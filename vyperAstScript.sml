@@ -44,8 +44,8 @@ Datatype:
   | Assert expr string
   | Raise (string option)
   | Return (expr option)
-  | Assign expr expr
-  | AnnAssign expr type expr
+  | Assign identifier (* TODO: could be a tuple *) expr
+  | AnnAssign identifier type expr
   ;
   expr
   = NamedExpr expr expr
@@ -73,13 +73,13 @@ Definition test_if_control_flow_ast_def:
   test_if_control_flow_ast =
   FunctionDef "foo" [External] []
   [
-    AnnAssign (Name "a") (Uint (n2w (256 DIV 8))) (Constant (Int 1));
+    AnnAssign "a" (Uint (n2w (256 DIV 8))) (Constant (Int 1));
     If (Compare (Name "a") Eq (Constant (Int 1)))
     [
-      Assign (Name "a") (Constant (Int 2))
+      Assign "a" (Constant (Int 2))
     ]
     [
-      Assign (Name "a") (Constant (Int 3))
+      Assign "a" (Constant (Int 3))
     ];
     Return (SOME (BinOp (Name "a") Add (Constant (Int 42))))
   ] (Uint (n2w (256 DIV 8)))
