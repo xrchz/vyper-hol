@@ -303,6 +303,11 @@ Proof
    gvs[option_CASE_rator, prod_CASE_rator, sum_CASE_rator] >>
    gvs[type_value_CASE_rator, assign_operation_CASE_rator,
        bound_CASE_rator] >>
+   TRY (qpat_x_assum `assign_result _ _ _ _ _ = (_, _)`
+          (assume_tac o MATCH_MP assign_result_state)) >>
+   TRY (qpat_x_assum `set_global _ _ _ _ _ = (_, _)`
+          (assume_tac o MATCH_MP set_global_immutables)) >>
+   TRY (gvs[] >> NO_TAC) >>
    gvs[AllCaseEqs()] >>
    gvs[PULL_EXISTS] >>
    gvs[return_def, raise_def] >>

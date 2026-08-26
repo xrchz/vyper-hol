@@ -123,19 +123,19 @@ Proof
       finite_mapTheory.FLOOKUP_UPDATE]
 QED
 
-(* SHA3 step lemma: given two defined operands, SHA3 succeeds and the
-   output variable contains some hash value. *)
+(* SHA3 step lemma: given two defined operands, SHA3 computes the hash
+   of the selected memory range. *)
 Theorem step_SHA3[local]:
   ∀ op1 op2 v1 v2 id out ss.
     eval_operand op1 ss = SOME v1 ∧ eval_operand op2 ss = SOME v2 ⇒
-    ∃ hash.
-      step_inst_base (mk_inst id SHA3 [op1; op2] [out]) ss =
-        OK (update_var out hash ss)
+    step_inst_base (mk_inst id SHA3 [op1; op2] [out]) ss =
+      OK (update_var out
+        (word_of_bytes T 0w
+          (Keccak_256_w64
+            (TAKE (w2n v2)
+              (DROP (w2n v1) ss.vs_memory ++ REPLICATE (w2n v2) 0w)))) ss)
 Proof
   rpt gen_tac >> strip_tac >>
-  qexists `word_of_bytes T 0w
-    (Keccak_256_w64
-      (TAKE (w2n v2) (DROP (w2n v1) ss.vs_memory ++ REPLICATE (w2n v2) 0w)))` >>
   PURE_REWRITE_TAC[mk_inst_def] >>
   ONCE_REWRITE_TAC[step_inst_base_def] >>
   simp[]
@@ -242,12 +242,29 @@ pairarg_tac >> gvs[] >>
                REPLICATE 32 0w))))
      (mstore (offset MOD dimword (:256)) w ss'))` by (
     qpat_x_assum `emitted_insts cs'' st' = _` (fn th => rewrite_tac [th]) >>
-    simp[run_inst_seq_def, mk_inst_def] >>
-    simp[Once step_inst_base_def] >>
     `eval_operand op' (mstore (offset MOD dimword (:256)) w ss') = SOME (n2w offset)` by (
       first_x_assum (qspecl_then [`op'`, `n2w offset`] mp_tac) >> simp[]
     ) >>
-    simp[eval_operand_lit]
+    `step_inst_base
+       (mk_inst cs''.cs_next_id SHA3 [op'; Lit 32w]
+          [STRING #"%" (toString cs''.cs_next_var)])
+       (mstore (offset MOD dimword (:256)) w ss') =
+     OK (update_var (STRING #"%" (toString cs''.cs_next_var))
+       (word_of_bytes T 0w
+         (Keccak_256_w64
+           (TAKE 32
+             (DROP (offset MOD dimword (:256))
+                (mstore (offset MOD dimword (:256)) w ss').vs_memory ++
+              REPLICATE 32 0w))))
+       (mstore (offset MOD dimword (:256)) w ss'))` by (
+      qspecl_then
+        [`op'`, `Lit 32w`, `n2w offset`, `32w`, `cs''.cs_next_id`,
+         `STRING #"%" (toString cs''.cs_next_var)`,
+         `mstore (offset MOD dimword (:256)) w ss'`]
+        mp_tac step_SHA3 >>
+      impl_tac >- simp[eval_operand_lit] >> simp[]
+    ) >>
+    simp[run_inst_seq_def]
   ) >>
   (* Key data equality via mload_mstore_same *)
   `TAKE 32

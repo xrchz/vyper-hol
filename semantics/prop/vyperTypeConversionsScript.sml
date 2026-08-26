@@ -64,6 +64,20 @@ Proof
   Cases_on `v` >> simp[value_has_type_def]
 QED
 
+Triviality evaluate_type_BaseT_SOME[local]:
+  !tenv bt tv. evaluate_type tenv (BaseT bt) = SOME tv ==> tv = BaseTV bt
+Proof
+  Cases_on `bt` >> gvs[evaluate_type_def, AllCaseEqs()] >>
+  Cases_on `b` >> gvs[]
+QED
+
+Triviality evaluate_type_FlagT_SOME[local]:
+  !tenv fid tv. evaluate_type tenv (FlagT fid) = SOME tv ==>
+  ?m. tv = FlagTV m
+Proof
+  gvs[evaluate_type_def, AllCaseEqs()] >> metis_tac[]
+QED
+
 Theorem valid_conversion_no_type_error:
   valid_conversion from_ty to_ty /\
   evaluate_type (get_tenv cx) from_ty = SOME from_tv /\
@@ -74,7 +88,19 @@ Proof
   rpt strip_tac >>
   gvs[evaluate_type_builtin_def] >>
   Cases_on`from_ty` >> Cases_on`to_ty` >>
-  gvs[valid_conversion_def, evaluate_type_def, AllCaseEqs()] >>
+  gvs[valid_conversion_def] >>
+  imp_res_tac evaluate_type_BaseT_SOME >>
+  imp_res_tac evaluate_type_FlagT_SOME >>
+  TRY (qpat_x_assum `from_tv = _` SUBST_ALL_TAC) >>
+  TRY (qpat_x_assum `to_tv = _` SUBST_ALL_TAC) >>
+  Cases_on `b` >> gvs[valid_conversion_def] >>
+  TRY (qpat_x_assum `valid_conversion (BaseT _) (BaseT b')` mp_tac >>
+       Cases_on `b'` >> strip_tac) >>
+  gvs[valid_conversion_def] >>
+  TRY (qpat_x_assum `evaluate_convert _ _ (BaseT (BytesT b)) = _` mp_tac >>
+       Cases_on `b` >> strip_tac) >>
+  TRY (qpat_x_assum `evaluate_type _ (FlagT _) = SOME _` mp_tac >>
+       simp[evaluate_type_def, AllCaseEqs()] >> strip_tac) >>
   TRY (drule_all uint_value_is_int >> strip_tac >> gvs[]) >>
   TRY (drule_all sint_value_is_int >> strip_tac >> gvs[]) >>
   TRY (drule_all bool_value_is_bool >> strip_tac >> gvs[]) >>

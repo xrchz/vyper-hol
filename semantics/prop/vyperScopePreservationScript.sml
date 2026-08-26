@@ -147,7 +147,8 @@ Proof
   (qpat_x_assum `_ = (res, st')` mp_tac >>
    simp[get_immutables_def, get_address_immutables_def, bind_def,
         lift_option_def, lift_option_type_def, return_def, raise_def] >>
-   rpt CASE_TAC >> gvs[return_def, raise_def]) >>
+   CASE_TAC >> gvs[return_def, raise_def] >>
+   CASE_TAC >> gvs[return_def, raise_def]) >>
   PairCases_on `x'` >> gvs[] >>
   Cases_on `x'0` >> gvs[bind_def, return_def, raise_def] >>
   qpat_x_assum `_ = (res, st')` mp_tac >>

@@ -537,6 +537,21 @@ val helper_close = FIRST [
     helpers)
 ];
 
+(* Direct exception closers avoid the context-wide search performed by
+   imp_res_tac, which is expensive in the ExtCall and IntCall cases. *)
+val close_check =
+  qpat_x_assum `check _ _ _ = (INR _, _)`
+    (ACCEPT_TAC o MATCH_MP check_no_control);
+val close_type_check =
+  qpat_x_assum `type_check _ _ _ = (INR _, _)`
+    (ACCEPT_TAC o MATCH_MP type_check_no_control);
+val close_lift_option =
+  qpat_x_assum `lift_option _ _ _ = (INR _, _)`
+    (ACCEPT_TAC o MATCH_MP lift_option_no_control);
+val close_lift_option_type =
+  qpat_x_assum `lift_option_type _ _ _ = (INR _, _)`
+    (ACCEPT_TAC o MATCH_MP lift_option_type_no_control);
+
 (* Lean step tactics: decompose monadic binds without gvs *)
 val lean_bind_step =
   qpat_x_assum `bind _ _ _ = (INR _, _)`
@@ -548,6 +563,21 @@ val lean_step = FIRST [lean_bind_step, lean_ibind_step];
 val lean_decompose = lean_step >> TRY (RULE_ASSUM_TAC BETA_RULE);
 
 (* ===== Case 18: ExtCall ===== *)
+
+Theorem ext_call_value_args_no_control[local]:
+  ∀is_static vs s exc s'.
+  (if is_static then return (NONE, TL vs)
+   else do
+     type_check (TL vs ≠ []) "ExtCall no value";
+     v <- lift_option_type (dest_NumV (HD (TL vs))) "ExtCall value not int";
+     return (SOME v, TL (TL vs))
+   od) s = (INR exc, s') ⇒ no_control_exc exc
+Proof
+  Cases >> rpt gen_tac >> strip_tac >> gvs[return_def]
+  >> step_tac >- close_type_check
+  >> step_tac >- close_lift_option_type
+  >> gvs[return_def]
+QED
 
 (* ===== Case 19: IntCall ===== *)
 
@@ -655,12 +685,12 @@ Theorem int_call_no_control[local]:
 Proof
   rpt strip_tac >> pop_assum mp_tac
   >> PURE_REWRITE_TAC[Once evaluate_def] >> strip_tac
-  >> step_tac >- helper_close
-  >> step_tac >- helper_close
-  >> step_tac >- helper_close
-  >> step_tac >- helper_close
+  >> step_tac >- close_type_check
+  >> step_tac >- close_lift_option_type
+  >> step_tac >- close_lift_option_type
+  >> step_tac >- close_type_check
   >> step_tac >- (res_tac >> gvs[no_control_exc_def])
-  >> step_tac >- helper_close
+  >> step_tac >- gvs[get_scopes_def, return_def]
   >> step_tac >- (
     drule finally_no_control >>
     disch_then irule >>
@@ -756,22 +786,41 @@ Resume eval_expr_no_control_with_bt[ExtCall]:
   >> lean_decompose
   >- (qpat_x_assum `∀s exc st'. eval_exprs cx es s = (INR exc,st') ⇒ no_control_exc exc`
         (qspecl_then [`s`, `exc`, `st'`] mp_tac) >> simp[])
-  (* Step 2: stash big drv IH + remove eval_exprs asms, leaving 1 asm *)
+  (* Remove the eval_exprs IH, then keep the large default-return IH out of
+     each simplifier call.  Splitting the monadic decomposition into small
+     fragments also keeps every tactic below holbuild's per-tactic timeout. *)
   >> qpat_x_assum `∀s exc st'. eval_exprs _ _ s = _ ⇒ _` kall_tac
-  (* Step 3: stash big drv IH, leave only do-block asm *)
-  (* Step 3: stash big IH into ML var, decompose body, restore *)
-  (* Step 3: stash big IH to goal *)
-  >> last_x_assum (fn ih =>
-    rpt (step_tac >- FIRST [
-      helper_close,
-      Cases_on `is_static'` >> gvs[bind_def, ignore_bind_def, return_def,
-        raise_def, AllCaseEqs()]
-      >> TRY (FIRST (map (fn th => imp_res_tac th >> gvs[no_control_exc_def]
-        >> NO_TAC) helpers))
-      >> TRY (gvs[return_def, no_control_exc_def] >> NO_TAC)])
-    >> RULE_ASSUM_TAC (SIMP_RULE std_ss [pairTheory.ELIM_UNCURRY])
-    >> rpt (step_tac >- helper_close)
-    >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- close_type_check >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- close_lift_option_type >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- (
+         qpat_x_assum `(if _ then _ else _) _ = (INR _, _)`
+           (ACCEPT_TAC o MATCH_MP ext_call_value_args_no_control)) >>
+       assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       RULE_ASSUM_TAC (SIMP_RULE std_ss [pairTheory.ELIM_UNCURRY]) >>
+       assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- close_lift_option_type >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- gvs[get_accounts_def, return_def] >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- close_check >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- gvs[get_transient_storage_def, return_def] >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- close_lift_option >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       RULE_ASSUM_TAC (SIMP_RULE std_ss [pairTheory.ELIM_UNCURRY]) >>
+       assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- close_check >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- gvs[update_accounts_def, return_def] >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- gvs[update_transient_def, return_def] >> assume_tac ih)
   (* Handle the if-tail *)
   >> qpat_x_assum `(if _ then _ else _) _ = _` mp_tac
   >> simp[COND_RATOR] >> strip_tac

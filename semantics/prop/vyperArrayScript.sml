@@ -423,6 +423,9 @@ Proof
 QED
 
 (* assign_subscripts with Update — computes everything inline, no existentials *)
+val assign_subscripts_int_sub_clause = cj 5 assign_subscripts_def;
+val assign_subscripts_update_clause = cj 2 assign_subscripts_def;
+
 Theorem assign_subscripts_update_INL:
   ∀tv a k ty bop v.
     array_is_mutable a ∧ valid_index tv a k ∧
@@ -437,17 +440,13 @@ Theorem assign_subscripts_update_INL:
                     (THE (array_index tv a k)) v))))
 Proof
   rpt strip_tac >>
-  `IS_SOME (array_index tv a k)` by simp[array_index_valid] >> let
-    val int_sub_clause = cj 5 assign_subscripts_def
-    val update_clause = cj 2 assign_subscripts_def
-  in
-    ONCE_REWRITE_TAC [int_sub_clause] >>
-    REWRITE_TAC [update_clause] >>
-    simp[LET_THM, array_set_index_INL] >>
-    Cases_on `array_index tv a k` >> fs[] >>
-    Cases_on `type_to_int_bound ty` >> fs[] >>
-    CASE_TAC >> fs[] >> CASE_TAC >> fs[]
-  end
+  `IS_SOME (array_index tv a k)` by simp[array_index_valid] >>
+  ONCE_REWRITE_TAC [assign_subscripts_int_sub_clause] >>
+  REWRITE_TAC [assign_subscripts_update_clause] >>
+  simp[LET_THM, array_set_index_INL] >>
+  Cases_on `array_index tv a k` >> fs[] >>
+  Cases_on `type_to_int_bound ty` >> fs[] >>
+  CASE_TAC >> fs[] >> CASE_TAC >> fs[]
 QED
 
 (* ============================================================

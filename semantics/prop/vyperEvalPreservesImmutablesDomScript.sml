@@ -1781,6 +1781,14 @@ Proof
 QED
 
 
+Theorem intcall_args_length_sub[local]:
+  ∀given expected defaults.
+    given ≤ expected ⇒
+    (expected − given ≤ defaults ⇔ expected ≤ given + defaults)
+Proof
+  decide_tac
+QED
+
 Theorem intcall_default_frame_imm_dom_from_generated_ih[local]:
   ∀cx src_id_opt fn es ih_check_s ih_mod_s ih_fun_s ih_len_s ih_args_s
      xrec srec ts smod tup sfun xlen slen vs sevl needed_dflts cxd prev res sdfl.
@@ -1838,7 +1846,15 @@ Proof
       LENGTH (FST (SND (SND tup))) − LENGTH es ≤
         LENGTH (FST (SND (SND (SND tup)))))
      "IntCall args length" ih_len_s = (INL xlen,slen)` by
-    (gvs[type_check_def, assert_def] \\ decide_tac) \\
+    (`(LENGTH es ≤ LENGTH (FST (SND (SND tup))) ∧
+       LENGTH (FST (SND (SND tup))) − LENGTH es ≤
+         LENGTH (FST (SND (SND (SND tup))))) =
+      (LENGTH es ≤ LENGTH (FST (SND (SND tup))) ∧
+       LENGTH (FST (SND (SND tup))) ≤
+         LENGTH es + LENGTH (FST (SND (SND (SND tup)))))` by
+       simp[intcall_args_length_sub] \\
+     pop_assum SUBST1_TAC \\
+     qpat_x_assum `type_check _ "IntCall args length" ih_len_s = _` ACCEPT_TAC) \\
   first_assum (qspecl_then
     [`ih_check_s`, `xrec`, `srec`,
      `ih_mod_s`, `ts`, `smod`,
@@ -1921,7 +1937,13 @@ Proof
   `type_check
      (LENGTH es ≤ LENGTH args ∧ LENGTH args − LENGTH es ≤ LENGTH dflts)
      "IntCall args length" ih_len_s = (INL xlen,slen)` by
-    (gvs[type_check_def, assert_def] \\ decide_tac) \\
+    (`(LENGTH es ≤ LENGTH args ∧
+       LENGTH args − LENGTH es ≤ LENGTH dflts) =
+      (LENGTH es ≤ LENGTH args ∧
+       LENGTH args ≤ LENGTH es + LENGTH dflts)` by
+       simp[intcall_args_length_sub] \\
+     pop_assum SUBST1_TAC \\
+     qpat_x_assum `type_check _ "IntCall args length" ih_len_s = _` ACCEPT_TAC) \\
   qpat_assum `∀s0 x0 t0 s1 ts0 t1 s2 tup0 t2 mut0 stup0 nr0 stup20
                   args0 sstup0 dflts0 sstup20 ret0 ss0 s3 x1 t3 s4 vs0 t4
                   needed_dflts0 cxd0 s5 dflt_vs0 t5 all_tenv s6 env0 t6
@@ -2219,38 +2241,22 @@ Proof
          `ih_check_s`, `ih_mod_s`, `ih_fun_s`, `ih_len_s`, `ih_args_s`,
          `xrec`, `srec`, `ts`, `smod`, `tup`, `sfun`, `xlen`, `slen`,
          `vs`, `sevl`, `needed_dflts`, `cxd`, `prev`, `INL dflt_vs`, `sdfl`]
-        mp_tac intcall_default_frame_imm_dom_from_generated_ih \\
-      simp[] \\
-      disch_then irule \\
-      simp[] \\
-      conj_tac
-      >- (rpt strip_tac \\
-          qpat_assum `∀s0 x0 t0 s1 ts0 t1 s2 tup0 t2 mut0 stup0 nr0 stup20
-                         args0 sstup0 dflts0 sstup20 ret0 body0 s3 x1 t3 s4
-                         vs0 t4 needed_dflts0 cxd0.
-                         _ ⇒ ∀st0 res0 st1.
-                           eval_exprs cxd0 needed_dflts0 st0 = (res0,st1) ⇒
-                           preserves_immutables_dom cxd0 st0 st1`
-            (qspecl_then
-              [`s0`, `()`, `t0`, `s1`, `ts0`, `t1`, `s2`, `tup0`, `t2`,
-               `FST tup0`, `SND tup0`, `FST (SND tup0)`, `SND (SND tup0)`,
-               `FST (SND (SND tup0))`, `SND (SND (SND tup0))`,
-               `FST (SND (SND (SND tup0)))`, `SND (SND (SND (SND tup0)))`,
-               `FST (SND (SND (SND (SND tup0))))`,
-               `SND (SND (SND (SND (SND tup0))))`, `s3`, `()`, `t3`,
-               `s4`, `vs0`, `t4`,
-               `DROP
-                  (LENGTH (FST (SND (SND (SND tup0)))) −
-                   (LENGTH (FST (SND (SND tup0))) − LENGTH es))
-                  (FST (SND (SND (SND tup0))))`,
-               `cx with stk updated_by CONS (src_id_opt,fn)`] mp_tac) \\
-          simp[] \\
-          disch_then irule \\
-          simp[] \\
-          drule type_check_intcall_args_length_sub \\
-          simp[]) \\
-      drule type_check_intcall_args_length_sub \\
-      simp[]) \\
+        irule intcall_default_frame_imm_dom_from_generated_ih \\
+      MAP_EVERY qexists_tac
+        [`cx`, `dflt_vs`, `es`, `fn`, `ih_args_s`, `ih_check_s`, `ih_fun_s`,
+         `ih_len_s`, `ih_mod_s`, `needed_dflts`, `prev`, `sfun`, `slen`,
+         `smod`, `src_id_opt`, `srec`, `ts`, `tup`, `vs`, `xlen`, `xrec`] \\
+      rpt conj_tac \\
+      FIRST [first_assum ACCEPT_TAC,
+        qpat_x_assum `stup = SND tup` (fn h_stup =>
+        qpat_x_assum `stup2 = SND stup` (fn h_stup2 =>
+        qpat_x_assum `args = FST stup2` (fn h_args =>
+        qpat_x_assum `sstup = SND stup2` (fn h_sstup =>
+        qpat_x_assum `dflts = FST sstup` (fn h_dflts =>
+        qpat_x_assum `needed_dflts = DROP _ _` (fn h_needed =>
+          PURE_REWRITE_TAC [GSYM h_stup, GSYM h_stup2, GSYM h_args,
+                            GSYM h_sstup, GSYM h_dflts] \\
+          FIRST [ACCEPT_TAC h_needed, first_assum ACCEPT_TAC]))))))]) \\
   simp[intcall_tail_body_provider_def] \\
   rpt strip_tac \\
   `type_check
@@ -2624,10 +2630,11 @@ Proof
   \\ simp[bind_def]
   \\ BasicProvers.TOP_CASE_TAC
   \\ reverse BasicProvers.TOP_CASE_TAC
-  >- (rpt strip_tac \\ gvs[] \\
+  >- (rpt strip_tac \\
+      qpat_x_assum `r'⁵' = st'` (SUBST1_TAC o SYM) \\
       irule preserves_immutables_dom_trans \\
       qexists_tac `r'⁴'` \\
-      conj_tac >- simp[] \\
+      conj_tac >- first_assum ACCEPT_TAC \\
       irule (iffLR preserves_immutables_dom_txn_eq) \\
       qexists_tac `cx with stk updated_by CONS (src_id_opt,fn)` \\ simp[] \\
       irule intcall_default_frame_imm_dom \\
@@ -2639,10 +2646,30 @@ Proof
       simp[] \\
       conj_tac
       >- (rpt strip_tac \\
-          qpat_x_assum `∀s'' t s'³' ts t' s'⁴' tup t'' s'⁵' t'³' s'⁶' vs t'⁴'. _ ⇒ ∀st res st'. eval_exprs (cx with stk updated_by CONS (src_id_opt,fn)) _ st = (res,st') ⇒ _`
-            (drule_all_then assume_tac) \\
-          first_x_assum drule \\
-          simp[]) \\
+          drule type_check_intcall_args_length_sub \\
+          strip_tac \\
+          qpat_x_assum `∀s'' x t s'³' ts t' s'⁴' tup t'' mut stup nr stup2 args sstup dflts sstup2 ret body' s'⁵' x' t'³' s'⁶' vs t'⁴' es' cx'.
+                           _ ⇒ ∀st res st'.
+                             eval_exprs cx' es' st = (res,st') ⇒ _`
+            (qspecl_then
+              [`st`, `x`, `r`, `st`, `x'`, `r'`, `st`, `x''`, `r''`,
+               `FST x''`, `SND x''`, `FST (SND x'')`, `SND (SND x'')`,
+               `FST (SND (SND x''))`, `SND (SND (SND x''))`,
+               `FST (SND (SND (SND x'')))`,
+               `SND (SND (SND (SND x'')))`,
+               `FST (SND (SND (SND (SND x''))))`,
+               `SND (SND (SND (SND (SND x''))))`,
+               `st`, `x'³'`, `r'³'`, `st`, `x'⁴'`, `r'⁴'`,
+               `DROP (LENGTH (FST (SND (SND (SND x'')))) −
+                      (LENGTH (FST (SND (SND x''))) − LENGTH es))
+                     (FST (SND (SND (SND x''))))`,
+               `cx with stk updated_by CONS (src_id_opt,fn)`] mp_tac) \\
+          impl_tac >-
+            (rpt conj_tac \\
+             FIRST [REFL_TAC, first_assum ACCEPT_TAC]) \\
+          disch_then drule \\
+          strip_tac \\
+          first_assum ACCEPT_TAC) \\
       qpat_x_assum `finally _ _ _ = _` mp_tac \\
       simp[ignore_bind_def])
   (* INL branch: fold remaining pipeline through post_default_intcall_tail *)
@@ -2941,13 +2968,16 @@ Proof
            (FST (SND (SND (SND fn_tup))))`,
      `cx with stk updated_by CONS (src_id_opt,fn)`,
      `s_args.scopes`, `INL default_vs`, `sdfl`]
-    mp_tac intcall_mutual_default_frame_imm_dom_from_generated_ih \\
-  simp[get_scopes_def, return_def] \\
-  (impl_tac >-
-     (qpat_assum `∀s0 x0 t0 s1 ts0 t1 s2 tup0 t2 mut0 stup0 nr0 stup20 args0 sstup0 dflts0 sstup20 ret0 body0 s3 x1 t3 s4 vs0 t4 es0 cxd0 s5 prev0 t5 s6 x2 t6. _ ⇒ ∀st0 res0 st1. eval_exprs cxd0 es0 st0 = (res0,st1) ⇒ preserves_immutables_dom cxd0 st0 st1`
-        mp_tac \\
-      simp[get_scopes_def, return_def])) \\
-  simp[]
+    irule intcall_mutual_default_frame_imm_dom_from_generated_ih \\
+  conj_tac
+  >- REFL_TAC \\
+  conj_tac
+  >- simp[get_scopes_def, return_def] \\
+  MAP_EVERY qexists_tac
+    [`arg_vs`, `check_res`, `default_vs`, `es`, `fn_tup`, `len_res`,
+     `mod_code`, `st0`] \\
+  rpt conj_tac \\
+  FIRST [REFL_TAC, first_assum ACCEPT_TAC]
 QED
 
 Theorem intcall_mutual_live_tail_body_provider[local]:

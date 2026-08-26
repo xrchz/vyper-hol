@@ -872,10 +872,15 @@ Resume compile_clamp_ok[signed]:
         integer_wordTheory.WORD_LTi, integer_wordTheory.WORD_GTi] >>
     `type_bits ty − 1 ≤ 255` by simp[] >>
     `2 ** (type_bits ty − 1) ≤ 2 ** 255` by simp[bitTheory.TWOEXP_MONO2] >>
-    simp[integer_wordTheory.w2i_i2w_neg] >>
-    simp[integer_wordTheory.w2i_i2w_pos] >>
-    simp[wordsTheory.INT_MIN_def, integer_wordTheory.INT_MAX_def] >>
-    intLib.COOPER_TAC) >>
+    `w2i (i2w (-&(2 ** (type_bits ty − 1))) : bytes32) =
+       -&(2 ** (type_bits ty − 1))` by (
+      irule integer_wordTheory.w2i_i2w_neg >>
+      simp[wordsTheory.INT_MIN_def]) >>
+    `w2i (i2w (&(2 ** (type_bits ty − 1) − 1)) : bytes32) =
+       &(2 ** (type_bits ty − 1) − 1)` by (
+      irule integer_wordTheory.w2i_i2w_pos >>
+      simp[wordsTheory.INT_MIN_def, integer_wordTheory.INT_MAX_def]) >>
+    asm_rewrite_tac[] >> intLib.COOPER_TAC) >>
   `bool_to_word (bool_to_word (v < lo) = 0w) &&
    bool_to_word (bool_to_word (v > hi) = 0w) ≠ 0w` by gvs[] >>
   `same_blocks st cs'⁵'` by metis_tac[same_blocks_trans] >>

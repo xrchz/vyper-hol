@@ -637,8 +637,8 @@ Proof
       Excl "is_int_type_def", Excl "is_numeric_type_def", Excl "is_bool_type_def",
       Excl "is_flag_type_def", Excl "is_comparable_type_def",
       is_int_type_inv, is_numeric_type_inv, is_bool_type_inv,
-      is_flag_type_inv, is_comparable_type_inv,
-      evaluate_type_def, type_to_int_bound_def, AllCaseEqs()] >>
+      is_flag_type_inv, is_comparable_type_inv] >>
+  gvs[evaluate_type_def, type_to_int_bound_def, AllCaseEqs()] >>
   gen_tac >>
   TRY (
     (* NotIn/NotEq: unfold once to binop_negate, then simp with binop_negate lemmas *)

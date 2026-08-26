@@ -212,7 +212,7 @@ Proof
       type_check_def, list_CASE_rator, raise_def, assert_def,
       set_scopes_def, return_def, get_scopes_def] >>
   gvs[lookup_scopes_def, FLOOKUP_UPDATE,AllCaseEqs()] >>
-  rw[] >> gvs[] >> TRY(first_x_assum drule_all >> simp[]) >> TRY(res_tac >> gvs[])
+  rw[] >> TRY(first_x_assum drule_all >> simp[]) >> TRY(res_tac >> gvs[])
 QED
 
 

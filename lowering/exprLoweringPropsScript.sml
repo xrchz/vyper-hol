@@ -411,11 +411,12 @@ Theorem iszero_bool_correct:
       OK (update_var out_var (val_to_w256 (BoolV (¬b))) ss)
 Proof
   Cases_on `b` >> rpt strip_tac >>
-  PURE_REWRITE_TAC[venomInstTheory.mk_inst_def] >>
-  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >> simp[] >>
-  simp[exec_pure1_def, eval_operand_def, val_to_w256_def,
-       update_var_def, venomExecSemanticsTheory.bool_to_word_def,
-       comp_return_def, comp_bind_def, comp_ignore_bind_def]
+  `(mk_inst inst_id ISZERO [op] [out_var]).inst_opcode = ISZERO`
+    by simp[venomInstTheory.mk_inst_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  pop_assum (fn th => PURE_REWRITE_TAC[th]) >>
+  simp[exec_pure1_def, venomInstTheory.mk_inst_def, val_to_w256_def,
+       venomExecSemanticsTheory.bool_to_word_def]
 QED
 
 (* ASSERT instruction: non-zero → OK (no-op), zero → Abort *)
@@ -1035,13 +1036,26 @@ Proof
           simp[rich_listTheory.IS_PREFIX_APPEND3])
       >> disj2_tac >>
       simp (contextTheory.compile_code_to_memory_def :: blocks_grew_rws))
-  (* LocCalldata: pure emit chain — isPREFIX *)
-  >> simp[ci_mono_def, comp_bind_def, comp_ignore_bind_def,
-          comp_return_def, pairTheory.UNCURRY] >>
-  disj1_tac >>
-  simp isPREFIX_prim_rws >>
-  rewrite_tac[GSYM listTheory.APPEND_ASSOC] >>
-  simp[rich_listTheory.IS_PREFIX_APPEND3]
+  (* LocCalldata: compose the monotonicity interfaces of each primitive.
+     Avoid unfolding the emit chain into a very large isPREFIX goal. *)
+  >> irule ci_mono_bind
+  >> simp[ci_mono_emit_op]
+  >> rpt gen_tac
+  >> irule ci_mono_bind
+  >> simp[ci_mono_compile_alloc_buffer]
+  >> rpt gen_tac >> PURE_REWRITE_TAC[LET_THM]
+  >> irule ci_mono_ignore_bind
+  >> simp[ci_mono_emit_void]
+  >> gen_tac
+  >> irule ci_mono_bind
+  >> simp[ci_mono_emit_op]
+  >> rpt gen_tac
+  >> irule ci_mono_bind
+  >> simp[ci_mono_emit_op]
+  >> rpt gen_tac
+  >> irule ci_mono_ignore_bind
+  >> simp[ci_mono_emit_void]
+  >> gen_tac >> simp[ci_mono_comp_return]
 QED
 
 (* ci_mono for unwrap_value *)
@@ -2398,7 +2412,11 @@ Theorem step_inst_base_ok_jmp_ctxs[local]:
     s'.vs_tx_ctx = s.vs_tx_ctx /\
     s'.vs_block_ctx = s.vs_block_ctx
 Proof
-  rw[] >> gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]
+  rpt strip_tac >>
+  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+  ASM_REWRITE_TAC[step_inst_base_def] >>
+  CONV_TAC (LAND_CONV (LAND_CONV EVAL)) >>
+  gvs[jump_to_def, AllCaseEqs()] >> rpt strip_tac >> gvs[]
 QED
 
 Theorem step_inst_base_ok_jnz_ctxs[local]:
@@ -2408,7 +2426,11 @@ Theorem step_inst_base_ok_jnz_ctxs[local]:
     s'.vs_tx_ctx = s.vs_tx_ctx /\
     s'.vs_block_ctx = s.vs_block_ctx
 Proof
-  rw[] >> gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]
+  rpt strip_tac >>
+  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+  ASM_REWRITE_TAC[step_inst_base_def] >>
+  CONV_TAC (LAND_CONV (LAND_CONV EVAL)) >>
+  gvs[jump_to_def, AllCaseEqs()] >> rpt strip_tac >> gvs[]
 QED
 
 Theorem step_inst_base_ok_djmp_ctxs[local]:
@@ -2418,7 +2440,11 @@ Theorem step_inst_base_ok_djmp_ctxs[local]:
     s'.vs_tx_ctx = s.vs_tx_ctx /\
     s'.vs_block_ctx = s.vs_block_ctx
 Proof
-  rw[] >> gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]
+  rpt strip_tac >>
+  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+  ASM_REWRITE_TAC[step_inst_base_def] >>
+  CONV_TAC (LAND_CONV (LAND_CONV EVAL)) >>
+  gvs[jump_to_def, AllCaseEqs()] >> rpt strip_tac >> gvs[]
 QED
 
 Theorem step_inst_base_ok_jump_ctxs[local]:

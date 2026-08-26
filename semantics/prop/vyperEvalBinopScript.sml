@@ -403,7 +403,23 @@ Theorem evaluate_binop_div_mod_success_nonzero:
     (∃i1 i2. v1 = DecimalV i1 ∧ v2 = DecimalV i2 ∧ i2 ≠ 0)
 Proof
   rpt gen_tac >> strip_tac >>
-  Cases_on `bop` >>
+  Cases_on `bop = Div`
+  >- (gvs[] >>
+      gvs[vyperValueOperationTheory.evaluate_binop_def, AllCaseEqs(),
+          vyperValueOperationTheory.bounded_int_op_def,
+          vyperValueOperationTheory.bounded_decimal_op_def,
+          vyperValueOperationTheory.wrapped_int_op_def] >>
+      Cases_on `v1` >> gvs[AllCaseEqs()] >>
+      Cases_on `v2` >> gvs[AllCaseEqs()]) >>
+  Cases_on `bop = UnsafeDiv`
+  >- (gvs[] >>
+      gvs[vyperValueOperationTheory.evaluate_binop_def, AllCaseEqs(),
+          vyperValueOperationTheory.bounded_int_op_def,
+          vyperValueOperationTheory.bounded_decimal_op_def,
+          vyperValueOperationTheory.wrapped_int_op_def] >>
+      Cases_on `v1` >> gvs[AllCaseEqs()] >>
+      Cases_on `v2` >> gvs[AllCaseEqs()]) >>
+  gvs[] >>
   gvs[vyperValueOperationTheory.evaluate_binop_def, AllCaseEqs(),
       vyperValueOperationTheory.bounded_int_op_def,
       vyperValueOperationTheory.bounded_decimal_op_def,

@@ -316,7 +316,12 @@ Theorem assert_ok:
     eval_operand op1 ss = SOME v ∧ v ≠ 0w ⇒
     step_inst_base (mk_inst id ASSERT [op1] []) ss = OK ss
 Proof
-  rw[step_inst_base_def]
+  rpt strip_tac >>
+  `(mk_inst id ASSERT [op1] []).inst_opcode = ASSERT`
+    by simp[venomInstTheory.mk_inst_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  pop_assum (fn th => PURE_REWRITE_TAC[th]) >>
+  simp[venomInstTheory.mk_inst_def]
 QED
 
 (* ASSERT with zero condition: Abort Revert *)
@@ -325,7 +330,12 @@ Theorem assert_revert:
     eval_operand op1 ss = SOME 0w ∧ rs = revert_state (set_returndata [] ss) ⇒
     step_inst_base (mk_inst id ASSERT [op1] []) ss = Abort Revert_abort rs
 Proof
-  rw[step_inst_base_def]
+  rpt strip_tac >>
+  `(mk_inst id ASSERT [op1] []).inst_opcode = ASSERT`
+    by simp[venomInstTheory.mk_inst_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  pop_assum (fn th => PURE_REWRITE_TAC[th]) >>
+  simp[venomInstTheory.mk_inst_def]
 QED
 
 (* ASSERT either succeeds or reverts (disjunctive form) *)
@@ -335,7 +345,13 @@ Theorem assert_ok_or_revert:
     step_inst_base (mk_inst id ASSERT [op1] []) ss = OK ss ∨
     step_inst_base (mk_inst id ASSERT [op1] []) ss = Abort Revert_abort rs
 Proof
-  rw[step_inst_base_def]
+  rpt strip_tac >>
+  `(mk_inst id ASSERT [op1] []).inst_opcode = ASSERT`
+    by simp[venomInstTheory.mk_inst_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  pop_assum (fn th => PURE_REWRITE_TAC[th]) >>
+  simp[venomInstTheory.mk_inst_def] >>
+  Cases_on `v = 0w` >> simp[]
 QED
 
 (* ===== eval_operand after update_var ===== *)
@@ -1260,9 +1276,15 @@ Theorem emit_void_ASSERT_ok_or_revert_mem:
 Proof
   rw[] >>
   drule emitted_insts_emit_void >> strip_tac >> gvs[] >>
-  simp[run_inst_seq_def, step_inst_base_def] >>
-  Cases_on `v = 0w` >> gvs[] >>
-  metis_tac[]
+  Cases_on `v = 0w`
+  >- (`step_inst_base (mk_inst st.cs_next_id ASSERT [op1] []) ss =
+        Abort Revert_abort (revert_state (set_returndata [] ss))`
+        by (irule assert_revert >> simp[]) >>
+      qexists_tac `revert_state (set_returndata [] ss)` >>
+      simp[run_inst_seq_def]) >>
+  `step_inst_base (mk_inst st.cs_next_id ASSERT [op1] []) ss = OK ss`
+    by (irule assert_ok >> simp[]) >>
+  qexists_tac `ss` >> simp[run_inst_seq_def]
 QED
 
 (* ASSERT with non-zero value: OK, state unchanged *)
@@ -1277,7 +1299,9 @@ Theorem emit_void_ASSERT_ok:
 Proof
   rw[] >>
   drule emitted_insts_emit_void >> strip_tac >> gvs[] >>
-  simp[run_inst_seq_def, step_inst_base_def]
+  `step_inst_base (mk_inst st.cs_next_id ASSERT [op1] []) ss = OK ss`
+    by (irule assert_ok >> simp[]) >>
+  simp[run_inst_seq_def]
 QED
 
 (* ASSERT with zero value: Abort *)
@@ -1292,7 +1316,11 @@ Theorem emit_void_ASSERT_revert:
 Proof
   rw[] >>
   drule emitted_insts_emit_void >> strip_tac >> gvs[] >>
-  simp[run_inst_seq_def, step_inst_base_def]
+  `step_inst_base (mk_inst st.cs_next_id ASSERT [op1] []) ss =
+    Abort Revert_abort (revert_state (set_returndata [] ss))`
+    by (irule assert_revert >> simp[]) >>
+  qexists_tac `revert_state (set_returndata [] ss)` >>
+  simp[run_inst_seq_def]
 QED
 
 Theorem emit_op_MLOAD_correct:
@@ -2008,8 +2036,14 @@ Theorem emit_void_ASSERT_ok_or_revert:
 Proof
   rpt gen_tac >> strip_tac >>
   drule emitted_insts_emit_void >> strip_tac >> gvs[] >>
-  simp[run_inst_seq_def, step_inst_base_def, mk_inst_def] >>
-  Cases_on `v1 = 0w` >> gvs[] >>
+  Cases_on `v1 = 0w`
+  >- (`step_inst_base (mk_inst st.cs_next_id ASSERT [op1] []) ss =
+        Abort Revert_abort (revert_state (set_returndata [] ss))`
+        by (irule assert_revert >> simp[]) >>
+      simp[run_inst_seq_def]) >>
+  `step_inst_base (mk_inst st.cs_next_id ASSERT [op1] []) ss = OK ss`
+    by (irule assert_ok >> simp[]) >>
+  simp[run_inst_seq_def] >>
   drule emit_void_extends >> simp[same_blocks_def] >> strip_tac >> gvs[] >>
   irule fresh_vars_wrt_emit_void >>
   goal_assum drule >> gvs[]
