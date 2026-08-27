@@ -19,6 +19,73 @@ separately: ordinary HOL warnings are not counted as `CHEAT` warnings. A warning
 be propagated through an `ACCEPT_TAC` or dependent theorem, so the warning inventory
 is intentionally not required to be a one-to-one copy of the static token table.
 
+## Reconciliation and comparison contract
+
+The stable key for both projections is `repository-relative source file | theorem-or-definition`.
+Static occurrence counts do not create extra keys. Comparing the **117** static keys with
+the **131** saved-warning keys gives **99 shared**, **18 static-only**, and **32 warning-only**
+keys. These sets are exhaustive:
+
+Static-only keys (direct/local cheats that are not saved as warning records under the same key):
+
+- `lowering/builtinTypeConvertPropsScript.sml|compile_type_convert_correct`
+- `lowering/e2eCorrectnessScript.sml|compile_vyper_evm_correspondence`
+- `lowering/e2eCorrectnessScript.sml|evm_correspondence_to_call_result`
+- `lowering/e2eCorrectnessScript.sml|evm_revert_state_unchanged`
+- `lowering/e2eCorrectnessScript.sml|o2_pipeline_ctx_pass_correct`
+- `lowering/exprLoweringPropsScript.sml|compile_expr_ci_mono`
+- `lowering/proofs/loweringMemSafetyProofsScript.sml|lowering_memory_safe`
+- `venom/codegen/proofs/genBlockSimScript.sml|do_dup_poke_venom_asm_rel`
+- `venom/passes/memmerging/proofs/mmWfProofsScript.sml|mm_preserves_ssa_form`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|bp_analyze_fixpoint`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|bp_analyze_ptr_fdom`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|bp_analyze_vv_inv`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|bp_assign_drestrict_ptrs_eq`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|cf_alloca_ok_opt_joined`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|cf_keys_ok_boundary`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|load_new_entry_sound`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|lse_step_equiv`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|staticcall_lf_sound_helper`
+
+Warning-only keys (saved/dependent theorems carrying a cheat tag from another direct site):
+
+- `lowering/e2eCorrectnessScript.sml|e2e_venom_to_evm`
+- `lowering/e2eCorrectnessScript.sml|e2e_vyper_to_evm`
+- `lowering/e2eCorrectnessScript.sml|e2e_vyper_to_evm_O2`
+- `lowering/e2eCorrectnessScript.sml|vyper_call_correct`
+- `lowering/exprLoweringPropsScript.sml|compile_expr_extends_insts`
+- `venom/codegen/proofs/genBlockSimScript.sml|gen_inst_ok_sim`
+- `venom/passes/algebraic_opt/algebraicOptCorrectnessScript.sml|ao_transform_function_correct`
+- `venom/passes/cse/cseCorrectnessScript.sml|cse_function_correct`
+- `venom/passes/dead_store_elim/deadStoreElimCorrectnessScript.sml|dse_function_correct`
+- `venom/passes/dead_store_elim/deadStoreElimCorrectnessScript.sml|dse_function_space_correct`
+- `venom/passes/function_inliner/defs/functionInlinerDefsScript.sml|call_walk_dfs_ind`
+- `venom/passes/function_inliner/functionInlinerCorrectnessScript.sml|function_inliner_pass_correct`
+- `venom/passes/load_elim/loadElimCorrectnessScript.sml|load_elim_function_correct`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|bp_ptr_sound_exec_block_gen`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|bp_ptr_sound_step_non_invoke`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|copy_elision_function_correct_proof`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|lse_pointwise_hyps`
+- `venom/passes/memory_copy_elision/proofs/memoryCopyElisionProofsScript.sml|stage1_correct`
+- `venom/passes/remove_unused/proofs/removeUnusedCorrectnessProofsScript.sml|remove_unused_cross_ctx_fn_equiv`
+- `venom/passes/remove_unused/proofs/removeUnusedCorrectnessProofsScript.sml|remove_unused_function_correct`
+- `venom/passes/remove_unused/proofs/removeUnusedCorrectnessProofsScript.sml|remove_unused_pass_correct`
+- `venom/passes/remove_unused/proofs/removeUnusedFnProofsScript.sml|remove_unused_function_correct_ssa`
+- `venom/passes/remove_unused/proofs/removeUnusedStructProofsScript.sml|rusp_preserves_all`
+- `venom/passes/remove_unused/removeUnusedCorrectnessScript.sml|remove_unused_function_correct`
+- `venom/passes/remove_unused/removeUnusedCorrectnessScript.sml|remove_unused_pass_correct`
+- `venom/passes/shared/passSharedPropsScript.sml|copy_fwd_read_equiv`
+- `venom/passes/shared/passSharedPropsScript.sml|copy_fwd_rel_preserved_identical_inst`
+- `venom/passes/shared/passSharedPropsScript.sml|copy_fwd_terminator_equiv`
+- `venom/passes/shared/passSharedPropsScript.sml|copy_fwd_write_equiv`
+- `venom/passes/simplify_cfg/defs/simplifyCfgDefsScript.sml|collapse_dfs_ind`
+- `venom/passes/simplify_cfg/simplifyCfgCorrectnessScript.sml|simplify_cfg_pass_correct`
+- `venom/props/execEquivPropsScript.sml|run_function_result_equiv_closed`
+
+Final comparison must recompute both projections independently. A new static key, a higher
+occurrence count for an existing static key, or a new saved-warning key is a regression;
+removed keys/counts are proof progress. Do not infer one projection from the other.
+
 ## Active cheat sites
 
 | File | Theorem/definition | Occurrences |
