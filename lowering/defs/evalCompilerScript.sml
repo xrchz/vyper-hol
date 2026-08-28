@@ -288,6 +288,144 @@ Proof
   simp [codegenTheory.codegen_def]
 QED
 
+Theorem two_phase_codegen_IS_SOME:
+  ∀runtime_ctx runtime_map runtime_data deploy_ctx deploy_map deploy_data.
+    IS_SOME
+      (case codegen runtime_ctx runtime_map runtime_data of
+         NONE => NONE
+       | SOME runtime_bytecode =>
+           case codegen deploy_ctx deploy_map (deploy_data runtime_bytecode) of
+             NONE => NONE
+           | SOME deploy_bytecode => SOME (deploy_bytecode, runtime_bytecode)) ⇔
+    IS_SOME (generate_context_plan runtime_ctx runtime_map) ∧
+    IS_SOME (generate_context_plan deploy_ctx deploy_map)
+Proof
+  rpt strip_tac >>
+  Cases_on `generate_context_plan runtime_ctx runtime_map` >>
+  Cases_on `generate_context_plan deploy_ctx deploy_map` >>
+  simp [codegenTheory.codegen_def]
+QED
+
+
+Theorem dependent_two_phase_codegen_IS_SOME:
+  ∀runtime_ctx runtime_map runtime_data deploy_ctx deploy_map deploy_data.
+    IS_SOME
+      (case codegen runtime_ctx runtime_map runtime_data of
+         NONE => NONE
+       | SOME runtime_bytecode =>
+           case codegen (deploy_ctx runtime_bytecode)
+                        (deploy_map runtime_bytecode)
+                        (deploy_data runtime_bytecode) of
+             NONE => NONE
+           | SOME deploy_bytecode => SOME (deploy_bytecode, runtime_bytecode)) ⇔
+    IS_SOME (generate_context_plan runtime_ctx runtime_map) ∧
+    ∀runtime_bytecode.
+      codegen runtime_ctx runtime_map runtime_data = SOME runtime_bytecode ⇒
+      IS_SOME
+        (generate_context_plan (deploy_ctx runtime_bytecode)
+                               (deploy_map runtime_bytecode))
+Proof
+  rpt strip_tac >>
+  Cases_on `codegen runtime_ctx runtime_map runtime_data`
+  >- (`generate_context_plan runtime_ctx runtime_map = NONE` by
+        (Cases_on `generate_context_plan runtime_ctx runtime_map` >>
+         gvs [codegenTheory.codegen_def]) >>
+      simp [])
+  >> simp [] >>
+  `IS_SOME (generate_context_plan runtime_ctx runtime_map)` by
+    (qspecl_then [`runtime_ctx`, `runtime_map`, `runtime_data`] mp_tac
+       codegen_IS_SOME >>
+     simp []) >>
+  qspecl_then [`deploy_ctx x`, `deploy_map x`, `deploy_data x`] mp_tac
+    codegen_IS_SOME >>
+  Cases_on `codegen (deploy_ctx x) (deploy_map x) (deploy_data x)` >>
+  simp []
+QED
+
+Theorem generate_context_plan_fold_IS_SOME[local]:
+  ∀fns fn_eom_map.
+    (∀fn lbl_ctr.
+       MEM fn fns ⇒
+       IS_SOME (generate_fn_plan fn
+         (case FLOOKUP fn_eom_map fn.fn_name of SOME v => v | NONE => 0)
+         lbl_ctr)) ⇒
+    ∀ops lbl_ctr.
+      IS_SOME
+        (FOLDL (λacc fn.
+           case acc of
+             NONE => NONE
+           | SOME (ops, lbl_ctr) =>
+               case generate_fn_plan fn
+                 (case FLOOKUP fn_eom_map fn.fn_name of
+                    SOME v => v | NONE => 0) lbl_ctr of
+                 NONE => NONE
+               | SOME (fn_ops, ps) =>
+                   SOME (ops ++ fn_ops, ps.ps_label_counter))
+          (SOME (ops, lbl_ctr)) fns)
+Proof
+  Induct_on `fns`
+  >- simp []
+  >> rpt strip_tac >>
+  simp [] >>
+  `IS_SOME
+     (generate_fn_plan h
+       (case FLOOKUP fn_eom_map h.fn_name of SOME v => v | NONE => 0)
+       lbl_ctr)` by
+    (qpat_assum `∀fn lbl_ctr. MEM fn (h::fns) ⇒ _`
+       (qspecl_then [`h`, `lbl_ctr`] mp_tac) >>
+     simp []) >>
+  Cases_on
+    `generate_fn_plan h
+      (case FLOOKUP fn_eom_map h.fn_name of SOME v => v | NONE => 0)
+      lbl_ctr` >>
+  gvs [] >>
+  PairCases_on `x` >>
+  gvs [] >>
+  first_x_assum irule >>
+  metis_tac []
+QED
+
+Theorem generate_context_plan_IS_SOME:
+  ∀ctx fn_eom_map.
+    (∀fn lbl_ctr.
+       MEM fn ctx.ctx_functions ⇒
+       IS_SOME (generate_fn_plan fn
+         (case FLOOKUP fn_eom_map fn.fn_name of SOME v => v | NONE => 0)
+         lbl_ctr)) ⇒
+    IS_SOME (generate_context_plan ctx fn_eom_map)
+Proof
+  rpt strip_tac >>
+  simp [stackPlanGenTheory.generate_context_plan_def] >>
+  `IS_SOME
+     (FOLDL (λacc fn.
+        case acc of
+          NONE => NONE
+        | SOME (ops, lbl_ctr) =>
+            case generate_fn_plan fn
+              (case FLOOKUP fn_eom_map fn.fn_name of
+                 SOME v => v | NONE => 0) lbl_ctr of
+              NONE => NONE
+            | SOME (fn_ops, ps) =>
+                SOME (ops ++ fn_ops, ps.ps_label_counter))
+       (SOME ([], 0)) ctx.ctx_functions)` by
+    (irule generate_context_plan_fold_IS_SOME >>
+     metis_tac []) >>
+  Cases_on
+    `FOLDL (λacc fn.
+       case acc of
+         NONE => NONE
+       | SOME (ops, lbl_ctr) =>
+           case generate_fn_plan fn
+             (case FLOOKUP fn_eom_map fn.fn_name of
+                SOME v => v | NONE => 0) lbl_ctr of
+             NONE => NONE
+           | SOME (fn_ops, ps) =>
+               SOME (ops ++ fn_ops, ps.ps_label_counter))
+      (SOME ([], 0)) ctx.ctx_functions` >>
+  gvs [] >>
+  PairCases_on `x` >>
+  simp []
+QED
 Theorem empty_compiles:
   IS_SOME
     (compile_vyper ([] : toplevel list)
