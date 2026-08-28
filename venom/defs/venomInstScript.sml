@@ -702,3 +702,15 @@ End
 Definition ctx_fn_names_def:
   ctx_fn_names ctx = MAP (\f. f.fn_name) ctx.ctx_functions
 End
+
+Theorem task006_opcode_classification_eval:
+  let ops = [DALLOCA; DRET; GETFMP; SETFMP; RETFMP;
+             INITIAL_FMP; BUMP; FMP_PARAM; RETPC_PARAM] in
+    MAP is_raw_fmp_opcode ops = [T; T; T; T; T; F; F; F; F] /\
+    MAP is_fmp_param_opcode ops = [F; F; F; F; F; F; F; T; T] /\
+    MAP is_terminator ops = [F; T; F; F; T; F; F; F; F] /\
+    MAP is_pseudo ops = [F; F; F; F; F; F; F; T; T] /\
+    MAP is_alloca_op ops = [F; F; F; F; F; F; F; F; F]
+Proof
+  EVAL_TAC
+QED

@@ -240,3 +240,16 @@ Definition addr_space_word_scale_def:
   addr_space_word_scale AddrSp_Transient = 1n /\
   addr_space_word_scale _ = 32n
 End
+
+Theorem task006_effects_eval:
+  let ops = [DALLOCA; DRET; GETFMP; SETFMP; RETFMP;
+             INITIAL_FMP; BUMP; FMP_PARAM; RETPC_PARAM] in
+    MAP read_effects ops =
+      [{Eff_FMP}; {Eff_FMP; Eff_MEMORY}; {Eff_FMP}; empty_effects;
+       {Eff_FMP}; {Eff_FMP}; empty_effects; empty_effects; empty_effects] /\
+    MAP write_effects ops =
+      [{Eff_FMP}; {Eff_FMP; Eff_MEMORY}; empty_effects; {Eff_FMP};
+       empty_effects; empty_effects; empty_effects; empty_effects; empty_effects]
+Proof
+  EVAL_TAC
+QED
