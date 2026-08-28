@@ -10,7 +10,7 @@
 
 Theory venomWf
 Ancestors
-  venomInst
+  dretShapeDefs
 
 (* ==========================================================================
    PHI operand well-formedness: alternating (Label, Var) pairs.
@@ -134,9 +134,21 @@ Definition inst_wf_def:
     | NOP => inst.inst_outputs = []
     | PARAM => ∃idx. inst.inst_operands = [Lit idx] ∧
                      LENGTH inst.inst_outputs = 1
-    (* ---- Allocation ---- *)
+    | FMP_PARAM => (∃idx. inst.inst_operands = [Lit idx]) ∧
+                         LENGTH inst.inst_outputs = 1
+    | RETPC_PARAM => (∃idx. inst.inst_operands = [Lit idx]) ∧
+                           LENGTH inst.inst_outputs = 1
+    (* ---- Allocation and frame-memory-pointer operations ---- *)
     | ALLOCA => ∃sz. inst.inst_operands = [Lit sz] ∧
                      LENGTH inst.inst_outputs = 1
+    | DALLOCA => LENGTH inst.inst_operands = 1 ∧
+                 LENGTH inst.inst_outputs = 1
+    | DRET => inst.inst_outputs = [] ∧ IS_SOME (parse_dret_shape inst)
+    | GETFMP => inst.inst_operands = [] ∧ LENGTH inst.inst_outputs = 1
+    | SETFMP => LENGTH inst.inst_operands = 1 ∧ inst.inst_outputs = []
+    | RETFMP => inst.inst_operands <> [] ∧ inst.inst_outputs = []
+    | INITIAL_FMP => inst.inst_operands = [] ∧ LENGTH inst.inst_outputs = 1
+    | BUMP => LENGTH inst.inst_operands = 2 ∧ LENGTH inst.inst_outputs = 2
     (* ---- External calls ---- *)
     | CALL => LENGTH inst.inst_operands = 7 ∧ LENGTH inst.inst_outputs = 1
     | STATICCALL => LENGTH inst.inst_operands = 6 ∧ LENGTH inst.inst_outputs = 1
