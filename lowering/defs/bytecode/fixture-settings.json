@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "profile": "formal_o1_ir_no_asm_opt",
+  "provenance": {
+    "pin_file": "VYPER_PIN"
+  },
+  "purpose": "HOL compiler self-regression bytecode fixtures",
+  "formal_compiler": {
+    "ir_optimization": "o1",
+    "assembly_optimization": "disabled_identity_finalizer"
+  },
+  "target": {
+    "evm_version": "prague",
+    "metadata": "default"
+  },
+  "comparison_contract": "self_regression_not_python_o1_golden"
+}
