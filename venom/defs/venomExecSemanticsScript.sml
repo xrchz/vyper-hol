@@ -9,7 +9,7 @@
 
 Theory venomExecSemantics
 Ancestors
-  venomState venomInst keccak vfmExecution
+  venomState venomInst venomLayout keccak vfmExecution
 
 (* --------------------------------------------------------------------------
    Arithmetic/Logic Operations (using bytes32 = 256 word)
@@ -567,6 +567,64 @@ Definition step_inst_base_def:
                 else Error "djmp: index out of range"
             | _ => Error "djmp: undefined operand or invalid labels")
         | _ => Error "djmp requires selector and labels")
+
+    (* Raw free-memory-pointer operations *)
+    | GETFMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([], [out]) => OK (update_var out s.vs_fmp s)
+        | _ => Error "getfmp requires no operands and one output")
+
+    | SETFMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([op], []) =>
+            (case eval_operand op s of
+              SOME value => OK (s with vs_fmp := value)
+            | NONE => Error "setfmp: undefined operand")
+        | _ => Error "setfmp requires one operand and no outputs")
+
+    | DALLOCA =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([size_op], [out]) =>
+            (case eval_operand size_op s of
+              SOME sz =>
+                OK (update_var out s.vs_fmp
+                  (s with vs_fmp :=
+                    s.vs_fmp + n2w (ceil32 (w2n sz))))
+            | NONE => Error "dalloca: undefined operand")
+        | _ => Error "dalloca requires one operand and one output")
+
+    | INITIAL_FMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([], [out]) => OK (update_var out s.vs_initial_fmp s)
+        | _ => Error "initial_fmp requires no operands and one output")
+
+    (* Lowered explicit-base bump arithmetic; deliberately FMP-independent. *)
+    | BUMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([base_op; size_op], [ptr_out; next_out]) =>
+            (case (eval_operand base_op s, eval_operand size_op s) of
+              (SOME base_val, SOME sz) =>
+                OK (update_var next_out
+                  (word_add base_val (n2w (ceil32 (w2n sz)) : bytes32))
+                  (update_var ptr_out base_val s))
+            | _ => Error "bump: undefined operand")
+        | _ => Error "bump requires two operands and two outputs")
+
+    (* Hidden invoke parameters. *)
+    | FMP_PARAM =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([Lit idx], [out]) =>
+            let i = w2n idx in
+            if i < LENGTH s.vs_params then
+              OK (update_var out (EL i s.vs_params) s)
+            else Error "fmp_param: index out of range"
+        | _ => Error "fmp_param requires literal index and one output")
+
+    | RETPC_PARAM =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([Lit idx], [out]) =>
+            OK (update_var out s.vs_return_pc_token s)
+        | _ => Error "retpc_param requires literal index and one output")
 
     (* Function parameter access *)
     | PARAM =>
