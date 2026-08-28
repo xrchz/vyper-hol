@@ -22,6 +22,88 @@ Definition noop_program_def:
        ([] : (string # type) list) ([] : expr list) NoneT [Pass]]
 End
 
+Definition noop_runtime_ctx_def:
+  noop_runtime_ctx =
+    let tops = noop_program in
+    let tenv = type_env tops in
+    let nkey_map = assign_nkeys tops 0 in
+    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+    let selectors = build_selectors tenv ext_fns in
+    let external_fns = MAP (package_external_fn tops F nkey_map) ext_fns in
+    let runtime_int_fns = MAP (package_internal_fn tops F nkey_map F) int_fns in
+    let fallback_fn = package_fallback_fn tops F nkey_map fb_fn in
+    let method_ids = MAP FST selectors in
+    let entry_info = build_dense_entry_info selectors external_fns in
+    let (runtime_ctx, runtime_data) =
+      run_lowering selectors external_fns runtime_int_fns fallback_fn Linear
+        0 0 ([] : dense_bucket list) entry_info "__entry" in
+    concretize_context_eval runtime_ctx
+End
+
+Definition noop_deploy_ctx_def:
+  noop_deploy_ctx runtime_bytecode =
+    let tops = noop_program in
+    let sft = make_struct_fields_map tops in
+    let immutables_len = compute_immutables_len (get_struct_fields sft) tops in
+    let nkey_map = assign_nkeys tops 0 in
+    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+    let deploy_int_fns = MAP (package_internal_fn tops F nkey_map T) int_fns in
+    let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
+         ctor_trans, ctor_body, ctor_ret) =
+      case ctor_fn of
+        SOME cf => package_constructor tops F nkey_map cf
+      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
+                 F, F, 0n, F, ([] : stmt list), NoneT) in
+    let (deploy_ctx, deploy_data_base) =
+      run_deploy_lowering (IS_SOME ctor_fn) (LENGTH runtime_bytecode)
+        immutables_len ctor_args 0 deploy_int_fns ctor_cenv ctor_body
+        ctor_payable ctor_nr ctor_nkey ctor_trans "__deploy" in
+    concretize_context_eval deploy_ctx
+End
+
+Theorem noop_runtime_ctx_alias[local]:
+  noop_runtime_ctx =
+    let tops = noop_program in
+    let tenv = type_env tops in
+    let nkey_map = assign_nkeys tops 0 in
+    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+    let selectors = build_selectors tenv ext_fns in
+    let external_fns = MAP (package_external_fn tops F nkey_map) ext_fns in
+    let runtime_int_fns = MAP (package_internal_fn tops F nkey_map F) int_fns in
+    let fallback_fn = package_fallback_fn tops F nkey_map fb_fn in
+    let entry_info = build_dense_entry_info selectors external_fns in
+    let (runtime_ctx, runtime_data) =
+      run_lowering selectors external_fns runtime_int_fns fallback_fn
+        Linear 0 0 ([] : dense_bucket list) entry_info "__entry" in
+    concretize_context_eval runtime_ctx
+Proof
+  simp [noop_runtime_ctx_def]
+QED
+
+Theorem noop_deploy_ctx_alias[local]:
+  ∀runtime_bytecode.
+    noop_deploy_ctx runtime_bytecode =
+      let tops = noop_program in
+      let sft = make_struct_fields_map tops in
+      let immutables_len = compute_immutables_len (get_struct_fields sft) tops in
+      let nkey_map = assign_nkeys tops 0 in
+      let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+      let deploy_int_fns = MAP (package_internal_fn tops F nkey_map T) int_fns in
+      let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
+           ctor_trans, ctor_body, ctor_ret) =
+        case ctor_fn of
+          SOME cf => package_constructor tops F nkey_map cf
+        | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
+                   F, F, 0n, F, ([] : stmt list), NoneT) in
+      let (deploy_ctx, deploy_data_base) =
+        run_deploy_lowering (IS_SOME ctor_fn) (LENGTH runtime_bytecode)
+          immutables_len ctor_args 0 deploy_int_fns ctor_cenv ctor_body
+          ctor_payable ctor_nr ctor_nkey ctor_trans "__deploy" in
+      concretize_context_eval deploy_ctx
+Proof
+  simp [noop_deploy_ctx_def]
+QED
+
 Definition return_uint_program_def:
   return_uint_program =
     [FunctionDecl External Nonpayable F F "foo"
@@ -441,7 +523,6 @@ Theorem noop_compiles:
 Proof
   EVAL_TAC
 QED
-
 Theorem return_uint_compiles:
   IS_SOME
     (compile_vyper return_uint_program
