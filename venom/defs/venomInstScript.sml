@@ -136,22 +136,60 @@ End
 (* --------------------------------------------------------------------------
    Function
 
-   An IR function contains:
-   - A name (entry label)
-   - A list of basic blocks (first is entry)
+   An IR function contains its control-flow blocks together with independently
+   owned identity, static-layout, and FMP-convention metadata.
    -------------------------------------------------------------------------- *)
+
+Datatype:
+  internal_call_abi = <|
+    ica_has_memory_return_buffer : bool option;
+    ica_user_return_count : num option
+  |>
+End
+
+Datatype:
+  fmp_signature = <|
+    fms_has_fmp_param : bool;
+    fms_publishes : bool
+  |>
+End
 
 Datatype:
   ir_function = <|
     fn_name : string;
-    fn_blocks : basic_block list
+    fn_blocks : basic_block list;
+    fn_call_abi : internal_call_abi;
+    fn_noinline : bool;
+    fn_forced_alloc_positions : (num,num) fmap;
+    fn_eom : num option;
+    fn_fmp_signature : fmp_signature option
+  |>
+End
+
+Definition default_internal_call_abi_def:
+  default_internal_call_abi = <|
+    ica_has_memory_return_buffer := NONE;
+    ica_user_return_count := NONE
+  |>
+End
+
+Definition mk_raw_function_def:
+  mk_raw_function name blocks = <|
+    fn_name := name;
+    fn_blocks := blocks;
+    fn_call_abi := default_internal_call_abi;
+    fn_noinline := F;
+    fn_forced_alloc_positions := FEMPTY;
+    fn_eom := NONE;
+    fn_fmp_signature := NONE
   |>
 End
 
 (* --------------------------------------------------------------------------
    Context (whole program)
 
-   Contains multiple functions and optional entry point.
+   Contains multiple functions, an optional entry point, and globally reserved
+   static-layout intervals.
 
    NOTE: Python IRContext also has data_segment : list[DataSection] containing
    label references and raw bytes (for selector dispatch tables, deploy code,
@@ -165,9 +203,63 @@ End
 Datatype:
   venom_context = <|
     ctx_functions : ir_function list;
-    ctx_entry : string option
+    ctx_entry : string option;
+    ctx_global_reserved : (num # num) list
   |>
 End
+
+Definition mk_venom_context_def:
+  mk_venom_context fns entry = <|
+    ctx_functions := fns;
+    ctx_entry := entry;
+    ctx_global_reserved := []
+  |>
+End
+
+(* Metadata ownership is deliberately split by the phase that owns each field. *)
+Definition fn_identity_metadata_eq_def:
+  fn_identity_metadata_eq f g <=>
+    f.fn_name = g.fn_name /\
+    f.fn_call_abi = g.fn_call_abi /\
+    f.fn_noinline = g.fn_noinline
+End
+
+Definition fn_static_input_eq_def:
+  fn_static_input_eq f g <=>
+    f.fn_forced_alloc_positions = g.fn_forced_alloc_positions
+End
+
+Definition fn_static_layout_eq_def:
+  fn_static_layout_eq f g <=> f.fn_eom = g.fn_eom
+End
+
+Definition fn_fmp_convention_eq_def:
+  fn_fmp_convention_eq f g <=>
+    f.fn_fmp_signature = g.fn_fmp_signature
+End
+
+Theorem mk_raw_function_metadata:
+  !name blocks.
+    (mk_raw_function name blocks).fn_call_abi = default_internal_call_abi /\
+    (mk_raw_function name blocks).fn_noinline = F /\
+    (mk_raw_function name blocks).fn_forced_alloc_positions = FEMPTY /\
+    (mk_raw_function name blocks).fn_eom = NONE /\
+    (mk_raw_function name blocks).fn_eom <> SOME 0 /\
+    (mk_raw_function name blocks).fn_fmp_signature = NONE
+Proof
+  simp[mk_raw_function_def]
+QED
+
+Theorem fn_metadata_eq_refl:
+  !f.
+    fn_identity_metadata_eq f f /\
+    fn_static_input_eq f f /\
+    fn_static_layout_eq f f /\
+    fn_fmp_convention_eq f f
+Proof
+  simp[fn_identity_metadata_eq_def, fn_static_input_eq_def,
+       fn_static_layout_eq_def, fn_fmp_convention_eq_def]
+QED
 
 (* --------------------------------------------------------------------------
    Data segment types (shared between lowering and codegen)
