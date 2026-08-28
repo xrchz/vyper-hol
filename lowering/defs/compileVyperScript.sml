@@ -30,11 +30,6 @@ Ancestors
   vyperAST
   byte
 
-(* ===== Dispatch Strategy ===== *)
-
-Datatype:
-  dispatch_strategy = Linear | Sparse | Dense
-End
 
 (* ===== Struct Fields Map ===== *)
 
