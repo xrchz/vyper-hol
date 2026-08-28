@@ -29,6 +29,7 @@ Datatype:
     | Eff_STORAGE
     | Eff_TRANSIENT
     | Eff_MEMORY
+    | Eff_FMP
     | Eff_IMMUTABLES
     | Eff_RETURNDATA
     | Eff_LOG
@@ -44,7 +45,7 @@ End
 
 Definition all_effects_def:
   all_effects : effects =
-    {Eff_STORAGE; Eff_TRANSIENT; Eff_MEMORY;
+    {Eff_STORAGE; Eff_TRANSIENT; Eff_MEMORY; Eff_FMP;
      Eff_IMMUTABLES; Eff_RETURNDATA; Eff_LOG; Eff_BALANCE; Eff_EXTCODE}
 End
 
@@ -77,6 +78,16 @@ Definition read_effects_def:
   read_effects SHA3 = {Eff_MEMORY} /\
   read_effects MEMTOP = {Eff_MEMORY} /\
   read_effects RETURN = {Eff_MEMORY} /\
+  (* Frame-memory-pointer operations *)
+  read_effects GETFMP = {Eff_FMP} /\
+  read_effects DALLOCA = {Eff_FMP} /\
+  read_effects INITIAL_FMP = {Eff_FMP} /\
+  read_effects RETFMP = {Eff_FMP} /\
+  read_effects DRET = {Eff_FMP; Eff_MEMORY} /\
+  read_effects SETFMP = empty_effects /\
+  read_effects BUMP = empty_effects /\
+  read_effects FMP_PARAM = empty_effects /\
+  read_effects RETPC_PARAM = empty_effects /\
   read_effects _ = empty_effects
 End
 
@@ -114,6 +125,16 @@ Definition write_effects_def:
   write_effects MCOPY = {Eff_MEMORY} /\
   (* SELFDESTRUCT: transfers balance to beneficiary, zeros own balance *)
   write_effects SELFDESTRUCT = {Eff_BALANCE} /\
+  (* Frame-memory-pointer operations *)
+  write_effects SETFMP = {Eff_FMP} /\
+  write_effects DALLOCA = {Eff_FMP} /\
+  write_effects DRET = {Eff_FMP; Eff_MEMORY} /\
+  write_effects GETFMP = empty_effects /\
+  write_effects RETFMP = empty_effects /\
+  write_effects INITIAL_FMP = empty_effects /\
+  write_effects BUMP = empty_effects /\
+  write_effects FMP_PARAM = empty_effects /\
+  write_effects RETPC_PARAM = empty_effects /\
   write_effects _ = empty_effects
 End
 
