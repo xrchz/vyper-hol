@@ -27,7 +27,8 @@ val step_inst_lift_from_all_tac =
   fn field_fn =>
   rw[Once step_inst_def] >>
   gvs[AllCaseEqs(), is_terminator_def] >-
-  (gvs[bind_outputs_def, merge_callee_state_def] >>
+  (Cases_on `ret.iret_adopt_fmp` >>
+   gvs[bind_outputs_def, adopt_return_fmp_def, merge_callee_state_def] >>
    qspecl_then [field_fn] mp_tac foldl_update_var_preserves >>
    simp[update_var_def]) >>
   imp_res_tac step_inst_base_preserves_all >> gvs[is_terminator_def];
@@ -261,7 +262,7 @@ QED
 (* ===================================================================== *)
 
 Theorem is_mem_write_not_terminator[local]:
-  !op. is_mem_write_op op ==> ~is_terminator op
+  !op. is_mem_write_op op /\ op <> DRET ==> ~is_terminator op
 Proof
   Cases >> EVAL_TAC
 QED
@@ -293,7 +294,9 @@ val mem_write_class_opcode_tac =
   gvs[exec_write2_def, AllCaseEqs()] >>
   gvs[mstore_def, mstore8_def, mcopy_def,
       write_memory_with_expansion_def,
-      update_var_def, lookup_var_def];
+      update_var_def, lookup_var_def] >>
+  TRY (pairarg_tac >> gvs[] >>
+       drule pack_dret_dynamic_preserves_non_memory >> simp[lookup_var_def]);
 
 val alloca_class_opcode_tac =
   fs[Once step_inst_def] >>
@@ -336,6 +339,7 @@ Theorem step_mem_write_preserves:
 Proof
   rpt gen_tac >> strip_tac >>
   Cases_on `inst.inst_opcode` >> gvs[is_mem_write_op_def]
+  >- mem_write_class_opcode_tac
   >- mem_write_class_opcode_tac
   >- mem_write_class_opcode_tac
   >- mem_write_class_opcode_tac
@@ -427,8 +431,9 @@ Proof
   rw[Once step_inst_def] >>
   gvs[AllCaseEqs(), is_terminator_def] >-
   (* INVOKE case *)
-  (gvs[bind_outputs_def, merge_callee_state_def] >>
-   `~MEM v (MAP FST (ZIP (inst.inst_outputs, vals)))` by
+  (Cases_on `ret.iret_adopt_fmp` >>
+   gvs[bind_outputs_def, adopt_return_fmp_def, merge_callee_state_def] >>
+   `~MEM v (MAP FST (ZIP (inst.inst_outputs, ret.iret_values)))` by
      simp[listTheory.MAP_ZIP] >>
    drule foldl_update_var_lookup >> simp[lookup_var_def]) >>
   (* Non-INVOKE: use mega-lemma *)
@@ -462,6 +467,9 @@ val effect_free_opcode_tac =
     drule exec_read0_state_equiv >> simp[],
     drule exec_read1_state_equiv >> simp[],
     gvs[AllCaseEqs()] >>
+    TRY (rename1 `state_equiv {ptr_out; next_out} _ _` >>
+         simp[state_equiv_def, execution_equiv_def, update_var_def,
+              lookup_var_def, FLOOKUP_UPDATE]) >>
     TRY (irule state_equiv_refl) >>
     TRY (irule state_equiv_subset >> qexists_tac `{out}` >>
          simp[update_var_state_equiv, SUBSET_DEF])
@@ -475,6 +483,11 @@ Theorem step_inst_base_effect_free_state_equiv:
 Proof
   rpt strip_tac >>
   Cases_on `inst.inst_opcode` >> gvs[is_effect_free_op_def]
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac

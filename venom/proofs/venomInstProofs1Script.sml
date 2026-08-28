@@ -351,6 +351,7 @@ Triviality nonterminator_opcode_class:
     is_alloca_op op \/
     is_ext_call_op op \/
     op = SSTORE \/ op = TSTORE \/ op = ISTORE \/ op = LOG \/
+    op = SETFMP \/ op = DALLOCA \/
     op = ASSERT \/ op = ASSERT_UNREACHABLE \/ op = INVOKE
 Proof
   Cases >> EVAL_TAC
@@ -365,6 +366,9 @@ val effect_free_opcode_tac =
     drule exec_read0_state_equiv >> simp[],
     drule exec_read1_state_equiv >> simp[],
     gvs[AllCaseEqs()] >>
+    TRY (rename1 `state_equiv {ptr_out; next_out} _ _` >>
+         simp[state_equiv_def, execution_equiv_def, update_var_def,
+              lookup_var_def, FLOOKUP_UPDATE]) >>
     TRY (irule state_equiv_refl) >>
     TRY (irule state_equiv_subset >> qexists_tac `{out}` >>
          simp[update_var_state_equiv, SUBSET_DEF])
@@ -378,6 +382,7 @@ Triviality step_inst_base_effect_free_state_equiv_local:
 Proof
   rpt strip_tac >>
   Cases_on `inst.inst_opcode` >> gvs[is_effect_free_op_def]
+  (* 1--10 *)
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
@@ -388,6 +393,7 @@ Proof
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
+  (* 11--20 *)
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
@@ -398,6 +404,7 @@ Proof
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
+  (* 21--30 *)
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
@@ -408,6 +415,7 @@ Proof
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
+  (* 31--40 *)
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
@@ -418,6 +426,7 @@ Proof
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
+  (* 41--50 *)
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
@@ -428,6 +437,7 @@ Proof
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
+  (* 51--60 *)
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
@@ -438,7 +448,45 @@ Proof
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
   >- effect_free_opcode_tac
+  (* 61--66 *)
   >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+  >- effect_free_opcode_tac
+QED
+
+Theorem pack_dret_dynamic_preserves_non_memory:
+  !pairs cursor s ptrs final_cursor s'.
+    pack_dret_dynamic cursor pairs s = (ptrs,final_cursor,s') ==>
+    s'.vs_call_ctx = s.vs_call_ctx /\
+    s'.vs_tx_ctx = s.vs_tx_ctx /\
+    s'.vs_block_ctx = s.vs_block_ctx /\
+    s'.vs_code = s.vs_code /\
+    s'.vs_data_section = s.vs_data_section /\
+    s'.vs_labels = s.vs_labels /\
+    s'.vs_params = s.vs_params /\
+    s'.vs_prev_hashes = s.vs_prev_hashes /\
+    s'.vs_halted = s.vs_halted /\
+    s'.vs_current_bb = s.vs_current_bb /\
+    s'.vs_prev_bb = s.vs_prev_bb /\
+    s'.vs_inst_idx = s.vs_inst_idx /\
+    s'.vs_allocas = s.vs_allocas /\
+    s'.vs_vars = s.vs_vars /\
+    s'.vs_immutables = s.vs_immutables /\
+    s'.vs_returndata = s.vs_returndata /\
+    s'.vs_transient = s.vs_transient /\
+    s'.vs_logs = s.vs_logs /\
+    s'.vs_accounts = s.vs_accounts
+Proof
+  Induct >- simp[pack_dret_dynamic_def] >>
+  rpt gen_tac >> PairCases_on `h` >>
+  simp[Once pack_dret_dynamic_def] >>
+  pairarg_tac >> gvs[] >>
+  first_x_assum drule >>
+  simp[mcopy_def, write_memory_with_expansion_def] >>
+  rpt strip_tac >> gvs[]
 QED
 
 val mem_write_opcode_tac =
@@ -449,7 +497,9 @@ val mem_write_opcode_tac =
   gvs[AllCaseEqs()] >>
   fs[mstore_def, mstore8_def, mcopy_def, write_memory_with_expansion_def,
      lookup_var_def, update_var_def, contract_storage_def,
-     write_effects_def, is_alloca_op_def];
+     write_effects_def, is_alloca_op_def] >>
+  TRY (pairarg_tac >> gvs[] >>
+       drule pack_dret_dynamic_preserves_non_memory >> simp[]);
 
 Triviality step_inst_base_mem_write_preserves_all:
   !inst s s'. step_inst_base inst s = OK s' /\
@@ -483,6 +533,7 @@ Proof
   >- mem_write_opcode_tac
   >- mem_write_opcode_tac
   >- mem_write_opcode_tac
+  >- mem_write_opcode_tac
 QED
 
 Triviality step_inst_base_mem_write_preserves_static_fields:
@@ -495,6 +546,7 @@ Triviality step_inst_base_mem_write_preserves_static_fields:
 Proof
   rpt gen_tac >> strip_tac >>
   Cases_on `inst.inst_opcode` >> gvs[is_mem_write_op_def]
+  >- mem_write_opcode_tac
   >- mem_write_opcode_tac
   >- mem_write_opcode_tac
   >- mem_write_opcode_tac
@@ -547,6 +599,8 @@ Proof
   >- (gvs[step_inst_base_def] >> step_base_field_finish_tac)
   >- (gvs[step_inst_base_def] >> step_base_field_finish_tac)
   >- (gvs[step_inst_base_def] >> step_base_field_finish_tac)
+  >- (gvs[step_inst_base_def] >> step_base_field_finish_tac)
+  >- (gvs[step_inst_base_def] >> step_base_field_finish_tac)
   >- gvs[step_inst_base_def]
 QED
 
@@ -577,7 +631,7 @@ Finalise step_inst_base_preserves_all
 fun step_inst_lift_from_all_tac field_fn =
   rw[Once step_inst_def] >>
   gvs[AllCaseEqs(), is_terminator_def] >-
-  (gvs[bind_outputs_def, merge_callee_state_def] >>
+  (gvs[bind_outputs_def, adopt_return_fmp_def, merge_callee_state_def] >>
    qspecl_then [field_fn] mp_tac foldl_update_var_preserves >>
    simp[update_var_def]) >>
   imp_res_tac step_inst_base_preserves_all >> gvs[is_terminator_def];
