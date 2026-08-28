@@ -41,10 +41,11 @@ Datatype:
     | JMP | JNZ | DJMP | RET | RETURN | REVERT | STOP | SINK
     (* SSA/IR-specific *)
     | PHI | PARAM | ASSIGN | NOP
-    (* Allocation (Vyper-specific stack slots) *)
-    | ALLOCA
-    (* Internal function calls *)
-    | INVOKE
+    (* Allocation and frame-memory-pointer operations *)
+    | ALLOCA | DALLOCA
+    | DRET | GETFMP | SETFMP | RETFMP | INITIAL_FMP | BUMP
+    (* Internal function calls and hidden physical parameters *)
+    | INVOKE | FMP_PARAM | RETPC_PARAM
     (* Environment *)
     | CALLER | CALLVALUE | CALLDATALOAD | CALLDATASIZE | CALLDATACOPY
     | ADDRESS | ORIGIN | GASPRICE | GAS | GASLIMIT
@@ -330,6 +331,15 @@ Definition is_terminator_def:
   is_terminator SINK = T /\
   is_terminator SELFDESTRUCT = T /\
   is_terminator INVALID = T /\
+  is_terminator DRET = T /\
+  is_terminator RETFMP = T /\
+  is_terminator DALLOCA = F /\
+  is_terminator GETFMP = F /\
+  is_terminator SETFMP = F /\
+  is_terminator INITIAL_FMP = F /\
+  is_terminator BUMP = F /\
+  is_terminator FMP_PARAM = F /\
+  is_terminator RETPC_PARAM = F /\
   is_terminator _ = F
 End
 
@@ -346,6 +356,15 @@ End
 Definition is_pseudo_def:
   is_pseudo PHI = T /\
   is_pseudo PARAM = T /\
+  is_pseudo FMP_PARAM = T /\
+  is_pseudo RETPC_PARAM = T /\
+  is_pseudo DALLOCA = F /\
+  is_pseudo DRET = F /\
+  is_pseudo GETFMP = F /\
+  is_pseudo SETFMP = F /\
+  is_pseudo RETFMP = F /\
+  is_pseudo INITIAL_FMP = F /\
+  is_pseudo BUMP = F /\
   is_pseudo _ = F
 End
 
@@ -384,6 +403,15 @@ Definition is_volatile_def:
   is_volatile ASSERT = T /\
   is_volatile ASSERT_UNREACHABLE = T /\
   is_volatile STOP = T /\
+  is_volatile DRET = T /\
+  is_volatile RETFMP = T /\
+  is_volatile FMP_PARAM = T /\
+  is_volatile RETPC_PARAM = T /\
+  is_volatile DALLOCA = F /\
+  is_volatile GETFMP = F /\
+  is_volatile SETFMP = F /\
+  is_volatile INITIAL_FMP = F /\
+  is_volatile BUMP = F /\
   is_volatile _ = F
 End
 
@@ -454,9 +482,20 @@ Definition is_effect_free_op_def:
   is_effect_free_op ASSIGN = T /\
   is_effect_free_op PHI = T /\
   is_effect_free_op PARAM = T /\
+  is_effect_free_op FMP_PARAM = T /\
+  is_effect_free_op RETPC_PARAM = T /\
   is_effect_free_op OFFSET = T /\
+  (* FMP value reads/arithmetic that do not mutate non-output state *)
+  is_effect_free_op GETFMP = T /\
+  is_effect_free_op INITIAL_FMP = T /\
+  is_effect_free_op BUMP = T /\
   (* No-op (no outputs, no state change, no side effects) *)
   is_effect_free_op NOP = T /\
+  (* Reviewed stateful FMP operations *)
+  is_effect_free_op DALLOCA = F /\
+  is_effect_free_op DRET = F /\
+  is_effect_free_op SETFMP = F /\
+  is_effect_free_op RETFMP = F /\
   (* Everything else *)
   is_effect_free_op _ = F
 End
@@ -471,12 +510,30 @@ Definition is_mem_write_op_def:
   is_mem_write_op CODECOPY = T /\
   is_mem_write_op EXTCODECOPY = T /\
   is_mem_write_op DLOADBYTES = T /\
+  is_mem_write_op DRET = T /\
+  is_mem_write_op DALLOCA = F /\
+  is_mem_write_op GETFMP = F /\
+  is_mem_write_op SETFMP = F /\
+  is_mem_write_op RETFMP = F /\
+  is_mem_write_op INITIAL_FMP = F /\
+  is_mem_write_op BUMP = F /\
+  is_mem_write_op FMP_PARAM = F /\
+  is_mem_write_op RETPC_PARAM = F /\
   is_mem_write_op _ = F
 End
 
 (* Allocation opcodes: modify vs_allocas *)
 Definition is_alloca_op_def:
   is_alloca_op ALLOCA = T /\
+  is_alloca_op DALLOCA = F /\
+  is_alloca_op DRET = F /\
+  is_alloca_op GETFMP = F /\
+  is_alloca_op SETFMP = F /\
+  is_alloca_op RETFMP = F /\
+  is_alloca_op INITIAL_FMP = F /\
+  is_alloca_op BUMP = F /\
+  is_alloca_op FMP_PARAM = F /\
+  is_alloca_op RETPC_PARAM = F /\
   is_alloca_op _ = F
 End
 
@@ -487,7 +544,43 @@ Definition is_ext_call_op_def:
   is_ext_call_op DELEGATECALL = T /\
   is_ext_call_op CREATE = T /\
   is_ext_call_op CREATE2 = T /\
+  is_ext_call_op DALLOCA = F /\
+  is_ext_call_op DRET = F /\
+  is_ext_call_op GETFMP = F /\
+  is_ext_call_op SETFMP = F /\
+  is_ext_call_op RETFMP = F /\
+  is_ext_call_op INITIAL_FMP = F /\
+  is_ext_call_op BUMP = F /\
+  is_ext_call_op FMP_PARAM = F /\
+  is_ext_call_op RETPC_PARAM = F /\
   is_ext_call_op _ = F
+End
+
+(* Raw FMP operations are eliminated by the FMP lowering boundary. *)
+Definition is_raw_fmp_opcode_def:
+  is_raw_fmp_opcode DALLOCA = T /\
+  is_raw_fmp_opcode DRET = T /\
+  is_raw_fmp_opcode GETFMP = T /\
+  is_raw_fmp_opcode SETFMP = T /\
+  is_raw_fmp_opcode RETFMP = T /\
+  is_raw_fmp_opcode INITIAL_FMP = F /\
+  is_raw_fmp_opcode BUMP = F /\
+  is_raw_fmp_opcode FMP_PARAM = F /\
+  is_raw_fmp_opcode RETPC_PARAM = F /\
+  is_raw_fmp_opcode _ = F
+End
+
+Definition is_fmp_param_opcode_def:
+  is_fmp_param_opcode FMP_PARAM = T /\
+  is_fmp_param_opcode RETPC_PARAM = T /\
+  is_fmp_param_opcode DALLOCA = F /\
+  is_fmp_param_opcode DRET = F /\
+  is_fmp_param_opcode GETFMP = F /\
+  is_fmp_param_opcode SETFMP = F /\
+  is_fmp_param_opcode RETFMP = F /\
+  is_fmp_param_opcode INITIAL_FMP = F /\
+  is_fmp_param_opcode BUMP = F /\
+  is_fmp_param_opcode _ = F
 End
 
 (* --------------------------------------------------------------------------
@@ -597,6 +690,12 @@ End
 
 Definition fn_insts_def:
   fn_insts fn = fn_insts_blocks fn.fn_blocks
+End
+
+Definition no_raw_fmp_ops_def:
+  no_raw_fmp_ops fn <=>
+    !inst. MEM inst (fn_insts fn) ==>
+           ~is_raw_fmp_opcode inst.inst_opcode
 End
 
 (* The function names in a context. *)
