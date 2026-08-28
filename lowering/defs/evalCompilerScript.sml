@@ -278,6 +278,16 @@ Definition internal_call_arg_program_def:
              [Name (BaseT (UintT 256)) "x"] NONE))]]
 End
 
+Theorem codegen_IS_SOME:
+  ∀ctx fn_eom_map data_seg.
+    IS_SOME (codegen ctx fn_eom_map data_seg) ⇔
+    IS_SOME (generate_context_plan ctx fn_eom_map)
+Proof
+  rpt strip_tac >>
+  Cases_on `generate_context_plan ctx fn_eom_map` >>
+  simp [codegenTheory.codegen_def]
+QED
+
 Theorem empty_compiles:
   IS_SOME
     (compile_vyper ([] : toplevel list)
