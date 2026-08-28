@@ -4,11 +4,7 @@ This document tracks whether the HOL compiler definitions correspond to the Pyth
 
 ## Authoritative upstream revision
 
-The sole source of truth is [`../VYPER_PIN`](../VYPER_PIN). At the time of this update it contains:
-
-```text
-1d81b8731a1f4d0fff953212deba5941c89602eb
-```
+The sole source of truth is [`../VYPER_PIN`](../VYPER_PIN). Read the live revision from that file; it must not be duplicated here.
 
 The same pin is to be used for:
 
