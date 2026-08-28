@@ -44,6 +44,10 @@ Definition valid_state_rel_def:
       s1.vs_current_bb = s2.vs_current_bb /\
       s1.vs_inst_idx = s2.vs_inst_idx /\
       s1.vs_params = s2.vs_params /\
+      s1.vs_fmp = s2.vs_fmp /\
+      s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+      s1.vs_initial_fmp = s2.vs_initial_fmp /\
+      s1.vs_return_pc_token = s2.vs_return_pc_token /\
       s1.vs_logs = s2.vs_logs /\
       s1.vs_immutables = s2.vs_immutables /\
       s1.vs_data_section = s2.vs_data_section /\
@@ -63,6 +67,10 @@ Definition valid_state_rel_def:
       s1.vs_returndata = s2.vs_returndata /\
       s1.vs_halted = s2.vs_halted /\
       s1.vs_params = s2.vs_params /\
+      s1.vs_fmp = s2.vs_fmp /\
+      s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+      s1.vs_initial_fmp = s2.vs_initial_fmp /\
+      s1.vs_return_pc_token = s2.vs_return_pc_token /\
       s1.vs_logs = s2.vs_logs /\
       s1.vs_immutables = s2.vs_immutables /\
       s1.vs_data_section = s2.vs_data_section /\
@@ -106,6 +114,10 @@ Definition valid_state_rel_def:
       t1.vs_current_bb = t2.vs_current_bb /\
       t1.vs_inst_idx = t2.vs_inst_idx /\
       t1.vs_params = t2.vs_params /\
+      t1.vs_fmp = t2.vs_fmp /\
+      t1.vs_call_entry_fmp = t2.vs_call_entry_fmp /\
+      t1.vs_initial_fmp = t2.vs_initial_fmp /\
+      t1.vs_return_pc_token = t2.vs_return_pc_token /\
       t1.vs_logs = t2.vs_logs /\
       t1.vs_immutables = t2.vs_immutables /\
       t1.vs_data_section = t2.vs_data_section /\
@@ -127,6 +139,10 @@ Definition valid_state_rel_def:
       t1.vs_returndata = t2.vs_returndata /\
       t1.vs_halted = t2.vs_halted /\
       t1.vs_params = t2.vs_params /\
+      t1.vs_fmp = t2.vs_fmp /\
+      t1.vs_call_entry_fmp = t2.vs_call_entry_fmp /\
+      t1.vs_initial_fmp = t2.vs_initial_fmp /\
+      t1.vs_return_pc_token = t2.vs_return_pc_token /\
       t1.vs_logs = t2.vs_logs /\
       t1.vs_immutables = t2.vs_immutables /\
       t1.vs_data_section = t2.vs_data_section /\

@@ -898,8 +898,10 @@ Definition result_rel_def:
   (result_rel ret_tv cenv cx (INL (), vs') (OK ss') =
     state_rel cenv cx vs' ss') ∧
   (* Internal return: state + return values *)
-  (result_rel ret_tv cenv cx (INR (ReturnException v), vs') (IntRet vals ss') =
-    (state_rel cenv cx vs' ss' ∧ intret_vals_match ret_tv v vals)) ∧
+  (result_rel ret_tv cenv cx (INR (ReturnException v), vs') (IntRet ir ss') =
+    (state_rel cenv cx vs' ss' ∧
+     intret_vals_match ret_tv v ir.iret_values ∧
+     ir.iret_adopt_fmp = NONE)) ∧
   (* External return → Halt with ABI-encoded data *)
   (result_rel ret_tv cenv cx (INR (ReturnException v), vs') (Halt ss') =
     state_rel cenv cx vs' ss') ∧

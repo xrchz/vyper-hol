@@ -282,12 +282,14 @@ End
    through normal EVM stack scheduling:
    - ASSIGN: copy instruction, no stack slot consumed
    - PHI: pseudo-instruction, lowered to parallel copies on CFG edges
-   - PARAM: pseudo-instruction, lowered to stack input
+   - PARAM/FMP_PARAM/RETPC_PARAM: pseudo-instructions lowered to hidden inputs
    - OFFSET: handled specially in venom_to_assembly (direct label+offset emit) *)
 Definition sue_count_exempt_def:
   sue_count_exempt ASSIGN = T /\
   sue_count_exempt PHI = T /\
   sue_count_exempt PARAM = T /\
+  sue_count_exempt FMP_PARAM = T /\
+  sue_count_exempt RETPC_PARAM = T /\
   sue_count_exempt OFFSET = T /\
   sue_count_exempt _ = F
 End

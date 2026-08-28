@@ -44,6 +44,8 @@ Definition sue_should_skip_def:
   sue_should_skip OFFSET = T /\
   sue_should_skip PHI = T /\
   sue_should_skip PARAM = T /\
+  sue_should_skip FMP_PARAM = T /\
+  sue_should_skip RETPC_PARAM = T /\
   sue_should_skip _ = F
 End
 

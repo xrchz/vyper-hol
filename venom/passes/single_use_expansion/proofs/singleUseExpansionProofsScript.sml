@@ -1225,6 +1225,9 @@ Proof
         gvs[venomWfTheory.inst_wf_def] >>
         Cases_on `inst.inst_operands` >> gvs[]) >>
       metis_tac[sue_expand_ops_log_hd_preserved]) >>
+    `inst.inst_opcode <> FMP_PARAM /\
+     inst.inst_opcode <> RETPC_PARAM` by
+      (conj_tac >> strip_tac >> gvs[sue_should_skip_def]) >>
     (* step_inst (modified) st' = step_inst inst st' *)
     `step_inst fuel ctx (inst with inst_operands := new_ops) st' =
      step_inst fuel ctx inst st'` by (

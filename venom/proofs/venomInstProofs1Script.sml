@@ -605,8 +605,9 @@ Proof
 QED
 
 Resume step_inst_base_preserves_all[g1]:
+      Cases_on `inst.inst_opcode` >> gvs[is_ext_call_op_def] >>
       gvs[Once step_inst_base_def,AllCaseEqs(),
-          is_ext_call_op_def,is_terminator_def,
+          is_terminator_def,
           exec_ext_call_def,update_var_def,
           exec_delegatecall_def,
           extract_venom_result_def, is_alloca_op_def,
@@ -621,8 +622,8 @@ Resume step_inst_base_preserves_all[g1]:
         gvs[exec_create_def, AllCaseEqs(),
             extract_venom_result_def, update_var_def,
             pairTheory.UNCURRY, FLOOKUP_UPDATE]) >>
-      Cases_on`result` >> gvs[] >>
-      Cases_on`y` >> gvs[]
+      Cases_on `result` >> gvs[] >>
+      Cases_on `y` >> gvs[]
 QED
 
 Finalise step_inst_base_preserves_all

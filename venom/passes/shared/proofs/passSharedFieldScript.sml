@@ -291,6 +291,13 @@ Proof
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
 QED
 
 (* Lift to step_inst (adds INVOKE + ALLOCA exclusions).
@@ -332,6 +339,13 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_terminator_def, is_alloca_op_def, is_ext_call_op_def,
       write_effects_def, read_effects_def, all_effects_def, empty_effects_def]
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
@@ -608,6 +622,13 @@ Proof
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
 QED
 
 Theorem step_inst_base_trans_error_frame:
@@ -625,6 +646,13 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_terminator_def, is_alloca_op_def, is_ext_call_op_def,
       write_effects_def, read_effects_def, all_effects_def, empty_effects_def]
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
@@ -917,6 +945,13 @@ Proof
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
 QED
 
 Theorem step_inst_base_acct_error_frame:
@@ -937,6 +972,13 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_terminator_def, is_alloca_op_def, is_ext_call_op_def,
       write_effects_def, read_effects_def, all_effects_def, empty_effects_def]
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac

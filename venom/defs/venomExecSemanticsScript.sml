@@ -1116,7 +1116,69 @@ Definition step_inst_base_def:
     | _ => Error "unknown opcode"
 End
 
+Theorem step_inst_base_NOT:
+  inst.inst_opcode = NOT ==>
+  step_inst_base inst s = exec_pure1 word_1comp inst s
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
 
+Theorem step_inst_base_ISZERO:
+  inst.inst_opcode = ISZERO ==>
+  step_inst_base inst s =
+    exec_pure1 (\x. bool_to_word (x = 0w)) inst s
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
+Theorem step_inst_base_RETFMP:
+  inst.inst_opcode = RETFMP ==>
+  step_inst_base inst s =
+    case eval_operands inst.inst_operands s of
+      SOME [] => Error "retfmp requires a return pc"
+    | SOME ret_vals =>
+        IntRet <| iret_values := FRONT ret_vals;
+                  iret_adopt_fmp := SOME s.vs_fmp |> s
+    | NONE => Error "retfmp: undefined return value"
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
+Theorem step_inst_base_DRET:
+  inst.inst_opcode = DRET ==>
+  step_inst_base inst s =
+    if inst.inst_outputs <> [] then Error "dret requires no outputs"
+    else
+      case parse_dret_shape inst of
+        NONE => Error "dret: malformed operand envelope"
+      | SOME (ordinary,dynamic) =>
+          case eval_operands inst.inst_operands s of
+            NONE => Error "dret: undefined operand"
+          | SOME vals =>
+              case pair_dret_words
+                (TAKE (2 * dynamic) (DROP (1 + ordinary) vals)) of
+                NONE => Error "dret: malformed dynamic operands"
+              | SOME pairs =>
+                  let ordinary_vals = TAKE ordinary (DROP 1 vals) in
+                  let (ptrs,final_cursor,s') =
+                    pack_dret_dynamic s.vs_call_entry_fmp pairs s in
+                  let s'' = s' with vs_fmp := final_cursor in
+                    IntRet
+                      <| iret_values := ordinary_vals ++ ptrs;
+                         iret_adopt_fmp := SOME final_cursor |> s''
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
+
+
+Theorem step_inst_base_pure1_equations_probe[local]:
+  inst.inst_opcode = NOT ==>
+  step_inst_base inst s1 = exec_pure1 word_1comp inst s1 /\
+  step_inst_base inst s2 = exec_pure1 word_1comp inst s2
+Proof
+  simp[step_inst_base_NOT]
+QED
 Theorem step_inst_base_RET_probe:
   step_inst_base (instruction id RET [Lit 7w; Lit 99w] []) s =
     IntRet <| iret_values := [7w]; iret_adopt_fmp := NONE |> s

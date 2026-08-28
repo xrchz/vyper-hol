@@ -109,15 +109,25 @@ Proof
     >- metis_tac[vsr_R_term_refl]
     >- metis_tac[vsr_R_term_refl]
     >- (
-      (* IntRet: merge_callee + bind_outputs preserve R_ok *)
+      (* IntRet: merge, optional FMP adoption, and output binding preserve R_ok. *)
       rename1 `run_blocks _ _ _ _ = IntRet vals callee_s'` >>
       sg `OPTREL R_ok
-            (bind_outputs inst.inst_outputs vals (merge_callee_state s1 callee_s'))
-            (bind_outputs inst.inst_outputs vals (merge_callee_state s2 callee_s'))`
-      >- (`R_ok (merge_callee_state s1 callee_s') (merge_callee_state s2 callee_s')` by
+            (bind_outputs inst.inst_outputs vals.iret_values
+              (adopt_return_fmp vals (merge_callee_state s1 callee_s')))
+            (bind_outputs inst.inst_outputs vals.iret_values
+              (adopt_return_fmp vals (merge_callee_state s2 callee_s')))`
+      >- (`R_ok (merge_callee_state s1 callee_s')
+                 (merge_callee_state s2 callee_s')` by
             (irule vsr_merge_callee_R_ok >> metis_tac[]) >>
+          `R_ok (adopt_return_fmp vals (merge_callee_state s1 callee_s'))
+                (adopt_return_fmp vals (merge_callee_state s2 callee_s'))` by
+            (Cases_on `vals.iret_adopt_fmp` >>
+             gvs[adopt_return_fmp_def] >>
+             metis_tac[vsr_fmp_R_ok]) >>
           drule_all vsr_bind_outputs_R_ok >>
-          disch_then (qspecl_then [`inst.inst_outputs`, `vals`] mp_tac) >> simp[])
+          disch_then
+            (qspecl_then [`inst.inst_outputs`, `vals.iret_values`] mp_tac) >>
+          simp[])
       >>
       gvs[optionTheory.OPTREL_def, lift_result_def])
   )
@@ -157,7 +167,10 @@ Proof
     irule vsr_step_inst_ext_call >> simp[] >> metis_tac[],
     irule vsr_step_inst_delegatecall >> simp[] >> metis_tac[],
     irule vsr_step_inst_create >> simp[] >> metis_tac[],
-    irule vsr_step_inst_alloca >> simp[] >> metis_tac[]
+    irule vsr_step_inst_alloca >> simp[] >> metis_tac[],
+    irule vsr_step_inst_fmp_opcode >> simp[] >> metis_tac[],
+    irule vsr_step_inst_dret >> simp[] >> metis_tac[],
+    irule vsr_step_inst_retfmp >> simp[] >> metis_tac[]
   ]
 QED
 

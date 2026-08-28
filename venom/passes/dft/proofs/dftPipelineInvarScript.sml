@@ -379,7 +379,7 @@ QED
 
 (* All effect values appear in the master list *)
 Triviality effect_mem_all:
-  !e. MEM e [Eff_STORAGE; Eff_TRANSIENT; Eff_MEMORY;
+  !e. MEM e [Eff_STORAGE; Eff_TRANSIENT; Eff_MEMORY; Eff_FMP;
              Eff_IMMUTABLES; Eff_RETURNDATA; Eff_LOG; Eff_BALANCE;
              Eff_EXTCODE]
 Proof

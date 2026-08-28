@@ -56,6 +56,10 @@ Theorem vsr_R_ok_fields:
     s1.vs_current_bb = s2.vs_current_bb /\
     s1.vs_inst_idx = s2.vs_inst_idx /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_logs = s2.vs_logs /\
     s1.vs_immutables = s2.vs_immutables /\
     s1.vs_data_section = s2.vs_data_section /\
@@ -79,6 +83,10 @@ Theorem vsr_R_term_fields:
     s1.vs_returndata = s2.vs_returndata /\
     s1.vs_halted = s2.vs_halted /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_logs = s2.vs_logs /\
     s1.vs_immutables = s2.vs_immutables /\
     s1.vs_data_section = s2.vs_data_section /\
@@ -222,6 +230,14 @@ Theorem vsr_allocas_R_ok:
   !R_ok R_term al s1 s2.
     valid_state_rel R_ok R_term /\ R_ok s1 s2 ==>
     R_ok (s1 with vs_allocas := al) (s2 with vs_allocas := al)
+Proof
+  vsr_field_update_proof ()
+QED
+
+Theorem vsr_fmp_R_ok:
+  !R_ok R_term fmp s1 s2.
+    valid_state_rel R_ok R_term /\ R_ok s1 s2 ==>
+    R_ok (s1 with vs_fmp := fmp) (s2 with vs_fmp := fmp)
 Proof
   vsr_field_update_proof ()
 QED

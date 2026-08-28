@@ -57,8 +57,9 @@ End
    Must not be a terminator, volatile, or have effects.
    ALLOCA excluded: it modifies vs_allocas (non-variable state),
    breaking execution_equiv in the deferred-abort case.
-   PHI/PARAM/OFFSET excluded: they can fail even when operands evaluate
-   (PHI needs vs_prev_bb, PARAM needs index in range, OFFSET needs label map). *)
+   PHI/PARAM/FMP_PARAM/OFFSET excluded: they can fail even when operands evaluate
+   (PHI needs vs_prev_bb, PARAM/FMP_PARAM need an index in range,
+    OFFSET needs the label map). *)
 Definition ac_is_safe_between_def:
   ac_is_safe_between inst <=>
     ~is_terminator inst.inst_opcode /\
@@ -66,6 +67,7 @@ Definition ac_is_safe_between_def:
     inst.inst_opcode <> ALLOCA /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
     inst.inst_opcode <> OFFSET /\
     write_effects inst.inst_opcode = {} /\
     read_effects inst.inst_opcode = {}

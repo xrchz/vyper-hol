@@ -299,6 +299,8 @@ Theorem step_inst_base_operands_irrelevant_safe[local]:
     (!op. eval_operand (g op) s = eval_operand op s) /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
+    inst.inst_opcode <> RETPC_PARAM /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> LOG /\
     inst.inst_opcode <> JMP /\
@@ -405,6 +407,8 @@ Theorem step_inst_base_operands_irrelevant[local]:
     (!op. (!lbl. op <> Label lbl) ==> (!lbl. g op <> Label lbl)) /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
+    inst.inst_opcode <> RETPC_PARAM /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> LOG ==>
     step_inst_base (inst with inst_operands := MAP g inst.inst_operands) s =
@@ -454,6 +458,8 @@ Theorem subst_operands_correct:
     eval_operand new_op s = SOME v /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
+    inst.inst_opcode <> RETPC_PARAM /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> LOG /\
     (!lbl. new_op <> Label lbl) ==>
@@ -488,6 +494,8 @@ Theorem subst_operands_map_correct:
                 (!lbl. new_op <> Label lbl)) /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
+    inst.inst_opcode <> RETPC_PARAM /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> LOG ==>
     step_inst fuel ctx (subst_operands_map subs inst) s =
@@ -534,7 +542,7 @@ Proof
 QED
 
 (* Stronger version: inst_wf handles structural positions, only PHI excluded.
-   Strategy: structural opcodes (PARAM, ALLOCA, LOG,
+   Strategy: structural opcodes (PARAM, FMP_PARAM, RETPC_PARAM, ALLOCA, LOG,
    JMP, JNZ, DJMP, INVOKE) handled by inst_wf + definition unfolding.
    OFFSET is exec_pure2 (positional), handled by step_inst_base_operands_irrelevant_safe.
    All other non-PHI opcodes handled by step_inst_base_operands_irrelevant_safe
@@ -554,6 +562,8 @@ Proof
     (rpt strip_tac >> irule subst_op_map_eval >> metis_tac[]) >>
   (* Non-structural opcodes *)
   Cases_on `inst.inst_opcode <> PARAM /\
+            inst.inst_opcode <> FMP_PARAM /\
+            inst.inst_opcode <> RETPC_PARAM /\
             ~is_alloca_op inst.inst_opcode /\
             inst.inst_opcode <> LOG /\
             inst.inst_opcode <> JMP /\
@@ -710,6 +720,8 @@ Proof
   >- long_or_call_finish_tac
   >- long_or_call_finish_tac
   >- long_or_call_finish_tac
+  >- long_or_call_finish_tac
+  >- long_or_call_finish_tac
   >- long_or_call_finish_tac >>
   gvs[]
 QED
@@ -732,6 +744,8 @@ Triviality step_inst_base_pos_safe[local]:
     inst_wf inst /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
+    inst.inst_opcode <> RETPC_PARAM /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> INVOKE /\
     inst.inst_opcode <> LOG /\
@@ -840,6 +854,13 @@ Proof
   >- pos_opcode_finish_tac
   >- pos_opcode_finish_tac
   >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
+  >- pos_opcode_finish_tac
 QED
 
 (*
@@ -860,6 +881,8 @@ Theorem step_inst_operands_equiv:
     inst_wf inst /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
+    inst.inst_opcode <> RETPC_PARAM /\
     inst.inst_opcode <> PHI /\
     LENGTH new_ops = LENGTH inst.inst_operands /\
     (!i. i < LENGTH inst.inst_operands ==>
@@ -876,7 +899,8 @@ Proof
   >- (gvs[inst_wf_def] >>
       Cases_on `new_ops` >> gvs[] >>
       `h = Label lbl` by
-        (first_x_assum (qspec_then `0` mp_tac) >> simp[]) >>
+        (qpat_x_assum `!i. i < _ ==> !lbl'. _ = Label lbl' ==> _`
+           (qspec_then `0` mp_tac) >> simp[]) >>
       gvs[] >>
       `eval_operands t st = eval_operands args st` by (
         irule eval_operands_positional >> simp[] >>
@@ -936,7 +960,8 @@ Proof
         `(\op. IS_SOME (get_label op)) (EL x label_ops)` by
           (irule (iffLR EVERY_EL) >> simp[]) >> fs[] >>
         Cases_on `EL x label_ops` >> gvs[get_label_def] >>
-        first_x_assum (qspec_then `SUC x` mp_tac) >> simp[]) >>
+        qpat_x_assum `!i. i < _ ==> !lbl. _ = Label lbl ==> _`
+          (qspec_then `SUC x` mp_tac) >> simp[]) >>
       `eval_operand h st = eval_operand sel st` by (
         qpat_x_assum `!i. _ ==> eval_operand _ _ = _`
           (qspec_then `0` mp_tac) >> simp[]) >>

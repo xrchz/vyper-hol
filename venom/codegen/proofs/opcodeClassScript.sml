@@ -102,7 +102,7 @@ Triviality terminator_opcode_cases[local]:
     is_terminator op ==>
     op = JMP \/ op = JNZ \/ op = DJMP \/ op = RET \/
     op = RETURN \/ op = REVERT \/ op = STOP \/ op = SINK \/
-    op = SELFDESTRUCT \/ op = INVALID
+    op = DRET \/ op = RETFMP \/ op = SELFDESTRUCT \/ op = INVALID
 Proof
   Cases >> gvs[is_terminator_def]
 QED
@@ -123,6 +123,8 @@ Proof
   >- gvs[AllCaseEqs()]
   >- gvs[AllCaseEqs()]
   >- gvs[AllCaseEqs()]
+  >- (gvs[AllCaseEqs()] >> rpt strip_tac >> pairarg_tac >> gvs[])
+  >- gvs[AllCaseEqs()]
   >- gvs[AllCaseEqs()]
 QED
 
@@ -136,7 +138,8 @@ Proof
   drule terminator_opcode_cases >> strip_tac >> gvs[] >>
   qpat_x_assum `step_inst_base inst vs = Abort a vs'` mp_tac >>
   ASM_REWRITE_TAC[step_inst_base_def] >>
-  gvs[AllCaseEqs()]
+  gvs[AllCaseEqs()] >>
+  rpt strip_tac >> pairarg_tac >> gvs[]
 QED
 
 Triviality nonterminator_opcode_class[local]:
@@ -146,6 +149,7 @@ Triviality nonterminator_opcode_class[local]:
     is_alloca_op op \/
     is_ext_call_op op \/
     op = SSTORE \/ op = TSTORE \/ op = ISTORE \/ op = LOG \/
+    op = SETFMP \/ op = DALLOCA \/
     op = ASSERT \/ op = ASSERT_UNREACHABLE \/ op = INVOKE
 Proof
   Cases >> EVAL_TAC
@@ -193,7 +197,9 @@ Definition ef_read1_def:
 End
 
 Definition ef_misc_def:
-  ef_misc op <=> op = SHA3 \/ op = PHI \/ op = ASSIGN \/ op = PARAM \/ op = NOP
+  ef_misc op <=> op = SHA3 \/ op = PHI \/ op = ASSIGN \/ op = PARAM \/ op = NOP \/
+    op = GETFMP \/ op = INITIAL_FMP \/ op = BUMP \/
+    op = FMP_PARAM \/ op = RETPC_PARAM
 End
 
 Triviality effect_free_group_cases[local]:
@@ -223,7 +229,9 @@ Triviality effect_free_opcode_cases[local]:
     (op = MLOAD \/ op = SLOAD \/ op = TLOAD \/ op = ILOAD \/
      op = DLOAD \/ op = BLOCKHASH \/ op = BLOBHASH \/ op = BALANCE \/
      op = CALLDATALOAD \/ op = EXTCODESIZE \/ op = EXTCODEHASH) \/
-    (op = SHA3 \/ op = PHI \/ op = ASSIGN \/ op = PARAM \/ op = NOP)
+    (op = SHA3 \/ op = PHI \/ op = ASSIGN \/ op = PARAM \/ op = NOP \/
+     op = GETFMP \/ op = INITIAL_FMP \/ op = BUMP \/
+     op = FMP_PARAM \/ op = RETPC_PARAM)
 Proof
   Cases >> EVAL_TAC
 QED
@@ -353,14 +361,16 @@ Triviality effect_free_misc_result_class[local]:
   !inst s vs' a.
     (inst.inst_opcode = SHA3 \/ inst.inst_opcode = PHI \/
      inst.inst_opcode = ASSIGN \/ inst.inst_opcode = PARAM \/
-     inst.inst_opcode = NOP) ==>
+     inst.inst_opcode = NOP \/ inst.inst_opcode = GETFMP \/
+     inst.inst_opcode = INITIAL_FMP \/ inst.inst_opcode = BUMP \/
+     inst.inst_opcode = FMP_PARAM \/ inst.inst_opcode = RETPC_PARAM) ==>
     step_inst_base inst s <> Halt vs' /\
     step_inst_base inst s <> Abort a vs'
 Proof
   rpt strip_tac >> gvs[] >>
   qpat_x_assum `step_inst_base inst s = _` mp_tac >>
   ASM_REWRITE_TAC[step_inst_base_def] >> simp[] >>
-  every_case_tac >> gvs[]
+  gvs[AllCaseEqs()]
 QED
 
 Triviality effect_free_not_halt_abort[local]:
@@ -398,7 +408,7 @@ Triviality mem_write_opcode_cases[local]:
   !op. is_mem_write_op op ==>
     op = MSTORE \/ op = MSTORE8 \/ op = MCOPY \/ op = CALLDATACOPY \/
     op = RETURNDATACOPY \/ op = CODECOPY \/ op = EXTCODECOPY \/
-    op = DLOADBYTES
+    op = DLOADBYTES \/ op = DRET
 Proof
   Cases >> EVAL_TAC
 QED
@@ -412,7 +422,8 @@ Proof
   drule mem_write_opcode_cases >> strip_tac >> gvs[] >>
   qpat_x_assum `step_inst_base inst s = Halt vs'` mp_tac >>
   ASM_REWRITE_TAC[step_inst_base_def] >>
-  gvs[AllCaseEqs()]
+  gvs[AllCaseEqs()] >>
+  rpt strip_tac >> pairarg_tac >> gvs[]
 QED
 
 Triviality mem_write_abort_opcode[local]:
@@ -425,7 +436,8 @@ Proof
   drule mem_write_opcode_cases >> strip_tac >> gvs[] >>
   qpat_x_assum `step_inst_base inst s = Abort a vs'` mp_tac >>
   ASM_REWRITE_TAC[step_inst_base_def] >>
-  gvs[AllCaseEqs()]
+  gvs[AllCaseEqs()] >>
+  rpt strip_tac >> pairarg_tac >> gvs[]
 QED
 
 Triviality mem_write_result_class[local]:
@@ -480,6 +492,7 @@ Triviality storage_imm_log_assert_not_halt[local]:
   !inst s vs'.
     (inst.inst_opcode = SSTORE \/ inst.inst_opcode = TSTORE \/
      inst.inst_opcode = ISTORE \/ inst.inst_opcode = LOG \/
+     inst.inst_opcode = SETFMP \/ inst.inst_opcode = DALLOCA \/
      inst.inst_opcode = ASSERT \/ inst.inst_opcode = ASSERT_UNREACHABLE \/
      inst.inst_opcode = INVOKE) ==>
     step_inst_base inst s <> Halt vs'
@@ -494,6 +507,7 @@ Triviality nofail_storage_imm_log_not_abort[local]:
   !inst s a vs'.
     (inst.inst_opcode = SSTORE \/ inst.inst_opcode = TSTORE \/
      inst.inst_opcode = ISTORE \/ inst.inst_opcode = LOG \/
+     inst.inst_opcode = SETFMP \/ inst.inst_opcode = DALLOCA \/
      inst.inst_opcode = INVOKE) ==>
     step_inst_base inst s <> Abort a vs'
 Proof
