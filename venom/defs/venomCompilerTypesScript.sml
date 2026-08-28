@@ -28,4 +28,41 @@ Datatype:
   |>
 End
 
+Definition resolve_o1_policy_def:
+  resolve_o1_policy policy =
+    if target_capabilities_wf policy.cpol_target /\
+       policy.cpol_target CapMcopy
+    then SOME <|
+      rpol_target := policy.cpol_target;
+      rpol_frontend_dispatch := Linear;
+      rpol_final_assembly := FAP_Optimize
+    |>
+    else NONE
+End
+
+Theorem resolve_o1_policy_shape:
+  resolve_o1_policy policy = SOME rpolicy ==>
+  rpolicy.rpol_frontend_dispatch = Linear /\
+  rpolicy.rpol_final_assembly = FAP_Optimize /\
+  rpolicy.rpol_target = policy.cpol_target
+Proof
+  simp [resolve_o1_policy_def] >>
+  strip_tac >>
+  gvs []
+QED
+
+Theorem resolve_o1_policy_prague:
+  IS_SOME (resolve_o1_policy <|cpol_target := prague_capabilities|>)
+Proof
+  simp [resolve_o1_policy_def,
+        venomPolicyTypesTheory.target_capabilities_wf_def,
+        venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem resolve_o1_policy_missing_mcopy:
+  resolve_o1_policy <|cpol_target := (\c. c <> CapMcopy)|> = NONE
+Proof
+  EVAL_TAC
+QED
+
 val _ = export_theory ();
