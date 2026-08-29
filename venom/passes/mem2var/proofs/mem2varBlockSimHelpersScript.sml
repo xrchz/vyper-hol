@@ -3988,6 +3988,46 @@ Proof
   simp[]
 QED
 
+(* Diagnostic: the current Mem2Var relations do not observe call-entry FMP. *)
+Theorem m2v_rel_call_entry_fmp_update[local]:
+  !fn s1 s2 c1 c2.
+    m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
+    m2v_ao_undef_sync fn s1 s2 ==>
+    m2v_inv_noix fn (s1 with vs_call_entry_fmp := c1)
+                         (s2 with vs_call_entry_fmp := c2) /\
+    m2v_non32_ok fn (s1 with vs_call_entry_fmp := c1)
+                        (s2 with vs_call_entry_fmp := c2) /\
+    m2v_ao_undef_sync fn (s1 with vs_call_entry_fmp := c1)
+                             (s2 with vs_call_entry_fmp := c2)
+Proof
+  simp[m2v_inv_noix_def, m2v_non32_ok_def, m2v_ao_undef_sync_def,
+       lookup_var_def, mem_byte_def, in_promoted_region_def, mload_def,
+       allocas_non_overlapping_def] >> metis_tac[]
+QED
+
+(* Empty dynamic packing exposes unequal cursors both in IntRet metadata and FMP. *)
+Theorem pack_dret_dynamic_nil_cursor_mismatch[local]:
+  !fn s1 s2 c1 c2.
+    c1 <> c2 ==>
+    ~lift_result
+       (\s1 s2. m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
+                m2v_ao_undef_sync fn s1 s2)
+       (\s1 s2. m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
+                m2v_ao_undef_sync fn s1 s2)
+       (\s1 s2. m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
+                m2v_ao_undef_sync fn s1 s2)
+       ((\(ptrs,final_cursor,s').
+           IntRet <| iret_values := ptrs; iret_adopt_fmp := SOME final_cursor |>
+             (s' with vs_fmp := final_cursor))
+          (pack_dret_dynamic c1 [] s1))
+       ((\(ptrs,final_cursor,s').
+           IntRet <| iret_values := ptrs; iret_adopt_fmp := SOME final_cursor |>
+             (s' with vs_fmp := final_cursor))
+          (pack_dret_dynamic c2 [] s2))
+Proof
+  simp[pack_dret_dynamic_def, lift_result_def]
+QED
+
 (* For FIND=NONE easy terminators (not RETURN/REVERT), step_inst on s1
    and s2 produce lift_result-related outputs. *)
 Theorem m2v_step_easy_terminator:
@@ -4033,8 +4073,9 @@ Proof
       metis_tac[m2v_inv_noix_jump_to, m2v_non32_ok_jump_to,
                 m2v_ao_undef_sync_jump_to])
   >- (ASM_REWRITE_TAC[step_inst_base_def] >>
-      Cases_on `eval_operands inst.inst_operands s2` >>
-      gvs[lift_result_def])
+      (Cases_on `eval_operands inst.inst_operands s2`
+       >- gvs[lift_result_def]) >>
+      Cases_on `x` >> gvs[lift_result_def])
   >- (ASM_REWRITE_TAC[step_inst_base_def] >> simp[lift_result_def] >>
       metis_tac[m2v_inv_noix_halt_state, m2v_non32_ok_halt_state,
                 m2v_ao_undef_sync_halt_state])
