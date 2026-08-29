@@ -95,7 +95,10 @@ Triviality state_equiv_step_base_concl:
     s'.vs_prev_bb = s.vs_prev_bb /\
     (!v. ~MEM v inst.inst_outputs ==> lookup_var v s' = lookup_var v s) /\
     s'.vs_immutables = s.vs_immutables /\
-    s'.vs_returndata = s.vs_returndata
+    s'.vs_returndata = s.vs_returndata /\
+    s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
 Proof
   rw[state_equiv_def, execution_equiv_def] >>
   first_x_assum drule >> simp[]
