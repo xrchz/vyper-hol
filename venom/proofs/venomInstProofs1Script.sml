@@ -481,7 +481,10 @@ Theorem pack_dret_dynamic_preserves_non_memory:
     s'.vs_returndata = s.vs_returndata /\
     s'.vs_transient = s.vs_transient /\
     s'.vs_logs = s.vs_logs /\
-    s'.vs_accounts = s.vs_accounts
+    s'.vs_accounts = s.vs_accounts /\
+    s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
 Proof
   Induct >- simp[pack_dret_dynamic_def] >>
   rpt gen_tac >> PairCases_on `h` >>
@@ -524,7 +527,10 @@ Triviality step_inst_base_mem_write_preserves_all:
      s'.vs_immutables = s.vs_immutables) /\
     (~is_alloca_op inst.inst_opcode /\
      Eff_RETURNDATA NOTIN write_effects inst.inst_opcode ==>
-     s'.vs_returndata = s.vs_returndata)
+     s'.vs_returndata = s.vs_returndata) /\
+    s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
 Proof
   rpt gen_tac >> strip_tac >>
   Cases_on `inst.inst_opcode` >> gvs[is_mem_write_op_def]
