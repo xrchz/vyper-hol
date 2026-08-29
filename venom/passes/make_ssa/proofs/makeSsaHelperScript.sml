@@ -3729,6 +3729,8 @@ Resume lockstep_body[non_term]:
       (fn peel =>
         assume_tac (SIMP_RULE (srw_ss()) [step_eq] peel)) >>
     assume_tac step_eq) >>
+  `inst_wf inst1` by
+    (simp[Abbr `inst1`] >> metis_tac[EVERY_EL]) >>
   qunabbrev_tac `rs_at` >> BETA_TAC >>
   drule_all (SIMP_RULE std_ss [GSYM AND_IMP_INTRO]
     ok_step_sim_bridge) >>
@@ -4201,6 +4203,13 @@ Resume lockstep_body_gen[gen_non_term]:
       (fn peel =>
         assume_tac (SIMP_RULE (srw_ss()) [step_eq] peel)) >>
     assume_tac step_eq) >>
+  `inst_wf inst1` by
+    (simp[Abbr `inst1`] >> metis_tac[EVERY_EL]) >>
+  `bound_output_count inst1.inst_opcode <= LENGTH inst1.inst_outputs` by (
+    Cases_on `inst1.inst_opcode = INVOKE`
+    >- gvs[bound_output_count_def, opcode_has_output_def]
+    >- (`bound_output_count inst1.inst_opcode = LENGTH inst1.inst_outputs` by
+          metis_tac[inst_wf_bound_output_count] >> simp[])) >>
   (* Get output_fresh for gen bridges *)
   `output_fresh sigma inst1 inst2 s1` by (
     qpat_x_assum `inst2 = SND _` (fn eq => REWRITE_TAC [eq]) >>
@@ -4239,23 +4248,28 @@ QED
 Resume lockstep_body_gen[after_fs]:
   (* Goal already peeled by fs[step_inst_non_invoke] in bridge_done *)
   (* Define sigma' and establish FOLDL equivalence *)
-    qabbrev_tac `sigma' = if opcode_has_output inst1.inst_opcode
-                  then (HD inst1.inst_outputs =+ HD inst2.inst_outputs) sigma
-                  else sigma` >>
+  (* Track the semantic all-output map and expose its full ordered fold. *)
+    qabbrev_tac `sigma' = output_sigma inst1.inst_opcode
+                  inst1.inst_outputs inst2.inst_outputs sigma` >>
     sg `sigma' = FOLDL (\s (o1,o2). (o1 =+ o2) s) sigma
                (ZIP (inst1.inst_outputs, inst2.inst_outputs))`
     >- suspend "foldl_equiv" >>
-  (* Bridge sigma' through inst_idx update *)
+    qpat_assum `Abbrev (sigma' = _)` (fn ab =>
+      qpat_x_assum `ssa_sim _ v s2'` (fn sim =>
+        let val eq = REWRITE_RULE [markerTheory.Abbrev_def] ab
+        in assume_tac (REWRITE_RULE [GSYM eq] sim) end)) >>
+  (* Bridge sigma' through inst_idx update and expose its state equalities. *)
     qpat_x_assum `ssa_sim _ v s2'` (fn sim =>
-      assume_tac (Q.SPECL [`SUC j`, `SUC (j + n_phi)`]
-        (MATCH_MP ssa_sim_update_inst_idx sim))) >>
-  (* ssa_sim field equalities *)
-    qpat_x_assum `ssa_sim sigma' _ _` (fn sim =>
-      let val ss = srw_ss()
-          val h = SIMP_RULE ss [] (MATCH_MP ssa_sim_halted sim)
-          val c = SIMP_RULE ss [] (MATCH_MP ssa_sim_current_bb sim)
-          val p = SIMP_RULE ss [] (MATCH_MP ssa_sim_prev_bb sim)
-      in assume_tac h >> assume_tac c >> assume_tac p >> assume_tac sim end) >>
+      let
+        val sim' = Q.SPECL [`SUC j`, `SUC (j + n_phi)`]
+          (MATCH_MP ssa_sim_update_inst_idx sim)
+        val ss = srw_ss()
+        val h = SIMP_RULE ss [] (MATCH_MP ssa_sim_halted sim')
+        val c = SIMP_RULE ss [] (MATCH_MP ssa_sim_current_bb sim')
+        val p = SIMP_RULE ss [] (MATCH_MP ssa_sim_prev_bb sim')
+      in
+        assume_tac h >> assume_tac c >> assume_tac p >> assume_tac sim'
+      end) >>
   (* Invoke IH with sigma' and live_set ++ inst1.inst_outputs *)
     last_x_assum (qspec_then `LENGTH bb.bb_instructions - SUC j` mp_tac) >>
     (impl_tac >- simp[]) >>
@@ -4436,22 +4450,13 @@ Resume lockstep_body_gen[output_case2]:
 QED
 
 Resume lockstep_body_gen[foldl_equiv]:
-  simp[Abbr `sigma'`] >>
-  Cases_on `opcode_has_output inst1.inst_opcode` >> simp[]
-  >- (
-    `?h. inst1.inst_outputs = [h]` by
-      metis_tac[opcode_has_output_single] >>
-    gvs[] >>
-    Cases_on `inst2.inst_outputs` >> gvs[] >>
-    Cases_on `t` >> gvs[]
-  )
-  >- (
-    `inst1.inst_outputs = []` by (
-      first_x_assum (qspec_then `j` mp_tac) >>
-      simp[Abbr `inst1`, Abbr `j`]) >>
-    gvs[] >>
-    Cases_on `inst2.inst_outputs` >> gvs[]
-  )
+  `bound_output_count inst1.inst_opcode = LENGTH inst1.inst_outputs` by
+    metis_tac[inst_wf_bound_output_count] >>
+  `TAKE (bound_output_count inst1.inst_opcode) inst1.inst_outputs =
+   inst1.inst_outputs` by simp[] >>
+  `TAKE (bound_output_count inst1.inst_opcode) inst2.inst_outputs =
+   inst2.inst_outputs` by simp[] >>
+  simp[Abbr `sigma'`, output_sigma_def]
 QED
 
 Resume lockstep_body_gen[gen_invoke]:
