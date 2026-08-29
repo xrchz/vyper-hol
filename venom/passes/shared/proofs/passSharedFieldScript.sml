@@ -83,6 +83,21 @@ Proof
             step_base_preserves_logs]
 QED
 
+Theorem step_inst_base_preserves_stable_frame_metadata:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE ==>
+    s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
+Proof
+  rpt strip_tac >>
+  drule venomInstProofs1Theory.step_inst_base_preserves_all >> simp[]
+QED
+
 (* Combined preservation theorem: all field preservation facts in one.
    Use with targeted qpat_x_assum to avoid metis search with multiple
    step_inst assumptions. *)
