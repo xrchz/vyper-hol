@@ -203,6 +203,10 @@ Definition commute_equiv_def:
     s1.vs_labels = s2.vs_labels /\
     s1.vs_code = s2.vs_code /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_prev_hashes = s2.vs_prev_hashes
 End
 
@@ -1479,6 +1483,7 @@ Proof
                     `v1`, `v2`, `s12`, `s21`] group_b_fields) >>
   (impl_tac >- fast_conj) >>
   strip_tac >>
+  drule_all ok_ok_frame_fields >> strip_tac >>
   (* Close commute_equiv — all needed equalities are in assumptions.
      Each field is s12.F = X = ... = s21.F via transitivity of 2-4 equalities.
      metis_tac[] handles this since all equalities are in assumptions. *)
