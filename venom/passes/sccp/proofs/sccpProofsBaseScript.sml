@@ -1463,7 +1463,7 @@ Triviality sccp_terminator_opcode_cases[local]:
     is_terminator op ==>
     op = JMP \/ op = JNZ \/ op = DJMP \/ op = RET \/
     op = RETURN \/ op = REVERT \/ op = STOP \/ op = SINK \/
-    op = SELFDESTRUCT \/ op = INVALID
+    op = SELFDESTRUCT \/ op = INVALID \/ op = DRET \/ op = RETFMP
 Proof
   Cases \\ gvs[is_terminator_def]
 QED
@@ -1529,6 +1529,8 @@ Proof
   >- term_succ_base_tac
   >- term_succ_base_tac
   >- term_succ_base_tac
+  >- term_succ_base_tac
+  >- (term_succ_base_tac >> pairarg_tac >> gvs[])
   >- term_succ_base_tac
   >- term_succ_base_tac
   >- term_succ_base_tac
