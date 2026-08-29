@@ -371,6 +371,17 @@ End
    Part 4: ssa_sim preservation lemmas
    ========================================================================== *)
 
+(* Updating the free-memory pointer to the same value on both sides preserves
+   simulation.  Consumers should use this boundary rather than unfold the
+   full state relation. *)
+Theorem ssa_sim_fmp_update:
+  !sigma s1 s2 fmp.
+    ssa_sim sigma s1 s2 ==>
+    ssa_sim sigma (s1 with vs_fmp := fmp) (s2 with vs_fmp := fmp)
+Proof
+  rw[ssa_sim_def, lookup_var_def]
+QED
+
 (* ssa_sim is preserved by update_var on corresponding variables,
    provided the new SSA name out2 doesn't alias sigma for any
    DEFINED variable in s1 other than out1.
@@ -387,6 +398,21 @@ Proof
   Cases_on `out1 = x` >> gvs[lookup_var_def, FLOOKUP_UPDATE] >>
   `FLOOKUP s1.vs_vars x <> NONE` by (Cases_on `FLOOKUP s1.vs_vars x` >> gvs[]) >>
   metis_tac[]
+QED
+
+(* DALLOCA-style updates change the common FMP and return a common value in
+   corresponding fresh outputs. *)
+Theorem ssa_sim_fmp_update_var:
+  !sigma s1 s2 out1 out2 value fmp.
+    ssa_sim sigma s1 s2 /\
+    (!x. x <> out1 /\ lookup_var x s1 <> NONE ==> sigma x <> out2) ==>
+    ssa_sim ((out1 =+ out2) sigma)
+      (update_var out1 value (s1 with vs_fmp := fmp))
+      (update_var out2 value (s2 with vs_fmp := fmp))
+Proof
+  rpt strip_tac >> irule ssa_sim_update_var >>
+  simp[lookup_var_def] >>
+  irule ssa_sim_fmp_update >> simp[]
 QED
 
 (* ssa_sim allows replacing sigma when the new sigma agrees on all defined vars *)
