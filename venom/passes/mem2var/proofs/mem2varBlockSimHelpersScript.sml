@@ -1235,6 +1235,9 @@ Theorem mstore_preserves:
     (mstore off v s).vs_labels = s.vs_labels /\
     (mstore off v s).vs_code = s.vs_code /\
     (mstore off v s).vs_params = s.vs_params /\
+    (mstore off v s).vs_fmp = s.vs_fmp /\
+    (mstore off v s).vs_initial_fmp = s.vs_initial_fmp /\
+    (mstore off v s).vs_return_pc_token = s.vs_return_pc_token /\
     (mstore off v s).vs_prev_hashes = s.vs_prev_hashes /\
     (mstore off v s).vs_allocas = s.vs_allocas /\
     (mstore off v s).vs_alloca_next = s.vs_alloca_next /\
@@ -1266,6 +1269,9 @@ Theorem wmwe_preserves:
     (write_memory_with_expansion off bytes s).vs_labels = s.vs_labels /\
     (write_memory_with_expansion off bytes s).vs_code = s.vs_code /\
     (write_memory_with_expansion off bytes s).vs_params = s.vs_params /\
+    (write_memory_with_expansion off bytes s).vs_fmp = s.vs_fmp /\
+    (write_memory_with_expansion off bytes s).vs_initial_fmp = s.vs_initial_fmp /\
+    (write_memory_with_expansion off bytes s).vs_return_pc_token = s.vs_return_pc_token /\
     (write_memory_with_expansion off bytes s).vs_prev_hashes = s.vs_prev_hashes /\
     (write_memory_with_expansion off bytes s).vs_allocas = s.vs_allocas /\
     (write_memory_with_expansion off bytes s).vs_alloca_next = s.vs_alloca_next /\
@@ -1297,6 +1303,9 @@ Theorem mstore8_preserves:
     (mstore8 off v s).vs_labels = s.vs_labels /\
     (mstore8 off v s).vs_code = s.vs_code /\
     (mstore8 off v s).vs_params = s.vs_params /\
+    (mstore8 off v s).vs_fmp = s.vs_fmp /\
+    (mstore8 off v s).vs_initial_fmp = s.vs_initial_fmp /\
+    (mstore8 off v s).vs_return_pc_token = s.vs_return_pc_token /\
     (mstore8 off v s).vs_prev_hashes = s.vs_prev_hashes /\
     (mstore8 off v s).vs_allocas = s.vs_allocas /\
     (mstore8 off v s).vs_alloca_next = s.vs_alloca_next /\
@@ -1328,6 +1337,9 @@ Theorem mcopy_preserves:
     (mcopy dst src sz s).vs_labels = s.vs_labels /\
     (mcopy dst src sz s).vs_code = s.vs_code /\
     (mcopy dst src sz s).vs_params = s.vs_params /\
+    (mcopy dst src sz s).vs_fmp = s.vs_fmp /\
+    (mcopy dst src sz s).vs_initial_fmp = s.vs_initial_fmp /\
+    (mcopy dst src sz s).vs_return_pc_token = s.vs_return_pc_token /\
     (mcopy dst src sz s).vs_prev_hashes = s.vs_prev_hashes /\
     (mcopy dst src sz s).vs_allocas = s.vs_allocas /\
     (mcopy dst src sz s).vs_alloca_next = s.vs_alloca_next /\
@@ -1522,6 +1534,9 @@ Theorem update_var_preserves:
     (update_var x v s).vs_labels = s.vs_labels /\
     (update_var x v s).vs_code = s.vs_code /\
     (update_var x v s).vs_params = s.vs_params /\
+    (update_var x v s).vs_fmp = s.vs_fmp /\
+    (update_var x v s).vs_initial_fmp = s.vs_initial_fmp /\
+    (update_var x v s).vs_return_pc_token = s.vs_return_pc_token /\
     (update_var x v s).vs_prev_hashes = s.vs_prev_hashes /\
     (update_var x v s).vs_allocas = s.vs_allocas /\
     (update_var x v s).vs_alloca_next = s.vs_alloca_next /\
@@ -1764,6 +1779,39 @@ Proof
   simp[] >>
   Cases_on `x = ao2` >> gvs[] >>
   metis_tac[]
+QED
+
+Theorem m2v_step_nonpromoted_dalloca:
+  !fn inst s1 s2 fuel ctx v1.
+    m2v_inv_noix fn s1 s2 /\
+    inst.inst_opcode = DALLOCA /\
+    (!op. MEM op inst.inst_operands ==>
+          eval_operand op s1 = eval_operand op s2) /\
+    (!v. MEM v inst.inst_outputs ==> v NOTIN m2v_fresh_vars fn) /\
+    (!ao pvar sz. MEM (ao,pvar,sz) (m2v_promo_list fn) ==>
+       ~MEM ao inst.inst_outputs) /\
+    step_inst fuel ctx inst s1 = OK v1 ==>
+    ?v2. step_inst fuel ctx inst s2 = OK v2 /\
+         m2v_inv_noix fn v1 v2
+Proof
+  rpt strip_tac >>
+  `s1.vs_fmp = s2.vs_fmp` by gvs[m2v_inv_noix_def] >>
+  gvs[step_inst_non_invoke, step_inst_base_def, AllCaseEqs()] >>
+  qabbrev_tac `t1 = s1 with vs_fmp :=
+    s2.vs_fmp + n2w (ceil32 (w2n sz))` >>
+  qabbrev_tac `t2 = s2 with vs_fmp :=
+    s2.vs_fmp + n2w (ceil32 (w2n sz))` >>
+  `m2v_inv_noix fn t1 t2` by (
+    gvs[Abbr `t1`, Abbr `t2`, m2v_inv_noix_def,
+        lookup_var_def, mem_byte_def, mload_def, in_promoted_region_def,
+        allocas_non_overlapping_def] >>
+    rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  qexists `update_var out s2.vs_fmp t2` >>
+  conj_tac
+  >- (qexists `sz` >> simp[Abbr `t2`]) >>
+  simp[Abbr `t1`, Abbr `t2`] >>
+  irule m2v_inv_noix_update_var >>
+  simp[] >> metis_tac[]
 QED
 
 (* alloca insert preserves allocas_non_overlapping when:
