@@ -303,8 +303,13 @@ Definition bp_get_write_location_def:
   bp_get_write_location result inst addr_sp =
     case addr_sp of
       AddrSp_Memory =>
-        (* Special cases first *)
-        if inst.inst_opcode = DLOAD then
+        (* Raw frame operations have no representable frame-relative segment.
+           Only DRET has a memory effect; the other raw operations are proven
+           non-memory operations by the shared effect table. *)
+        if is_raw_fmp_opcode inst.inst_opcode then
+          if Eff_MEMORY ∈ write_effects inst.inst_opcode then ml_undefined
+          else ml_empty
+        else if inst.inst_opcode = DLOAD then
           <| ml_offset := SOME 0; ml_size := SOME 32;
              ml_alloca := NONE; ml_volatile := F |>
         else if inst.inst_opcode = INVOKE then ml_undefined
@@ -354,7 +359,12 @@ Definition bp_get_read_location_def:
   bp_get_read_location result inst addr_sp =
     case addr_sp of
       AddrSp_Memory =>
-        if inst.inst_opcode = DLOAD then
+        (* Raw frame operations use an unknown memory segment exactly when
+           their conservative effect table says they may read memory. *)
+        if is_raw_fmp_opcode inst.inst_opcode then
+          if Eff_MEMORY ∈ read_effects inst.inst_opcode then ml_undefined
+          else ml_empty
+        else if inst.inst_opcode = DLOAD then
           <| ml_offset := SOME 0; ml_size := SOME 32;
              ml_alloca := NONE; ml_volatile := F |>
         else if inst.inst_opcode ∈ {ILOAD; INVOKE; RET} then ml_undefined
@@ -450,3 +460,44 @@ Definition bp_get_read_location_def:
     | AddrSp_Immutables => ml_empty  (* ILOAD reads via Memory case *)
 End
 
+
+
+(* Executable contract for extended-IR memory-location boundaries. *)
+Theorem task011_extended_bp_locations_eval:
+  let raw = MAP (\op. mk_inst 0 op [] [])
+                [DALLOCA; DRET; GETFMP; SETFMP; RETFMP] in
+  let invoke = mk_inst 1 INVOKE [] [] in
+  let params = MAP (\op. mk_inst 2 op [] [])
+                   [PARAM; FMP_PARAM; RETPC_PARAM] in
+  let dload = mk_inst 3 DLOAD [Lit 7w] ["d"] in
+  let dloadbytes = mk_inst 4 DLOADBYTES [Lit 100w; Lit 7w; Lit 9w] [] in
+  let loc0_32 = <| ml_offset := SOME 0; ml_size := SOME 32;
+                    ml_alloca := NONE; ml_volatile := F |> in
+  let loc7_32 = <| ml_offset := SOME 7; ml_size := SOME 32;
+                    ml_alloca := NONE; ml_volatile := F |> in
+  let loc100_9 = <| ml_offset := SOME 100; ml_size := SOME 9;
+                     ml_alloca := NONE; ml_volatile := F |> in
+  let loc7_9 = <| ml_offset := SOME 7; ml_size := SOME 9;
+                   ml_alloca := NONE; ml_volatile := F |> in
+    MAP (\inst. bp_get_read_location FEMPTY inst AddrSp_Memory) raw =
+      [ml_empty; ml_undefined; ml_empty; ml_empty; ml_empty] /\
+    MAP (\inst. bp_get_write_location FEMPTY inst AddrSp_Memory) raw =
+      [ml_empty; ml_undefined; ml_empty; ml_empty; ml_empty] /\
+    bp_get_read_location FEMPTY invoke AddrSp_Memory = ml_undefined /\
+    bp_get_write_location FEMPTY invoke AddrSp_Memory = ml_undefined /\
+    bp_get_read_location FEMPTY invoke AddrSp_Storage = ml_undefined /\
+    bp_get_write_location FEMPTY invoke AddrSp_Storage = ml_undefined /\
+    bp_get_read_location FEMPTY invoke AddrSp_Transient = ml_undefined /\
+    bp_get_write_location FEMPTY invoke AddrSp_Transient = ml_undefined /\
+    MAP (\inst. bp_get_read_location FEMPTY inst AddrSp_Memory) params =
+      [ml_empty; ml_empty; ml_empty] /\
+    MAP (\inst. bp_get_write_location FEMPTY inst AddrSp_Memory) params =
+      [ml_empty; ml_empty; ml_empty] /\
+    bp_get_read_location FEMPTY dload AddrSp_Memory = loc0_32 /\
+    bp_get_write_location FEMPTY dload AddrSp_Memory = loc0_32 /\
+    bp_get_read_location FEMPTY dload AddrSp_Data = loc7_32 /\
+    bp_get_write_location FEMPTY dloadbytes AddrSp_Memory = loc100_9 /\
+    bp_get_read_location FEMPTY dloadbytes AddrSp_Data = loc7_9
+Proof
+  EVAL_TAC >> wordsLib.WORD_DECIDE_TAC
+QED
