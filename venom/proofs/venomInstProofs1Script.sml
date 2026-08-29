@@ -590,7 +590,10 @@ Theorem step_inst_base_preserves_all:
      s'.vs_immutables = s.vs_immutables) /\
     (~is_alloca_op inst.inst_opcode /\
      Eff_RETURNDATA NOTIN write_effects inst.inst_opcode ==>
-     s'.vs_returndata = s.vs_returndata)
+     s'.vs_returndata = s.vs_returndata) /\
+    s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
 Proof
   rpt gen_tac >> strip_tac >>
   drule nonterminator_opcode_class >> strip_tac
