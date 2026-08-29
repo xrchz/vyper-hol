@@ -98,6 +98,24 @@ Proof
   drule venomInstProofs1Theory.step_inst_base_preserves_all >> simp[]
 QED
 
+Theorem step_inst_base_preserves_fmp_no_write:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE /\
+    Eff_FMP NOTIN write_effects inst.inst_opcode ==>
+    s'.vs_fmp = s.vs_fmp
+Proof
+  rpt strip_tac >>
+  `inst.inst_opcode <> SETFMP` by
+    (strip_tac >> gvs[write_effects_def]) >>
+  `inst.inst_opcode <> DALLOCA` by
+    (strip_tac >> gvs[write_effects_def]) >>
+  metis_tac[venomInstProofs1Theory.step_inst_base_preserves_fmp_ordinary]
+QED
+
 Theorem step_inst_base_ordinary_fmp_agreement:
   !inst s1 s2 v1 v2.
     step_inst_base inst s1 = OK v1 /\

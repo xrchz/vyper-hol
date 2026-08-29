@@ -1301,6 +1301,83 @@ Proof
          metis_tac[cj 13 step_inst_preserves_all])
 QED
 
+(* Frame/FMP commutation boundary for the four base executions in the
+   general OK x OK case. *)
+Theorem ok_ok_frame_fields[local]:
+  !inst1 inst2 s v1 v2 s12 s21.
+    step_inst_base inst1 s = OK v1 /\
+    step_inst_base inst2 s = OK v2 /\
+    step_inst_base inst2 v1 = OK s12 /\
+    step_inst_base inst1 v2 = OK s21 /\
+    effects_independent inst1.inst_opcode inst2.inst_opcode /\
+    ~is_terminator inst1.inst_opcode /\
+    ~is_terminator inst2.inst_opcode /\
+    ~is_alloca_op inst1.inst_opcode /\
+    ~is_alloca_op inst2.inst_opcode /\
+    ~is_ext_call_op inst1.inst_opcode /\
+    ~is_ext_call_op inst2.inst_opcode /\
+    inst1.inst_opcode <> INVOKE /\
+    inst2.inst_opcode <> INVOKE /\
+    (!op. MEM op inst2.inst_operands ==>
+          eval_operand op s = eval_operand op v1) /\
+    (!op. MEM op inst1.inst_operands ==>
+          eval_operand op s = eval_operand op v2) ==>
+    s12.vs_fmp = s21.vs_fmp /\
+    s12.vs_call_entry_fmp = s21.vs_call_entry_fmp /\
+    s12.vs_initial_fmp = s21.vs_initial_fmp /\
+    s12.vs_return_pc_token = s21.vs_return_pc_token
+Proof
+  rpt strip_tac >>
+  `v1.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+   v1.vs_initial_fmp = s.vs_initial_fmp /\
+   v1.vs_return_pc_token = s.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  `v2.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+   v2.vs_initial_fmp = s.vs_initial_fmp /\
+   v2.vs_return_pc_token = s.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  `s12.vs_call_entry_fmp = v1.vs_call_entry_fmp /\
+   s12.vs_initial_fmp = v1.vs_initial_fmp /\
+   s12.vs_return_pc_token = v1.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  `s21.vs_call_entry_fmp = v2.vs_call_entry_fmp /\
+   s21.vs_initial_fmp = v2.vs_initial_fmp /\
+   s21.vs_return_pc_token = v2.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  (Cases_on `Eff_FMP IN write_effects inst1.inst_opcode`
+   >- (`Eff_FMP NOTIN write_effects inst2.inst_opcode` by
+         (gvs[effects_independent_def] >>
+          metis_tac[pred_setTheory.IN_DISJOINT, pred_setTheory.IN_UNION]) >>
+       `v2.vs_fmp = s.vs_fmp` by
+         metis_tac[step_inst_base_preserves_fmp_no_write] >>
+       `s12.vs_fmp = v1.vs_fmp` by
+         metis_tac[step_inst_base_preserves_fmp_no_write] >>
+       `v1.vs_fmp = s21.vs_fmp` by
+         metis_tac[step_inst_base_ordinary_fmp_agreement] >>
+       metis_tac[])
+   >- (Cases_on `Eff_FMP IN write_effects inst2.inst_opcode`
+       >- (`Eff_FMP NOTIN write_effects inst1.inst_opcode` by
+             (gvs[effects_independent_def] >>
+              metis_tac[pred_setTheory.IN_DISJOINT,
+                        pred_setTheory.IN_UNION]) >>
+           `v1.vs_fmp = s.vs_fmp` by
+             metis_tac[step_inst_base_preserves_fmp_no_write] >>
+           `s21.vs_fmp = v2.vs_fmp` by
+             metis_tac[step_inst_base_preserves_fmp_no_write] >>
+           `v2.vs_fmp = s12.vs_fmp` by
+             metis_tac[step_inst_base_ordinary_fmp_agreement] >>
+           metis_tac[])
+       >- (`v1.vs_fmp = s.vs_fmp` by
+             metis_tac[step_inst_base_preserves_fmp_no_write] >>
+           `v2.vs_fmp = s.vs_fmp` by
+             metis_tac[step_inst_base_preserves_fmp_no_write] >>
+           `s12.vs_fmp = v1.vs_fmp` by
+             metis_tac[step_inst_base_preserves_fmp_no_write] >>
+           `s21.vs_fmp = v2.vs_fmp` by
+             metis_tac[step_inst_base_preserves_fmp_no_write] >>
+           metis_tac[])))
+QED
+
 (* General OK×OK case: neither INVOKE nor ext_call.
    Both run, both produce OK on the other's output, commute_equiv holds. *)
 Theorem ok_ok_case_general[local]:
