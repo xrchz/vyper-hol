@@ -3060,6 +3060,10 @@ Resume m2v_nonterminal_step_dispatch[nonpromoted]:
   `!ao pvar sz. MEM (ao,pvar,sz) (m2v_promo_list fn) ==>
     ~MEM ao inst.inst_outputs` by
     metis_tac[ssa_promo_ao_not_in_outputs] >>
+  Cases_on `inst.inst_opcode = DALLOCA`
+  >- (mp_tac (Q.SPECL [`fn`, `inst`, `s1`, `s2`, `fuel`, `ctx`, `v1`]
+        m2v_step_nonpromoted_dalloca) >>
+      (impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC)) >> simp[]) >>
   mp_tac (Q.SPECL [`fn`, `inst`, `s1`, `s2`, `fuel`, `ctx`, `v1`]
     m2v_step_nonpromoted) >>
   simp[] >>
