@@ -1353,6 +1353,12 @@ Proof
   Cases_on `ir.iret_adopt_fmp` >> simp[adopt_return_fmp_def]
 QED
 
+Theorem adopt_return_fmp_allocas[simp]:
+  !ir s. (adopt_return_fmp ir s).vs_allocas = s.vs_allocas
+Proof
+  rpt strip_tac >> Cases_on `ir.iret_adopt_fmp` >> simp[adopt_return_fmp_def]
+QED
+
 Theorem adopt_return_fmp_halted[simp]:
   (adopt_return_fmp ir s).vs_halted = s.vs_halted
 Proof
