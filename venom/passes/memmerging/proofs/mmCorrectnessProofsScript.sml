@@ -2651,6 +2651,64 @@ Definition memzero_block_wf_def:
        EVERY (memzero_inst_ok nop_set rep_map fresh) non_terms)
 End
 
+(* Precompute each concrete non-aborting base-step clause separately, avoiding
+   a single simplifier call over every opcode constructor. *)
+local
+  val opcode_ops = TypeBase.constructors_of ``:opcode``;
+  val nt_nec_na_ops = List.filter (fn op_tm =>
+    let val nt = EVAL ``~is_terminator ^op_tm``
+        val nec = EVAL ``~is_ext_call_op ^op_tm``
+        val na = EVAL ``~is_alloca_op ^op_tm``
+    in aconv (rhs (concl nt)) T andalso aconv (rhs (concl nec)) T
+       andalso aconv (rhs (concl na)) T end
+  ) opcode_ops;
+  val abort_ops = [``ASSERT``, ``ASSERT_UNREACHABLE``, ``RETURNDATACOPY``];
+  val non_abort_ops = List.filter (fn op_tm =>
+    not (List.exists (fn t => aconv t op_tm) abort_ops)) nt_nec_na_ops;
+  val base_clauses = map (fn op_tm =>
+    SIMP_CONV (srw_ss()) [step_inst_base_def]
+      (mk_comb(mk_comb(``step_inst_base``,
+        ``inst with inst_opcode := ^op_tm``), ``st:venom_state``))
+  ) non_abort_ops;
+  val exec_helper_defs = [
+    exec_pure1_def, exec_pure2_def, exec_pure3_def,
+    exec_read0_def, exec_read1_def, exec_write2_def,
+    exec_alloca_def, exec_ext_call_def, exec_create_def,
+    exec_delegatecall_def, LET_THM, AllCaseEqs()];
+  val direct_clause_pairs = ListPair.zip(non_abort_ops, base_clauses);
+  val common_case_tac =
+    gvs[is_terminator_def, is_volatile_memory_def, read_effects_def,
+        write_effects_def, empty_effects_def,
+        is_alloca_op_def, is_ext_call_op_def];
+  fun direct_clause_tac op_tm clause =
+    (`inst with inst_opcode := ^op_tm = inst`
+       by simp[instruction_component_equality] >>
+     pop_assum (fn upd => ONCE_REWRITE_TAC [GSYM upd]) >>
+     ONCE_REWRITE_TAC [clause] >> simp exec_helper_defs);
+  val opcode_case_tacs = map (fn op_tm =>
+    case List.find (fn (candidate, _) => aconv candidate op_tm)
+           direct_clause_pairs of
+      NONE => common_case_tac
+    | SOME (_, clause) => common_case_tac >> direct_clause_tac op_tm clause
+  ) opcode_ops;
+in
+  val mm_step_inst_base_no_abort_cases = opcode_case_tacs;
+end
+
+Theorem step_inst_base_non_volatile_no_abort[local]:
+  !inst s a s'.
+    ~is_terminator inst.inst_opcode /\
+    inst.inst_opcode <> ASSERT /\
+    inst.inst_opcode <> ASSERT_UNREACHABLE /\
+    ~is_volatile_memory inst /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode ==>
+    step_inst_base inst s <> Abort a s'
+Proof
+  rpt gen_tac >> disch_then strip_assume_tac >>
+  (Cases_on `inst.inst_opcode` THENL mm_step_inst_base_no_abort_cases)
+QED
+
 (* Non-terminator, non-INVOKE: step_inst can't produce Halt or IntRet *)
 Theorem step_inst_non_term_non_invoke_only_ok_error_abort[local]:
   !fuel ctx inst s.
@@ -2670,10 +2728,9 @@ Proof
       extract_venom_result_def]
 QED
 
+
 (* Non-terminator, non-INVOKE, non-ASSERT, non-ASSERT_UNREACHABLE,
-   non-volatile-memory, non-alloca, non-ext_call: step_inst cannot Abort.
-   Proof: move Abort equality to goal, expand step_inst_base_def,
-   let simp handle contradiction against preconditions. *)
+   non-volatile-memory, non-alloca, non-ext_call: step_inst cannot Abort. *)
 Theorem step_inst_non_volatile_no_abort[local]:
   !fuel ctx inst s a s'.
     ~is_terminator inst.inst_opcode /\
@@ -2687,13 +2744,7 @@ Theorem step_inst_non_volatile_no_abort[local]:
 Proof
   rpt strip_tac >>
   gvs[step_inst_non_invoke] >>
-  Cases_on `inst.inst_opcode` >>
-  gvs[is_terminator_def, is_volatile_memory_def, read_effects_def,
-      write_effects_def, is_alloca_op_def, is_ext_call_op_def] >>
-  qpat_x_assum `step_inst_base _ _ = _` mp_tac >>
-  simp[step_inst_base_def, AllCaseEqs(),
-       exec_pure1_def, exec_pure2_def, exec_pure3_def,
-       exec_read0_def, exec_read1_def, exec_write2_def]
+  metis_tac[step_inst_base_non_volatile_no_abort]
 QED
 
 (* memzero_inst_ok instructions only produce OK or Error.
@@ -2901,6 +2952,121 @@ QED
 
 (* ===== Mode block simulation proof ===== *)
 
+Theorem nop_mload_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = MLOAD ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> fs[] >>
+  Cases_on `t` >> gvs[] >>
+  simp[step_inst_base_def, exec_read1_def, eval_operand_def]
+QED
+
+Theorem nop_calldataload_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = CALLDATALOAD ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> fs[] >>
+  Cases_on `t` >> gvs[] >>
+  simp[step_inst_base_def, exec_read1_def, eval_operand_def]
+QED
+
+Theorem nop_dload_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = DLOAD ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> fs[] >>
+  Cases_on `t` >> gvs[] >>
+  simp[step_inst_base_def, exec_read1_def, eval_operand_def]
+QED
+
+Theorem nop_mstore_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = MSTORE ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `t'` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> gvs[] >>
+  simp[step_inst_base_def, exec_write2_def, eval_operand_def, mstore_def]
+QED
+
+Theorem nop_mcopy_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = MCOPY ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `t'` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> gvs[] >>
+  simp[step_inst_base_def, exec_write2_def, eval_operand_def, mcopy_def, LET_THM]
+QED
+
+Theorem nop_calldatacopy_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = CALLDATACOPY ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `t'` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> gvs[] >>
+  simp[step_inst_base_def, eval_operand_def, LET_THM]
+QED
+
+
+Theorem nop_dloadbytes_always_ok[local]:
+  !inst fuel ctx s.
+    inst_wf inst /\
+    EVERY (\op. ?v. op = Lit v) inst.inst_operands /\
+    inst.inst_opcode = DLOADBYTES ==>
+    ?s'. step_inst fuel ctx inst s = OK s'
+Proof
+  rpt strip_tac >>
+  fs[step_inst_non_invoke, inst_wf_def] >>
+  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `t'` >> fs[EVERY_DEF] >>
+  Cases_on `t` >> fs[EVERY_DEF] >>
+  Cases_on `inst.inst_outputs` >> gvs[] >>
+  simp[step_inst_base_def, eval_operand_def, LET_THM]
+QED
 (* NOP'd instructions with literal operands always succeed (return OK).
    Key: eval_operand (Lit v) s = SOME v for any s. *)
 Theorem nop_inst_always_ok[local]:
@@ -2914,17 +3080,15 @@ Theorem nop_inst_always_ok[local]:
     ?s'. step_inst fuel ctx inst s = OK s'
 Proof
   rpt strip_tac >>
-  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
-  fs[step_inst_non_invoke, inst_wf_def] >>
-  (* Normalize operand/output lists from LENGTH + EVERY Lit *)
-  Cases_on `inst.inst_operands` >> fs[EVERY_DEF] >>
-  TRY (Cases_on `t` >> fs[EVERY_DEF]) >>
-  TRY (Cases_on `t'` >> fs[EVERY_DEF]) >>
-  Cases_on `inst.inst_outputs` >> fs[] >>
-  TRY (Cases_on `t` >> fs[]) >>
   gvs[] >>
-  simp[step_inst_base_def, exec_read1_def, exec_write2_def, eval_operand_def,
-       mcopy_def, mstore_def, LET_THM]
+  FIRST
+    [irule nop_mload_always_ok >> fs[] >> NO_TAC,
+     irule nop_calldataload_always_ok >> fs[] >> NO_TAC,
+     irule nop_dload_always_ok >> fs[] >> NO_TAC,
+     irule nop_mstore_always_ok >> fs[] >> NO_TAC,
+     irule nop_mcopy_always_ok >> fs[] >> NO_TAC,
+     irule nop_calldatacopy_always_ok >> fs[] >> NO_TAC,
+     irule nop_dloadbytes_always_ok >> fs[] >> NO_TAC]
 QED
 
 (* Corollary: NOP'd or rep instructions from mode_inst_ok always succeed *)
@@ -2973,11 +3137,11 @@ Resume mode_inst_ok_only_ok_or_error[nop_load]:
 QED
 
 Resume mode_inst_ok_only_ok_or_error[nop_write]:
-  fs[] >>
-  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
-  fs[step_inst_non_invoke, inst_wf_def] >>
-  simp[step_inst_base_def, exec_write2_def] >>
-  BasicProvers.every_case_tac
+  disj1_tac >>
+  qspecl_then [`nop_set`, `rep_map`, `fresh`, `inst`, `fuel`, `ctx`, `s`]
+    mp_tac mode_inst_ok_nop_or_rep_always_ok >>
+  (impl_tac >- fs[mode_inst_ok_def]) >>
+  simp[]
 QED
 
 Resume mode_inst_ok_only_ok_or_error[identity]:
@@ -2990,11 +3154,11 @@ Resume mode_inst_ok_only_ok_or_error[identity]:
 QED
 
 Resume mode_inst_ok_only_ok_or_error[representative]:
-  res_tac >>
-  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
-  fs[step_inst_non_invoke, inst_wf_def] >>
-  simp[step_inst_base_def, exec_write2_def] >>
-  BasicProvers.every_case_tac
+  disj1_tac >>
+  qspecl_then [`nop_set`, `rep_map`, `fresh`, `inst`, `fuel`, `ctx`, `s`]
+    mp_tac mode_inst_ok_nop_or_rep_always_ok >>
+  (impl_tac >- fs[mode_inst_ok_def]) >>
+  simp[]
 QED
 
 Finalise mode_inst_ok_only_ok_or_error;
