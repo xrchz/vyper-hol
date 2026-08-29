@@ -84,9 +84,9 @@ End
 Definition clone_function_def:
   clone_function prefix func =
     let labels = fn_labels func in
-    <| fn_name := STRCAT prefix func.fn_name;
-       fn_blocks :=
-         MAP (clone_basic_block prefix labels) func.fn_blocks |>
+    func with <| fn_name := STRCAT prefix func.fn_name;
+                 fn_blocks :=
+                   MAP (clone_basic_block prefix labels) func.fn_blocks |>
 End
 
 (* ===== Parameter / Return Rewriting ===== *)
