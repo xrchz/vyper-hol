@@ -39,6 +39,30 @@ Definition function_map_transform_def:
     fn with fn_blocks := MAP bt fn.fn_blocks
 End
 
+Theorem function_map_transform_identity_metadata_eq:
+  !bt fn. fn_identity_metadata_eq (function_map_transform bt fn) fn
+Proof
+  simp[function_map_transform_def, fn_identity_metadata_eq_def]
+QED
+
+Theorem function_map_transform_static_input_eq:
+  !bt fn. fn_static_input_eq (function_map_transform bt fn) fn
+Proof
+  simp[function_map_transform_def, fn_static_input_eq_def]
+QED
+
+Theorem function_map_transform_static_layout_eq:
+  !bt fn. fn_static_layout_eq (function_map_transform bt fn) fn
+Proof
+  simp[function_map_transform_def, fn_static_layout_eq_def]
+QED
+
+Theorem function_map_transform_fmp_convention_eq:
+  !bt fn. fn_fmp_convention_eq (function_map_transform bt fn) fn
+Proof
+  simp[function_map_transform_def, fn_fmp_convention_eq_def]
+QED
+
 (* ===== Simulation predicates ===== *)
 
 (* Level 1: per-instruction simulation.
