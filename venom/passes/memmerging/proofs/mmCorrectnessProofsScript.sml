@@ -767,6 +767,10 @@ Definition memzero_inv_def:
     s1.vs_transient = s2.vs_transient /\
     s1.vs_accounts = s2.vs_accounts /\
     s1.vs_logs = s2.vs_logs /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_allocas = s2.vs_allocas /\
     s1.vs_alloca_next = s2.vs_alloca_next /\
     (* Variables agree on non-fresh *)
