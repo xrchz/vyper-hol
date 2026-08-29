@@ -86,8 +86,13 @@ Definition read_effects_def:
   read_effects DRET = {Eff_FMP; Eff_MEMORY} /\
   read_effects SETFMP = empty_effects /\
   read_effects BUMP = empty_effects /\
+  (* Parameter and data-section metadata are explicit pure reads. *)
+  read_effects PARAM = empty_effects /\
   read_effects FMP_PARAM = empty_effects /\
   read_effects RETPC_PARAM = empty_effects /\
+  read_effects DLOAD = empty_effects /\
+  read_effects DLOADBYTES = empty_effects /\
+  read_effects OFFSET = empty_effects /\
   read_effects _ = empty_effects
 End
 
@@ -133,8 +138,11 @@ Definition write_effects_def:
   write_effects RETFMP = empty_effects /\
   write_effects INITIAL_FMP = empty_effects /\
   write_effects BUMP = empty_effects /\
+  (* Pure parameter/offset metadata has no state write effect. *)
+  write_effects PARAM = empty_effects /\
   write_effects FMP_PARAM = empty_effects /\
   write_effects RETPC_PARAM = empty_effects /\
+  write_effects OFFSET = empty_effects /\
   write_effects _ = empty_effects
 End
 
@@ -250,6 +258,31 @@ Theorem task006_effects_eval:
     MAP write_effects ops =
       [{Eff_FMP}; {Eff_FMP; Eff_MEMORY}; empty_effects; {Eff_FMP};
        empty_effects; empty_effects; empty_effects; empty_effects; empty_effects]
+Proof
+  EVAL_TAC
+QED
+
+
+(* Exhaustive executable contract for every opcode added by the extended IR. *)
+Theorem task011_extended_opcode_classification_eval:
+  let ops = [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
+             INVOKE; PARAM; FMP_PARAM; RETPC_PARAM; DLOAD; DLOADBYTES; OFFSET] in
+    MAP read_effects ops =
+      [{Eff_FMP}; {Eff_FMP; Eff_MEMORY}; {Eff_FMP}; empty_effects;
+       {Eff_FMP}; {Eff_FMP}; empty_effects; all_effects; empty_effects;
+       empty_effects; empty_effects; empty_effects; empty_effects; empty_effects] /\
+    MAP write_effects ops =
+      [{Eff_FMP}; {Eff_FMP; Eff_MEMORY}; empty_effects; {Eff_FMP};
+       empty_effects; empty_effects; empty_effects; all_effects; empty_effects;
+       empty_effects; empty_effects; {Eff_MEMORY}; {Eff_MEMORY}; empty_effects] /\
+    MAP is_raw_fmp_opcode ops =
+      [T; T; T; T; T; F; F; F; F; F; F; F; F; F] /\
+    MAP is_pseudo ops =
+      [F; F; F; F; F; F; F; F; T; T; T; F; F; F] /\
+    MAP is_volatile ops =
+      [F; T; F; F; T; F; F; T; T; T; T; F; T; F] /\
+    MAP is_effect_free_op ops =
+      [F; F; T; F; F; T; T; F; T; T; T; T; F; T]
 Proof
   EVAL_TAC
 QED
