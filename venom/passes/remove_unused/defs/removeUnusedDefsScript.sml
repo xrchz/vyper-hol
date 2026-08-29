@@ -36,12 +36,19 @@ Ancestors
 
 (* ===== Per-instruction transform ===== *)
 
+(* Stateful removable opcodes whose effects must be preserved even when all
+   of their outputs are dead. *)
+Definition remove_unused_must_preserve_op_def:
+  remove_unused_must_preserve_op op <=>
+    op = ALLOCA \/ op = DALLOCA \/ op = SETFMP
+End
+
 (* Transform given the set of live variables after this instruction.
    If the instruction is removable and none of its outputs are live,
    replace with NOP. *)
 Definition remove_unused_inst_def:
   remove_unused_inst (live : string list) inst =
-    if inst.inst_opcode = ALLOCA then inst
+    if remove_unused_must_preserve_op inst.inst_opcode then inst
     else if ~is_removable inst then inst
     else if EVERY (\v. ~MEM v live) inst.inst_outputs
     then mk_nop_inst inst

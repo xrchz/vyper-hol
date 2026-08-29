@@ -42,17 +42,17 @@ Libs
 
 (* ===== Per-instruction: effect-free removable → state_equiv ===== *)
 
-(* ALLOCA is the only removable opcode that isn't effect-free.
-   All other removable opcodes are effect-free (pure computation,
-   state reads, SSA bookkeeping). *)
-Theorem removable_not_alloca_effect_free[local]:
-  !inst. is_removable inst /\ inst.inst_opcode <> ALLOCA ==>
+(* Every removable opcode outside the pass-owned must-preserve boundary is
+   effect-free (pure computation, state reads, or SSA bookkeeping). *)
+Theorem removable_not_preserved_effect_free[local]:
+  !inst. is_removable inst /\
+         ~remove_unused_must_preserve_op inst.inst_opcode ==>
          is_effect_free_op inst.inst_opcode
 Proof
   rpt strip_tac >>
   Cases_on `inst.inst_opcode` >>
-  gvs[is_removable_def, is_volatile_def, is_terminator_def,
-      is_effect_free_op_def]
+  gvs[is_removable_def, remove_unused_must_preserve_op_def,
+      is_volatile_def, is_terminator_def, is_effect_free_op_def]
 QED
 
 (* Per-instruction NOP correctness: if an effect-free instruction
@@ -162,6 +162,11 @@ Proof
     `state_equiv vars (merge_callee_state s1 v)
                       (merge_callee_state s2 v)` by
       (irule merge_callee_state_equiv >> gvs[]) >>
+    `state_equiv vars (adopt_return_fmp i (merge_callee_state s1 v))
+                      (adopt_return_fmp i (merge_callee_state s2 v))` by
+      (Cases_on `i.iret_adopt_fmp` >>
+       gvs[adopt_return_fmp_def, state_equiv_def, execution_equiv_def,
+           lookup_var_def]) >>
     simp[bind_outputs_def] >>
     IF_CASES_TAC >> gvs[result_equiv_def] >>
     irule foldl_update_var_state_equiv >> gvs[])
@@ -207,7 +212,7 @@ Definition block_nop_outputs_def:
     set (FLAT (MAPi (\idx inst.
       let live = live_after_at lr bb.bb_label idx
                    (LENGTH bb.bb_instructions) in
-      if inst.inst_opcode <> ALLOCA /\
+      if ~remove_unused_must_preserve_op inst.inst_opcode /\
          is_removable inst /\
          EVERY (\v. ~MEM v live) inst.inst_outputs
       then inst.inst_outputs
@@ -323,11 +328,12 @@ Proof
   rpt (pop_assum mp_tac) >>
   rpt IF_CASES_TAC >> gvs[mk_nop_inst_def,
     instruction_component_equality] >>
-  gvs[is_removable_def]
+  gvs[is_removable_def, is_volatile_def]
+  >- simp[is_effect_free_op_def]
   >- simp[is_effect_free_op_def]
   >- (rpt strip_tac >>
-      irule removable_not_alloca_effect_free >>
-      simp[is_removable_def])
+      irule removable_not_preserved_effect_free >>
+      simp[is_removable_def, remove_unused_must_preserve_op_def])
 QED
 
 (* NOP'd instruction is not a terminator *)
@@ -827,16 +833,6 @@ QED
 
 (* ===== Growing V block simulation with SSA + liveness ===== *)
 
-(* Removable non-NOP instructions have exactly one output *)
-Theorem removable_non_nop_single_output[local]:
-  !inst. is_removable inst /\ inst_wf inst /\
-         inst.inst_opcode <> NOP ==>
-         LENGTH inst.inst_outputs = 1
-Proof
-  rpt strip_tac >>
-  Cases_on `inst.inst_opcode` >>
-  gvs[is_removable_def, is_volatile_def, is_terminator_def, inst_wf_def]
-QED
 
 (* Block instructions are in fn_insts *)
 Theorem mem_block_fn_insts[local]:
