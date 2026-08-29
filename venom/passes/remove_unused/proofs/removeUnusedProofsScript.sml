@@ -2754,10 +2754,10 @@ QED
 Theorem pass_correct_empty_false_for_nop[local]:
   ~pass_correct (state_equiv {}) (execution_equiv {}) (execution_equiv {})
     (\fuel. run_blocks fuel ARB cx_ru_fn1
-       (ARB with <|vs_vars := FEMPTY;
+       ((init_venom_state "entry") with <|vs_vars := FEMPTY;
                    vs_current_bb := "entry"; vs_inst_idx := 0; vs_halted := F|>))
     (\fuel. run_blocks fuel ARB cx_ru_fn2
-       (ARB with <|vs_vars := FEMPTY;
+       ((init_venom_state "entry") with <|vs_vars := FEMPTY;
                    vs_current_bb := "entry"; vs_inst_idx := 0; vs_halted := F|>))
 Proof
   simp[passSimulationDefsTheory.pass_correct_def,

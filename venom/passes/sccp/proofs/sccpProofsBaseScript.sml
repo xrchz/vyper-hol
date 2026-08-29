@@ -15,7 +15,8 @@
  *   fn' = sccp_function fn
  *       = SOME (fn with block "entry" = [STOP])
  *         (ASSERT(Lit 1w) becomes NOP under SCCP, clear_nops removes it)
- *   s   = ARB with <|vs_inst_idx := 1; vs_current_bb := "entry"|>
+ *   s   = init_venom_state "entry" with
+ *           <|vs_inst_idx := 1; vs_current_bb := "entry"|>
  *   fuel = 1, ctx = ARB
  *
  * With vs_inst_idx = 1:
@@ -191,7 +192,7 @@ Proof
   qexists_tac `ARB` >>
   qexists_tac `cx_fn` >>
   simp[cx_sccp_function, cx_ssa] >>
-  qexists_tac `(ARB:venom_state) with
+  qexists_tac `(init_venom_state "entry") with
     <|vs_inst_idx := 1; vs_current_bb := "entry"; vs_halted := F|>` >>
   simp[lift_result_def] >>
   EVAL_TAC

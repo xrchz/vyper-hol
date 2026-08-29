@@ -32,7 +32,7 @@ Ancestors
 
 (* Counterexample function: 4 blocks, one pre-existing "A_split_B" *)
 Definition cx_func_def:
-  cx_func = <| fn_blocks :=
+  cx_func = mk_raw_function ""
     [<| bb_label := "A"; bb_instructions :=
         [<| inst_id := 0; inst_opcode := JNZ;
             inst_operands := [Var "c"; Label "B"; Label "C"];
@@ -45,14 +45,14 @@ Definition cx_func_def:
             inst_operands := [Label "B"]; inst_outputs := [] |>] |>;
      <| bb_label := "A_split_B"; bb_instructions :=
         [<| inst_id := 4; inst_opcode := INVALID;
-            inst_operands := []; inst_outputs := [] |>] |>] |>
+            inst_operands := []; inst_outputs := [] |>] |>]
 End
 
 (* The counterexample function is well-formed *)
 Theorem cx_wf_function[local]:
   wf_function cx_func
 Proof
-  simp[wf_function_def, cx_func_def] >>
+  simp[wf_function_def, cx_func_def, mk_raw_function_def] >>
   conj_tac >- EVAL_TAC >>
   conj_tac >- EVAL_TAC >>
   conj_tac >- (
@@ -88,7 +88,7 @@ QED
 
 (* cfg_norm_fn produces a function with duplicate "A_split_B" labels *)
 Theorem cx_cfg_norm_fn[local]:
-  cfg_norm_fn cx_func = <| fn_blocks :=
+  cfg_norm_fn cx_func = mk_raw_function ""
     [<| bb_label := "A"; bb_instructions :=
         [<| inst_id := 0; inst_opcode := JNZ;
             inst_operands := [Var "c"; Label "A_split_B"; Label "C"];
@@ -104,7 +104,7 @@ Theorem cx_cfg_norm_fn[local]:
             inst_operands := []; inst_outputs := [] |>] |>;
      <| bb_label := "A_split_B"; bb_instructions :=
         [<| inst_id := 0; inst_opcode := JMP;
-            inst_operands := [Label "B"]; inst_outputs := [] |>] |>] |>
+            inst_operands := [Label "B"]; inst_outputs := [] |>] |>]
 Proof
   EVAL_TAC
 QED
@@ -188,7 +188,7 @@ QED
 
 (* Function: P (JNZ→B,C), C (JMP→B), B (PHI [P→x, C→z]; STOP) *)
 Definition cx2_func_def:
-  cx2_func = <| fn_blocks :=
+  cx2_func = mk_raw_function ""
     [<| bb_label := "P"; bb_instructions :=
         [<| inst_id := 0; inst_opcode := JNZ;
             inst_operands := [Var "c"; Label "B"; Label "C"];
@@ -201,13 +201,13 @@ Definition cx2_func_def:
             inst_operands := [Label "P"; Var "x"; Label "C"; Var "z"];
             inst_outputs := ["y"] |>;
          <| inst_id := 2; inst_opcode := STOP;
-            inst_operands := []; inst_outputs := [] |>] |>] |>
+            inst_operands := []; inst_outputs := [] |>] |>]
 End
 
 Theorem cx2_wf[local]:
   wf_function cx2_func
 Proof
-  simp[wf_function_def, cx2_func_def] >>
+  simp[wf_function_def, cx2_func_def, mk_raw_function_def] >>
   conj_tac >- EVAL_TAC >>
   conj_tac >- EVAL_TAC >>
   conj_tac >- (
@@ -245,7 +245,7 @@ Theorem cx2_labels_fresh[local]:
   split_labels_fresh split_block_name cx2_func
 Proof
   rw[split_labels_fresh_def, fn_labels_def, cx2_func_def,
-     split_block_name_def, listTheory.MEM, listTheory.MAP] >>
+     mk_raw_function_def, split_block_name_def, listTheory.MEM, listTheory.MAP] >>
   spose_not_then strip_assume_tac >>
   qpat_x_assum `_ = _` (mp_tac o AP_TERM ``STRLEN``) >>
   simp[stringTheory.STRLEN_CAT]
@@ -253,7 +253,7 @@ QED
 
 (* cfg_norm_fn splits the P→B edge *)
 Theorem cx2_cfg_norm[local]:
-  cfg_norm_fn cx2_func = <| fn_blocks :=
+  cfg_norm_fn cx2_func = mk_raw_function ""
     [<| bb_label := "P"; bb_instructions :=
         [<| inst_id := 0; inst_opcode := JNZ;
             inst_operands := [Var "c"; Label "P_split_B"; Label "C"];
@@ -273,7 +273,7 @@ Theorem cx2_cfg_norm[local]:
             inst_operands := [Var "x"];
             inst_outputs := ["P_split_B_fwd_x"] |>;
          <| inst_id := 1; inst_opcode := JMP;
-            inst_operands := [Label "B"]; inst_outputs := [] |>] |>] |>
+            inst_operands := [Label "B"]; inst_outputs := [] |>] |>]
 Proof
   EVAL_TAC
 QED
@@ -287,7 +287,7 @@ Theorem cx2_orig_halt[local]:
 Proof
   rpt strip_tac >>
   ONCE_REWRITE_TAC[run_blocks_def] >>
-  gvs[cx2_func_def, lookup_block_def, listTheory.FIND_thm] >>
+  gvs[cx2_func_def, mk_raw_function_def, lookup_block_def, listTheory.FIND_thm] >>
   simp[eval_phis_def, eval_one_phi_def, resolve_phi_def, eval_operand_def,
        lookup_var_def, update_var_def, phi_prefix_length_def] >>
   ONCE_REWRITE_TAC[exec_block_def] >>
@@ -305,7 +305,7 @@ Theorem cx2_trans_error[local]:
 Proof
   rpt strip_tac >> Cases_on `fuel` >> gvs[] >>
   ONCE_REWRITE_TAC[run_blocks_def] >>
-  gvs[cx2_cfg_norm, cfg_norm_fn_def, insert_split_def,
+  gvs[cx2_cfg_norm, mk_raw_function_def, cfg_norm_fn_def, insert_split_def,
       lookup_block_def, listTheory.FIND_thm] >>
   simp[eval_phis_def, eval_one_phi_def, resolve_phi_def]
 QED

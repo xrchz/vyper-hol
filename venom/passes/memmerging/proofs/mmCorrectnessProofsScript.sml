@@ -1541,7 +1541,7 @@ QED
 Theorem mstore_0w_only_mem[local]:
   !dst (s:venom_state).
     (mstore dst (0w:bytes32) s).vs_memory =
-    (mstore dst 0w <| vs_memory := s.vs_memory |>).vs_memory
+    (mstore dst 0w ((init_venom_state "") with vs_memory := s.vs_memory)).vs_memory
 Proof
   rw[mstore_def, LET_THM]
 QED
@@ -1600,7 +1600,7 @@ Theorem run_insts_s1_mem_factor[local]:
     FOLDL (\m inst.
       if is_zero_store inst then
         (mstore (THE (operand_lit_val (HD inst.inst_operands))) (0w:bytes32)
-         <| vs_memory := m |>).vs_memory
+         ((init_venom_state "") with vs_memory := m)).vs_memory
       else m)
       s.vs_memory insts
 Proof
@@ -1621,7 +1621,7 @@ Proof
     `s'.vs_memory = FOLDL (\m inst.
       if is_zero_store inst then
         (mstore (THE (operand_lit_val (HD inst.inst_operands))) 0w
-         <| vs_memory := m |>).vs_memory
+         ((init_venom_state "") with vs_memory := m)).vs_memory
       else m) s_mid.vs_memory insts` by
       (first_x_assum irule >> metis_tac[]) >>
     fs[])
@@ -1633,7 +1633,7 @@ QED
 Definition apply_zero_write_def:
   apply_zero_write (offset:num, n:num) mem =
     (write_memory_with_expansion offset (REPLICATE n (0w:word8))
-       <|vs_memory := mem|>).vs_memory
+       ((init_venom_state "") with vs_memory := mem)).vs_memory
 End
 
 (* Length after write_memory_with_expansion *)
@@ -1651,7 +1651,7 @@ Theorem wmexp_only_mem[local]:
   !offset bytes (s:venom_state).
     (write_memory_with_expansion offset bytes s).vs_memory =
     (write_memory_with_expansion offset bytes
-       <| vs_memory := s.vs_memory |>).vs_memory
+       ((init_venom_state "") with vs_memory := s.vs_memory)).vs_memory
 Proof
   rw[write_memory_with_expansion_def, LET_THM]
 QED
@@ -1703,7 +1703,7 @@ Theorem apply_zero_write_el[local]:
       else if i < LENGTH mem then EL i mem else 0w
 Proof
   simp[apply_zero_write_def] >> rpt strip_tac >>
-  qspecl_then [`offset`, `n`, `<|vs_memory := mem|>`, `i`] mp_tac wmexp_zeros_el >>
+  qspecl_then [`offset`, `n`, `((init_venom_state "") with vs_memory := mem)`, `i`] mp_tac wmexp_zeros_el >>
   fs[LENGTH_REPLICATE, wmexp_mem_length]
 QED
 
@@ -1772,7 +1772,7 @@ QED
 (* Bridge: mstore 0w FOLDL = apply_zero_write FOLDL with 32-byte writes *)
 Theorem foldl_mstore_eq_zero_write[local]:
   !dsts mem.
-    FOLDL (\m d. (mstore d (0w:bytes32) <|vs_memory := m|>).vs_memory) mem dsts =
+    FOLDL (\m d. (mstore d (0w:bytes32) ((init_venom_state "") with vs_memory := m)).vs_memory) mem dsts =
     FOLDL (\m w. apply_zero_write w m) mem (MAP (\d. (d, 32)) dsts)
 Proof
   Induct >> simp[apply_zero_write_def, mstore_0w_eq_write]
@@ -1783,9 +1783,9 @@ Theorem conditional_foldl_eq_filter_foldl[local]:
   !insts mem.
     FOLDL (\m inst. if is_zero_store inst then
       (mstore (THE (operand_lit_val (HD inst.inst_operands))) (0w:bytes32)
-       <|vs_memory := m|>).vs_memory
+       ((init_venom_state "") with vs_memory := m)).vs_memory
     else m) mem insts =
-    FOLDL (\m d. (mstore d 0w <|vs_memory := m|>).vs_memory) mem
+    FOLDL (\m d. (mstore d 0w ((init_venom_state "") with vs_memory := m)).vs_memory) mem
       (MAP (\inst. THE (operand_lit_val (HD inst.inst_operands)))
            (FILTER is_zero_store insts))
 Proof
