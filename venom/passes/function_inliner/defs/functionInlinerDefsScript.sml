@@ -81,6 +81,8 @@ Definition clone_basic_block_def:
          MAP (clone_instruction prefix fn_block_labels) bb.bb_instructions |>
 End
 
+(* Clone by updating the callee record: only identity name and blocks change.
+   ABI, noinline, forced-allocation, EOM, and FMP metadata stay with the callee. *)
 Definition clone_function_def:
   clone_function prefix func =
     let labels = fn_labels func in
@@ -181,6 +183,8 @@ End
    3. Rewrite cloned blocks: PARAM → ASSIGN, RET → assigns + JMP
    4. Append return block and cloned blocks to caller
    5. Truncated call block gets JMP to cloned entry *)
+(* The result is always the caller itself or a caller record update changing
+   only fn_blocks; callee metadata is never transferred to the caller. *)
 Definition inline_call_site_def:
   inline_call_site prefix return_label caller_fn callee_fn
       call_bb_lbl call_idx =
@@ -225,6 +229,7 @@ End
 (* After inlining, successors of the return block may have PHIs
    referencing the original call block. Update to reference return block.
    Matches Python _fix_phi. *)
+(* PHI repair is likewise a block-only update of the caller-derived function. *)
 Definition fix_inline_phis_def:
   fix_inline_phis orig_label new_label return_bb func =
     let succ_labels = bb_succs return_bb in
