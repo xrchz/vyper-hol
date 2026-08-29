@@ -150,6 +150,92 @@ Proof
   simp[map_unit_data_item_def]
 QED
 
+Theorem fn_labels_subst_label_map_fn[simp]:
+  fn_labels (subst_label_map_fn label_map fn) = fn_labels fn
+Proof
+  simp[venomInstTheory.fn_labels_def, subst_label_map_fn_def,
+       subst_label_map_block_def, listTheory.MAP_MAP_o,
+       combinTheory.o_DEF]
+QED
+
+Theorem apply_resolved_unit_label_map_namespace[simp]:
+  unit_label_namespace (apply_resolved_unit_label_map resolved unit) =
+  unit_label_namespace unit
+Proof
+  simp[apply_resolved_unit_label_map_def, unit_label_namespace_def,
+       listTheory.MAP_MAP_o, combinTheory.o_DEF, SF ETA_ss]
+QED
+
+Theorem map_unit_data_item_refs_valid:
+  EVERY (\label. MEM label namespace) (data_item_label_refs item) /\
+  (!entry. MEM entry resolved ==> MEM (SND entry) namespace) ==>
+  EVERY (\label. MEM label namespace)
+    (data_item_label_refs (map_unit_data_item resolved item))
+Proof
+  Cases_on `item` >>
+  simp[data_item_label_refs_def, map_unit_data_item_def] >>
+  Cases_on `ALOOKUP resolved s` >> gvs[] >>
+  strip_tac >> drule alistTheory.ALOOKUP_MEM >>
+  disch_then assume_tac >>
+  first_x_assum (qspec_then `(s,x)` mp_tac) >> simp[]
+QED
+
+Theorem unit_data_labels_consistent_sections:
+  unit_data_labels_consistent unit <=>
+  EVERY (\section.
+    EVERY (\item.
+      EVERY (\label. MEM label (unit_label_namespace unit))
+        (data_item_label_refs item)) section.ds_items)
+    unit.cu_data_segment
+Proof
+  simp[unit_data_labels_consistent_def, unit_data_label_refs_def,
+       data_section_label_refs_def, listTheory.EVERY_FLAT,
+       listTheory.EVERY_MAP]
+QED
+
+Theorem apply_resolved_unit_label_map_data_consistent:
+  unit_data_labels_consistent unit /\
+  resolved_label_endpoints_valid unit resolved ==>
+  unit_data_labels_consistent
+    (apply_resolved_unit_label_map resolved unit)
+Proof
+  simp[unit_data_labels_consistent_sections,
+       resolved_label_endpoints_valid_def,
+       apply_resolved_unit_label_map_def, map_unit_data_section_def,
+       listTheory.EVERY_MAP, Excl "MEM_unit_label_namespace"] >>
+  strip_tac >> gvs[listTheory.EVERY_MEM] >>
+  rpt strip_tac >>
+  Cases_on `x'` >> gvs[map_unit_data_item_def] >>
+  Cases_on `ALOOKUP resolved s` >> gvs[]
+  >- metis_tac[] >>
+  drule alistTheory.ALOOKUP_MEM >> disch_then assume_tac >>
+  qpat_x_assum `!entry. MEM entry resolved ==> _`
+    (qspec_then `(s,x')` mp_tac) >> simp[]
+QED
+
+Theorem apply_unit_label_map_namespace:
+  apply_unit_label_map label_map unit = SOME unit' ==>
+  unit_label_namespace unit' = unit_label_namespace unit
+Proof
+  simp[apply_unit_label_map_def] >>
+  Cases_on `resolve_label_map label_map` >> simp[] >>
+  Cases_on `resolved_label_endpoints_valid unit x` >> simp[] >>
+  strip_tac >> gvs[]
+QED
+
+Theorem apply_unit_label_map_context_data_consistent:
+  unit_labels_wf unit /\
+  apply_unit_label_map label_map unit = SOME unit' ==>
+  unit_labels_wf unit'
+Proof
+  simp[apply_unit_label_map_def] >>
+  Cases_on `resolve_label_map label_map` >> simp[] >>
+  Cases_on `resolved_label_endpoints_valid unit x` >> simp[] >>
+  strip_tac >>
+  gvs[unit_labels_wf_def] >>
+  irule apply_resolved_unit_label_map_data_consistent >> simp[]
+QED
+
 Definition task009_label_fixture_def:
   task009_label_fixture reference = <|
     cu_context := mk_venom_context
