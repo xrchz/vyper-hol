@@ -2721,7 +2721,7 @@ QED
 
 (* Original: ASSIGN v1 := 42, then STOP *)
 Definition cx_ru_fn1_def:
-  cx_ru_fn1 = ir_function "test_fn"
+  cx_ru_fn1 = mk_raw_function "test_fn"
     [basic_block "entry"
       [instruction 0 ASSIGN [Lit 42w] ["v1"];
        instruction 1 STOP [] []]]
@@ -2729,7 +2729,7 @@ End
 
 (* Transformed: NOP (v1 assignment removed), then STOP *)
 Definition cx_ru_fn2_def:
-  cx_ru_fn2 = ir_function "test_fn"
+  cx_ru_fn2 = mk_raw_function "test_fn"
     [basic_block "entry"
       [instruction 0 NOP [] [];
        instruction 1 STOP [] []]]

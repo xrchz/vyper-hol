@@ -48,7 +48,7 @@ Libs
 
 (* The counterexample function *)
 Definition cx_fn_def:
-  cx_fn = ir_function "test_fn"
+  cx_fn = mk_raw_function "test_fn"
     [basic_block "entry"
        [instruction 0 ASSERT [Lit 1w] [];
         instruction 1 STOP [] []]]
@@ -108,7 +108,7 @@ Triviality cx_wl_step[local]:
        df_boundary <|sl_vals := FEMPTY; sl_targets := {} |> old lbl)
     (df_process_block Forward <|sl_vals := FEMPTY; sl_targets := {} |>
       sccp_join sccp_transfer_inst sccp_edge_transfer
-      (ir_function "test_fn"
+      (mk_raw_function "test_fn"
         [basic_block "entry"
           [instruction 0 ASSERT [Lit 1w] []; instruction 1 STOP [] []]])
       (SOME ("entry", <|sl_vals := FEMPTY; sl_targets := {} |>))
