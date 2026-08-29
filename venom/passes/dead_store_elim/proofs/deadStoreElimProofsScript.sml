@@ -570,18 +570,11 @@ End
 
 (* Initial state: empty, run_function will set current_bb *)
 Definition cex_state_def:
-  cex_state = <|
-    vs_memory := [];
+  cex_state = (init_venom_state "") with <|
     vs_transient := K (K 0w);
-    vs_vars := FEMPTY;
-    vs_prev_bb := NONE; vs_current_bb := ""; vs_inst_idx := 0;
-    vs_returndata := []; vs_halted := F;
     vs_accounts := K ARB; vs_call_ctx := ARB;
     vs_tx_ctx := ARB; vs_block_ctx := ARB;
-    vs_logs := []; vs_immutables := FEMPTY; vs_data_section := [];
-    vs_labels := FEMPTY |+ ("A", 0w:256 word) |+ ("B", 0w);
-    vs_code := []; vs_params := [];
-    vs_prev_hashes := []; vs_allocas := FEMPTY; vs_alloca_next := 0
+    vs_labels := FEMPTY |+ ("A", 0w:256 word) |+ ("B", 0w)
   |>
 End
 
@@ -764,21 +757,15 @@ QED
 Triviality cex_after_block_A:
   exec_block 0 ARB (EL 0 cex_fn.fn_blocks)
     (cex_state with <| vs_current_bb := "A"; vs_inst_idx := 0 |>) =
-  OK <| vs_memory := []; vs_transient := K (K 0w);
+  OK (cex_state with <|
         vs_vars := FEMPTY |+ ("ptr1", 0w:256 word)
                           |+ ("ptr2", n2w (w2n (32w:256 word)))
                           |+ ("ptr1_adj", 0w + 32w);
         vs_prev_bb := SOME "A"; vs_current_bb := "B"; vs_inst_idx := 0;
-        vs_returndata := []; vs_halted := F;
-        vs_accounts := K ARB; vs_call_ctx := ARB;
-        vs_tx_ctx := ARB; vs_block_ctx := ARB;
-        vs_logs := []; vs_immutables := FEMPTY; vs_data_section := [];
-        vs_labels := FEMPTY |+ ("A", 0w) |+ ("B", 0w);
-        vs_code := []; vs_params := [];
-        vs_prev_hashes := [];
         vs_allocas := FEMPTY |+ (0, (0, w2n (32w:256 word)))
                              |+ (1, (w2n (32w:256 word), w2n (32w:256 word)));
-        vs_alloca_next := w2n (32w:256 word) + w2n (32w:256 word) |>
+        vs_alloca_next := w2n (32w:256 word) + w2n (32w:256 word)
+      |>)
 Proof
   EVAL_TAC
 QED
@@ -1168,18 +1155,11 @@ Definition cex2_analysis_fn_def:
 End
 
 Definition cex2_state_def:
-  cex2_state = <|
-    vs_memory := [];
+  cex2_state = (init_venom_state "A") with <|
     vs_transient := K (K 0w);
-    vs_vars := FEMPTY;
-    vs_prev_bb := NONE; vs_current_bb := "A"; vs_inst_idx := 0;
-    vs_returndata := []; vs_halted := F;
     vs_accounts := K ARB; vs_call_ctx := ARB;
     vs_tx_ctx := ARB; vs_block_ctx := ARB;
-    vs_logs := []; vs_immutables := FEMPTY; vs_data_section := [];
-    vs_labels := FEMPTY |+ ("A", 0w);
-    vs_code := []; vs_params := [];
-    vs_prev_hashes := []; vs_allocas := FEMPTY; vs_alloca_next := 0
+    vs_labels := FEMPTY |+ ("A", 0w)
   |>
 End
 
@@ -1815,16 +1795,11 @@ Triviality exec_alloca_init[local]:
         lookup_var out v = SOME (n2w 0)
 Proof
   rpt strip_tac >>
-  qexists `<| vs_memory := []; vs_transient := empty_transient_storage;
-    vs_vars := FEMPTY |+ (out,0w); vs_prev_bb := NONE;
-    vs_current_bb := ""; vs_inst_idx := 0; vs_returndata := [];
-    vs_halted := F; vs_accounts := empty_accounts;
-    vs_call_ctx := empty_call_context; vs_tx_ctx := empty_tx_context;
-    vs_block_ctx := empty_block_context; vs_logs := [];
-    vs_immutables := FEMPTY; vs_data_section := []; vs_labels := FEMPTY;
-    vs_code := []; vs_params := []; vs_prev_hashes := [];
+  qexists `(init_venom_state "") with <|
+    vs_vars := FEMPTY |+ (out,0w);
     vs_allocas := FEMPTY |+ (inst.inst_id,(0,w2n alloc_size));
-    vs_alloca_next := w2n alloc_size |>` >>
+    vs_alloca_next := w2n alloc_size
+  |>` >>
   ONCE_REWRITE_TAC[step_inst_base_def] >>
   qpat_x_assum `inst.inst_opcode = ALLOCA`
     (fn th => PURE_REWRITE_TAC[th]) >>
