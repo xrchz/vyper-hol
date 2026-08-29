@@ -282,6 +282,9 @@ Definition opcode_has_output_def:
   opcode_has_output REVERT = F /\
   opcode_has_output STOP = F /\
   opcode_has_output SINK = F /\
+  (* Extended terminators — no output *)
+  opcode_has_output DRET = F /\
+  opcode_has_output RETFMP = F /\
   (* Has output: arithmetic *)
   opcode_has_output ADD = T /\
   opcode_has_output SUB = T /\
@@ -363,6 +366,24 @@ Definition opcode_has_output_def:
   opcode_has_output INVOKE = F /\  (* outputs unconstrained; handled separately *)
   opcode_has_output OFFSET = T
 End
+
+(* Build-time exhaustiveness audit: every opcode constructor must reduce to a
+   concrete Boolean under the explicit classification equations above. *)
+val _ = app (fn op_tm =>
+  let
+    val th = SIMP_CONV (srw_ss()) [opcode_has_output_def]
+      (mk_comb(``opcode_has_output``, op_tm));
+    val r = rhs (concl th)
+  in
+    if aconv r T orelse aconv r F then ()
+    else raise Fail "opcode_has_output_def is not constructor-exhaustive"
+  end) (TypeBase.constructors_of ``:opcode``);
+
+Theorem opcode_has_output_extended_terminators[simp]:
+  opcode_has_output DRET = F /\ opcode_has_output RETFMP = F
+Proof
+  simp[opcode_has_output_def]
+QED
 
 (* Number of syntactic outputs that step_inst_base actually binds.  Most
    producers bind one output; BUMP binds its base and bumped pointer in order. *)
