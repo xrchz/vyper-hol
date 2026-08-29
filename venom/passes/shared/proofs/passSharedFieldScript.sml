@@ -98,6 +98,28 @@ Proof
   drule venomInstProofs1Theory.step_inst_base_preserves_all >> simp[]
 QED
 
+Theorem step_inst_base_ordinary_fmp_agreement:
+  !inst s1 s2 v1 v2.
+    step_inst_base inst s1 = OK v1 /\
+    step_inst_base inst s2 = OK v2 /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE /\
+    (!op. MEM op inst.inst_operands ==>
+          eval_operand op s1 = eval_operand op s2) /\
+    s1.vs_fmp = s2.vs_fmp ==>
+    v1.vs_fmp = v2.vs_fmp
+Proof
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode = SETFMP`
+  >- (gvs[step_inst_base_def, AllCaseEqs()] >> metis_tac[]) >>
+  Cases_on `inst.inst_opcode = DALLOCA`
+  >- (gvs[step_inst_base_def, AllCaseEqs()] >> simp[update_var_def]) >>
+  imp_res_tac venomInstProofs1Theory.step_inst_base_preserves_fmp_ordinary >>
+  metis_tac[]
+QED
+
 Theorem step_inst_base_ordinary_frame_agreement:
   !inst s1 s2 v1 v2.
     step_inst_base inst s1 = OK v1 /\
