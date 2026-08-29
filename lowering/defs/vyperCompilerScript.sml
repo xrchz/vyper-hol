@@ -51,11 +51,9 @@ Definition extract_context_def:
                         bb_instructions := st.cs_current_insts |> in
     let finalized = REVERSE st.cs_blocks in
     let all_blocks = finalized ++ [current_bb] in
-    (<| ctx_functions :=
-          [<| fn_name := entry_label;
-              fn_blocks := all_blocks |>];
-        ctx_entry := SOME entry_label
-     |>,
+    (mk_venom_context
+       [mk_raw_function entry_label all_blocks]
+       (SOME entry_label),
      REVERSE st.cs_data_sections)
 End
 

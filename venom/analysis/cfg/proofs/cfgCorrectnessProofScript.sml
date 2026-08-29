@@ -18,7 +18,8 @@ val cfg_eval_defs = [cfg_analyze_def, build_succs_def, init_succs_def,
   build_preds_def, init_preds_def, build_reachable_def,
   entry_block_def, bb_succs_def, get_successors_def, is_terminator_def,
   get_label_def, cfg_preds_of_def, cfg_succs_of_def, cfg_reachable_of_def,
-  cfg_path_def, fn_labels_def, INDEX_OF_def, INDEX_FIND_def, nub_def];
+  cfg_path_def, fn_labels_def, INDEX_OF_def, INDEX_FIND_def, nub_def,
+  mk_raw_function_def];
 
 val cfg_eval_tac = simp_tac dfs_ss cfg_eval_defs;
 
@@ -29,16 +30,16 @@ val cfg_eval_tac = simp_tac dfs_ss cfg_eval_defs;
 (* CE1: single block "a" → "b", where "b" is not a block label.
    Used for: preds_domain, reachable_sets, semantic_reachability *)
 Definition ce_fn1_def:
-  ce_fn1 = <| fn_name := "f"; fn_blocks := [
+  ce_fn1 = mk_raw_function "f" [
     <| bb_label := "a";
        bb_instructions := [<| inst_id := 0; inst_opcode := JMP;
-         inst_operands := [Label "b"]; inst_outputs := [] |>] |>] |>
+         inst_operands := [Label "b"]; inst_outputs := [] |>] |>]
 End
 
 (* CE2: duplicate label "a" — first block "a"→"b", second "a"→STOP.
    Used for: preserves_bb_succs *)
 Definition ce_fn2_def:
-  ce_fn2 = <| fn_name := "f"; fn_blocks := [
+  ce_fn2 = mk_raw_function "f" [
     <| bb_label := "a";
        bb_instructions := [<| inst_id := 0; inst_opcode := JMP;
          inst_operands := [Label "b"]; inst_outputs := [] |>] |>;
@@ -47,7 +48,7 @@ Definition ce_fn2_def:
          inst_operands := []; inst_outputs := [] |>] |>;
     <| bb_label := "a";
        bb_instructions := [<| inst_id := 2; inst_opcode := STOP;
-         inst_operands := []; inst_outputs := [] |>] |>] |>
+         inst_operands := []; inst_outputs := [] |>] |>]
 End
 
 (* CE3: cross-edge graph for preorder_order.
@@ -55,7 +56,7 @@ End
    Pre output: [entry,s,b,a]. INDEX_OF "a" = 3, INDEX_OF "b" = 2.
    a→b is non-back (succs["b"]=[], so no path b→a). Want 3 < 2? FALSE. *)
 Definition ce_fn3_def:
-  ce_fn3 = <| fn_name := "f"; fn_blocks := [
+  ce_fn3 = mk_raw_function "f" [
     <| bb_label := "entry";
        bb_instructions := [<| inst_id := 0; inst_opcode := JMP;
          inst_operands := [Label "a"; Label "s"]; inst_outputs := [] |>] |>;
@@ -67,7 +68,7 @@ Definition ce_fn3_def:
          inst_operands := []; inst_outputs := [] |>] |>;
     <| bb_label := "a";
        bb_instructions := [<| inst_id := 3; inst_opcode := JMP;
-         inst_operands := [Label "b"]; inst_outputs := [] |>] |>] |>
+         inst_operands := [Label "b"]; inst_outputs := [] |>] |>]
 End
 
 (* ==========================================================================

@@ -39,7 +39,7 @@ Libs
    ===================================================================== *)
 
 Definition cex_fn_def:
-  cex_fn = <| fn_name := "test"; fn_blocks :=
+  cex_fn = mk_raw_function "test"
     [<| bb_label := "A"; bb_instructions :=
         [<| inst_id := 1; inst_opcode := MSTORE;
             inst_operands := [Var "dst"; Var "val"]; inst_outputs := [] |>;
@@ -49,7 +49,7 @@ Definition cex_fn_def:
         [<| inst_id := 3; inst_opcode := MSTORE;
             inst_operands := [Var "dst2"; Var "val2"]; inst_outputs := [] |>;
          <| inst_id := 4; inst_opcode := JMP;
-            inst_operands := [Label "A"]; inst_outputs := [] |>] |>] |>
+            inst_operands := [Label "A"]; inst_outputs := [] |>] |>]
 End
 
 Definition cex_cfg_def:
@@ -92,7 +92,7 @@ val cex_unfold = [mem_ssa_build_def, LET_THM, cex_cfg_def, cex_dom_def,
 Theorem cex_wf_function:
   wf_function cex_fn
 Proof
-  simp[wf_function_def, cex_fn_def,
+  simp[wf_function_def, cex_fn_def, mk_raw_function_def,
        fn_has_entry_def, fn_inst_ids_distinct_def, fn_labels_def,
        bb_well_formed_def, fn_succs_closed_def, bb_succs_def,
        get_successors_def, get_label_def] >>
