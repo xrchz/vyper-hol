@@ -74,9 +74,10 @@ Proof
                          OK v => Error "invoke: callee did not return"
                        | Halt s'' => Halt s''
                        | Abort a s'' => Abort a s''
-                       | IntRet vals callee_s' =>
-                           (case bind_outputs inst.inst_outputs vals
-                                   (merge_callee_state st callee_s') of
+                       | IntRet ret callee_s' =>
+                           (case bind_outputs inst.inst_outputs ret.iret_values
+                                   (adopt_return_fmp ret
+                                      (merge_callee_state st callee_s')) of
                              NONE => Error "invoke: return arity mismatch"
                            | SOME s'' => OK s'')
                        | Error e => Error e`
