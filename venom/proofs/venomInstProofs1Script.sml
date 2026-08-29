@@ -96,6 +96,7 @@ Triviality state_equiv_step_base_concl:
     (!v. ~MEM v inst.inst_outputs ==> lookup_var v s' = lookup_var v s) /\
     s'.vs_immutables = s.vs_immutables /\
     s'.vs_returndata = s.vs_returndata /\
+    s'.vs_fmp = s.vs_fmp /\
     s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
     s'.vs_initial_fmp = s.vs_initial_fmp /\
     s'.vs_return_pc_token = s.vs_return_pc_token
@@ -528,6 +529,7 @@ Triviality step_inst_base_mem_write_preserves_all:
     (~is_alloca_op inst.inst_opcode /\
      Eff_RETURNDATA NOTIN write_effects inst.inst_opcode ==>
      s'.vs_returndata = s.vs_returndata) /\
+    s'.vs_fmp = s.vs_fmp /\
     s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
     s'.vs_initial_fmp = s.vs_initial_fmp /\
     s'.vs_return_pc_token = s.vs_return_pc_token
@@ -591,6 +593,8 @@ Theorem step_inst_base_preserves_all:
     (~is_alloca_op inst.inst_opcode /\
      Eff_RETURNDATA NOTIN write_effects inst.inst_opcode ==>
      s'.vs_returndata = s.vs_returndata) /\
+    (inst.inst_opcode <> SETFMP /\ inst.inst_opcode <> DALLOCA /\
+     ~is_alloca_op inst.inst_opcode ==> s'.vs_fmp = s.vs_fmp) /\
     s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
     s'.vs_initial_fmp = s.vs_initial_fmp /\
     s'.vs_return_pc_token = s.vs_return_pc_token
@@ -639,6 +643,21 @@ Resume step_inst_base_preserves_all[g1]:
 QED
 
 Finalise step_inst_base_preserves_all
+
+Theorem step_inst_base_preserves_fmp_ordinary:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE /\
+    inst.inst_opcode <> SETFMP /\
+    inst.inst_opcode <> DALLOCA ==>
+    s'.vs_fmp = s.vs_fmp
+Proof
+  rpt strip_tac >>
+  drule step_inst_base_preserves_all >> simp[]
+QED
 
 (* Generic lift: from step_inst_base mega-lemma to step_inst for any field *)
 fun step_inst_lift_from_all_tac field_fn =
