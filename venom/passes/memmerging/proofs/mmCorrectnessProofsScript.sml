@@ -2709,6 +2709,72 @@ Proof
   (Cases_on `inst.inst_opcode` THENL mm_step_inst_base_no_abort_cases)
 QED
 
+(* Small result-shape facts keep consumers from unfolding the full executor. *)
+Triviality mm_exec_helpers_no_halt_intret[simp]:
+  (!f inst s s'. exec_pure1 f inst s <> Halt s') /\
+  (!f inst s vs s'. exec_pure1 f inst s <> IntRet vs s') /\
+  (!f inst s s'. exec_pure2 f inst s <> Halt s') /\
+  (!f inst s vs s'. exec_pure2 f inst s <> IntRet vs s') /\
+  (!f inst s s'. exec_pure3 f inst s <> Halt s') /\
+  (!f inst s vs s'. exec_pure3 f inst s <> IntRet vs s') /\
+  (!f inst s s'. exec_read0 f inst s <> Halt s') /\
+  (!f inst s vs s'. exec_read0 f inst s <> IntRet vs s') /\
+  (!f inst s s'. exec_read1 f inst s <> Halt s') /\
+  (!f inst s vs s'. exec_read1 f inst s <> IntRet vs s') /\
+  (!f inst s s'. exec_write2 f inst s <> Halt s') /\
+  (!f inst s vs s'. exec_write2 f inst s <> IntRet vs s') /\
+  (!inst s sz s'. exec_alloca inst s sz <> Halt s') /\
+  (!inst s sz vs s'. exec_alloca inst s sz <> IntRet vs s')
+Proof
+  rw[exec_pure1_def, exec_pure2_def, exec_pure3_def,
+     exec_read0_def, exec_read1_def, exec_write2_def, exec_alloca_def] >>
+  gvs[AllCaseEqs()]
+QED
+
+Triviality mm_exec_call_helpers_no_halt_intret[simp]:
+  (!inst s g a v ao as_ ro rs is_s s'.
+     exec_ext_call inst s g a v ao as_ ro rs is_s <> Halt s') /\
+  (!inst s g a v ao as_ ro rs is_s vs s'.
+     exec_ext_call inst s g a v ao as_ ro rs is_s <> IntRet vs s') /\
+  (!inst s g a ao as_ ro rs s'.
+     exec_delegatecall inst s g a ao as_ ro rs <> Halt s') /\
+  (!inst s g a ao as_ ro rs vs s'.
+     exec_delegatecall inst s g a ao as_ ro rs <> IntRet vs s') /\
+  (!inst s v off sz salt s'.
+     exec_create inst s v off sz salt <> Halt s') /\
+  (!inst s v off sz salt vs s'.
+     exec_create inst s v off sz salt <> IntRet vs s')
+Proof
+  rw[exec_ext_call_def, exec_delegatecall_def, exec_create_def,
+     extract_venom_result_def] >>
+  gvs[AllCaseEqs()]
+QED
+
+Theorem step_inst_base_non_term_no_halt[local]:
+  !inst s s'. step_inst_base inst s = Halt s' ==>
+    is_terminator inst.inst_opcode
+Proof
+  rw[step_inst_base_def] >> gvs[AllCaseEqs(), is_terminator_def]
+QED
+
+Theorem step_inst_base_non_term_no_intret[local]:
+  !inst s vs s'. step_inst_base inst s = IntRet vs s' ==>
+    is_terminator inst.inst_opcode
+Proof
+  rw[step_inst_base_def] >> gvs[AllCaseEqs(), is_terminator_def]
+QED
+
+Theorem step_inst_base_non_term_only_ok_error_abort[local]:
+  !inst s. ~is_terminator inst.inst_opcode ==>
+    (?s'. step_inst_base inst s = OK s') \/
+    (?e. step_inst_base inst s = Error e) \/
+    (?a s'. step_inst_base inst s = Abort a s')
+Proof
+  rpt strip_tac >> Cases_on `step_inst_base inst s` >>
+  metis_tac[step_inst_base_non_term_no_halt,
+            step_inst_base_non_term_no_intret]
+QED
+
 (* Non-terminator, non-INVOKE: step_inst can't produce Halt or IntRet *)
 Theorem step_inst_non_term_non_invoke_only_ok_error_abort[local]:
   !fuel ctx inst s.
@@ -2719,13 +2785,7 @@ Theorem step_inst_non_term_non_invoke_only_ok_error_abort[local]:
 Proof
   rpt strip_tac >>
   gvs[step_inst_non_invoke] >>
-  Cases_on `step_inst_base inst s` >> gvs[] >>
-  gvs[step_inst_base_def, AllCaseEqs(), is_terminator_def,
-      exec_pure1_def, exec_pure2_def, exec_pure3_def,
-      exec_read0_def, exec_read1_def, exec_write2_def,
-      exec_ext_call_def, exec_delegatecall_def,
-      exec_create_def, exec_alloca_def,
-      extract_venom_result_def]
+  metis_tac[step_inst_base_non_term_only_ok_error_abort]
 QED
 
 
