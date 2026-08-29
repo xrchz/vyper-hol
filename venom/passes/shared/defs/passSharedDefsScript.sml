@@ -196,6 +196,30 @@ Definition clear_nops_function_def:
     fn with fn_blocks := MAP clear_nops_block fn.fn_blocks
 End
 
+Theorem clear_nops_function_identity_metadata_eq:
+  !fn. fn_identity_metadata_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_identity_metadata_eq_def]
+QED
+
+Theorem clear_nops_function_static_input_eq:
+  !fn. fn_static_input_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_static_input_eq_def]
+QED
+
+Theorem clear_nops_function_static_layout_eq:
+  !fn. fn_static_layout_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_static_layout_eq_def]
+QED
+
+Theorem clear_nops_function_fmp_convention_eq:
+  !fn. fn_fmp_convention_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_fmp_convention_eq_def]
+QED
+
 (* ===== Transitive use computation ===== *)
 
 (* Collect output variables of instructions that use any variable in vars.
