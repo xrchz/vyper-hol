@@ -474,6 +474,29 @@ Proof
 QED
 
 (* ================================================================
+   DRET packing commutes with instruction-index updates
+   ================================================================ *)
+
+Theorem pack_dret_dynamic_inst_idx_update[local]:
+  !pairs cursor s ptrs final_cursor s' n.
+    pack_dret_dynamic cursor pairs s = (ptrs,final_cursor,s') ==>
+    pack_dret_dynamic cursor pairs (s with vs_inst_idx := n) =
+      (ptrs,final_cursor,s' with vs_inst_idx := n)
+Proof
+  Induct
+  >- simp[pack_dret_dynamic_def]
+  >> rpt gen_tac >> strip_tac >>
+  PairCases_on `h` >>
+  Cases_on `pack_dret_dynamic (cursor + n2w (ceil32 (w2n h1))) pairs
+              (mcopy (w2n cursor) (w2n h0) (w2n h1) s)` >>
+  Cases_on `r` >>
+  gvs[pack_dret_dynamic_def, mcopy_idx] >>
+  first_x_assum drule >>
+  disch_then (fn th => rewrite_tac[th]) >>
+  simp[]
+QED
+
+(* ================================================================
    TERMINATOR idx-indep: normalizing idx to 0 yields same result
    ================================================================ *)
 
