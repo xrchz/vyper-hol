@@ -465,9 +465,10 @@ Proof
       BasicProvers.EVERY_CASE_TAC >>
       gvs[var_frame_result_def, update_var_def,
           venom_state_component_equality]) >>
+  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
   CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [step_inst_base_def])) >>
   CONV_TAC (RAND_CONV (RAND_CONV (ONCE_REWRITE_CONV [step_inst_base_def]))) >>
-  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
+  qpat_assum `inst.inst_opcode = op` (fn th => rewrite_tac[th]) >>
   gvs(exec_frame_thms @
       (update_var_def :: finite_mapTheory.FUPDATE_COMMUTES ::
        mload_def :: mstore_def :: mstore8_def :: sload_def :: sstore_def ::
@@ -578,6 +579,16 @@ Proof
   irule (cj 1 listTheory.MAP_ZIP) >> gvs[]
 QED
 
+
+Triviality adopt_return_fmp_update_var[local]:
+  !ir x w s.
+    adopt_return_fmp ir (update_var x w s) =
+    update_var x w (adopt_return_fmp ir s)
+Proof
+  rpt strip_tac >>
+  Cases_on `ir.iret_adopt_fmp` >>
+  simp[adopt_return_fmp_def, update_var_def]
+QED
 (* ===================================================================== *)
 (* ===== step_inst_var_frame_full ====================================== *)
 (* ===================================================================== *)
@@ -624,15 +635,19 @@ Proof
       Cases_on `run_blocks fuel ctx callee_fn callee_s` >> gvs[] >>
       rename1 `IntRet vals callee_s'` >>
       gvs[merge_callee_update_var] >>
-      Cases_on `LENGTH inst.inst_outputs = LENGTH vals`
-      >- (`bind_outputs inst.inst_outputs vals
-             (update_var x w (merge_callee_state st callee_s')) =
+      Cases_on `LENGTH inst.inst_outputs = LENGTH vals.iret_values`
+      >- (`bind_outputs inst.inst_outputs vals.iret_values
+             (adopt_return_fmp vals
+               (update_var x w (merge_callee_state st callee_s'))) =
            OPTION_MAP (update_var x w)
-             (bind_outputs inst.inst_outputs vals
-                (merge_callee_state st callee_s'))`
-            by (irule bind_outputs_update_var >> gvs[]) >>
-          Cases_on `bind_outputs inst.inst_outputs vals
-                      (merge_callee_state st callee_s')` >> gvs[])
+             (bind_outputs inst.inst_outputs vals.iret_values
+               (adopt_return_fmp vals
+                 (merge_callee_state st callee_s')))`
+            by (rewrite_tac[adopt_return_fmp_update_var] >>
+                irule bind_outputs_update_var >> gvs[]) >>
+          Cases_on `bind_outputs inst.inst_outputs vals.iret_values
+                      (adopt_return_fmp vals
+                        (merge_callee_state st callee_s'))` >> gvs[])
       >> gvs[bind_outputs_def])
   (* Non-INVOKE: step_inst = step_inst_base *)
   >> (drule_all step_inst_base_var_frame_full >>

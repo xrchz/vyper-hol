@@ -685,6 +685,16 @@ Proof
   simp[merge_callee_state_def, venom_state_component_equality]
 QED
 
+
+Triviality adopt_return_fmp_idx:
+  !ir s j.
+    adopt_return_fmp ir (s with vs_inst_idx := j) =
+    (adopt_return_fmp ir s) with vs_inst_idx := j
+Proof
+  rpt gen_tac >>
+  Cases_on `ir.iret_adopt_fmp` >>
+  simp[adopt_return_fmp_def, venom_state_component_equality]
+QED
 Triviality bind_outputs_idx:
   !outs vals s j.
     bind_outputs outs vals (s with vs_inst_idx := j) =
@@ -705,7 +715,7 @@ Theorem invoke_step_inst_idx_OK_only:
 Proof
   rpt strip_tac >>
   simp[step_inst_def, eval_ops_inst_idx, setup_callee_def,
-       merge_callee_state_idx, bind_outputs_idx,
+       merge_callee_state_idx, adopt_return_fmp_idx, bind_outputs_idx,
        venom_state_component_equality] >>
   BasicProvers.EVERY_CASE_TAC >> gvs[decode_invoke_def]
 QED

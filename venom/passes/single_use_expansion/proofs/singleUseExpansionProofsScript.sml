@@ -8,7 +8,7 @@
 
 Theory singleUseExpansionProofs
 Ancestors
-  singleUseExpansionDefs passSharedDefs passSharedProps
+  singleUseExpansionDefs dretShapeDefs passSharedDefs passSharedProps
   passSimulationDefs passSimulationProofs
   stateEquiv stateEquivProps execEquivParamProofs analysisSimProofsBase
   venomWf venomInstProps dfgAnalysisProps
@@ -609,6 +609,22 @@ Proof
   )
 QED
 
+
+(* DRET's leading dynamic-count literal is parser syntax and passes through. *)
+Theorem sue_expand_ops_dret_parse_preserved[local]:
+  inst.inst_opcode = DRET /\
+  sue_expand_ops dfg inst inst.inst_operands 0 = (assigns,new_ops) ==>
+  parse_dret_shape (inst with inst_operands := new_ops) =
+  parse_dret_shape inst
+Proof
+  rpt strip_tac >>
+  imp_res_tac sue_expand_ops_length >>
+  Cases_on `inst.inst_operands` >-
+    gvs[dretShapeDefsTheory.parse_dret_shape_def, sue_expand_ops_def] >>
+  `?more_ops. new_ops = h :: more_ops` by
+    metis_tac[sue_expand_ops_DRET_head] >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def]
+QED
 (* Labels are never expanded: sue_needs_assign returns F for Label operands *)
 Theorem sue_expand_ops_label_preserved[local]:
   !dfg inst assigns new_ops.
@@ -1228,6 +1244,11 @@ Proof
     `inst.inst_opcode <> FMP_PARAM /\
      inst.inst_opcode <> RETPC_PARAM` by
       (conj_tac >> strip_tac >> gvs[sue_should_skip_def]) >>
+    (* DRET structural parser preservation *)
+    `inst.inst_opcode = DRET ==>
+     parse_dret_shape (inst with inst_operands := new_ops) =
+     parse_dret_shape inst` by
+      metis_tac[sue_expand_ops_dret_parse_preserved] >>
     (* step_inst (modified) st' = step_inst inst st' *)
     `step_inst fuel ctx (inst with inst_operands := new_ops) st' =
      step_inst fuel ctx inst st'` by (
@@ -2479,7 +2500,7 @@ Triviality sue_not_needs_assign_uses_le1[local]:
     ~sue_needs_assign dfg inst n /\
     n < LENGTH inst.inst_operands /\
     EL n inst.inst_operands = Var v /\
-    ~(inst.inst_opcode = LOG /\ n = 0) ==>
+    ~((inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) /\ n = 0) ==>
     LENGTH (dfg_get_uses dfg v) <= 1
 Proof
   rw[sue_needs_assign_def, LET_THM] >>
@@ -2493,7 +2514,8 @@ Triviality sue_kept_var_at_most_one_user[local]:
     dfg = dfg_build_function fn /\
     (!bb i x. MEM bb fn.fn_blocks /\ MEM i bb.bb_instructions /\
        MEM (Var x) i.inst_operands ==> x NOTIN sue_fresh_vars_fn fn) /\
-    (!i. MEM i (fn_insts fn) /\ i.inst_opcode = LOG ==>
+    (!i. MEM i (fn_insts fn) /\
+         (i.inst_opcode = LOG \/ i.inst_opcode = DRET) ==>
        ?n. HD i.inst_operands = Lit n) /\
     MEM inst (fn_insts fn) /\
     MEM (Var v) inst.inst_operands /\
@@ -2511,8 +2533,8 @@ Proof
          mp_tac sue_expand_ops_dichotomy >> simp[] >> strip_tac
        >- gvs[]
        >- metis_tac[sue_original_neq_fresh])
-  (* Exclude LOG pos 0: if LOG, HD is Lit by precondition, contradicting Var *)
-  \\ `~(inst.inst_opcode = LOG /\ j = 0)` by (
+  (* Exclude parser-significant pos 0 for LOG and DRET: HD is Lit. *)
+  \\ `~((inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) /\ j = 0)` by (
        strip_tac >> fs[] >>
        res_tac >> Cases_on `inst.inst_operands` >> fs[])
   (* Now use kept_var_single_use: either ~sue_needs_assign or LENGTH uses = 1 *)
@@ -2537,7 +2559,8 @@ Triviality sue_both_original_same[local]:
     dfg = dfg_build_function fn /\
     (!bb inst x. MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
        MEM (Var x) inst.inst_operands ==> x NOTIN sue_fresh_vars_fn fn) /\
-    (!inst. MEM inst (fn_insts fn) /\ inst.inst_opcode = LOG ==>
+    (!inst. MEM inst (fn_insts fn) /\
+         (inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) ==>
        ?n. HD inst.inst_operands = Lit n) /\
     MEM inst1 (fn_insts fn) /\ MEM (Var v) inst1.inst_operands /\
     MEM (Var v) (SND (sue_expand_ops dfg inst1 inst1.inst_operands 0)) /\
@@ -2561,7 +2584,8 @@ Triviality sue_expand_at_most_one[local]:
     ALL_DISTINCT (MAP (\i. i.inst_id) (fn_insts fn)) /\
     (!bb inst x. MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
        MEM (Var x) inst.inst_operands ==> x NOTIN sue_fresh_vars_fn fn) /\
-    (!inst. MEM inst (fn_insts fn) /\ inst.inst_opcode = LOG ==>
+    (!inst. MEM inst (fn_insts fn) /\
+         (inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) ==>
        ?n. HD inst.inst_operands = Lit n) /\
     MEM inst1 (fn_insts fn) /\ ~sue_should_skip inst1.inst_opcode /\
     MEM (Var v) (SND (sue_expand_ops dfg inst1 inst1.inst_operands 0)) /\
@@ -2719,7 +2743,8 @@ Theorem sue_establishes_single_use_form:
     ALL_DISTINCT (MAP (\i. i.inst_id) (fn_insts fn)) /\
     (!bb inst x. MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
        MEM (Var x) inst.inst_operands ==> x NOTIN sue_fresh_vars_fn fn) /\
-    (!inst. MEM inst (fn_insts fn) /\ inst.inst_opcode = LOG ==>
+    (!inst. MEM inst (fn_insts fn) /\
+         (inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) ==>
        ?n. HD inst.inst_operands = Lit n) ==>
     single_use_form (sue_expand_function fn)
 Proof

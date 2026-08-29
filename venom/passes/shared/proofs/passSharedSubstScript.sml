@@ -294,9 +294,53 @@ val label_op_tac =
 val opcode_cases_tac =
   Cases_on `inst.inst_opcode` >> gvs[is_alloca_op_def];
 
+
+Theorem parse_dret_shape_subst_operand[local]:
+  !old new_op inst.
+    IS_SOME (parse_dret_shape inst) ==>
+    parse_dret_shape
+      (inst with inst_operands :=
+         MAP (subst_operand old new_op) inst.inst_operands) =
+    parse_dret_shape inst
+Proof
+  rpt strip_tac >> Cases_on `inst.inst_operands` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def] >> Cases_on `h` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def, subst_operand_def]
+QED
+
+Theorem parse_dret_shape_subst_op_map[local]:
+  !subs inst.
+    IS_SOME (parse_dret_shape inst) ==>
+    parse_dret_shape
+      (inst with inst_operands := MAP (subst_op_map subs) inst.inst_operands) =
+    parse_dret_shape inst
+Proof
+  rpt strip_tac >> Cases_on `inst.inst_operands` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def] >> Cases_on `h` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def, subst_op_map_def]
+QED
+
+Triviality step_inst_base_dret_map[local]:
+  !g inst s.
+    inst.inst_opcode = DRET /\
+    parse_dret_shape
+      (inst with inst_operands := MAP g inst.inst_operands) =
+      parse_dret_shape inst /\
+    eval_operands (MAP g inst.inst_operands) s =
+      eval_operands inst.inst_operands s ==>
+    step_inst_base (inst with inst_operands := MAP g inst.inst_operands) s =
+    step_inst_base inst s
+Proof
+  rpt strip_tac >>
+  CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [step_inst_base_def])) >>
+  CONV_TAC (RHS_CONV (ONCE_REWRITE_CONV [step_inst_base_def])) >>
+  gvs[]
+QED
+
 Theorem step_inst_base_operands_irrelevant_safe[local]:
   !g inst s.
     (!op. eval_operand (g op) s = eval_operand op s) /\
+    inst.inst_opcode <> DRET /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
     inst.inst_opcode <> FMP_PARAM /\
@@ -310,12 +354,14 @@ Theorem step_inst_base_operands_irrelevant_safe[local]:
     step_inst_base inst s
 Proof
   rpt strip_tac >>
-  CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [step_inst_base_def])) >>
+  Cases_on `inst.inst_operands = []`
+  >- (`(inst with inst_operands := []) = inst` by
+        simp[instruction_component_equality] >>
+      gvs[])
+  >> CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [step_inst_base_def])) >>
   simp (exec_map_thms @ exec_inst_operands_thms @ [eval_operands_map_thm]) >>
   CONV_TAC (RHS_CONV (ONCE_REWRITE_CONV [step_inst_base_def])) >>
-  Cases_on `inst.inst_operands`
-  >- simp[]
-  >> simp[] >>
+  Cases_on `inst.inst_operands` >> gvs[] >>
   TRY (Cases_on `t` >> simp[]) >>
   TRY (FIRST [Cases_on `t'`, Cases_on `t`] >> simp[]) >>
   TRY (FIRST [Cases_on `t`, Cases_on `t'`, Cases_on `t''`] >> simp[]) >>
@@ -404,6 +450,7 @@ Theorem step_inst_base_operands_irrelevant[local]:
   !g inst s.
     (!op. eval_operand (g op) s = eval_operand op s) /\
     (!lbl. g (Label lbl) = Label lbl) /\
+    inst.inst_opcode <> DRET /\
     (!op. (!lbl. op <> Label lbl) ==> (!lbl. g op <> Label lbl)) /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
@@ -462,6 +509,7 @@ Theorem subst_operands_correct:
     inst.inst_opcode <> RETPC_PARAM /\
     ~is_alloca_op inst.inst_opcode /\
     inst.inst_opcode <> LOG /\
+    (inst.inst_opcode = DRET ==> IS_SOME (parse_dret_shape inst)) /\
     (!lbl. new_op <> Label lbl) ==>
     step_inst fuel ctx (subst_operands old new_op inst) s =
     step_inst fuel ctx inst s
@@ -482,6 +530,10 @@ Proof
       imp_res_tac eval_operands_map_thm >>
       simp[step_inst_def] >>
       rpt (CASE_TAC >> simp[])) >>
+  Cases_on `inst.inst_opcode = DRET`
+  >- (simp[step_inst_non_invoke] >>
+      irule step_inst_base_dret_map >>
+      simp[parse_dret_shape_subst_operand, eval_operands_map_thm]) >>
   imp_res_tac step_inst_base_operands_irrelevant >>
   simp[step_inst_non_invoke]
 QED
@@ -497,7 +549,8 @@ Theorem subst_operands_map_correct:
     inst.inst_opcode <> FMP_PARAM /\
     inst.inst_opcode <> RETPC_PARAM /\
     ~is_alloca_op inst.inst_opcode /\
-    inst.inst_opcode <> LOG ==>
+    inst.inst_opcode <> LOG /\
+    (inst.inst_opcode = DRET ==> IS_SOME (parse_dret_shape inst)) ==>
     step_inst fuel ctx (subst_operands_map subs inst) s =
     step_inst fuel ctx inst s
 Proof
@@ -519,6 +572,10 @@ Proof
       imp_res_tac eval_operands_map_thm >>
       simp[step_inst_def] >>
       rpt (CASE_TAC >> simp[])) >>
+  Cases_on `inst.inst_opcode = DRET`
+  >- (simp[step_inst_non_invoke] >>
+      irule step_inst_base_dret_map >>
+      simp[parse_dret_shape_subst_op_map, eval_operands_map_thm]) >>
   imp_res_tac step_inst_base_operands_irrelevant >>
   simp[step_inst_non_invoke]
 QED
@@ -560,6 +617,11 @@ Proof
   `!op. eval_operand (subst_op_map subs op) s =
         eval_operand op s` by
     (rpt strip_tac >> irule subst_op_map_eval >> metis_tac[]) >>
+  Cases_on `inst.inst_opcode = DRET`
+  >- (`IS_SOME (parse_dret_shape inst)` by gvs[inst_wf_def] >>
+      simp[subst_operands_map_def, step_inst_non_invoke] >>
+      irule step_inst_base_dret_map >>
+      simp[parse_dret_shape_subst_op_map, eval_operands_map_thm]) >>
   (* Non-structural opcodes *)
   Cases_on `inst.inst_opcode <> PARAM /\
             inst.inst_opcode <> FMP_PARAM /\
@@ -684,6 +746,9 @@ Triviality step_inst_base_pos_safe_long[local]:
     inst.inst_opcode <> DJMP /\
     6 < LENGTH inst.inst_operands /\
     LENGTH new_ops = LENGTH inst.inst_operands /\
+    (inst.inst_opcode = DRET ==>
+      parse_dret_shape (inst with inst_operands := new_ops) =
+      parse_dret_shape inst) /\
     eval_operands new_ops st = eval_operands inst.inst_operands st /\
     (!i. i < LENGTH inst.inst_operands ==>
          eval_operand (EL i new_ops) st =
@@ -753,6 +818,9 @@ Triviality step_inst_base_pos_safe[local]:
     inst.inst_opcode <> JNZ /\
     inst.inst_opcode <> DJMP /\
     LENGTH new_ops = LENGTH inst.inst_operands /\
+    (inst.inst_opcode = DRET ==>
+      parse_dret_shape (inst with inst_operands := new_ops) =
+      parse_dret_shape inst) /\
     (!i. i < LENGTH inst.inst_operands ==>
          eval_operand (EL i new_ops) (st:venom_state) =
          eval_operand (EL i inst.inst_operands) st) ==>
@@ -885,6 +953,9 @@ Theorem step_inst_operands_equiv:
     inst.inst_opcode <> RETPC_PARAM /\
     inst.inst_opcode <> PHI /\
     LENGTH new_ops = LENGTH inst.inst_operands /\
+    (inst.inst_opcode = DRET ==>
+      parse_dret_shape (inst with inst_operands := new_ops) =
+      parse_dret_shape inst) /\
     (!i. i < LENGTH inst.inst_operands ==>
          eval_operand (EL i new_ops) st = eval_operand (EL i inst.inst_operands) st) /\
     (!i. i < LENGTH inst.inst_operands ==>

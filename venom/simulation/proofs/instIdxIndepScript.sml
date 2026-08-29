@@ -525,7 +525,16 @@ Proof
   >- terminator_idx_tac  (* REVERT *)
   >- terminator_idx_tac  (* STOP *)
   >- terminator_idx_tac  (* SINK *)
-  >- terminator_idx_tac  (* DRET *)
+  >- (simp[step_inst_base_def,
+           eval_op_inst_idx, eval_ops_inst_idx,
+           jump_to_idx, halt_state_idx, revert_state_idx,
+           set_returndata_idx, read_mem_idx, write_mem_idx] >>
+      EVERY_CASE_TAC >>
+      Cases_on `pack_dret_dynamic s.vs_call_entry_fmp x' s` >>
+      Cases_on `r'` >>
+      drule pack_dret_dynamic_inst_idx_update >>
+      disch_then (fn th => rewrite_tac[th]) >>
+      gvs[exec_result_map_def, venom_state_component_equality])  (* DRET *)
   >- terminator_idx_tac  (* RETFMP *)
   >- terminator_idx_tac  (* SELFDESTRUCT *)
   >- terminator_idx_tac  (* INVALID *)
@@ -546,7 +555,9 @@ Proof
   >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* REVERT *)
   >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* STOP *)
   >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* SINK *)
-  >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* DRET *)
+  >- (gvs[step_inst_base_def, AllCaseEqs(), jump_to_def] >>
+      Cases_on `pack_dret_dynamic s.vs_call_entry_fmp pairs s` >>
+      Cases_on `r` >> gvs[])  (* DRET *)
   >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* RETFMP *)
   >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* SELFDESTRUCT *)
   >- gvs[step_inst_base_def, AllCaseEqs(), jump_to_def]  (* INVALID *)

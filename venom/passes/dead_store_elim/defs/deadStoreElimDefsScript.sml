@@ -34,11 +34,12 @@ Ancestors
   memAliasDefs memLocDefs basePtrDefs cfgDefs While
 
 (* is_store_opcode (in passSharedDefs) covers MSTORE/SSTORE/TSTORE.
-   DSE operates on ALL memory definitions identified by memSSA, which
-   includes any instruction with write effects in the target space.
-   We use is_memory_def_opcode for the broader check. *)
+   DSE operates on all non-terminating memory definitions identified by
+   memSSA.  Terminators must be excluded because dse_inst replaces eligible
+   instructions with NOP. *)
 Definition is_memory_def_opcode_def:
   is_memory_def_opcode (space : addr_space) op <=>
+    ~is_terminator op /\
     (case space of
        AddrSp_Memory => Eff_MEMORY IN write_effects op
      | AddrSp_Storage => Eff_STORAGE IN write_effects op

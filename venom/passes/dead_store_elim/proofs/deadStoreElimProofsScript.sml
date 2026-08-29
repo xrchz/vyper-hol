@@ -228,6 +228,16 @@ Proof
   gvs[is_terminator_def] >> EVAL_TAC
 QED
 
+Triviality memory_def_opcode_store_probes:
+  is_memory_def_opcode AddrSp_Memory MSTORE /\
+  is_memory_def_opcode AddrSp_Storage SSTORE /\
+  is_memory_def_opcode AddrSp_Transient TSTORE /\
+  ~is_memory_def_opcode AddrSp_Memory DRET
+Proof
+  simp[is_memory_def_opcode_def, is_terminator_def, write_effects_def] >>
+  EVAL_TAC
+QED
+
 (* Add effect definitions to computeLib for EVAL capability *)
 val _ = computeLib.add_funs
   [write_effects_def, read_effects_def, is_memory_def_opcode_def,
@@ -806,7 +816,7 @@ Triviality cex_alloca_inv:
   alloca_inv cex_entry_state
 Proof
   `cex_entry_state.vs_allocas = FEMPTY` by
-    simp[cex_entry_state_def, cex_state_def] >>
+    simp[cex_entry_state_def, cex_state_def, init_venom_state_def] >>
   drule alloca_inv_empty >> simp[]
 QED
 
@@ -814,7 +824,7 @@ Triviality cex_bp_ptrs_bounded:
   bp_ptrs_bounded (bp_analyze (cfg_analyze cex_fn) cex_fn) cex_fn cex_entry_state
 Proof
   `cex_entry_state.vs_allocas = FEMPTY` by
-    simp[cex_entry_state_def, cex_state_def] >>
+    simp[cex_entry_state_def, cex_state_def, init_venom_state_def] >>
   drule bp_ptrs_bounded_empty_alloca >> simp[]
 QED
 
@@ -822,7 +832,7 @@ Triviality cex_bp_ptr_sound:
   bp_ptr_sound (bp_analyze (cfg_analyze cex_fn) cex_fn) cex_entry_state
 Proof
   `cex_entry_state.vs_vars = FEMPTY` by
-    simp[cex_entry_state_def, cex_state_def] >>
+    simp[cex_entry_state_def, cex_state_def, init_venom_state_def] >>
   drule bp_ptr_sound_empty_vars >> simp[]
 QED
 
@@ -1200,7 +1210,7 @@ Proof
   simp[dse_single_pass_def, function_map_transform_def,
        block_map_transform_def, listTheory.MAP,
        cex2_fn_def, cex2_fn_trans_def, mk_raw_function_def, dse_inst_def,
-       mk_nop_inst_def, is_memory_def_opcode_def,
+       mk_nop_inst_def, is_memory_def_opcode_def, is_terminator_def,
        write_effects_def, pred_setTheory.IN_INSERT,
        pred_setTheory.NOT_IN_EMPTY]
 QED
@@ -1231,7 +1241,7 @@ Triviality cex2_alloca_inv:
   alloca_inv cex2_state
 Proof
   irule alloca_inv_empty_allocas >>
-  simp[cex2_state_def]
+  simp[cex2_state_def, init_venom_state_def]
 QED
 
 Triviality cex2_bp_analyze:
@@ -1527,7 +1537,7 @@ Proof
   conj_tac >- simp[cex2_alloca_inv] >>
   conj_tac >- (
     simp[cex2_alloca_roots_empty, alloca_safe_access_FEMPTY_allocas,
-         cex2_state_def, pointer_derived_vars_empty]) >>
+         cex2_state_def, init_venom_state_def, pointer_derived_vars_empty]) >>
   conj_tac >- simp[cex2_step_preserves_safety] >>
   rpt gen_tac >> Cases_on `space = AddrSp_Memory /\ fn' = cex2_fn` >- (
     simp[cex2_analysis_fn_def, cex2_all_dead_stores]) >>
@@ -1614,7 +1624,7 @@ Proof
   simp[] >>
   qexistsl [`cex_analysis_fn`, `AddrSp_Memory`, `2`, `ARB`, `cex_fn`, `cex_entry_state`] >>
   `cex_entry_state.vs_allocas = FEMPTY`
-    by (simp[cex_entry_state_def, cex_state_def]) >>
+    by (simp[cex_entry_state_def, cex_state_def, init_venom_state_def]) >>
   gvs[alloca_inv_empty_allocas, bp_ptrs_bounded_empty_alloca] >>
   simp[cex_precondition] >>
   simp[cex_function_space] >>

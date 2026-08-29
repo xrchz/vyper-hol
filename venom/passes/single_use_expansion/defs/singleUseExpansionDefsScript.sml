@@ -75,8 +75,8 @@ Definition sue_needs_assign_def:
     if op_idx >= LENGTH inst.inst_operands then F
     else
       let op = EL op_idx inst.inst_operands in
-      (* Skip LOG's first operand (magic topic count) *)
-      if inst.inst_opcode = LOG /\ op_idx = 0 then F
+      (* Preserve parser-significant structural counts at operand 0. *)
+      if (inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) /\ op_idx = 0 then F
       else
         case op of
           Var v =>
@@ -89,6 +89,14 @@ Definition sue_needs_assign_def:
         | Lit _ => T
         | Label _ => F
 End
+
+Theorem sue_needs_assign_DRET_head:
+  inst.inst_opcode = DRET /\ inst.inst_operands <> [] ==>
+  ~sue_needs_assign dfg inst 0
+Proof
+  Cases_on `inst.inst_operands` >>
+  gvs[sue_needs_assign_def]
+QED
 
 (* ===== Per-Instruction Expansion ===== *)
 
@@ -144,6 +152,16 @@ Definition sue_expand_ops_def:
           (assign_inst :: more_assigns, Var vn :: more_ops)
 End
 
+
+Theorem sue_expand_ops_DRET_head:
+  inst.inst_opcode = DRET /\ inst.inst_operands = op :: ops /\
+  sue_expand_ops dfg inst (op :: ops) 0 = (assigns,new_ops) ==>
+  ?more_ops. new_ops = op :: more_ops
+Proof
+  rw[sue_expand_ops_def] >>
+  pairarg_tac >>
+  gvs[sue_needs_assign_DRET_head]
+QED
 Definition sue_expand_inst_def:
   sue_expand_inst dfg inst =
     if sue_should_skip inst.inst_opcode then [inst]

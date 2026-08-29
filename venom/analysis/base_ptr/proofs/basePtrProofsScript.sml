@@ -14,7 +14,7 @@
 Theory basePtrProofs
 Ancestors
   basePtrDefs venomExecSemantics venomWf memLocDefs venomInstProofs
-  venomExecProofs venomMemProps finite_map list pred_set venomInst
+  venomInstProofs1 venomExecProofs venomMemProps finite_map list pred_set venomInst
 
 (* Transfer function only modifies the output variable's pointer set. *)
 Theorem bp_handle_inst_other_var_proof:
@@ -132,7 +132,9 @@ Proof
     gvs[Once venomExecSemanticsTheory.step_inst_def, AllCaseEqs()] >>
     qpat_x_assum `bind_outputs _ _ _ = _` mp_tac >>
     simp[venomExecSemanticsTheory.bind_outputs_def, AllCaseEqs()] >>
-    strip_tac >> gvs[foldl_update_var_allocas,
+    strip_tac >> Cases_on `ret.iret_adopt_fmp` >>
+    gvs[foldl_update_var_allocas,
+      venomExecSemanticsTheory.adopt_return_fmp_def,
       venomExecSemanticsTheory.merge_callee_state_def]) >>
   Cases_on `inst.inst_opcode = ALLOCA`
   >- (
@@ -162,7 +164,9 @@ Proof
     gvs[Once venomExecSemanticsTheory.step_inst_def, AllCaseEqs()] >>
     drule bind_outputs_preserves_lookup >>
     disch_then (qspec_then `v` mp_tac) >> simp[] >> strip_tac >>
+    Cases_on `ret.iret_adopt_fmp` >>
     simp[venomStateTheory.lookup_var_def,
+         venomExecSemanticsTheory.adopt_return_fmp_def,
          venomExecSemanticsTheory.merge_callee_state_def]
   ) >>
   Cases_on `is_terminator inst.inst_opcode`
@@ -171,6 +175,9 @@ Proof
       fs[venomExecSemanticsTheory.step_inst_non_invoke] >>
     fs[venomExecSemanticsTheory.step_inst_base_def] >>
     gvs[venomInstTheory.is_terminator_def, AllCaseEqs()] >>
+    TRY (pairarg_tac >> gvs[] >>
+         drule pack_dret_dynamic_preserves_non_memory >>
+         simp[venomStateTheory.lookup_var_def]) >>
     gvs[venomStateTheory.jump_to_def, venomStateTheory.lookup_var_def]
   )
   >- (
@@ -790,7 +797,9 @@ Proof
   rpt strip_tac >>
   gvs[Once venomExecSemanticsTheory.step_inst_def, AllCaseEqs()] >>
   gvs[venomExecSemanticsTheory.bind_outputs_def, AllCaseEqs()] >>
+  Cases_on `ret.iret_adopt_fmp` >>
   gvs[foldl_update_var_allocas,
+      venomExecSemanticsTheory.adopt_return_fmp_def,
       venomExecSemanticsTheory.merge_callee_state_def]
 QED
 
