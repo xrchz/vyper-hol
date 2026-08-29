@@ -273,6 +273,19 @@ Proof
   gvs[lookup_var_def]
 QED
 
+(* Updating the returned FMP in the same way preserves state equivalence. *)
+Theorem adopt_return_fmp_state_equiv[local]:
+  !vars ir s1 s2.
+    state_equiv vars s1 s2 ==>
+    state_equiv vars (adopt_return_fmp ir s1)
+                     (adopt_return_fmp ir s2)
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `ir.iret_adopt_fmp` >>
+  gvs[adopt_return_fmp_def, state_equiv_def, execution_equiv_def,
+      lookup_var_def]
+QED
+
 (* Extends execEquivProofs.step_inst_result_equiv (which only covers
    step_inst_base) to handle INVOKE via step_inst. *)
 Theorem execution_equiv_refl[local]:
@@ -315,8 +328,13 @@ Proof
                       (merge_callee_state s2 v)` by
       (irule merge_callee_state_equiv >> gvs[]) >>
     simp[bind_outputs_def] >>
-    IF_CASES_TAC >> gvs[result_equiv_def] >>
-    irule foldl_update_var_state_equiv >> gvs[])
+    IF_CASES_TAC >> gvs[result_equiv_def]
+    >- (`state_equiv vars
+          (adopt_return_fmp i (merge_callee_state s1 v))
+          (adopt_return_fmp i (merge_callee_state s2 v))` by
+          (irule adopt_return_fmp_state_equiv >> gvs[]) >>
+        irule foldl_update_var_state_equiv >> gvs[])
+    >> irule adopt_return_fmp_state_equiv >> gvs[])
   >> (gvs[step_inst_non_invoke] >> irule step_inst_result_equiv >> gvs[])
 QED
 
@@ -561,8 +579,15 @@ Theorem step_inst_base_abort_input_equiv:
     ?s2'. step_inst_base inst s2 = Abort a s2'
 Proof
   rpt strip_tac >>
+  `inst.inst_opcode = ASSERT \/
+   inst.inst_opcode = ASSERT_UNREACHABLE \/
+   inst.inst_opcode = RETURNDATACOPY` by
+    metis_tac[step_inst_base_abort_opcode] >>
+  gvs[] >>
   qpat_x_assum `step_inst_base _ _ = _` mp_tac >>
-  step_base_result_tac >>
+  rw[step_inst_base_def] >>
+  rpt strip_tac >>
+  gvs[AllCaseEqs()] >>
   rpt (first_x_assum (fn th => mp_tac (REWRITE_RULE [eval_operand_def] th))) >>
   rpt (CHANGED_TAC (
     TRY (Cases_on `cond_op` >> gvs[eval_operand_def]) >>
