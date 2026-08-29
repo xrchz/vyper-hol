@@ -119,6 +119,24 @@ Proof
      venom_state_component_equality]
 QED
 
+Theorem pack_dret_dynamic_update_var[local]:
+  !cursor pairs s x v.
+    pack_dret_dynamic cursor pairs (update_var x v s) =
+    let (ptrs, final_cursor, s') = pack_dret_dynamic cursor pairs s in
+      (ptrs, final_cursor, update_var x v s')
+Proof
+  Induct_on `pairs`
+  >- simp[pack_dret_dynamic_def]
+  >> Cases_on `h`
+  >> rpt gen_tac
+  >> Cases_on
+       `pack_dret_dynamic (cursor + n2w (ceil32 (w2n r))) pairs
+          (mcopy (w2n cursor) (w2n q) (w2n r) s)`
+  >> Cases_on `r''`
+  >> gvs[Ntimes pack_dret_dynamic_def 2,
+         GSYM update_var_mcopy_commute]
+QED
+
 Theorem update_var_halt_state_commute:
   !x v s.
   update_var x v (halt_state s) = halt_state (update_var x v s)
@@ -244,6 +262,16 @@ Proof
   rw[merge_callee_state_def, update_var_def, venom_state_component_equality]
 QED
 
+
+Theorem adopt_return_fmp_update_var[local]:
+  !ir x v s.
+    adopt_return_fmp ir (update_var x v s) =
+    update_var x v (adopt_return_fmp ir s)
+Proof
+  rpt strip_tac >>
+  Cases_on `ir.iret_adopt_fmp` >>
+  simp[adopt_return_fmp_def, update_var_def]
+QED
 Theorem bind_outputs_update_var:
   !outs vals s x v. ~MEM x outs ==>
   bind_outputs outs vals (update_var x v s) =
@@ -666,7 +694,25 @@ Proof
   >- base_frame_tac (* ASSIGN *)
   >- base_frame_tac (* NOP *)
   >- base_frame_tac (* ALLOCA *)
+  >- (base_frame_tac >>
+      gvs[update_var_def, venom_state_component_equality]) (* DALLOCA *)
+  >- (base_frame_tac >>
+      gvs[pack_dret_dynamic_update_var, update_var_def,
+          venom_state_component_equality] >>
+      rpt (pairarg_tac >>
+           gvs[map_result_state_def, update_var_def,
+               venom_state_component_equality]) >>
+      gvs[map_result_state_def, update_var_def,
+          venom_state_component_equality]) (* DRET *)
+  >- (base_frame_tac >> gvs[update_var_def]) (* GETFMP *)
+  >- (base_frame_tac >>
+      gvs[update_var_def, venom_state_component_equality]) (* SETFMP *)
+  >- (base_frame_tac >> gvs[update_var_def]) (* RETFMP *)
+  >- (base_frame_tac >> gvs[update_var_def]) (* INITIAL_FMP *)
+  >- base_frame_tac (* BUMP *)
   >- base_frame_tac (* INVOKE *)
+  >- base_frame_tac (* FMP_PARAM *)
+  >- (base_frame_tac >> gvs[update_var_def]) (* RETPC_PARAM *)
   >- base_frame_tac (* CALLER *)
   >- base_frame_tac (* CALLVALUE *)
   >- base_frame_tac (* CALLDATALOAD *)
@@ -774,8 +820,11 @@ Proof
   simp[setup_callee_update_var] >>
   BasicProvers.TOP_CASE_TAC >> simp[] >>
   BasicProvers.TOP_CASE_TAC >> simp[] >>
-  simp[merge_callee_update_var, bind_outputs_update_var] >>
-  Cases_on `bind_outputs inst.inst_outputs l (merge_callee_state s v')` >>
+  simp[merge_callee_update_var, adopt_return_fmp_update_var,
+       bind_outputs_update_var] >>
+  Cases_on
+    `bind_outputs inst.inst_outputs i.iret_values
+       (adopt_return_fmp i (merge_callee_state s v'))` >>
   gvs[]
 QED
 

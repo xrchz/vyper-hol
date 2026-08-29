@@ -1104,7 +1104,8 @@ local
       ?e. step_inst fuel ctx inst st = Error e``,
     rpt strip_tac >>
     Cases_on `inst.inst_opcode` >>
-    gvs[sue_should_skip_def, is_alloca_op_def, sue_operands_wf_def] >>
+    gvs[sue_should_skip_def, is_param_opcode_def,
+        is_alloca_op_def, sue_operands_wf_def] >>
     TRY dispatch_opcode_tac >>
     simp[]);
 
@@ -1192,7 +1193,7 @@ Proof
       simp[]) >>
     (* not PARAM, not PHI *)
     `inst.inst_opcode <> PARAM /\ inst.inst_opcode <> PHI` by
-      (Cases_on `inst.inst_opcode` >> gvs[sue_should_skip_def]) >>
+      (Cases_on `inst.inst_opcode` >> gvs[sue_should_skip_def, is_param_opcode_def]) >>
     (* bounded freshness for sue_expand_ops_eval (idx=0) *)
     `!v j. MEM (Var v) inst.inst_operands /\ 0 <= j /\
            j < 0 + LENGTH inst.inst_operands ==>
@@ -1243,7 +1244,7 @@ Proof
       metis_tac[sue_expand_ops_log_hd_preserved]) >>
     `inst.inst_opcode <> FMP_PARAM /\
      inst.inst_opcode <> RETPC_PARAM` by
-      (conj_tac >> strip_tac >> gvs[sue_should_skip_def]) >>
+      (conj_tac >> strip_tac >> gvs[sue_should_skip_def, is_param_opcode_def]) >>
     (* DRET structural parser preservation *)
     `inst.inst_opcode = DRET ==>
      parse_dret_shape (inst with inst_operands := new_ops) =
@@ -2034,18 +2035,18 @@ Proof
   rpt strip_tac >>
   simp[sue_expand_inst_def] >>
   Cases_on `sue_should_skip inst.inst_opcode` >>
-  gvs[phi_prefix_length_def, sue_should_skip_def] >>
+  gvs[phi_prefix_length_def, sue_should_skip_def, is_param_opcode_def] >>
   pairarg_tac >> gvs[] >>
   Cases_on `assigns` >> gvs[phi_prefix_length_def]
   >- (drule sue_expand_ops_assigns_are_assign >> simp[phi_prefix_length_def]) >>
-  Cases_on `inst.inst_opcode` >> gvs[sue_should_skip_def, phi_prefix_length_def]
+  Cases_on `inst.inst_opcode` >> gvs[sue_should_skip_def, is_param_opcode_def, phi_prefix_length_def]
 QED
 
 Triviality sue_expand_inst_phi[local]:
   !dfg inst.
     inst.inst_opcode = PHI ==> sue_expand_inst dfg inst = [inst]
 Proof
-  rw[sue_expand_inst_def, sue_should_skip_def]
+  rw[sue_expand_inst_def, sue_should_skip_def, is_param_opcode_def]
 QED
 
 Triviality sue_expand_inst_phi_prefix_append[local]:
@@ -2064,7 +2065,7 @@ Triviality sue_expand_inst_prefix_length_append[local]:
 Proof
   rpt strip_tac >>
   simp[sue_expand_inst_def] >>
-  Cases_on `inst.inst_opcode` >> gvs[sue_should_skip_def, phi_prefix_length_def] >>
+  Cases_on `inst.inst_opcode` >> gvs[sue_should_skip_def, is_param_opcode_def, phi_prefix_length_def] >>
   pairarg_tac >> gvs[] >>
   Cases_on `assigns` >> gvs[phi_prefix_length_def] >>
   TRY (drule sue_expand_ops_assigns_are_assign >> simp[phi_prefix_length_def])
@@ -2227,7 +2228,7 @@ QED
 Triviality skip_iff_exempt[local]:
   !op. sue_should_skip op <=> sue_count_exempt op
 Proof
-  Cases >> simp[sue_should_skip_def, sue_count_exempt_def]
+  Cases >> simp[sue_should_skip_def, sue_count_exempt_def, is_param_opcode_def]
 QED
 
 (* Digit-string separator lemma: underscore splits uniquely *)
@@ -2375,8 +2376,8 @@ Proof
     metis_tac[sue_expand_ops_assigns_are_assign] >>
   `~sue_count_exempt inst.inst_opcode` by metis_tac[skip_iff_exempt] >>
   simp[FILTER_APPEND_DISTRIB, FILTER_EQ_NIL, EVERY_MEM] >>
-  rpt strip_tac >> gvs[sue_count_exempt_def] >>
-  fs[EVERY_MEM] >> res_tac >> gvs[sue_count_exempt_def]
+  rpt strip_tac >> gvs[sue_count_exempt_def, is_param_opcode_def] >>
+  fs[EVERY_MEM] >> res_tac >> gvs[sue_count_exempt_def, is_param_opcode_def]
 QED
 
 (* fn_insts_blocks = FLAT of MAP *)
@@ -2683,7 +2684,7 @@ Proof
   pairarg_tac >> gvs[MEM_APPEND] >>
   `EVERY (\a. a.inst_opcode = ASSIGN) assigns` by
     metis_tac[sue_expand_ops_assigns_are_assign] >>
-  fs[EVERY_MEM] >> res_tac >> gvs[sue_count_exempt_def]
+  fs[EVERY_MEM] >> res_tac >> gvs[sue_count_exempt_def, is_param_opcode_def]
 QED
 
 (* The FLAT expanded instruction list = FLAT MAP sue_expand_inst over fn_insts *)

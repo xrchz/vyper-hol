@@ -40,14 +40,17 @@ Ancestors
 
 (* Python: if inst.opcode in ("assign", "offset", "phi", "param"): continue *)
 Definition sue_should_skip_def:
-  sue_should_skip ASSIGN = T /\
-  sue_should_skip OFFSET = T /\
-  sue_should_skip PHI = T /\
-  sue_should_skip PARAM = T /\
-  sue_should_skip FMP_PARAM = T /\
-  sue_should_skip RETPC_PARAM = T /\
-  sue_should_skip _ = F
+  sue_should_skip opc <=>
+    opc = ASSIGN \/ opc = OFFSET \/ opc = PHI \/ is_param_opcode opc
 End
+
+Theorem sue_should_skip_param_eval:
+  sue_should_skip PARAM /\
+  sue_should_skip FMP_PARAM /\
+  sue_should_skip RETPC_PARAM
+Proof
+  simp[sue_should_skip_def, is_param_opcode_def]
+QED
 
 (* ===== Fresh Variable ===== *)
 

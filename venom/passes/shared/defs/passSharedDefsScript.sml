@@ -309,14 +309,17 @@ End
    - PARAM/FMP_PARAM/RETPC_PARAM: pseudo-instructions lowered to hidden inputs
    - OFFSET: handled specially in venom_to_assembly (direct label+offset emit) *)
 Definition sue_count_exempt_def:
-  sue_count_exempt ASSIGN = T /\
-  sue_count_exempt PHI = T /\
-  sue_count_exempt PARAM = T /\
-  sue_count_exempt FMP_PARAM = T /\
-  sue_count_exempt RETPC_PARAM = T /\
-  sue_count_exempt OFFSET = T /\
-  sue_count_exempt _ = F
+  sue_count_exempt opc <=>
+    opc = ASSIGN \/ opc = PHI \/ opc = OFFSET \/ is_param_opcode opc
 End
+
+Theorem sue_count_exempt_param_eval:
+  sue_count_exempt PARAM /\
+  sue_count_exempt FMP_PARAM /\
+  sue_count_exempt RETPC_PARAM
+Proof
+  simp[sue_count_exempt_def, is_param_opcode_def]
+QED
 
 (* Count uses of variable v across non-exempt instructions in a block. *)
 Definition var_use_count_block_def:
