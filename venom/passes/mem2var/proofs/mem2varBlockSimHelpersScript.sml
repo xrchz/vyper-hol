@@ -359,6 +359,9 @@ Definition m2v_inv_noix_def:
     s1.vs_labels = s2.vs_labels /\
     s1.vs_code = s2.vs_code /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_prev_hashes = s2.vs_prev_hashes /\
     s1.vs_allocas = s2.vs_allocas /\
     s1.vs_alloca_next = s2.vs_alloca_next /\
@@ -1024,6 +1027,25 @@ Theorem m2v_inv_noix_step_nonpromoted:
     m2v_inv_noix fn v1 v2
 Proof
   rpt strip_tac >>
+  `s1.vs_fmp = s2.vs_fmp /\
+   s1.vs_initial_fmp = s2.vs_initial_fmp /\
+   s1.vs_return_pc_token = s2.vs_return_pc_token` by
+    gvs[m2v_inv_noix_def] >>
+  `v1.vs_fmp = v2.vs_fmp` by (
+    mp_tac (Q.SPECL [`inst`, `s1`, `s2`, `v1`, `v2`]
+      step_inst_base_ordinary_fmp_agreement) >> simp[]) >>
+  `v1.vs_call_entry_fmp = s1.vs_call_entry_fmp /\
+   v1.vs_initial_fmp = s1.vs_initial_fmp /\
+   v1.vs_return_pc_token = s1.vs_return_pc_token` by (
+    mp_tac (Q.SPECL [`inst`, `s1`, `v1`]
+      step_inst_base_preserves_stable_frame_metadata) >> simp[]) >>
+  `v2.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+   v2.vs_initial_fmp = s2.vs_initial_fmp /\
+   v2.vs_return_pc_token = s2.vs_return_pc_token` by (
+    mp_tac (Q.SPECL [`inst`, `s2`, `v2`]
+      step_inst_base_preserves_stable_frame_metadata) >> simp[]) >>
+  `v1.vs_initial_fmp = v2.vs_initial_fmp /\
+   v1.vs_return_pc_token = v2.vs_return_pc_token` by metis_tac[] >>
   imp_res_tac step_inst_preserves_alloca_state >>
   imp_res_tac step_inst_preserves_all >>
   imp_res_tac no_mem_write_excludes_others >>
