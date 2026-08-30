@@ -622,13 +622,11 @@ QED
 
 Resume step_inst_base_preserves_all[g1]:
       Cases_on `inst.inst_opcode` >> gvs[is_ext_call_op_def] >>
-      gvs[Once step_inst_base_def,AllCaseEqs(),
-          is_terminator_def,
-          exec_ext_call_def,update_var_def,
-          exec_delegatecall_def,
-          extract_venom_result_def, is_alloca_op_def,
-          write_effects_def, pairTheory.UNCURRY] >>
-      gvs[AllCaseEqs(), lookup_var_def, all_effects_def] >>
+      gvs[Once step_inst_base_def, is_terminator_def,
+          is_alloca_op_def, write_effects_def, all_effects_def] >>
+      gvs[exec_ext_call_def, exec_delegatecall_def, AllCaseEqs(),
+          extract_venom_result_def, update_var_def,
+          pairTheory.UNCURRY, lookup_var_def] >>
       gvs[FLOOKUP_UPDATE]
       >- (
         gvs[exec_create_def, AllCaseEqs(),
