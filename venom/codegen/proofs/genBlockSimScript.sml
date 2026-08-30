@@ -2725,7 +2725,10 @@ QED
 
 Resume gen_inst_ok_sim[none]:
   Cases_on `inst.inst_opcode` >>
-  gvs[venom_to_evm_name_def, is_pre_codegen_opcode_def]
+  gvs[venom_to_evm_name_def, is_pre_codegen_opcode_def,
+      is_unlowered_fmp_opcode_def,
+      is_unlowered_internal_call_opcode_def,
+      is_raw_fmp_opcode_def, is_fmp_param_opcode_def]
   >> TRY (`inst.inst_opcode <> ISTORE /\
            inst.inst_opcode <> JMP /\
            inst.inst_opcode <> JNZ /\
