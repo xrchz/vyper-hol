@@ -460,6 +460,78 @@ Proof
           collect_locals_def]
 QED
 
+
+Definition nested_foo_entry_stage_def:
+  nested_foo_entry_stage =
+    do new_block "fn_foo";
+       compile_entry_checks
+         (min_calldata_size nested_external_cenv
+            [("x", BaseT (UintT 256))] 0) F;
+       compile_register_positional_args nested_external_cenv
+         (build_positional_args nested_external_cenv
+            [("x", BaseT (UintT 256))]) 4
+    od
+End
+
+Definition nested_after_foo_entry_state_def:
+  nested_after_foo_entry_state : compile_state =
+    <| cs_next_var := 13;
+       cs_next_label := 4;
+       cs_next_id := 20;
+       cs_current_bb := "fn_foo";
+       cs_current_insts :=
+         [mk_inst 10 CALLVALUE [] ["%6"];
+          mk_inst 11 ISZERO [Var "%6"] ["%7"];
+          mk_inst 12 ASSERT [Var "%7"] [];
+          mk_inst 13 CALLDATASIZE [] ["%8"];
+          mk_inst 14 LT [Var "%8"; Lit 36w] ["%9"];
+          mk_inst 15 ISZERO [Var "%9"] ["%10"];
+          mk_inst 16 ASSERT [Var "%10"] [];
+          mk_inst 17 CALLDATASIZE [] ["%11"];
+          mk_inst 18 CALLDATALOAD [Lit 4w] ["%12"];
+          mk_inst 19 MSTORE [Lit 0w; Var "%12"] []];
+       cs_blocks :=
+         [<| bb_label := fresh_label_output "next" 3;
+             bb_instructions :=
+               [mk_inst 9 JMP [Label nested_fallback_label] []] |>;
+          <| bb_label := fresh_label_output "match" 2;
+             bb_instructions :=
+               [mk_inst 8 JMP [Label "fn_foo"] []] |>;
+          <| bb_label := fresh_label_output "dispatch" 1;
+             bb_instructions :=
+               [mk_inst 4 CALLDATALOAD [Lit 0w] ["%3"];
+                mk_inst 5 SHR [Lit 224w; Var "%3"] ["%4"];
+                mk_inst 6 EQ [Var "%4"; Lit (n2w 801029432)] ["%5"];
+                mk_inst 7 JNZ
+                  [Var "%5"; Label (fresh_label_output "match" 2);
+                   Label (fresh_label_output "next" 3)] []] |>;
+          <| bb_label := "__entry";
+             bb_instructions :=
+               [mk_inst 0 CALLDATASIZE [] ["%0"];
+                mk_inst 1 LT [Var "%0"; Lit 4w] ["%1"];
+                mk_inst 2 ISZERO [Var "%1"] ["%2"];
+                mk_inst 3 JNZ
+                  [Var "%2"; Label (fresh_label_output "dispatch" 1);
+                   Label nested_fallback_label] []] |>];
+       cs_data_sections := [] |>
+End
+
+Theorem nested_foo_entry_stage_eq:
+  nested_foo_entry_stage nested_after_dispatch_state =
+    ((), nested_after_foo_entry_state)
+Proof
+  simp[nested_foo_entry_stage_def, nested_external_entry_inputs,
+       moduleLoweringTheory.compile_entry_checks_def,
+       moduleLoweringTheory.compile_register_positional_args_def,
+       moduleLoweringTheory.compile_decode_args_def,
+       abiEncoderTheory.compile_abi_clamp_basetype_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       compileEnvTheory.new_block_def, compileEnvTheory.comp_return_def,
+       compileEnvTheory.comp_bind_def, compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       nested_after_dispatch_state_def, nested_after_foo_entry_state_def]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
