@@ -277,12 +277,27 @@ Theorem task011_extended_opcode_classification_eval:
        empty_effects; empty_effects; {Eff_MEMORY}; {Eff_MEMORY}; empty_effects] /\
     MAP is_raw_fmp_opcode ops =
       [T; T; T; T; T; F; F; F; F; F; F; F; F; F] /\
+    MAP is_param_opcode ops =
+      [F; F; F; F; F; F; F; F; T; T; T; F; F; F] /\
+    MAP is_terminator ops =
+      [F; T; F; F; T; F; F; F; F; F; F; F; F; F] /\
     MAP is_pseudo ops =
       [F; F; F; F; F; F; F; F; T; T; T; F; F; F] /\
     MAP is_volatile ops =
       [F; T; F; F; T; F; F; T; T; T; T; F; T; F] /\
     MAP is_effect_free_op ops =
-      [F; F; T; F; F; T; T; F; T; T; T; T; F; T]
+      [F; F; T; F; F; T; T; F; T; T; T; T; F; T] /\
+    MAP is_mem_write_op ops =
+      [F; T; F; F; F; F; F; F; F; F; F; F; T; F] /\
+    MAP is_alloca_op ops =
+      [F; F; F; F; F; F; F; F; F; F; F; F; F; F] /\
+    MAP is_ext_call_op ops =
+      [F; F; F; F; F; F; F; F; F; F; F; F; F; F] /\
+    MAP is_nonidempotent ops =
+      [F; F; F; F; F; F; F; T; F; F; F; F; F; F] /\
+    MAP opcode_fail_class ops =
+      [NoFail; NoFail; NoFail; NoFail; NoFail; NoFail; NoFail; AnyFail;
+       NoFail; NoFail; NoFail; NoFail; NoFail; NoFail]
 Proof
   EVAL_TAC
 QED

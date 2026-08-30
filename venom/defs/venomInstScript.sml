@@ -338,8 +338,13 @@ Definition is_terminator_def:
   is_terminator SETFMP = F /\
   is_terminator INITIAL_FMP = F /\
   is_terminator BUMP = F /\
+  is_terminator INVOKE = F /\
+  is_terminator PARAM = F /\
   is_terminator FMP_PARAM = F /\
   is_terminator RETPC_PARAM = F /\
+  is_terminator DLOAD = F /\
+  is_terminator DLOADBYTES = F /\
+  is_terminator OFFSET = F /\
   is_terminator _ = F
 End
 
@@ -365,6 +370,10 @@ Definition is_pseudo_def:
   is_pseudo RETFMP = F /\
   is_pseudo INITIAL_FMP = F /\
   is_pseudo BUMP = F /\
+  is_pseudo INVOKE = F /\
+  is_pseudo DLOAD = F /\
+  is_pseudo DLOADBYTES = F /\
+  is_pseudo OFFSET = F /\
   is_pseudo _ = F
 End
 
@@ -412,6 +421,8 @@ Definition is_volatile_def:
   is_volatile SETFMP = F /\
   is_volatile INITIAL_FMP = F /\
   is_volatile BUMP = F /\
+  is_volatile DLOAD = F /\
+  is_volatile OFFSET = F /\
   is_volatile _ = F
 End
 
@@ -491,11 +502,13 @@ Definition is_effect_free_op_def:
   is_effect_free_op BUMP = T /\
   (* No-op (no outputs, no state change, no side effects) *)
   is_effect_free_op NOP = T /\
-  (* Reviewed stateful FMP operations *)
+  (* Reviewed stateful and extended operations *)
   is_effect_free_op DALLOCA = F /\
   is_effect_free_op DRET = F /\
   is_effect_free_op SETFMP = F /\
   is_effect_free_op RETFMP = F /\
+  is_effect_free_op INVOKE = F /\
+  is_effect_free_op DLOADBYTES = F /\
   (* Everything else *)
   is_effect_free_op _ = F
 End
@@ -517,8 +530,12 @@ Definition is_mem_write_op_def:
   is_mem_write_op RETFMP = F /\
   is_mem_write_op INITIAL_FMP = F /\
   is_mem_write_op BUMP = F /\
+  is_mem_write_op INVOKE = F /\
+  is_mem_write_op PARAM = F /\
   is_mem_write_op FMP_PARAM = F /\
   is_mem_write_op RETPC_PARAM = F /\
+  is_mem_write_op DLOAD = F /\
+  is_mem_write_op OFFSET = F /\
   is_mem_write_op _ = F
 End
 
@@ -532,8 +549,13 @@ Definition is_alloca_op_def:
   is_alloca_op RETFMP = F /\
   is_alloca_op INITIAL_FMP = F /\
   is_alloca_op BUMP = F /\
+  is_alloca_op INVOKE = F /\
+  is_alloca_op PARAM = F /\
   is_alloca_op FMP_PARAM = F /\
   is_alloca_op RETPC_PARAM = F /\
+  is_alloca_op DLOAD = F /\
+  is_alloca_op DLOADBYTES = F /\
+  is_alloca_op OFFSET = F /\
   is_alloca_op _ = F
 End
 
@@ -551,8 +573,13 @@ Definition is_ext_call_op_def:
   is_ext_call_op RETFMP = F /\
   is_ext_call_op INITIAL_FMP = F /\
   is_ext_call_op BUMP = F /\
+  is_ext_call_op INVOKE = F /\
+  is_ext_call_op PARAM = F /\
   is_ext_call_op FMP_PARAM = F /\
   is_ext_call_op RETPC_PARAM = F /\
+  is_ext_call_op DLOAD = F /\
+  is_ext_call_op DLOADBYTES = F /\
+  is_ext_call_op OFFSET = F /\
   is_ext_call_op _ = F
 End
 
@@ -565,8 +592,13 @@ Definition is_raw_fmp_opcode_def:
   is_raw_fmp_opcode RETFMP = T /\
   is_raw_fmp_opcode INITIAL_FMP = F /\
   is_raw_fmp_opcode BUMP = F /\
+  is_raw_fmp_opcode INVOKE = F /\
+  is_raw_fmp_opcode PARAM = F /\
   is_raw_fmp_opcode FMP_PARAM = F /\
   is_raw_fmp_opcode RETPC_PARAM = F /\
+  is_raw_fmp_opcode DLOAD = F /\
+  is_raw_fmp_opcode DLOADBYTES = F /\
+  is_raw_fmp_opcode OFFSET = F /\
   is_raw_fmp_opcode _ = F
 End
 
