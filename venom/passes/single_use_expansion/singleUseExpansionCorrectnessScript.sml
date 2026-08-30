@@ -28,7 +28,8 @@ Theorem sue_establishes_single_use:
     ALL_DISTINCT (MAP (\i. i.inst_id) (fn_insts fn)) /\
     (!bb inst x. MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
        MEM (Var x) inst.inst_operands ==> x NOTIN sue_fresh_vars_fn fn) /\
-    (!inst. MEM inst (fn_insts fn) /\ inst.inst_opcode = LOG ==>
+    (!inst. MEM inst (fn_insts fn) /\
+         (inst.inst_opcode = LOG \/ inst.inst_opcode = DRET) ==>
        ?n. HD inst.inst_operands = Lit n) ==>
     single_use_form (sue_expand_function fn)
 Proof

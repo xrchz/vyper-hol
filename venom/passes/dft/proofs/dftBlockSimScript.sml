@@ -907,7 +907,7 @@ Proof
 QED
 
 (* INVOKE preserves structural fields (prev_bb, params, contexts, etc.) *)
-Theorem invoke_preserves_structural[local]:
+Theorem invoke_preserves_structural:
   !fuel ctx inst s s'.
     step_inst fuel ctx inst s = OK s' /\
     inst.inst_opcode = INVOKE ==>

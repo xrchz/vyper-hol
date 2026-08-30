@@ -55,7 +55,7 @@ Proof
   Cases_on `is_comparator i.inst_opcode` >> simp[] >>
   Cases_on `i.inst_opcode` >>
   fs[is_comparator_def, flip_comparison_opcode_def, is_barrier_def,
-     is_volatile_def, is_alloca_op_def]
+     is_volatile_def, is_alloca_op_def, is_raw_fmp_opcode_def]
 QED
 
 (* ===== Helper lemmas ===== *)

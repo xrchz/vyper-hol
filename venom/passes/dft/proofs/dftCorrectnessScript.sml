@@ -1938,7 +1938,7 @@ Theorem effect_free_or_barrier:
       is_effect_free_op i.inst_opcode \/ is_barrier i
 Proof
   rpt strip_tac >> Cases_on `i.inst_opcode` >>
-  gvs[is_effect_free_op_def, is_barrier_def,
+  gvs[is_effect_free_op_def, is_barrier_def, is_raw_fmp_opcode_def,
       is_volatile_def, is_alloca_op_def, is_pseudo_def, is_terminator_def]
 QED
 
@@ -6554,6 +6554,11 @@ Proof
   `sb.vs_prev_bb = s.vs_prev_bb` by
     metis_tac[step_preserves_control_flow] >>
   `sb.vs_params = s.vs_params` by metis_tac[step_preserves_params] >>
+  `sb.vs_return_pc_token = s.vs_return_pc_token` by
+    (Cases_on `b.inst_opcode = INVOKE`
+     >- metis_tac[invoke_preserves_structural]
+     >> `step_inst_base b s = OK sb` by gvs[step_inst_non_invoke] >>
+        drule venomInstProofs1Theory.step_inst_base_preserves_all >> simp[]) >>
   `!v. ~MEM v b.inst_outputs ==>
        lookup_var v sb = lookup_var v s` by
     metis_tac[step_preserves_non_output_vars] >>
@@ -6584,8 +6589,20 @@ Proof
       imp_res_tac dftCommutationTheory.resolve_phi_MEM >>
       first_x_assum drule >> simp[])
   (* PARAM case *)
-  >> (gvs[Once step_inst_base_def, AllCaseEqs()] >>
+  >- (gvs[Once step_inst_base_def, AllCaseEqs()] >>
       `EL (w2n idx) s.vs_params = val` by
+        (fs[update_var_def, venom_state_component_equality] >>
+         metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
+      ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[])
+  (* FMP_PARAM case *)
+  >- (gvs[Once step_inst_base_def, AllCaseEqs()] >>
+      `EL (w2n idx) s.vs_params = val` by
+        (fs[update_var_def, venom_state_component_equality] >>
+         metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
+      ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[])
+  (* RETPC_PARAM case *)
+  >> (gvs[Once step_inst_base_def, AllCaseEqs()] >>
+      `s.vs_return_pc_token = val` by
         (fs[update_var_def, venom_state_component_equality] >>
          metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
       ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[])
@@ -6630,6 +6647,11 @@ Proof
     metis_tac[step_preserves_params] >>
   `sb.vs_labels = s.vs_labels` by
     metis_tac[step_preserves_labels] >>
+  `sb.vs_return_pc_token = s.vs_return_pc_token` by
+    (Cases_on `b.inst_opcode = INVOKE`
+     >- metis_tac[invoke_preserves_structural]
+     >> `step_inst_base b s = OK sb` by gvs[step_inst_non_invoke] >>
+        drule venomInstProofs1Theory.step_inst_base_preserves_all >> simp[]) >>
   `!v. ~MEM v b.inst_outputs ==>
        lookup_var v sb = lookup_var v s` by
     metis_tac[step_preserves_non_output_vars] >>
@@ -6644,19 +6666,38 @@ Proof
            DISJOINT_DEF, EXTENSION] >>
         metis_tac[mem_var_operand_vars, MEM]) >>
      metis_tac[]) >>
-  (* Now replay the executable pseudo opcode.  PHI is impossible under
-     final semantics because step_inst_base PHI is Error. *)
+  (* Now replay each executable pseudo opcode explicitly. *)
   fs[step_inst_non_invoke] >>
   Cases_on `a.inst_opcode` >> gvs[is_pseudo_def]
-  >- gvs[Once step_inst_base_def, AllCaseEqs()] >>
-  gvs[Once step_inst_base_def, AllCaseEqs()] >>
-  `EL (w2n idx) s.vs_params = val` by
-    (fs[update_var_def, venom_state_component_equality] >>
-     metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
-  qexists `update_var out val s` >>
-  conj_tac
-  >- (ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[]) >>
-  fs[]
+  (* PHI is impossible under final semantics. *)
+  >- gvs[Once step_inst_base_def, AllCaseEqs()]
+  (* PARAM case *)
+  >- (gvs[Once step_inst_base_def, AllCaseEqs()] >>
+      `EL (w2n idx) s.vs_params = val` by
+        (fs[update_var_def, venom_state_component_equality] >>
+         metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
+      qexists `update_var out val s` >>
+      conj_tac
+      >- (ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[]) >>
+      fs[])
+  (* FMP_PARAM case *)
+  >- (gvs[Once step_inst_base_def, AllCaseEqs()] >>
+      `EL (w2n idx) s.vs_params = val` by
+        (fs[update_var_def, venom_state_component_equality] >>
+         metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
+      qexists `update_var out val s` >>
+      conj_tac
+      >- (ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[]) >>
+      fs[])
+  (* RETPC_PARAM case *)
+  >> (gvs[Once step_inst_base_def, AllCaseEqs()] >>
+      `sb.vs_return_pc_token = val` by
+        (fs[update_var_def, venom_state_component_equality] >>
+         metis_tac[FUPD11_SAME_KEY_AND_BASE]) >>
+      qexists `update_var out val s` >>
+      conj_tac
+      >- (ONCE_REWRITE_TAC[step_inst_base_def] >> gvs[]) >>
+      fs[])
 QED
 
 (* Non-terminator non-INVOKE: can't produce Halt or IntRet from step_inst *)

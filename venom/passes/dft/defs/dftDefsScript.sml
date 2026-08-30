@@ -182,10 +182,13 @@ Definition add_alloca_deps_def:
 End
 
 (* Barrier predicate: instructions that bi_independent cannot handle.
-   Volatile ops (INVOKE, ext_call, MSTORE, ...) and alloca ops have implicit
-   state dependencies not captured by the effects system. *)
+   Volatile ops (INVOKE, ext_call, MSTORE, ...), alloca ops, and raw FMP ops
+   have implicit state dependencies that must be ordered conservatively. *)
 Definition is_barrier_def:
-  is_barrier inst <=> is_volatile inst.inst_opcode \/ is_alloca_op inst.inst_opcode
+  is_barrier inst <=>
+    is_volatile inst.inst_opcode \/
+    is_alloca_op inst.inst_opcode \/
+    is_raw_fmp_opcode inst.inst_opcode
 End
 
 (* Pass 1: each non-phi after a barrier gets that barrier as a dep.
