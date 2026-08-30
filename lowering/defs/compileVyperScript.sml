@@ -294,7 +294,7 @@ Definition build_func_info_def:
       FunctionDecl vis _ _ _ fname fargs _ ret _ =>
         if vis = External then rest_map
         else
-          let fn_lbl = "fn_" ++ fname in
+          let fn_lbl = fname in
           let arg_types = MAP SND fargs in
           let ret_mem = type_mem_bytes sft ret in
           let info = compute_func_info (λn. MAP (FST o SND) (sft n))
@@ -480,7 +480,7 @@ End
 Definition package_internal_fn_def:
   package_internal_fn tops use_trans nkey_map is_ctor_context
     (mut, nr, rr, fname, fargs, _, ret, body) =
-    let fn_lbl = "fn_" ++ fname in
+    let fn_lbl = fname in
     let sft = make_struct_fields_map tops in
     let sft_fn = get_struct_fields sft in
     let sft_types = (λname. MAP (FST o SND) (sft_fn name)) in
@@ -502,6 +502,15 @@ Definition package_internal_fn_def:
      is_ctor_context, 0n,
      body, SOME ret)
 End
+
+Theorem package_internal_fn_call_label:
+  !tops use_trans nkey_map is_ctor_context mut nr rr fname fargs dflts ret body.
+    FST (package_internal_fn tops use_trans nkey_map is_ctor_context
+           (mut, nr, rr, fname, fargs, dflts, ret, body)) =
+    nsid_to_string (NONE, fname)
+Proof
+  simp[package_internal_fn_def, nsid_to_string_def]
+QED
 
 Definition package_fallback_fn_def:
   package_fallback_fn tops use_trans nkey_map NONE = NONE ∧

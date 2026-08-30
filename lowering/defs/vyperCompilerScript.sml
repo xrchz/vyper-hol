@@ -58,6 +58,78 @@ Definition extract_context_def:
      REVERSE st.cs_data_sections)
 End
 
+(* Split at the first block carrying a certified internal-function entry label.
+   The suffix retains the delimiter block. *)
+Definition split_blocks_at_def:
+  split_blocks_at (label : string) ([] : basic_block list) = NONE /\
+  split_blocks_at label (bb :: rest) =
+    if bb.bb_label = label then SOME ([], bb :: rest)
+    else
+      case split_blocks_at label rest of
+        NONE => NONE
+      | SOME (prefix, suffix) => SOME (bb :: prefix, suffix)
+End
+
+(* Raw internal functions receive only metadata certified by source lowering.
+   Static-layout and FMP metadata deliberately retain mk_raw_function defaults. *)
+Definition mk_internal_function_def:
+  mk_internal_function name blocks has_ret_buf user_return_count =
+    (mk_raw_function name blocks) with
+      fn_call_abi :=
+        <| ica_has_memory_return_buffer := SOME has_ret_buf;
+           ica_user_return_count := SOME user_return_count |>
+End
+
+(* Partition the finalized block stream at ordered certified entry labels.
+   The first component is the entry/external prefix; each remaining segment is
+   packaged as one internal function. Missing or out-of-order labels fail. *)
+Definition package_internal_blocks_def:
+  package_internal_blocks
+    ([] : (string # bool # num) list) (blocks : basic_block list) =
+      SOME (blocks, []) /\
+  package_internal_blocks ((name, has_ret_buf, rc) :: rest) blocks =
+    case split_blocks_at name blocks of
+      NONE => NONE
+    | SOME (prefix, suffix) =>
+        case package_internal_blocks rest suffix of
+          NONE => NONE
+        | SOME (fn_blocks, functions) =>
+            SOME (prefix,
+                  mk_internal_function name fn_blocks has_ret_buf rc :: functions)
+End
+
+(* Small executable probes for the packaging boundary. *)
+Theorem package_internal_blocks_two_probe:
+  package_internal_blocks [("f", T, 2n); ("g", F, 0n)]
+    [<| bb_label := "entry"; bb_instructions := [] |>;
+     <| bb_label := "f"; bb_instructions := [] |>;
+     <| bb_label := "f.more"; bb_instructions := [] |>;
+     <| bb_label := "g"; bb_instructions := [] |>] =
+  SOME
+    ([<| bb_label := "entry"; bb_instructions := [] |>],
+     [mk_internal_function "f"
+        [<| bb_label := "f"; bb_instructions := [] |>;
+         <| bb_label := "f.more"; bb_instructions := [] |>] T 2;
+      mk_internal_function "g"
+        [<| bb_label := "g"; bb_instructions := [] |>] F 0])
+Proof
+  EVAL_TAC
+QED
+
+Theorem mk_internal_function_metadata:
+  !name blocks has_ret_buf rc.
+    (mk_internal_function name blocks has_ret_buf rc).fn_name = name /\
+    (mk_internal_function name blocks has_ret_buf rc).fn_blocks = blocks /\
+    (mk_internal_function name blocks has_ret_buf rc).fn_call_abi =
+      <| ica_has_memory_return_buffer := SOME has_ret_buf;
+         ica_user_return_count := SOME rc |> /\
+    ~(mk_internal_function name blocks has_ret_buf rc).fn_noinline /\
+    (mk_internal_function name blocks has_ret_buf rc).fn_eom = NONE /\
+    (mk_internal_function name blocks has_ret_buf rc).fn_fmp_signature = NONE
+Proof
+  simp[mk_internal_function_def, mk_raw_function_def]
+QED
+
 (* ===== Policy Boundary ===== *)
 
 (* Raw source lowering implements the resolved O1 frontend contract.  Check the
