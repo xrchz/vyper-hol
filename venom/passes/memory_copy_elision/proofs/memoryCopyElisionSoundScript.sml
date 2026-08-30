@@ -1191,7 +1191,7 @@ Triviality terminator_opcode_cases[local]:
     is_terminator op ==>
     op = JMP \/ op = JNZ \/ op = DJMP \/ op = RET \/
     op = RETURN \/ op = REVERT \/ op = STOP \/ op = SINK \/
-    op = SELFDESTRUCT \/ op = INVALID
+    op = SELFDESTRUCT \/ op = INVALID \/ op = DRET \/ op = RETFMP
 Proof
   Cases >> simp[is_terminator_def]
 QED
@@ -1207,7 +1207,8 @@ val terminator_tuple_tac =
 Triviality step_inst_base_terminator_ok_field_tuple[local]:
   !inst s s'.
     step_inst_base inst s = OK s' /\
-    is_terminator inst.inst_opcode ==>
+    is_terminator inst.inst_opcode /\
+    Eff_MEMORY NOTIN write_effects inst.inst_opcode ==>
     (s'.vs_memory, s'.vs_allocas, s'.vs_call_ctx,
      s'.vs_data_section, s'.vs_code, s'.vs_returndata) =
     (s.vs_memory, s.vs_allocas, s.vs_call_ctx,
@@ -1215,22 +1216,25 @@ Triviality step_inst_base_terminator_ok_field_tuple[local]:
 Proof
   rpt strip_tac >>
   drule terminator_opcode_cases >> strip_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
-  >- terminator_tuple_tac
+  >- terminator_tuple_tac (* JMP *)
+  >- terminator_tuple_tac (* JNZ *)
+  >- terminator_tuple_tac (* DJMP *)
+  >- terminator_tuple_tac (* RET *)
+  >- terminator_tuple_tac (* RETURN *)
+  >- terminator_tuple_tac (* REVERT *)
+  >- terminator_tuple_tac (* STOP *)
+  >- terminator_tuple_tac (* SINK *)
+  >- terminator_tuple_tac (* SELFDESTRUCT *)
+  >- terminator_tuple_tac (* INVALID *)
+  >- fs[write_effects_def] (* DRET excluded by no-memory premise *)
+  >- terminator_tuple_tac (* RETFMP *)
 QED
 
 Triviality step_terminator_preserves_fields[local]:
   !fuel ctx inst s s'.
     step_inst fuel ctx inst s = OK s' /\
-    is_terminator inst.inst_opcode ==>
+    is_terminator inst.inst_opcode /\
+    Eff_MEMORY NOTIN write_effects inst.inst_opcode ==>
     s'.vs_memory = s.vs_memory /\
     s'.vs_allocas = s.vs_allocas /\
     s'.vs_call_ctx = s.vs_call_ctx /\
@@ -1578,7 +1582,8 @@ Triviality bp_write_loc_mstore_lit[local]:
        ml_alloca := NONE; ml_volatile := F |>
 Proof
   rw[bp_get_write_location_def, mem_write_ops_def, bp_segment_from_ops_def,
-     LET_THM, is_alloca_op_def, venomEffectsTheory.write_effects_def] >>
+     LET_THM, is_alloca_op_def, is_raw_fmp_opcode_def,
+     venomEffectsTheory.write_effects_def] >>
   simp[wordsTheory.dimword_def]
 QED
 
@@ -1817,7 +1822,7 @@ Proof
   (* Unfold to get DRESTRICT form *)
   simp[copy_fact_invalidate_def, cf_sound_opt_def,
        bp_get_write_location_def, mem_write_ops_def, LET_THM,
-       write_effects_def, is_alloca_op_def,
+       write_effects_def, is_alloca_op_def, is_raw_fmp_opcode_def,
        bp_segment_from_ops_def, ml_is_fixed_def] >>
   simp[cf_sound_def, FLOOKUP_DRESTRICT] >>
   rpt strip_tac >>
@@ -2054,7 +2059,7 @@ QED
 
 Resume cft_mstore[var_case]:
   simp[bp_get_write_location_def, mem_write_ops_def, LET_THM,
-       write_effects_def, is_alloca_op_def,
+       write_effects_def, is_alloca_op_def, is_raw_fmp_opcode_def,
        copy_fact_invalidate_def] >>
   IF_CASES_TAC
   >- simp[cf_sound_opt_def, cf_sound_def] >>
@@ -2073,14 +2078,14 @@ Resume cft_mstore[var_case]:
     simp[ce_memloc_from_ops_def] >>
     qpat_x_assum `memloc_within_alloca _ s` mp_tac >>
     simp[bp_get_write_location_def, mem_write_ops_def, LET_THM,
-         write_effects_def, is_alloca_op_def,
+         write_effects_def, is_alloca_op_def, is_raw_fmp_opcode_def,
          ce_memloc_from_ops_def]) >>
   gvs[] >>
   irule cft_mstore_var >> simp[] >>
   qpat_x_assum `memloc_within_alloca _ s` mp_tac >>
   simp[ce_memloc_from_ops_def,
        bp_get_write_location_def, mem_write_ops_def, LET_THM,
-       write_effects_def, is_alloca_op_def]
+       write_effects_def, is_alloca_op_def, is_raw_fmp_opcode_def]
 QED
 
 Finalise cft_mstore
@@ -2108,7 +2113,7 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_copy_opcode_def, bp_get_write_location_def,
       ce_memloc_from_ops_def, write_effects_def, mem_write_ops_def,
-      is_alloca_op_def]
+      is_alloca_op_def, is_raw_fmp_opcode_def]
 QED
 
 (* bp_ptrs_bounded gives memloc_within_alloca for write locations.
@@ -2120,6 +2125,7 @@ Triviality bp_ptrs_bounded_write_loc[local]:
     bp_ptrs_bounded bp fn s /\
     MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
     inst.inst_opcode <> DLOAD /\ inst.inst_opcode <> INVOKE /\
+    ~is_raw_fmp_opcode inst.inst_opcode /\
     Eff_MEMORY IN write_effects inst.inst_opcode ==>
     memloc_within_alloca (bp_get_write_location bp inst AddrSp_Memory) s
 Proof
@@ -2212,7 +2218,7 @@ Resume copy_fact_transfer_sound_thm[mst_sound]:
      (bp_get_write_location ctx.ce_bp inst AddrSp_Memory) s` by (
     mp_tac bp_ptrs_bounded_write_loc >>
     disch_then (qspecl_then [`ctx.ce_bp`,`fn`,`s`,`bb`,`inst`] mp_tac) >>
-    gvs[write_effects_def, opcode2num_thm]) >>
+    gvs[write_effects_def, opcode2num_thm, is_raw_fmp_opcode_def]) >>
   irule cft_mstore >> simp[] >>
   qexistsl [`fuel`, `run_ctx`, `s`] >>
   Cases_on `v` >>
@@ -2271,7 +2277,8 @@ Resume copy_fact_transfer_sound_thm[is_copy]:
         disch_then (qspecl_then [`ctx.ce_bp`,`fn`,`s`,`bb`,`inst`] mp_tac) >>
         (impl_tac >- (
           simp[] >> Cases_on `inst.inst_opcode` >>
-          gvs[is_copy_opcode_def, opcode2num_thm, write_effects_def])) >>
+          gvs[is_copy_opcode_def, opcode2num_thm, write_effects_def,
+              is_raw_fmp_opcode_def])) >>
         simp[]) >>
       mp_tac (Q.SPECL [`ctx.ce_bp`, `dst`, `sz`, `s`, `dst_val`]
                 ce_memloc_runtime_w2n) >>
