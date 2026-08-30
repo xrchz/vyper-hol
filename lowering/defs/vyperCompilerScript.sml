@@ -22,6 +22,7 @@ Ancestors
   compileEnv
   venomInst
   venomCompilerTypes
+  venomWf
 
 (* ===== Compile State Initialization ===== *)
 
@@ -130,6 +131,52 @@ Proof
   simp[mk_internal_function_def, mk_raw_function_def]
 QED
 
+
+(* Project the certified packaging facts from compile_internal_fn_bodies inputs. *)
+Definition internal_fn_descriptors_def:
+  internal_fn_descriptors [] = [] /\
+  internal_fn_descriptors
+    ((name, cenv, params, has_ret_buf, is_nr, nkey, use_trans, is_view,
+      is_ctor, imm_len, body, ret_type) :: rest) =
+    (name, has_ret_buf, cenv.ce_returns_count) ::
+      internal_fn_descriptors rest
+End
+
+Definition extract_context_with_internals_def:
+  extract_context_with_internals entry_label internal_fns (st : compile_state) =
+    let current_bb = <| bb_label := st.cs_current_bb;
+                        bb_instructions := st.cs_current_insts |> in
+    let all_blocks = REVERSE st.cs_blocks ++ [current_bb] in
+    case package_internal_blocks (internal_fn_descriptors internal_fns) all_blocks of
+      NONE => NONE
+    | SOME (entry_blocks, functions) =>
+        SOME
+          (mk_venom_context
+             (mk_raw_function entry_label entry_blocks :: functions)
+             (SOME entry_label),
+           REVERSE st.cs_data_sections)
+End
+
+Definition invoke_target_ok_def:
+  invoke_target_ok names inst <=>
+    if inst.inst_opcode = INVOKE then
+      case inst.inst_operands of
+        Label label :: _ => MEM label names
+      | _ => F
+    else T
+End
+
+Definition wf_invoke_targets_check_def:
+  wf_invoke_targets_check ctx <=>
+    EVERY
+      (\fn. EVERY (invoke_target_ok (ctx_fn_names ctx)) (fn_insts fn))
+      ctx.ctx_functions
+End
+
+Definition lowering_context_ok_def:
+  lowering_context_ok ctx <=>
+    ALL_DISTINCT (ctx_fn_names ctx) /\ wf_invoke_targets_check ctx
+End
 (* ===== Policy Boundary ===== *)
 
 (* Raw source lowering implements the resolved O1 frontend contract.  Check the
@@ -188,12 +235,17 @@ Definition run_lowering_def:
                (entry_info : num -> string # num # bool)
                (entry_label : string) : compilation_unit option =
     if lowering_policy_ok rpolicy then
-      let (ctx, data) =
-        run_lowering_pair_compat selectors external_fns internal_fns
+      let st0 = initial_compile_state entry_label in
+      let ((), st1) =
+        compile_generate_runtime selectors external_fns internal_fns
           fallback_fn rpolicy.rpol_frontend_dispatch
-          bucket_count fn_metadata_bytes dense_buckets entry_info entry_label
-      in
-        SOME <| cu_context := ctx; cu_data_segment := data |>
+          bucket_count fn_metadata_bytes dense_buckets entry_info st0 in
+      case extract_context_with_internals entry_label internal_fns st1 of
+        NONE => NONE
+      | SOME (ctx, data) =>
+          if lowering_context_ok ctx then
+            SOME <| cu_context := ctx; cu_data_segment := data |>
+          else NONE
     else NONE
 End
 
@@ -206,16 +258,20 @@ Definition run_deploy_lowering_def:
                        nkey use_transient
                        (entry_label : string) : compilation_unit option =
     if lowering_policy_ok rpolicy then
-      let (ctx, data) =
-        run_deploy_lowering_pair_compat has_constructor
-          (LENGTH runtime_bytecode) immutables_len constructor_args data_size
-          ctor_internal_fns cenv body is_payable is_nonreentrant
-          nkey use_transient entry_label
-      in
-        SOME <| cu_context := ctx;
-                cu_data_segment :=
-                  data ++
-                  [<| ds_label := "runtime_begin";
-                      ds_items := [DataBytes runtime_bytecode] |>] |>
+      let st0 = initial_compile_state entry_label in
+      let ((), st1) =
+        compile_generate_deploy has_constructor (LENGTH runtime_bytecode)
+          immutables_len constructor_args data_size ctor_internal_fns
+          cenv body is_payable is_nonreentrant nkey use_transient st0 in
+      case extract_context_with_internals entry_label ctor_internal_fns st1 of
+        NONE => NONE
+      | SOME (ctx, data) =>
+          if lowering_context_ok ctx then
+            SOME <| cu_context := ctx;
+                    cu_data_segment :=
+                      data ++
+                      [<| ds_label := "runtime_begin";
+                          ds_items := [DataBytes runtime_bytecode] |>] |>
+          else NONE
     else NONE
 End

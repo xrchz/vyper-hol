@@ -638,7 +638,7 @@ Theorem lower_vyper_runtime_unit_empty_prague:
          rpol_frontend_dispatch := Linear;
          rpol_final_assembly := FAP_Optimize |>)
 Proof
-  EVAL_TAC
+  EVAL_TAC >> simp[venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
 QED
 
 Theorem lower_vyper_deploy_unit_empty_installs_runtime:
@@ -653,7 +653,7 @@ Theorem lower_vyper_deploy_unit_empty_installs_runtime:
              ds_items := [DataBytes ([170w; 187w] : byte list)] |>
           u.cu_data_segment
 Proof
-  EVAL_TAC
+  EVAL_TAC >> simp[venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
 QED
 
 Theorem lower_vyper_runtime_unit_rejects_missing_mcopy:
