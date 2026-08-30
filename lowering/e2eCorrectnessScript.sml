@@ -360,7 +360,7 @@ Definition compile_vyper_raw_def:
                 entry_label
                 (pipeline : venom_context -> venom_context)
                 fn_eom_map =
-    let (ctx, data_seg) = run_lowering selectors ext_fns int_fns fb_fn
+    let (ctx, data_seg) = run_lowering_pair_compat selectors ext_fns int_fns fb_fn
                             dispatch bucket_count fn_meta_bytes
                             dense_buckets entry_info entry_label in
     let ctx' = pipeline ctx in
@@ -487,7 +487,7 @@ Theorem compile_vyper_raw_well_formed:
   !selectors ext_fns int_fns fb_fn dispatch
     bucket_count fn_meta_bytes dense_buckets entry_info entry_label
     pipeline fn_eom_map bytecode spill_hwm.
-  let (ctx, _) = run_lowering selectors ext_fns int_fns fb_fn
+  let (ctx, _) = run_lowering_pair_compat selectors ext_fns int_fns fb_fn
                    dispatch bucket_count fn_meta_bytes
                    dense_buckets entry_info entry_label in
   let ctx' = pipeline ctx in
@@ -588,7 +588,7 @@ Theorem e2e_vyper_to_evm:
     entry_label fn_eom_map bytecode cenv spill_hwm
     (R_ok : venom_state -> venom_state -> bool) R_term
     am tx vs args ret.
-  let (ctx, _) = run_lowering selectors ext_fns int_fns fb_fn
+  let (ctx, _) = run_lowering_pair_compat selectors ext_fns int_fns fb_fn
                    dispatch bucket_count fn_meta_bytes
                    dense_buckets entry_info entry_label in
     (* Compilation produces bytecode *)
@@ -632,7 +632,7 @@ Proof
   \\ qmatch_asmsub_abbrev_tac `ctx_pass_correct pipeline _ _ ctx vs`
   (* Extract codegen from compile_vyper_raw *)
   \\ `codegen (pipeline ctx) fn_eom_map
-       (SND (run_lowering selectors ext_fns int_fns fb_fn dispatch bucket_count
+       (SND (run_lowering_pair_compat selectors ext_fns int_fns fb_fn dispatch bucket_count
               fn_meta_bytes dense_buckets entry_info entry_label))
      = SOME bytecode` by (
       gvs[compile_vyper_raw_def, pairTheory.UNCURRY, Abbr `ctx`] >>
@@ -736,7 +736,7 @@ Theorem e2e_vyper_to_evm_O2:
     vs.vs_inst_idx = 0 /\
     cenv.ce_type_env = tenv /\
     event_info = cenv.ce_event_info /\
-    codegen_context_obligations (pipeline (FST (run_lowering selectors ext_fns int_fns fb_fn
+    codegen_context_obligations (pipeline (FST (run_lowering_pair_compat selectors ext_fns int_fns fb_fn
       dispatch bucket_count fn_meta_bytes dense_buckets entry_info entry_label))) spill_hwm
     ==>
     ?gas_needed.
@@ -812,9 +812,9 @@ Proof
   \\ gvs[AllCaseEqs()]
   \\ rpt (FIRST [pairarg_tac \\ gvs[AllCaseEqs()],
                 CASE_TAC \\ gvs[AllCaseEqs()]])
-  (* The hypothesis contains run_lowering with specific computed params.
+  (* The hypothesis contains run_lowering_pair_compat with specific computed params.
      Extract them as witnesses for the existential. *)
-  \\ qmatch_assum_abbrev_tac `codegen (pipeline (FST (run_lowering _ _ _ _ _ bc fmb db ei _))) _ _ = _`
+  \\ qmatch_assum_abbrev_tac `codegen (pipeline (FST (run_lowering_pair_compat _ _ _ _ _ bc fmb db ei _))) _ _ = _`
   \\ MAP_EVERY qexists_tac [`bc`, `fmb`, `db`, `ei`]
   \\ gvs[]
 QED
