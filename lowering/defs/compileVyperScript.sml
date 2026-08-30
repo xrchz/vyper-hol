@@ -455,6 +455,23 @@ Proof
   >> EVAL_TAC
 QED
 
+Theorem build_compile_env_external_single_uint_arg_no_return_pc:
+  !tops mut func_name arg_name ret_type (body : stmt list) use_trans.
+    add_module_var_locations tops FEMPTY = FEMPTY /\
+    collect_locals body = [] /\
+    arg_name <> "__return_pc__" ==>
+    FLOOKUP
+      (build_compile_env tops External mut func_name
+         [(arg_name, BaseT (UintT 256))] ret_type body use_trans).ce_vars
+      "__return_pc__" = NONE
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[allocate_args_def, type_mem_bytes_def])
+  >> EVAL_TAC
+  >> gvs[]
+QED
+
 
 Definition update_cenv_ret_abi_def:
   update_cenv_ret_abi cenv ret_type =
