@@ -625,6 +625,140 @@ Proof
        GSYM nested_foo_name_stage_def, nested_foo_name_stage_eq,
        compileEnvTheory.comp_bind_def, compileEnvTheory.comp_return_def]
 QED
+
+Definition nested_foo_mid_call_stage_def:
+  nested_foo_mid_call_stage =
+    lower_value compile_expr nested_external_cenv (BaseT (UintT 256))
+      (Call (BaseT (UintT 256)) (IntCall (NONE, "mid"))
+        [Name (BaseT (UintT 256)) "x"] NONE)
+End
+
+Definition nested_foo_mid_call_operand_def:
+  nested_foo_mid_call_operand = Var "%16"
+End
+
+
+Definition nested_after_foo_alloc_state_def:
+  nested_after_foo_alloc_state =
+    nested_after_foo_name_state with
+      <| cs_next_var := 15;
+         cs_next_id := 22;
+         cs_current_insts :=
+           nested_after_foo_name_state.cs_current_insts ++
+             [mk_inst 21 ALLOCA [Lit 32w] ["%14"]] |>
+End
+
+Theorem fresh_vars_one:
+  !cs. fresh_vars 1 cs =
+    (["%" ++ toString cs.cs_next_var],
+     cs with cs_next_var := cs.cs_next_var + 1)
+Proof
+  gen_tac
+  >> rewrite_tac[arithmeticTheory.ONE,
+                 CONJUNCT2 emitHelperTheory.fresh_vars_def,
+                 CONJUNCT1 emitHelperTheory.fresh_vars_def]
+  >> simp[compileEnvTheory.fresh_var_def,
+          compileEnvTheory.comp_bind_def, compileEnvTheory.comp_return_def]
+QED
+
+Theorem nested_after_foo_alloc_state_next_var:
+  nested_after_foo_alloc_state.cs_next_var = 15
+Proof
+  simp[nested_after_foo_alloc_state_def]
+QED
+
+Theorem nested_foo_fresh_vars_one_eq:
+  fresh_vars 1 nested_after_foo_alloc_state =
+    (["%15"], nested_after_foo_alloc_state with cs_next_var := 16)
+Proof
+  simp[fresh_vars_one, nested_after_foo_alloc_state_next_var]
+QED
+
+Definition nested_after_foo_invoke_state_def:
+  nested_after_foo_invoke_state =
+    (nested_after_foo_alloc_state with cs_next_var := 16) with
+      <| cs_next_id := 23;
+         cs_current_insts :=
+           nested_after_foo_alloc_state.cs_current_insts ++
+             [mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"]] |>
+End
+
+Theorem nested_foo_emit_mid_one_eq:
+  emit_multi_op INVOKE [Label "mid"; nested_foo_x_operand] 1
+    nested_after_foo_alloc_state =
+  ([Var "%15"], nested_after_foo_invoke_state)
+Proof
+  simp[emitHelperTheory.emit_multi_op_def,
+       nested_foo_fresh_vars_one_eq,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.comp_bind_def, compileEnvTheory.comp_return_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.emit_def,
+       nested_after_foo_invoke_state_def]
+  >> simp[nested_after_foo_alloc_state_def]
+QED
+Definition nested_after_foo_mid_call_state_def:
+  nested_after_foo_mid_call_state =
+    nested_after_foo_name_state with
+      <| cs_next_var := 17;
+         cs_next_id := 25;
+         cs_current_insts :=
+           nested_after_foo_name_state.cs_current_insts ++
+             [mk_inst 21 ALLOCA [Lit 32w] ["%14"];
+              mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"];
+              mk_inst 23 MSTORE [Var "%14"; Var "%15"] [];
+              mk_inst 24 MLOAD [Var "%14"] ["%16"]] |>
+End
+
+Theorem nested_foo_mid_call_stage_eq:
+  nested_foo_mid_call_stage nested_after_foo_entry_state =
+    (nested_foo_mid_call_operand, nested_after_foo_mid_call_state)
+Proof
+  `nested_after_foo_name_state.cs_next_var = 14 /\
+   nested_after_foo_name_state.cs_next_id = 21` by
+    simp[nested_after_foo_name_state_def]
+  >> simp[nested_foo_mid_call_stage_def, exprLoweringTheory.lower_value_def,
+       Once exprLoweringTheory.compile_expr_def,
+       Once exprLoweringTheory.compile_call_def,
+       compileEnvTheory.nsid_to_string_def,
+       vyperASTTheory.expr_type_def,
+       nested_external_cenv_body_facts,
+       nested_foo_singleton_args_stage_eq,
+       exprLoweringTheory.compile_stage_intcall_args_def,
+       contextTheory.compile_alloc_buffer_def,
+       emitHelperTheory.emit_op_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       GSYM nested_after_foo_alloc_state_def]
+  >> rewrite_tac[nested_foo_emit_mid_one_eq]
+  >> simp[exprLoweringTheory.store_multi_results_def,
+          contextTheory.base_ptr_def, exprLoweringTheory.unwrap_value_def,
+          contextTheory.compile_ptr_load_def,
+          compileEnvTheory.is_word_type_def,
+          emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+          compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def,
+          compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+          compileEnvTheory.emit_def,
+          nested_foo_mid_call_operand_def,
+          nested_after_foo_mid_call_state_def,
+          nested_after_foo_invoke_state_def,
+          nested_after_foo_alloc_state_def]
+  >> `nested_after_foo_name_state.cs_current_insts ++
+        [mk_inst 21 ALLOCA [Lit 32w] ["%14"]] ++
+        [mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"]] ++
+        [mk_inst 23 MSTORE [Var "%14"; Var "%15"] []] ++
+        [mk_inst 24 MLOAD [Var "%14"] ["%16"]] =
+      nested_after_foo_name_state.cs_current_insts ++
+        [mk_inst 21 ALLOCA [Lit 32w] ["%14"];
+         mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"];
+         mk_inst 23 MSTORE [Var "%14"; Var "%15"] [];
+         mk_inst 24 MLOAD [Var "%14"] ["%16"]]` by
+       (rewrite_tac[GSYM listTheory.APPEND_ASSOC] >> simp[])
+  >> simp[]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
