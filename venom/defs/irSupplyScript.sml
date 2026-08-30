@@ -261,4 +261,51 @@ Proof
   gvs[fresh_name_candidate_def]
 QED
 
+Datatype:
+  ir_supply = <|
+    irs_next_inst : num;
+    irs_next_var : num;
+    irs_next_label : num;
+    irs_used_inst_ids : num list;
+    irs_used_vars : string list;
+    irs_used_labels : string list
+  |>
+End
+
+Definition init_ir_supply_def:
+  init_ir_supply unit = <|
+    irs_next_inst := SUC (FOLDL MAX 0 (unit_ir_inst_ids unit));
+    irs_next_var := 0;
+    irs_next_label := 0;
+    irs_used_inst_ids := unit_ir_inst_ids unit;
+    irs_used_vars := unit_ir_vars unit;
+    irs_used_labels := unit_ir_labels unit
+  |>
+End
+
+Definition fresh_inst_id_def:
+  fresh_inst_id s =
+    (s.irs_next_inst,
+     s with <| irs_next_inst := SUC s.irs_next_inst;
+               irs_used_inst_ids := s.irs_next_inst :: s.irs_used_inst_ids |>)
+End
+
+Definition fresh_ir_var_def:
+  fresh_ir_var s =
+    case seek_fresh_name "formal_var_" s.irs_used_vars s.irs_next_var
+                         (LENGTH s.irs_used_vars) of
+      (name,k) =>
+        (name, s with <| irs_next_var := SUC k;
+                        irs_used_vars := name :: s.irs_used_vars |>)
+End
+
+Definition fresh_ir_label_def:
+  fresh_ir_label s =
+    case seek_fresh_name "formal_label_" s.irs_used_labels s.irs_next_label
+                         (LENGTH s.irs_used_labels) of
+      (name,k) =>
+        (name, s with <| irs_next_label := SUC k;
+                        irs_used_labels := name :: s.irs_used_labels |>)
+End
+
 val _ = export_theory ();
