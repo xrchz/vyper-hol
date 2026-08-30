@@ -620,6 +620,50 @@ Definition lower_vyper_deploy_unit_def:
       ctor_payable ctor_nr ctor_nkey ctor_trans "__deploy"
 End
 
+
+(* Closed executable probes for the checked complete-unit boundary. *)
+Theorem lower_vyper_runtime_unit_empty_prague:
+  IS_SOME
+    (lower_vyper_runtime_unit ([] : toplevel list)
+      <| rpol_target := prague_capabilities;
+         rpol_frontend_dispatch := Linear;
+         rpol_final_assembly := FAP_Optimize |>)
+Proof
+  EVAL_TAC
+QED
+
+Theorem lower_vyper_deploy_unit_empty_installs_runtime:
+  case lower_vyper_deploy_unit ([] : toplevel list)
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |>
+         ([170w; 187w] : byte list) of
+    NONE => F
+  | SOME u =>
+      MEM <| ds_label := "runtime_begin";
+             ds_items := [DataBytes ([170w; 187w] : byte list)] |>
+          u.cu_data_segment
+Proof
+  EVAL_TAC
+QED
+
+Theorem lower_vyper_runtime_unit_rejects_missing_mcopy:
+  lower_vyper_runtime_unit ([] : toplevel list)
+    <| rpol_target := (\c. c <> CapMcopy);
+       rpol_frontend_dispatch := Linear;
+       rpol_final_assembly := FAP_Optimize |> = NONE
+Proof
+  EVAL_TAC
+QED
+
+Theorem lower_vyper_runtime_unit_rejects_malformed_dispatch:
+  lower_vyper_runtime_unit ([] : toplevel list)
+    <| rpol_target := prague_capabilities;
+       rpol_frontend_dispatch := Sparse;
+       rpol_final_assembly := FAP_Optimize |> = NONE
+Proof
+  EVAL_TAC
+QED
 Definition compile_vyper_def:
   compile_vyper (tops : toplevel list)
                 (pipeline : venom_context -> venom_context)
