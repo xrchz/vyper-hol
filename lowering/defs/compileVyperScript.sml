@@ -411,6 +411,31 @@ Definition build_compile_env_def:
        ce_raw_return := F
     |> : compile_env
 End
+Theorem build_compile_env_ce_struct_fields:
+  !tops vis mut func_name args ret_type (body : stmt list) use_trans.
+    (build_compile_env tops vis mut func_name args ret_type body use_trans).
+      ce_struct_fields = make_struct_fields_map tops
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem build_compile_env_external_single_uint_arg_lookup:
+  !tops mut func_name arg_name ret_type (body : stmt list) use_trans.
+    add_module_var_locations tops FEMPTY = FEMPTY /\
+    collect_locals body = [] ==>
+    FLOOKUP
+      (build_compile_env tops External mut func_name
+         [(arg_name, BaseT (UintT 256))] ret_type body use_trans).ce_vars
+      arg_name = SOME (MemLoc 0 32)
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[allocate_args_def, type_mem_bytes_def])
+  >> EVAL_TAC
+QED
+
 
 Definition update_cenv_ret_abi_def:
   update_cenv_ret_abi cenv ret_type =
