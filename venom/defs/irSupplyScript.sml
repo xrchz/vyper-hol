@@ -424,4 +424,45 @@ Proof
   simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_data_item]
 QED
 
+Theorem fresh_inst_id_contract:
+  ir_supply_inst_ok s /\ fresh_inst_id s = (id,s') ==>
+  id = s.irs_next_inst /\
+  ~MEM id s.irs_used_inst_ids /\
+  s'.irs_used_inst_ids = id :: s.irs_used_inst_ids /\
+  s'.irs_next_inst = SUC s.irs_next_inst /\
+  s'.irs_next_var = s.irs_next_var /\
+  s'.irs_next_label = s.irs_next_label /\
+  s'.irs_used_vars = s.irs_used_vars /\
+  s'.irs_used_labels = s.irs_used_labels /\
+  ir_supply_inst_ok s'
+Proof
+  simp[fresh_inst_id_def] >> strip_tac >>
+  gvs[ir_supply_inst_ok_def, EVERY_MEM] >>
+  conj_tac
+  >- (strip_tac >> first_x_assum drule >> decide_tac)
+  >> rpt strip_tac >> gvs[] >>
+  first_x_assum drule >> decide_tac
+QED
+
+Theorem fresh_inst_id_preserves_old:
+  fresh_inst_id s = (id,s') /\ MEM old s.irs_used_inst_ids ==>
+  MEM old s'.irs_used_inst_ids
+Proof
+  simp[fresh_inst_id_def] >> rpt strip_tac >> gvs[]
+QED
+
+Theorem fresh_inst_id_two_calls_distinct:
+  ir_supply_inst_ok s /\
+  fresh_inst_id s = (id1,s1) /\
+  fresh_inst_id s1 = (id2,s2) ==>
+  id2 <> id1 /\ ir_supply_inst_ok s2
+Proof
+  strip_tac >>
+  drule fresh_inst_id_contract >> disch_then drule >> strip_tac >>
+  qpat_x_assum `ir_supply_inst_ok s` kall_tac >>
+  qpat_x_assum `fresh_inst_id s = _` kall_tac >>
+  drule fresh_inst_id_contract >> disch_then drule >> strip_tac >>
+  gvs[]
+QED
+
 val _ = export_theory ();
