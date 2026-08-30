@@ -445,6 +445,21 @@ Proof
   EVAL_TAC
 QED
 
+Theorem nested_external_entry_inputs:
+  min_calldata_size nested_external_cenv [("x", BaseT (UintT 256))] 0 = 36 /\
+  build_positional_args nested_external_cenv [("x", BaseT (UintT 256))] =
+    [("x", T, F, 32, DecPrimWord NoClamp)] /\
+  FLOOKUP nested_external_cenv.ce_vars "x" = SOME (MemLoc 0 32)
+Proof
+  simp[build_positional_args_single_uint256,
+       min_calldata_size_single_uint256]
+  >> simp[nested_external_cenv_def, update_cenv_nonreentrant_def,
+          update_cenv_ret_abi_def]
+  >> irule build_compile_env_external_single_uint_arg_lookup
+  >> simp[nested_internal_call_program_def, add_module_var_locations_def,
+          collect_locals_def]
+QED
+
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
