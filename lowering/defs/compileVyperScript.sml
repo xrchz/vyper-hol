@@ -571,6 +571,55 @@ Definition build_dense_entry_info_def:
   build_dense_entry_info _ _ = K ("", 0n, F)
 End
 
+(* ===== Policy-driven complete-unit lowering ===== *)
+
+(* Package runtime metadata from source, but keep the raw lowering result atomic.
+   The checked raw boundary accepts only Linear O1 policies, so no independent
+   dispatch or jumptable choice is exposed here. *)
+Definition lower_vyper_runtime_unit_def:
+  lower_vyper_runtime_unit (tops : toplevel list)
+                           (rpolicy : resolved_compiler_policy) =
+    let tenv = type_env tops in
+    let nkey_map = assign_nkeys tops 0 in
+    let use_trans = F in
+    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+    let selectors = build_selectors tenv ext_fns in
+    let external_fns = MAP (package_external_fn tops use_trans nkey_map)
+                           ext_fns in
+    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F)
+                              int_fns in
+    let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
+    let entry_info = build_dense_entry_info selectors external_fns in
+    run_lowering selectors external_fns runtime_int_fns fallback_fn
+      rpolicy 0 0 ([] : dense_bucket list) entry_info "__entry"
+End
+
+(* Deploy lowering receives the actual runtime bytes.  Their size and data
+   section are both owned by run_deploy_lowering. *)
+Definition lower_vyper_deploy_unit_def:
+  lower_vyper_deploy_unit (tops : toplevel list)
+                          (rpolicy : resolved_compiler_policy)
+                          (runtime_bytecode : byte list) =
+    let sft = make_struct_fields_map tops in
+    let sft_fn = get_struct_fields sft in
+    let immutables_len = compute_immutables_len sft_fn tops in
+    let nkey_map = assign_nkeys tops 0 in
+    let use_trans = F in
+    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+    let has_constructor = IS_SOME ctor_fn in
+    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T)
+                             int_fns in
+    let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
+         ctor_trans, ctor_body, ctor_ret) =
+      case ctor_fn of
+        SOME cf => package_constructor tops use_trans nkey_map cf
+      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
+                 F, F, 0n, F, ([] : stmt list), NoneT) in
+    run_deploy_lowering has_constructor rpolicy runtime_bytecode
+      immutables_len ctor_args 0 deploy_int_fns ctor_cenv ctor_body
+      ctor_payable ctor_nr ctor_nkey ctor_trans "__deploy"
+End
+
 Definition compile_vyper_def:
   compile_vyper (tops : toplevel list)
                 (pipeline : venom_context -> venom_context)
@@ -608,7 +657,7 @@ Definition compile_vyper_def:
        | Linear =>
            (0, 0, [])) in
     let (runtime_ctx, runtime_data) =
-      run_lowering selectors external_fns runtime_int_fns
+      run_lowering_pair_compat selectors external_fns runtime_int_fns
         fallback_fn dispatch_strategy bucket_count fn_meta_bytes
         dense_buckets entry_info entry_label in
     let runtime_ctx' = pipeline runtime_ctx in
@@ -629,7 +678,7 @@ Definition compile_vyper_def:
       | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
                  F, F, 0n, F, ([] : stmt list), NoneT) in
     let (deploy_ctx, deploy_data_base) =
-      run_deploy_lowering has_constructor
+      run_deploy_lowering_pair_compat has_constructor
         (LENGTH runtime_bytecode) immutables_len
         ctor_args 0 deploy_int_fns
         ctor_cenv ctor_body ctor_payable ctor_nr
@@ -680,7 +729,7 @@ Definition compile_vyper_eval_def:
        | Linear =>
            (0, 0, [])) in
     let (runtime_ctx, runtime_data) =
-      run_lowering selectors external_fns runtime_int_fns
+      run_lowering_pair_compat selectors external_fns runtime_int_fns
         fallback_fn dispatch_strategy bucket_count fn_meta_bytes
         dense_buckets entry_info entry_label in
     let runtime_ctx' = pipeline runtime_ctx in
@@ -697,7 +746,7 @@ Definition compile_vyper_eval_def:
       | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
                  F, F, 0n, F, ([] : stmt list), NoneT) in
     let (deploy_ctx, deploy_data_base) =
-      run_deploy_lowering has_constructor
+      run_deploy_lowering_pair_compat has_constructor
         (LENGTH runtime_bytecode) immutables_len
         ctor_args 0 deploy_int_fns
         ctor_cenv ctor_body ctor_payable ctor_nr

@@ -4,7 +4,7 @@
  * Upstream: vyperlang/vyper@a7f7bf133
  *
  * Connects Vyper big-step semantics (call_external) to Venom IR
- * execution (run_context) on the context produced by run_lowering.
+ * execution (run_context) on the context produced by run_lowering_pair_compat.
  *
  * Three-layer decomposition:
  *   Layer 1 - Selector dispatch: calldata method_id routes to correct
@@ -99,7 +99,7 @@ End
    with arguments tx.args, then Venom execution on the lowered context
    produces a result corresponding to Vyper evaluation.
 
-   ctx is bound to run_lowering on the given compilation inputs.
+   ctx is bound to run_lowering_pair_compat on the given compilation inputs.
    The selector_matches predicate links sel_num to tx.function_name
    via keccak256 of the ABI signature. *)
 Theorem vyper_to_venom_correct:
@@ -107,7 +107,7 @@ Theorem vyper_to_venom_correct:
     bucket_count fn_meta_bytes dense_buckets entry_info entry_label
     vs am tx sel fn_lbl htz cenv
     args dflts ret body mut nr.
-  let (ctx, _) = run_lowering selectors ext_fns int_fns fb_fn
+  let (ctx, _) = run_lowering_pair_compat selectors ext_fns int_fns fb_fn
                    dispatch bucket_count fn_meta_bytes
                    dense_buckets entry_info entry_label in
     (* tx targets a known external function *)
