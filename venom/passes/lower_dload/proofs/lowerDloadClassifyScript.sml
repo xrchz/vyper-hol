@@ -9,7 +9,7 @@
 Theory lowerDloadClassify
 Ancestors
   lowerDloadDefs stateEquiv venomExecProps venomInstProps instIdxIndep
-  venomExecSemantics venomInst venomState finite_map
+  venomExecSemantics venomInst venomState finite_map opcodeClass
 
 (* ===== Cross-block invariant ===== *)
 
@@ -559,16 +559,14 @@ Proof
   gvs[AllCaseEqs()]
 QED
 
-val step_base_result_tac =
-  rw[step_inst_base_def] >>
-  gvs[AllCaseEqs(), is_terminator_def];
-
 Theorem step_inst_base_no_halt_ld[local]:
   !inst s s'.
     step_inst_base inst s = Halt s' ==>
     is_terminator inst.inst_opcode
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule step_inst_base_halt_opcodes >> strip_tac >>
+  gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_no_intret_ld[local]:
@@ -576,7 +574,9 @@ Theorem step_inst_base_no_intret_ld[local]:
     step_inst_base inst s = IntRet vs s' ==>
     is_terminator inst.inst_opcode
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule step_inst_base_intret_opcodes >> strip_tac >>
+  gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_abort_opcode_ld[local]:
@@ -587,7 +587,9 @@ Theorem step_inst_base_abort_opcode_ld[local]:
     inst.inst_opcode = ASSERT_UNREACHABLE \/
     inst.inst_opcode = RETURNDATACOPY
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule step_inst_base_abort_opcodes >> strip_tac >>
+  gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_not_halt_abort[local]:
