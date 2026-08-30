@@ -328,6 +328,25 @@ Definition min_calldata_size_def:
                     required in
     4 + SUM sizes
 End
+Theorem build_positional_args_single_uint256:
+  !cenv name.
+    build_positional_args cenv [(name, BaseT (UintT 256))] =
+      [(name, T, F, 32, DecPrimWord NoClamp)]
+Proof
+  simp[build_positional_args_def, build_positional_arg_def,
+       is_word_type_def, is_abi_dynamic_def,
+       abi_embedded_static_size_def, abi_static_size_def,
+       type_to_abi_dec_info_def, type_to_abi_clamp_def]
+QED
+
+Theorem min_calldata_size_single_uint256:
+  !cenv name.
+    min_calldata_size cenv [(name, BaseT (UintT 256))] 0 = 36
+Proof
+  simp[min_calldata_size_def, abi_embedded_static_size_def,
+       is_abi_dynamic_def, abi_static_size_def]
+QED
+
 
 (* ===== Storage Layout from AST ===== *)
 
