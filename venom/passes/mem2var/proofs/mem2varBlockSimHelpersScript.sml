@@ -1810,6 +1810,8 @@ Proof
   conj_tac
   >- (qexists `sz` >> simp[Abbr `t2`]) >>
   simp[Abbr `t1`, Abbr `t2`] >>
+  qpat_assum `m2v_inv_noix fn (s1 with vs_fmp := _) _`
+    (assume_tac o ONCE_REWRITE_RULE [wordsTheory.WORD_ADD_COMM]) >>
   irule m2v_inv_noix_update_var >>
   simp[] >> metis_tac[]
 QED
@@ -2486,7 +2488,7 @@ QED
    Used by RETURN/REVERT FIND=NONE and nonpromoted memory ops. *)
 Definition m2v_nonpromoted_access_safe_def:
   m2v_nonpromoted_access_safe fn s <=>
-    !bb inst ops off_val sz_val sz_op.
+    (!bb inst ops off_val sz_val sz_op.
       MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
       (mem_write_ops inst = SOME ops \/ mem_read_ops inst = SOME ops) /\
       ~is_immutable_op inst.inst_opcode /\
@@ -2496,7 +2498,16 @@ Definition m2v_nonpromoted_access_safe_def:
       ops.iao_max_size = SOME sz_op /\
       eval_operand sz_op s = SOME sz_val ==>
       !addr. w2n off_val <= addr /\ addr < w2n off_val + w2n sz_val ==>
-        ~in_promoted_region fn s addr
+        ~in_promoted_region fn s addr) /\
+    (!bb inst vals q r pairs src sz.
+      MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
+      inst.inst_opcode = DRET /\
+      parse_dret_shape inst = SOME (q,r) /\
+      eval_operands inst.inst_operands s = SOME vals /\
+      pair_dret_words (TAKE (2 * r) (DROP (q + 1) vals)) = SOME pairs /\
+      MEM (src,sz) pairs ==>
+      !addr. w2n src <= addr /\ addr < w2n src + w2n sz ==>
+        ~in_promoted_region fn s addr)
 End
 
 Triviality eval_operand_idx[simp]:
@@ -2508,7 +2519,8 @@ Theorem m2v_nonpromoted_access_safe_idx[simp]:
   m2v_nonpromoted_access_safe fn (s with vs_inst_idx := n) =
   m2v_nonpromoted_access_safe fn s
 Proof
-  simp[m2v_nonpromoted_access_safe_def, in_promoted_region_def]
+  simp[m2v_nonpromoted_access_safe_def, in_promoted_region_def,
+       instIdxIndepTheory.eval_ops_inst_idx]
 QED
 
 (* Element of TAKE sz (DROP off mem ++ REPLICATE sz 0w) = mem_byte *)
@@ -2825,6 +2837,23 @@ Proof
   simp[m2v_nonpromoted_access_safe_def] >> metis_tac[]
 QED
 
+(* NAS extraction: each successfully parsed DRET dynamic source range is
+   disjoint from promoted regions. *)
+Theorem nas_dret_source_range_disjoint:
+  !fn s bb inst vals q r pairs src sz.
+    m2v_nonpromoted_access_safe fn s /\
+    MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
+    inst.inst_opcode = DRET /\
+    parse_dret_shape inst = SOME (q,r) /\
+    eval_operands inst.inst_operands s = SOME vals /\
+    pair_dret_words (TAKE (2 * r) (DROP (q + 1) vals)) = SOME pairs /\
+    MEM (src,sz) pairs ==>
+    !addr. w2n src <= addr /\ addr < w2n src + w2n sz ==>
+           ~in_promoted_region fn s addr
+Proof
+  simp[m2v_nonpromoted_access_safe_def] >> metis_tac[]
+QED
+
 (* Combined: read_memory agrees for nonpromoted mem_read_ops instructions.
    Chains read_memory_m2v_inv + nas_read_range_disjoint.
    Takes eval_operand on EITHER state (bridges via agreement). *)
@@ -2972,6 +3001,17 @@ Resume m2v_step_ext_call[create2]:
 QED
 Finalise m2v_step_ext_call
 
+Theorem m2v_promo_sizes_bounded_MEM:
+  !fn ao pvar sz.
+    m2v_promo_sizes_bounded fn /\
+    MEM (ao,pvar,sz) (m2v_promo_list fn) ==>
+    sz = 32
+Proof
+  rpt strip_tac >>
+  fs[m2v_promo_sizes_bounded_def] >>
+  first_x_assum drule >> simp[]
+QED
+
 Theorem m2v_nonterminal_step_dispatch:
   !fn bb i fuel ctx s1 s2 v1.
     wf_function fn /\
@@ -3116,8 +3156,8 @@ Resume m2v_nonterminal_step_dispatch[disjoint]:
   strip_tac >> simp[] >>
   (* IS_SOME ==> sz2 >= 32: fresh pvar2 only assigned by promoted MSTORE (sz=32) *)
   strip_tac >>
-  `sz2 = 32` by (
-    gvs[m2v_promo_sizes_bounded_def] >> res_tac) >>
+  `sz2 = 32` by
+    (drule_all m2v_promo_sizes_bounded_MEM >> gvs[]) >>
   simp[]
 QED
 
@@ -3226,7 +3266,9 @@ Resume m2v_nonterminal_step_dispatch[mstore_unchanged]:
     `addr`,`addr'`] m2v_inv_noix_regions_disjoint) >>
   (impl_tac >- simp[]) >> strip_tac >>
   (* regions_disjoint (w2n addr, sz) (w2n addr', 32) with sz = 32 *)
-  `sz = 32` by (gvs[m2v_promo_sizes_bounded_def] >> res_tac) >>
+  `sz = 32` by
+    (mp_tac (Q.SPECL [`fn`,`ao`,`pvar`,`sz`]
+       m2v_promo_sizes_bounded_MEM) >> simp[]) >>
   gvs[regions_disjoint_def]
 QED
 
@@ -3479,18 +3521,16 @@ Proof
   gvs[step_inst_base_def, AllCaseEqs()] >>
   rename1 `inst.inst_outputs = [out]` >>
   (* Memory data agrees: extract from nonpromoted_access_safe *)
+  `!addr. w2n offset <= addr /\ addr < w2n offset + w2n size_val ==>
+          ~in_promoted_region fn s1 addr`
+    by (ho_match_mp_tac nas_read_range_disjoint >>
+        qexistsl [`bb`, `inst`] >>
+        simp[mem_read_ops_def, is_immutable_op_def]) >>
   `TAKE (w2n size_val) (DROP (w2n offset) s1.vs_memory ++
      REPLICATE (w2n size_val) 0w) =
    TAKE (w2n size_val) (DROP (w2n offset) s2.vs_memory ++
      REPLICATE (w2n size_val) 0w)`
-    by (irule mem_byte_agrees_take_drop >> rpt strip_tac >>
-        first_x_assum irule >>
-        qpat_x_assum `m2v_nonpromoted_access_safe _ _` mp_tac >>
-        simp[m2v_nonpromoted_access_safe_def] >>
-        disch_then (qspecl_then [`bb`, `inst`] mp_tac) >>
-        simp[mem_read_ops_def, is_immutable_op_def] >>
-        disch_then (qspecl_then [`offset`, `size_val`] mp_tac) >>
-        simp[] >> disch_then irule >> simp[]) >>
+    by (irule mem_byte_agrees_take_drop >> metis_tac[]) >>
   simp[] >>
   irule m2v_inv_noix_update_var >> simp[] >>
   mp_tac (Q.SPECL [`fn`,`inst`,`out`] m2v_output_safe) >> simp[]
@@ -3539,13 +3579,11 @@ Proof
   (* Memory read range is outside promoted regions *)
   `!addr. w2n off <= addr /\ addr < w2n off + w2n sz ==>
           ~in_promoted_region fn s1 addr`
-    by (qpat_x_assum `m2v_nonpromoted_access_safe _ _` mp_tac >>
-        simp[m2v_nonpromoted_access_safe_def] >>
-        disch_then (qspecl_then [`bb`, `inst`] mp_tac) >>
+    by (ho_match_mp_tac nas_read_range_disjoint >>
+        qexistsl [`bb`, `inst`] >>
         `LENGTH rest >= 2` by simp[] >>
         simp[mem_read_ops_def, is_immutable_op_def] >>
-        Cases_on `rest` >> gvs[] >> Cases_on `t` >> gvs[] >>
-        disch_then (qspecl_then [`off`, `sz`, `h'`] mp_tac) >> simp[]) >>
+        Cases_on `rest` >> gvs[] >> Cases_on `t` >> gvs[]) >>
   (* Memory data for event agrees *)
   `TAKE (w2n sz) (DROP (w2n off) s1.vs_memory ++ REPLICATE (w2n sz) 0w) =
    TAKE (w2n sz) (DROP (w2n off) s2.vs_memory ++ REPLICATE (w2n sz) 0w)`
@@ -4028,6 +4066,276 @@ Proof
   simp[pack_dret_dynamic_def, lift_result_def]
 QED
 
+(* Checked obstruction for paired DRET packing: a one-byte copy can export an
+   allowed source disagreement into an observed destination.  Thus preservation
+   needs source-byte agreement (or a source-range exclusion premise). *)
+Theorem mcopy_exports_promoted_disagreement[local]:
+  !fn s1 s2 b1 b2.
+    b1 <> b2 /\
+    ~in_promoted_region fn
+       (mcopy 64 0 1 (s1 with vs_memory := [b1])) 64 ==>
+    ~m2v_inv_noix fn
+       (mcopy 64 0 1 (s1 with vs_memory := [b1]))
+       (mcopy 64 0 1 (s2 with vs_memory := [b2]))
+Proof
+  rpt strip_tac >> fs[m2v_inv_noix_def] >>
+  qpat_x_assum `!i. ~in_promoted_region fn _ i ==> _`
+    (qspec_then `64` mp_tac) >>
+  simp[mem_byte_def, mcopy_def, write_memory_with_expansion_def] >>
+  EVAL_TAC >> simp[]
+QED
+
+Definition dret_ce_inst_def[local]:
+  dret_ce_inst =
+    mk_inst 2 DRET
+      [Lit (1w:bytes32); Lit (0w:bytes32);
+       Lit (1w:bytes32); Lit (0w:bytes32)] []
+End
+
+Definition dret_ce_fn_def[local]:
+  dret_ce_fn =
+    mk_raw_function "f"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 0 ALLOCA [Lit (32w:bytes32)] ["a"];
+             mk_inst 1 MSTORE [Lit (0w:bytes32); Var "a"] [];
+             dret_ce_inst] |>]
+End
+
+Definition dret_ce_s1_def[local]:
+  dret_ce_s1 = init_venom_state "entry" with <|
+    vs_memory := [(1w:word8)];
+    vs_allocas := FEMPTY |+ (0,(0,32));
+    vs_call_entry_fmp := (64w:bytes32)
+  |>
+End
+
+Definition dret_ce_s2_def[local]:
+  dret_ce_s2 = init_venom_state "entry" with <|
+    vs_memory := [(2w:word8)];
+    vs_allocas := FEMPTY |+ (0,(0,32));
+    vs_call_entry_fmp := (64w:bytes32)
+  |>
+End
+
+Theorem dret_ce_promo_list[local]:
+  m2v_promo_list dret_ce_fn = [("a",m2v_fresh_var "a" 0,32)]
+Proof
+  EVAL_TAC >> wordsLib.WORD_DECIDE_TAC
+QED
+
+Theorem dret_ce_promoted_ids[local]:
+  m2v_promoted_ids dret_ce_fn = {0}
+Proof
+  EVAL_TAC >>
+  conj_tac
+  >- (rw[SUBSET_DEF] >> gvs[]) >>
+  qexists `<| inst_id := 0; inst_opcode := ALLOCA;
+               inst_operands := [Lit (32w:bytes32)];
+               inst_outputs := ["a"] |>` >>
+  simp[] >> qexists `"a"` >> simp[]
+QED
+
+Theorem dret_ce_fresh_vars[local]:
+  m2v_fresh_vars dret_ce_fn = {m2v_fresh_var "a" 0}
+Proof
+  EVAL_TAC >> wordsLib.WORD_DECIDE_TAC
+QED
+
+Theorem dret_ce_fn_insts[local]:
+  fn_insts dret_ce_fn =
+    [mk_inst 0 ALLOCA [Lit (32w:bytes32)] ["a"];
+     mk_inst 1 MSTORE [Lit (0w:bytes32); Var "a"] [];
+     dret_ce_inst]
+Proof
+  EVAL_TAC >> wordsLib.WORD_DECIDE_TAC
+QED
+
+Theorem dret_ce_inst_mem[local]:
+  MEM dret_ce_inst (fn_insts dret_ce_fn)
+Proof
+  simp[dret_ce_fn_insts]
+QED
+
+Theorem dret_ce_inst_opcode[local]:
+  dret_ce_inst.inst_opcode = DRET
+Proof
+  EVAL_TAC
+QED
+
+Theorem dret_ce_inst_shape[local]:
+  parse_dret_shape dret_ce_inst = SOME (0,1)
+Proof
+  EVAL_TAC >> simp[mk_inst_def]
+QED
+
+Theorem dret_ce_call_entry_fmp[local]:
+  dret_ce_s1.vs_call_entry_fmp = (64w:bytes32) /\
+  dret_ce_s2.vs_call_entry_fmp = (64w:bytes32)
+Proof
+  EVAL_TAC
+QED
+
+Theorem dret_ce_inv_noix[local]:
+  m2v_inv_noix dret_ce_fn dret_ce_s1 dret_ce_s2
+Proof
+  simp[m2v_inv_noix_def, dret_ce_fresh_vars, dret_ce_promo_list,
+       dret_ce_fn_insts, dret_ce_promoted_ids, dret_ce_s1_def, dret_ce_s2_def,
+       lookup_var_def, mem_byte_def, in_promoted_region_def, mload_def,
+       allocas_non_overlapping_def, init_venom_state_def, mk_inst_def] >>
+  rpt strip_tac >> gvs[FLOOKUP_UPDATE, FLOOKUP_DEF, FDOM_FEMPTY]
+QED
+
+Theorem dret_ce_non32_ok[local]:
+  m2v_non32_ok dret_ce_fn dret_ce_s1 dret_ce_s2
+Proof
+  simp[m2v_non32_ok_def, dret_ce_promo_list]
+QED
+
+Theorem dret_ce_ao_undef_sync[local]:
+  m2v_ao_undef_sync dret_ce_fn dret_ce_s1 dret_ce_s2
+Proof
+  simp[m2v_ao_undef_sync_def, dret_ce_promo_list,
+       dret_ce_s1_def, dret_ce_s2_def, lookup_var_def, init_venom_state_def]
+QED
+
+Theorem dret_ce_fresh_names_disjoint[local]:
+  m2v_fresh_names_disjoint dret_ce_fn
+Proof
+  EVAL_TAC >> rpt strip_tac >> gvs[]
+QED
+
+Theorem dret_ce_alloca_next[local]:
+  dret_ce_s1.vs_alloca_next = dret_ce_s2.vs_alloca_next
+Proof
+  EVAL_TAC
+QED
+
+Theorem dret_ce_terminator_sides[local]:
+  MEM dret_ce_inst (fn_insts dret_ce_fn) /\
+  is_terminator dret_ce_inst.inst_opcode /\
+  dret_ce_inst.inst_opcode <> INVOKE /\
+  dret_ce_inst.inst_opcode <> RETURN /\
+  dret_ce_inst.inst_opcode <> REVERT
+Proof
+  simp[dret_ce_inst_mem, dret_ce_inst_opcode, is_terminator_def]
+QED
+
+Theorem dret_ce_eval_operands[local]:
+  eval_operands dret_ce_inst.inst_operands dret_ce_s1 =
+    SOME [(1w:bytes32); 0w; 1w; 0w] /\
+  eval_operands dret_ce_inst.inst_operands dret_ce_s2 =
+    SOME [(1w:bytes32); 0w; 1w; 0w]
+Proof
+  EVAL_TAC
+QED
+
+
+
+Definition dret_safe_inst_def[local]:
+  dret_safe_inst =
+    mk_inst 2 DRET
+      [Lit (1w:bytes32); Lit (32w:bytes32);
+       Lit (1w:bytes32); Lit (0w:bytes32)] []
+End
+
+Definition dret_safe_fn_def[local]:
+  dret_safe_fn =
+    mk_raw_function "f"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 0 ALLOCA [Lit (32w:bytes32)] ["a"];
+             mk_inst 1 MSTORE [Lit (0w:bytes32); Var "a"] [];
+             dret_safe_inst] |>]
+End
+
+Theorem dret_safe_nonpromoted_access_safe[local]:
+  m2v_nonpromoted_access_safe dret_safe_fn dret_ce_s1
+Proof
+  EVAL_TAC >> rpt strip_tac >>
+  gvs[eval_operands_def, eval_operand_def, pair_dret_words_def]
+QED
+
+Theorem dret_ce_not_nonpromoted_access_safe[local]:
+  ~m2v_nonpromoted_access_safe dret_ce_fn dret_ce_s1
+Proof
+  strip_tac >>
+  `!addr. w2n (0w:bytes32) <= addr /\
+          addr < w2n (0w:bytes32) + w2n (1w:bytes32) ==>
+          ~in_promoted_region dret_ce_fn dret_ce_s1 addr` by (
+    ho_match_mp_tac nas_dret_source_range_disjoint >>
+    qexistsl [`<| bb_label := "entry";
+                  bb_instructions :=
+                    [mk_inst 0 ALLOCA [Lit (32w:bytes32)] ["a"];
+                     mk_inst 1 MSTORE [Lit (0w:bytes32); Var "a"] [];
+                     dret_ce_inst] |>`,
+               `dret_ce_inst`,
+               `[(1w:bytes32); 0w; 1w; 0w]`, `0`, `1`,
+               `[((0w:bytes32),(1w:bytes32))]`] >>
+    simp[dret_ce_fn_def, dret_ce_inst_def, dret_ce_s1_def,
+         eval_operands_def, eval_operand_def, pair_dret_words_def,
+         dretShapeDefsTheory.parse_dret_shape_def, mk_inst_def,
+         mk_raw_function_def, init_venom_state_def]) >>
+  first_x_assum (qspec_then `0` mp_tac) >>
+  simp[in_promoted_region_def, dret_ce_promoted_ids, dret_ce_s1_def,
+       init_venom_state_def, FLOOKUP_UPDATE]
+QED
+
+(* The repaired DRET contract excludes exactly the singleton execution that
+   would copy a promoted source disagreement into observable memory. *)
+Theorem dret_ce_dynamic_pairs[local]:
+  pair_dret_words
+    (TAKE (2 * 1) (DROP (1 + 0)
+      [(1w:bytes32); 0w; 1w; 0w])) =
+    SOME [((0w:bytes32),(1w:bytes32))]
+Proof
+  EVAL_TAC
+QED
+
+Theorem dret_ce_singleton_pack[local]:
+  !s.
+    pack_dret_dynamic (64w:bytes32)
+      [((0w:bytes32),(1w:bytes32))] s =
+    ([64w],96w,mcopy 64 0 1 s)
+Proof
+  simp[pack_dret_dynamic_def] >> EVAL_TAC >>
+  wordsLib.WORD_DECIDE_TAC
+QED
+
+Theorem dret_ce_singleton_pack_breaks_inv[local]:
+  ~m2v_inv_noix dret_ce_fn
+     (mcopy 64 0 1 dret_ce_s1)
+     (mcopy 64 0 1 dret_ce_s2)
+Proof
+  pure_rewrite_tac[dret_ce_s1_def, dret_ce_s2_def] >>
+  irule mcopy_exports_promoted_disagreement >>
+  simp[in_promoted_region_def, dret_ce_promoted_ids,
+       mcopy_def, write_memory_with_expansion_def,
+       init_venom_state_def, FLOOKUP_UPDATE]
+QED
+
+Theorem dret_ce_repaired_contract_excludes_bad_pack[local]:
+  m2v_inv_noix dret_ce_fn dret_ce_s1 dret_ce_s2 /\
+  pair_dret_words
+    (TAKE (2 * 1) (DROP (1 + 0)
+      [(1w:bytes32); 0w; 1w; 0w])) =
+    SOME [((0w:bytes32),(1w:bytes32))] /\
+  pack_dret_dynamic (64w:bytes32)
+      [((0w:bytes32),(1w:bytes32))] dret_ce_s1 =
+    ([64w],96w,mcopy 64 0 1 dret_ce_s1) /\
+  pack_dret_dynamic (64w:bytes32)
+      [((0w:bytes32),(1w:bytes32))] dret_ce_s2 =
+    ([64w],96w,mcopy 64 0 1 dret_ce_s2) /\
+  ~m2v_inv_noix dret_ce_fn
+     (mcopy 64 0 1 dret_ce_s1)
+     (mcopy 64 0 1 dret_ce_s2) /\
+  ~m2v_nonpromoted_access_safe dret_ce_fn dret_ce_s1
+Proof
+  simp[dret_ce_inv_noix, dret_ce_dynamic_pairs, dret_ce_singleton_pack,
+       dret_ce_singleton_pack_breaks_inv,
+       dret_ce_not_nonpromoted_access_safe]
+QED
+
 (* For FIND=NONE easy terminators (not RETURN/REVERT), step_inst on s1
    and s2 produce lift_result-related outputs. *)
 Theorem m2v_step_easy_terminator:
@@ -4183,6 +4491,11 @@ val return_revert_find_none_tac =
   Cases_on `eval_operand sz_op s2` >> gvs[] >>
   rename1 `eval_operand off_op s2 = SOME off_val` >>
   rename1 `eval_operand sz_op s2 = SOME sz_val` >>
+  `!addr. w2n off_val <= addr /\ addr < w2n off_val + w2n sz_val ==>
+          ~in_promoted_region fn s1 addr` by (
+    ho_match_mp_tac nas_read_range_disjoint >>
+    qexistsl [`bb`, `inst`] >>
+    simp[mem_read_ops_def, is_immutable_op_def]) >>
   `TAKE (w2n sz_val) (DROP (w2n off_val) s1.vs_memory ++
      REPLICATE (w2n sz_val) 0w) =
    TAKE (w2n sz_val) (DROP (w2n off_val) s2.vs_memory ++
@@ -4190,13 +4503,7 @@ val return_revert_find_none_tac =
     irule mem_byte_agrees_take_drop >> rpt strip_tac >>
     qpat_x_assum `m2v_inv_noix _ _ _`
       (strip_assume_tac o REWRITE_RULE[m2v_inv_noix_def]) >>
-    first_x_assum irule >>
-    qpat_x_assum `m2v_nonpromoted_access_safe _ _`
-      (mp_tac o REWRITE_RULE[m2v_nonpromoted_access_safe_def]) >>
-    disch_then (qspecl_then [`bb`, `inst`, `<| iao_ofst := off_op;
-      iao_size := SOME sz_op; iao_max_size := SOME sz_op |>`,
-      `off_val`, `sz_val`, `sz_op`] mp_tac) >>
-    simp[mem_read_ops_def, is_immutable_op_def]) >>
+    first_x_assum irule >> first_x_assum irule >> simp[]) >>
   simp[lift_result_def] >>
   mp_tac m2v_terminal_inv_preserved >>
   disch_then (qspecl_then [`fn`,`s1`,`s2`,
