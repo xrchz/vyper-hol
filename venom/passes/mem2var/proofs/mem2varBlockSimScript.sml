@@ -35,6 +35,8 @@ Theorem m2v_per_block_sim_at[local]:
     MEM bb fn.fn_blocks /\
     bb_well_formed bb /\
     EVERY (\i. i.inst_opcode <> INVOKE) bb.bb_instructions /\
+    EVERY (\i. i.inst_opcode <> DRET) bb.bb_instructions /\
+    EVERY (\i. i.inst_opcode <> RETFMP) bb.bb_instructions /\
     EVERY (\i. i.inst_opcode <> MEMTOP) bb.bb_instructions /\
     s1.vs_inst_idx <= LENGTH bb.bb_instructions /\
     s2.vs_inst_idx = s1.vs_inst_idx /\
@@ -522,6 +524,10 @@ Theorem m2v_per_block_sim:
     all_mem_via_pointer fn (alloca_roots fn) /\
     EVERY (\bb. EVERY (\i. i.inst_opcode <> INVOKE)
       bb.bb_instructions) fn.fn_blocks /\
+    EVERY (\bb. EVERY (\i. i.inst_opcode <> DRET)
+      bb.bb_instructions) fn.fn_blocks /\
+    EVERY (\bb. EVERY (\i. i.inst_opcode <> RETFMP)
+      bb.bb_instructions) fn.fn_blocks /\
     EVERY (\bb. EVERY (\i. i.inst_opcode <> MEMTOP)
       bb.bb_instructions) fn.fn_blocks ==>
     !bb. MEM bb fn.fn_blocks ==>
@@ -567,6 +573,10 @@ Proof
   `bb_well_formed bb` by metis_tac[wf_function_bb_well_formed] >>
   (* Get EVERY no_invoke for this block *)
   `EVERY (\i. i.inst_opcode <> INVOKE)
+    bb.bb_instructions` by (gvs[EVERY_MEM] >> metis_tac[]) >>
+  `EVERY (\i. i.inst_opcode <> DRET)
+    bb.bb_instructions` by (gvs[EVERY_MEM] >> metis_tac[]) >>
+  `EVERY (\i. i.inst_opcode <> RETFMP)
     bb.bb_instructions` by (gvs[EVERY_MEM] >> metis_tac[]) >>
   `EVERY (\i. i.inst_opcode <> MEMTOP)
     bb.bb_instructions` by (gvs[EVERY_MEM] >> metis_tac[]) >>

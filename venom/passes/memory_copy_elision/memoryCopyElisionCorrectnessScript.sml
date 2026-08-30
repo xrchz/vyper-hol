@@ -88,14 +88,15 @@ Proof
   rw[load_store_step_def, LET_THM]
 QED
 
-(* Terminators satisfy the non-modifiable condition *)
-Triviality terminator_not_modifiable:
-  !op. is_terminator op ==>
-    ~is_load_fact_opcode op /\ ~is_store_opcode op /\
-    ~is_copy_opcode op /\ Eff_MEMORY NOTIN write_effects op
+(* Terminators are always emitted unchanged, even when they update load facts. *)
+Triviality terminator_lse_step_identity:
+  !aliases bp uc lf inst.
+    is_terminator inst.inst_opcode ==>
+    SND (load_store_step aliases bp uc (lf, inst)) = inst
 Proof
-  Cases >> simp[is_terminator_def, is_load_fact_opcode_def,
-    is_store_opcode_def, is_copy_opcode_def,
+  rpt gen_tac >> Cases_on `inst.inst_opcode` >>
+  simp[is_terminator_def, load_store_step_def, LET_THM,
+    is_load_fact_opcode_def, is_store_opcode_def, is_copy_opcode_def,
     write_effects_def, empty_effects_def]
 QED
 
@@ -155,7 +156,8 @@ Triviality lse_foldl_el:
      ~is_store_opcode orig.inst_opcode /\
      ~is_copy_opcode orig.inst_opcode /\
      Eff_MEMORY NOTIN write_effects orig.inst_opcode ==>
-     inst' = orig)
+     inst' = orig) /\
+    (is_terminator orig.inst_opcode ==> inst' = orig)
 Proof
   Induct >> simp[LET_THM]
   >> rpt gen_tac >> simp[LET_THM] >> pairarg_tac >> gvs[]
@@ -179,8 +181,13 @@ Resume lse_foldl_el[i_eq]:
   qspecl_then [`aliases`,`bp`,`uc`,`lf0`,`h`] strip_assume_tac
     lse_step_inst_or_nop >>
   gvs[mk_nop_inst_def] >>
-  strip_tac >>
-  drule lse_step_identity >> simp[] >>
+  conj_tac
+  >- (strip_tac >>
+      drule lse_step_identity >> simp[] >>
+      disch_then (qspecl_then [`aliases`,`bp`,`uc`,`lf0`] mp_tac) >>
+      simp[])
+  >> strip_tac >>
+  drule terminator_lse_step_identity >>
   disch_then (qspecl_then [`aliases`,`bp`,`uc`,`lf0`] mp_tac) >>
   simp[]
 QED
@@ -210,7 +217,8 @@ Triviality lse_foldl_combined:
         ~is_store_opcode orig.inst_opcode /\
         ~is_copy_opcode orig.inst_opcode /\
         Eff_MEMORY NOTIN write_effects orig.inst_opcode ==>
-        inst' = orig))
+        inst' = orig) /\
+       (is_terminator orig.inst_opcode ==> inst' = orig))
 Proof
   rpt strip_tac
   >- (drule lse_foldl_length >> simp[])
@@ -251,7 +259,8 @@ Triviality lse_block_trace:
      ~is_store_opcode orig.inst_opcode /\
      ~is_copy_opcode orig.inst_opcode /\
      Eff_MEMORY NOTIN write_effects orig.inst_opcode ==>
-     inst = orig)
+     inst = orig) /\
+    (is_terminator orig.inst_opcode ==> inst = orig)
 Proof
   rpt strip_tac >>
   gvs[load_store_elim_block_def, LET_THM] >>
@@ -271,7 +280,8 @@ Proof
   qspecl_then [`aliases`,`bp`,`uc`,`bb`,`i`] mp_tac
     (REWRITE_RULE [LET_THM] lse_block_trace) >>
   simp[lse_block_length] >> strip_tac >>
-  first_x_assum irule >> simp[phi_not_modifiable]
+  qpat_x_assum `~is_load_fact_opcode _ /\ _ ==> _` irule >>
+  simp[phi_not_modifiable]
 QED
 
 (* If the transformed instruction has opcode PHI, the original did too *)
@@ -311,7 +321,7 @@ Proof
   simp[Abbr `bb'`, lse_block_length] >>
   `is_terminator (EL (PRE (LENGTH bb.bb_instructions)) bb.bb_instructions).inst_opcode` by
     (gvs[bb_well_formed_def, LAST_EL]) >>
-  drule terminator_not_modifiable >> strip_tac >> simp[]
+  simp[]
 QED
 
 Triviality lse_block_wf:

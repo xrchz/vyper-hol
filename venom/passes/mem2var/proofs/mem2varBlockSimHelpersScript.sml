@@ -4347,7 +4347,9 @@ Theorem m2v_step_easy_terminator:
     is_terminator inst.inst_opcode /\
     inst.inst_opcode <> INVOKE /\
     inst.inst_opcode <> RETURN /\
-    inst.inst_opcode <> REVERT ==>
+    inst.inst_opcode <> REVERT /\
+    inst.inst_opcode <> DRET /\
+    inst.inst_opcode <> RETFMP ==>
     lift_result (\s1 s2. m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
                          m2v_ao_undef_sync fn s1 s2)
                 (\s1 s2. m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
@@ -5665,7 +5667,9 @@ Theorem m2v_step_easy_terminator_full:
     is_terminator inst.inst_opcode /\
     inst.inst_opcode <> INVOKE /\
     inst.inst_opcode <> RETURN /\
-    inst.inst_opcode <> REVERT ==>
+    inst.inst_opcode <> REVERT /\
+    inst.inst_opcode <> DRET /\
+    inst.inst_opcode <> RETFMP ==>
     lift_result (\s1 s2. m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
                          m2v_ao_undef_sync fn s1 s2 /\
                          s1.vs_alloca_next = s2.vs_alloca_next)
