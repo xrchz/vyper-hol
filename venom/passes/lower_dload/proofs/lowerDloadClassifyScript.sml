@@ -375,6 +375,13 @@ Proof
   >- ld_classify_one_tac
   >- ld_classify_one_tac
   >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
 QED
 
 Theorem ld_step_passthrough:
