@@ -21,6 +21,7 @@ Ancestors
   moduleLowering
   compileEnv
   venomInst
+  venomCompilerTypes
 
 (* ===== Compile State Initialization ===== *)
 
@@ -57,20 +58,24 @@ Definition extract_context_def:
      REVERSE st.cs_data_sections)
 End
 
-(* ===== Top-Level Compilation ===== *)
+(* ===== Policy Boundary ===== *)
 
-(* Run the compilation monad and extract a venom_context.
-   This is the pure function composition:
-     1. Initialize compile state
-     2. Run compile_generate_runtime in the monad
-     3. Extract the resulting context
+(* Raw source lowering implements the resolved O1 frontend contract.  Check the
+   whole resolved shape rather than accepting a dispatch choice independently. *)
+Definition lowering_policy_ok_def:
+  lowering_policy_ok (rpolicy : resolved_compiler_policy) <=>
+    target_capabilities_wf rpolicy.rpol_target /\
+    rpolicy.rpol_target CapMcopy /\
+    rpolicy.rpol_frontend_dispatch = Linear /\
+    rpolicy.rpol_final_assembly = FAP_Optimize
+End
 
-   The arguments mirror compile_generate_runtime's parameters.
-   A higher-level wrapper that extracts these from a vyper_module
-   is left for future work (requires formalizing the module
-   metadata extraction that Python does in VenomCompiler.__init__). *)
-Definition run_lowering_def:
-  run_lowering selectors external_fns internal_fns
+(* ===== Pair-returning compatibility runners ===== *)
+
+(* Legacy construction result.  New callers should use run_lowering, which
+   keeps context and data atomic in a compilation_unit. *)
+Definition run_lowering_pair_compat_def:
+  run_lowering_pair_compat selectors external_fns internal_fns
                fallback_fn dispatch_strategy
                bucket_count fn_metadata_bytes
                dense_buckets
@@ -82,16 +87,12 @@ Definition run_lowering_def:
         fallback_fn dispatch_strategy bucket_count fn_metadata_bytes
         dense_buckets entry_info st0
     in
-    extract_context entry_label st1  (* returns (venom_context, data_section list) *)
+    extract_context entry_label st1
 End
 
-(* Run the deploy compilation monad and extract a venom_context.
-   Mirrors Python's generate_deploy_venom():
-   - Constructor body (if present) with is_ctor_context=True
-   - Internal fns reachable from constructor (is_ctor_context=True)
-   - Deploy epilogue: codecopy runtime + return *)
-Definition run_deploy_lowering_def:
-  run_deploy_lowering has_constructor runtime_size immutables_len
+(* Legacy deploy construction result. *)
+Definition run_deploy_lowering_pair_compat_def:
+  run_deploy_lowering_pair_compat has_constructor runtime_size immutables_len
                        constructor_args data_size
                        ctor_internal_fns
                        cenv body is_payable is_nonreentrant
@@ -104,4 +105,45 @@ Definition run_deploy_lowering_def:
         cenv body is_payable is_nonreentrant nkey use_transient st0
     in
     extract_context entry_label st1
+End
+
+(* ===== Complete-unit raw lowering APIs ===== *)
+
+Definition run_lowering_def:
+  run_lowering selectors external_fns internal_fns fallback_fn
+               (rpolicy : resolved_compiler_policy)
+               bucket_count fn_metadata_bytes dense_buckets
+               (entry_info : num -> string # num # bool)
+               (entry_label : string) : compilation_unit option =
+    if lowering_policy_ok rpolicy then
+      let (ctx, data) =
+        run_lowering_pair_compat selectors external_fns internal_fns
+          fallback_fn rpolicy.rpol_frontend_dispatch
+          bucket_count fn_metadata_bytes dense_buckets entry_info entry_label
+      in
+        SOME <| cu_context := ctx; cu_data_segment := data |>
+    else NONE
+End
+
+(* Deploy lowering owns both the runtime size and runtime data installation. *)
+Definition run_deploy_lowering_def:
+  run_deploy_lowering has_constructor (rpolicy : resolved_compiler_policy)
+                       (runtime_bytecode : byte list) immutables_len
+                       constructor_args data_size ctor_internal_fns
+                       cenv body is_payable is_nonreentrant
+                       nkey use_transient
+                       (entry_label : string) : compilation_unit option =
+    if lowering_policy_ok rpolicy then
+      let (ctx, data) =
+        run_deploy_lowering_pair_compat has_constructor
+          (LENGTH runtime_bytecode) immutables_len constructor_args data_size
+          ctor_internal_fns cenv body is_payable is_nonreentrant
+          nkey use_transient entry_label
+      in
+        SOME <| cu_context := ctx;
+                cu_data_segment :=
+                  data ++
+                  [<| ds_label := "runtime_begin";
+                      ds_items := [DataBytes runtime_bytecode] |>] |>
+    else NONE
 End
