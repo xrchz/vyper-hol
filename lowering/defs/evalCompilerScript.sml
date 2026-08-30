@@ -460,6 +460,46 @@ Proof
           collect_locals_def]
 QED
 
+Theorem nested_external_cenv_body_facts:
+  FLOOKUP nested_external_cenv.ce_vars "x" = SOME (MemLoc 0 32) /\
+  FLOOKUP nested_external_cenv.ce_vars "__return_pc__" = NONE /\
+  nested_external_cenv.ce_func_info "mid" = (1,0,[T]) /\
+  (nested_external_cenv.ce_raw_return <=> F) /\
+  nested_external_cenv.ce_ret_enc_info = AbiPrimWord /\
+  nested_external_cenv.ce_max_return_size = 32 /\
+  nested_external_cenv.ce_nonreentrant = (F,0,F,F) /\
+  expr_type
+    (Call (BaseT (UintT 256)) (IntCall (NONE,"mid"))
+      [Name (BaseT (UintT 256)) "x"] NONE) = BaseT (UintT 256) /\
+  is_word_type (BaseT (UintT 256))
+Proof
+  conj_tac
+  >- metis_tac[nested_external_entry_inputs]
+  >> conj_tac
+  >- (simp[nested_external_cenv_def, update_cenv_nonreentrant_def,
+           update_cenv_ret_abi_def]
+      >> irule build_compile_env_external_single_uint_arg_no_return_pc
+      >> simp[nested_internal_call_program_def, add_module_var_locations_def,
+              collect_locals_def])
+  >> conj_tac
+  >- simp[nested_external_cenv_def, update_cenv_nonreentrant_def,
+          update_cenv_ret_abi_def, build_compile_env_ce_func_info,
+          nested_internal_call_program_def, build_func_info_def,
+          make_struct_fields_map_def, compileEnvTheory.get_struct_fields_def,
+          compileEnvTheory.compute_func_info_def,
+          compileEnvTheory.returns_stack_count_def,
+          compileEnvTheory.compute_pass_via_stack_def,
+          compileEnvTheory.is_word_type_def,
+          compileEnvTheory.MAX_STACK_ARGS_def]
+  >> simp[nested_external_cenv_def, update_cenv_nonreentrant_def,
+          update_cenv_ret_abi_def, build_compile_env_ce_struct_fields,
+          exprLoweringTheory.type_to_abi_enc_info_def,
+          compileEnvTheory.abi_size_bound_def,
+          compileEnvTheory.abi_static_size_def,
+          vyperASTTheory.expr_type_def,
+          compileEnvTheory.is_word_type_def]
+QED
+
 
 Definition nested_foo_entry_stage_def:
   nested_foo_entry_stage =
