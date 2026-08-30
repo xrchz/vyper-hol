@@ -512,6 +512,58 @@ Proof
   simp[package_internal_fn_def, nsid_to_string_def]
 QED
 
+Definition source_internal_fn_descriptor_def:
+  source_internal_fn_descriptor tops
+    (mut, nr, rr, fname, fargs, dflts, ret, body) =
+    let sft_types =
+      (\name. MAP (FST o SND)
+                    (get_struct_fields (make_struct_fields_map tops) name)) in
+    let rc = returns_stack_count sft_types ret in
+    (fname, rc = 0 /\ ret <> NoneT, rc)
+End
+
+Theorem build_compile_env_returns_count:
+  !tops vis mut fname fargs ret body use_trans.
+    (build_compile_env tops vis mut fname fargs ret body use_trans).
+      ce_returns_count =
+    returns_stack_count
+      (\name. MAP (FST o SND)
+                    (get_struct_fields (make_struct_fields_map tops) name)) ret
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem package_internal_fn_descriptor:
+  !tops use_trans nkey_map is_ctor_context
+   mut nr rr fname fargs dflts ret body.
+    internal_fn_descriptors
+      [package_internal_fn tops use_trans nkey_map is_ctor_context
+         (mut, nr, rr, fname, fargs, dflts, ret, body)] =
+    [source_internal_fn_descriptor tops
+       (mut, nr, rr, fname, fargs, dflts, ret, body)]
+Proof
+  simp[internal_fn_descriptors_def, package_internal_fn_def,
+       source_internal_fn_descriptor_def, update_cenv_nonreentrant_def,
+       build_compile_env_returns_count]
+QED
+
+Theorem internal_fn_descriptors_MAP_package_internal_fn:
+  !fs tops use_trans nkey_map is_ctor_context.
+    internal_fn_descriptors
+      (MAP (package_internal_fn tops use_trans nkey_map is_ctor_context) fs) =
+    MAP (source_internal_fn_descriptor tops) fs
+Proof
+  Induct
+  >- simp[internal_fn_descriptors_def]
+  >> Cases_on `h`
+  >> PairCases_on `r`
+  >> simp[internal_fn_descriptors_def, package_internal_fn_def,
+          source_internal_fn_descriptor_def, update_cenv_nonreentrant_def,
+          build_compile_env_returns_count]
+QED
+
 Definition package_fallback_fn_def:
   package_fallback_fn tops use_trans nkey_map NONE = NONE ∧
   package_fallback_fn tops use_trans nkey_map
