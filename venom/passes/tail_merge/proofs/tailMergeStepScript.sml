@@ -473,8 +473,9 @@ fun mk_cond_rewrite_fast opc = let
 
 (* Classify each opcode by its exec category *)
 val all_opcodes = TypeBase.constructors_of ``:opcode``;
-val excluded = [``JMP``, ``JNZ``, ``DJMP``, ``RET``, ``RETURN``, ``REVERT``,
-  ``STOP``, ``SINK``, ``SELFDESTRUCT``, ``INVALID``, ``PHI``, ``PARAM``];
+val excluded = [``JMP``, ``JNZ``, ``DJMP``, ``RET``, ``DRET``, ``RETFMP``,
+  ``RETURN``, ``REVERT``, ``STOP``, ``SINK``, ``SELFDESTRUCT``, ``INVALID``,
+  ``PHI``, ``PARAM``];
 val target_opcodes = filter (fn t => not (exists (aconv t) excluded)) all_opcodes;
 
 val fast_crs = map mk_cond_rewrite_fast target_opcodes;
