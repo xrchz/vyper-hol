@@ -158,7 +158,17 @@ Definition venom_to_evm_name_def:
   venom_to_evm_name JMP = NONE ∧
   venom_to_evm_name JNZ = NONE ∧
   venom_to_evm_name DJMP = NONE ∧
+  (* Extended-core operations must be lowered before legacy codegen. *)
+  venom_to_evm_name DALLOCA = NONE ∧
+  venom_to_evm_name DRET = NONE ∧
+  venom_to_evm_name GETFMP = NONE ∧
+  venom_to_evm_name SETFMP = NONE ∧
+  venom_to_evm_name RETFMP = NONE ∧
+  venom_to_evm_name INITIAL_FMP = NONE ∧
+  venom_to_evm_name BUMP = NONE ∧
   venom_to_evm_name INVOKE = NONE ∧
+  venom_to_evm_name FMP_PARAM = NONE ∧
+  venom_to_evm_name RETPC_PARAM = NONE ∧
   venom_to_evm_name RET = NONE ∧
   venom_to_evm_name LOG = NONE ∧             (* needs LOG{n} *)
   venom_to_evm_name ASSERT = NONE ∧
@@ -169,6 +179,14 @@ Definition venom_to_evm_name_def:
   venom_to_evm_name DLOAD = NONE ∧
   venom_to_evm_name DLOADBYTES = NONE
 End
+
+Theorem task063_extended_venom_to_evm_name_eval:
+  MAP venom_to_evm_name
+    [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
+     INVOKE; FMP_PARAM; RETPC_PARAM] = REPLICATE 10 NONE
+Proof
+  EVAL_TAC
+QED
 
 (* =========================================================================
    Instruction Operand Helpers

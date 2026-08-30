@@ -260,14 +260,40 @@ Definition generate_regular_inst_plan_def:
        pop_ops ++ opt_ops, ps10)
 End
 
-(* Opcodes that should never appear at codegen time.
-   These must be eliminated by earlier passes:
-     ALLOCA — eliminated by mem2var / memory layout
-     SINK   — test-only pseudo-instruction
-     DLOAD, DLOADBYTES — lowered by lower_dload pass *)
-Definition is_pre_codegen_opcode_def:
-  is_pre_codegen_opcode opc ⇔ MEM opc [ALLOCA; SINK; DLOAD; DLOADBYTES]
+(* Extended-core FMP operations that still require lowering.  The foundational
+   is_raw_fmp_opcode classifier deliberately excludes setup operations, so keep
+   the complete legacy-codegen boundary explicit here. *)
+Definition is_unlowered_fmp_opcode_def:
+  is_unlowered_fmp_opcode opc ⇔
+    is_raw_fmp_opcode opc ∨ MEM opc [INITIAL_FMP; BUMP]
 End
+
+Definition is_unlowered_internal_call_opcode_def:
+  is_unlowered_internal_call_opcode opc ⇔ (opc = INVOKE)
+End
+
+(* Opcodes that should never appear at legacy codegen time. *)
+Definition is_pre_codegen_opcode_def:
+  is_pre_codegen_opcode opc ⇔
+    MEM opc [ALLOCA; SINK; DLOAD; DLOADBYTES] ∨
+    is_unlowered_fmp_opcode opc ∨
+    is_unlowered_internal_call_opcode opc ∨
+    is_fmp_param_opcode opc
+End
+
+Theorem task063_extended_pre_codegen_eval:
+  MAP is_pre_codegen_opcode
+    [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
+     INVOKE; FMP_PARAM; RETPC_PARAM] = REPLICATE 10 T
+Proof
+  EVAL_TAC
+QED
+
+Theorem task063_legacy_pre_codegen_eval:
+  MAP is_pre_codegen_opcode [ALLOCA; SINK; DLOAD; DLOADBYTES] = REPLICATE 4 T
+Proof
+  EVAL_TAC
+QED
 
 (* =========================================================================
    Codegen Preconditions
@@ -316,6 +342,14 @@ Definition generate_inst_plan_def:
       SOME (generate_regular_inst_plan liveness dfg cfg fn inst
               next_liveness is_halting next_is_terminator cur_bb_label ps)
 End
+
+Theorem generate_inst_plan_pre_codegen_none:
+  is_pre_codegen_opcode inst.inst_opcode ==>
+  generate_inst_plan liveness dfg cfg fn inst next_liveness is_halting
+    next_is_terminator cur_bb_label ps = NONE
+Proof
+  simp[generate_inst_plan_def]
+QED
 
 (* =========================================================================
    Prepare Stack for Function Entry
