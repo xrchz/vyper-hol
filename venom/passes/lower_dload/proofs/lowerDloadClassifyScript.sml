@@ -29,6 +29,10 @@ Definition ld_ok_def:
     s1.vs_code = s2.vs_code /\
     s1.vs_params = s2.vs_params /\
     s1.vs_prev_hashes = s2.vs_prev_hashes /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_current_bb = s2.vs_current_bb /\
     s1.vs_inst_idx = s2.vs_inst_idx /\
     s1.vs_prev_bb = s2.vs_prev_bb
@@ -193,37 +197,6 @@ Proof
   simp[]
 QED
 
-Theorem dalloca_ld_ok_exempt[local]:
-  !inst s1 s2 vars s1'.
-    ld_ok vars s1 s2 /\
-    inst.inst_opcode = DALLOCA /\
-    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
-    (!out. MEM out inst.inst_outputs ==> out IN vars) /\
-    step_inst_base inst s1 = OK s1' ==>
-    ?s2'. step_inst_base inst s2 = OK s2' /\ ld_ok vars s1' s2'
-Proof
-  rpt strip_tac >>
-  `?size_op. inst.inst_operands = [size_op]` by (
-    Cases_on `inst.inst_operands` >>
-    gvs[step_inst_base_def, AllCaseEqs()] >>
-    Cases_on `t` >> gvs[step_inst_base_def, AllCaseEqs()]) >>
-  qpat_x_assum `step_inst_base inst s1 = OK s1'` mp_tac >>
-  ASM_REWRITE_TAC[step_inst_base_def] >>
-  gvs[AllCaseEqs()] >>
-  `eval_operand size_op s1 = eval_operand size_op s2` by (
-    irule ld_eval_operand_agree >>
-    qexists_tac `vars` >> simp[] >>
-    rw[] >> first_x_assum irule >> simp[]) >>
-  strip_tac >> gvs[] >>
-  qexists_tac
-    `update_var out s2.vs_fmp
-      (s2 with vs_fmp := s2.vs_fmp + n2w (ceil32 (w2n sz)))` >>
-  simp[step_inst_base_def] >>
-  qpat_x_assum `SOME sz = eval_operand size_op s2` (assume_tac o SYM) >>
-  simp[] >>
-  irule ld_ok_update_exempt >> simp[] >>
-  gvs[ld_ok_def, lookup_var_def]
-QED
 
 (* ===== Generic operand agreement tactic ===== *)
 
@@ -306,6 +279,20 @@ val ld_classify_one_tac =
   TRY (irule ld_ok_update_var >> gvs[ld_ok_def] >> NO_TAC) >>
   TRY (irule ld_ok_write_memory >> gvs[ld_ok_def] >> NO_TAC) >>
   gvs[ld_ok_def, lookup_var_def, update_var_def, FLOOKUP_UPDATE];
+
+Theorem hidden_output_ld_ok_probe[local]:
+  !inst s1 s2 vars s1'.
+    ld_ok vars s1 s2 /\
+    (inst.inst_opcode = GETFMP \/
+     inst.inst_opcode = INITIAL_FMP \/
+     inst.inst_opcode = RETPC_PARAM \/
+     inst.inst_opcode = DALLOCA) /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    step_inst_base inst s1 = OK s1' ==>
+    ?s2'. step_inst_base inst s2 = OK s2' /\ ld_ok vars s1' s2'
+Proof
+  gen_tac >> Cases_on `inst.inst_opcode` >> simp[] >> ld_classify_one_tac
+QED
 
 Theorem step_inst_base_ld_ok_classify:
   !inst s1 s2 vars s1'.
