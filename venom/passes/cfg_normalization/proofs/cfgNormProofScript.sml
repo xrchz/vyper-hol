@@ -1158,7 +1158,14 @@ Theorem cfg_norm_inv_fwd_clean:
   !func0 func L. cfg_norm_inv func0 func /\ MEM L (fn_labels func0) ==>
     !a b. L <> STRCAT a (STRCAT "_fwd" b)
 Proof
-  rw[cfg_norm_inv_def]
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `cfg_norm_inv func0 func` mp_tac >>
+  PURE_REWRITE_TAC[cfg_norm_inv_def] >>
+  strip_tac >>
+  qpat_x_assum `!L. MEM L (fn_labels func0) ==> !a b. _`
+    (qspec_then `L` mp_tac) >>
+  (impl_tac >- first_assum ACCEPT_TAC) >>
+  strip_tac
 QED
 
 Theorem cfg_norm_inv_no_split_suffix:
