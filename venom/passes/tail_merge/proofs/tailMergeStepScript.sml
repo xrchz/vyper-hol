@@ -1182,17 +1182,39 @@ fun prove_output_inline cr opc =
   prove(``!inst1 inst2 s1 s2 s1' s2'.
     sim_pre inst1 inst2 s1 s2 /\ inst1.inst_opcode = ^opc /\
     inst1.inst_id = inst2.inst_id /\
+    ALL_DISTINCT inst1.inst_outputs /\
+    ALL_DISTINCT inst2.inst_outputs /\
     step_inst_base inst1 s1 = OK s1' /\
     step_inst_base inst2 s2 = OK s2' ==>
     !k. k < LENGTH inst1.inst_outputs ==>
         lookup_var (EL k inst1.inst_outputs) s1' =
         lookup_var (EL k inst2.inst_outputs) s2'``,
-  rpt gen_tac >> strip_tac >>
-  specialize_cr cr >>
-  fs[sim_pre_def] >> spec_evals >> decompose_ops >>
-  gvs (AllCaseEqs() :: output_close) >>
-  rpt (CASE_TAC >> gvs output_close) >>
-  metis_tac[]);
+  if aconv opc ``BUMP`` then
+    (rpt gen_tac >> strip_tac >>
+     specialize_cr cr >>
+     fs[sim_pre_def] >>
+     spec_evals >> decompose_ops >>
+     Cases_on `inst1.inst_outputs` >> gvs[] >>
+     Cases_on `t` >> gvs[] >>
+     Cases_on `inst2.inst_outputs` >> gvs[] >>
+     Cases_on `t` >> gvs[] >>
+     Cases_on `t'` >> gvs[] >>
+     qpat_x_assum `_ = OK s2'` mp_tac >>
+     qpat_x_assum `_ = OK s1'` mp_tac >>
+     CASE_TAC >> gvs[] >>
+     CASE_TAC >> gvs[] >>
+     rpt strip_tac >>
+     Cases_on `k` >>
+     gvs[lookup_var_def, update_var_def,
+         finite_mapTheory.FLOOKUP_UPDATE] >>
+     Cases_on `n` >> gvs[])
+  else
+    (rpt gen_tac >> strip_tac >>
+     specialize_cr cr >>
+     fs[sim_pre_def] >> spec_evals >> decompose_ops >>
+     gvs (AllCaseEqs() :: output_close) >>
+     rpt (CASE_TAC >> gvs output_close) >>
+     metis_tac[]));
 
 (* State-mod-only opcodes: modify state but don't use update_var.
    output_match is unprovable for these from sim_pre alone (ee UNIV doesn't
@@ -1215,6 +1237,8 @@ fun prove_output_ext_call bridge_thm cr opc =
   prove(``!inst1 inst2 s1 s2 s1' s2'.
     sim_pre inst1 inst2 s1 s2 /\ inst1.inst_opcode = ^opc /\
     inst1.inst_id = inst2.inst_id /\
+    ALL_DISTINCT inst1.inst_outputs /\
+    ALL_DISTINCT inst2.inst_outputs /\
     step_inst_base inst1 s1 = OK s1' /\
     step_inst_base inst2 s2 = OK s2' ==>
     !k. k < LENGTH inst1.inst_outputs ==>
@@ -1289,6 +1313,8 @@ Theorem step_inst_base_output_match:
   !inst1 inst2 s1 s2 s1' s2'.
     sim_pre inst1 inst2 s1 s2 /\
     inst1.inst_id = inst2.inst_id /\
+    ALL_DISTINCT inst1.inst_outputs /\
+    ALL_DISTINCT inst2.inst_outputs /\
     ~is_terminator inst1.inst_opcode /\
     is_output_opcode inst1.inst_opcode /\
     inst1.inst_opcode <> PHI /\ inst1.inst_opcode <> PARAM /\
