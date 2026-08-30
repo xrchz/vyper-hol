@@ -179,6 +179,52 @@ Definition lowering_context_ok_def:
 End
 (* ===== Policy Boundary ===== *)
 
+Theorem wf_invoke_targets_check_eq:
+  !ctx. wf_invoke_targets_check ctx <=> wf_invoke_targets ctx
+Proof
+  simp[wf_invoke_targets_check_def, listTheory.EVERY_MEM,
+       invoke_target_ok_def, wf_invoke_targets_def] >>
+  gen_tac >> eq_tac
+  >- (rpt strip_tac >>
+      first_x_assum drule >> disch_then drule >> disch_then drule >>
+      Cases_on `inst.inst_operands` >> gvs[] >>
+      Cases_on `h` >> gvs[])
+  >> (rpt strip_tac >>
+      first_x_assum (qspecl_then [`fn`, `e`] mp_tac) >>
+      simp[] >> strip_tac >>
+      Cases_on `e.inst_operands` >> gvs[])
+QED
+
+Theorem lowering_context_ok_integrity:
+  !ctx. lowering_context_ok ctx ==>
+        ctx_distinct_fn_names ctx /\ wf_invoke_targets ctx
+Proof
+  simp[lowering_context_ok_def, ctx_distinct_fn_names_def,
+       wf_invoke_targets_check_eq]
+QED
+
+Definition internal_fn_matches_descriptor_def:
+  internal_fn_matches_descriptor (name, has_ret_buf, rc) fn <=>
+    fn.fn_name = name /\
+    fn.fn_call_abi.ica_has_memory_return_buffer = SOME has_ret_buf /\
+    fn.fn_call_abi.ica_user_return_count = SOME rc /\
+    ~fn.fn_noinline /\ fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE
+End
+
+Theorem package_internal_blocks_metadata:
+  !descriptors blocks entry_blocks functions.
+    package_internal_blocks descriptors blocks = SOME (entry_blocks, functions) ==>
+    LIST_REL internal_fn_matches_descriptor descriptors functions
+Proof
+  Induct_on `descriptors`
+  >- simp[package_internal_blocks_def]
+  >> rpt gen_tac >> strip_tac >> PairCases_on `h` >>
+  gvs[package_internal_blocks_def, AllCaseEqs()] >>
+  simp[internal_fn_matches_descriptor_def, mk_internal_function_def,
+       mk_raw_function_def] >>
+  first_x_assum drule >> simp[]
+QED
+
 (* Raw source lowering implements the resolved O1 frontend contract.  Check the
    whole resolved shape rather than accepting a dispatch choice independently. *)
 Definition lowering_policy_ok_def:
@@ -275,3 +321,90 @@ Definition run_deploy_lowering_def:
           else NONE
     else NONE
 End
+
+
+Theorem lookup_function_exists_for_name:
+  !name functions.
+    MEM name (MAP (\fn. fn.fn_name) functions) ==>
+    ?fn. lookup_function name functions = SOME fn
+Proof
+  Induct_on `functions`
+  >- simp[lookup_function_def, listTheory.FIND_thm]
+  >> rpt strip_tac >> Cases_on `h.fn_name = name`
+  >- (qexists `h` >> simp[lookup_function_def, listTheory.FIND_thm])
+  >> gvs[] >> first_x_assum drule >> strip_tac >>
+  qexists `fn` >> gvs[lookup_function_def, listTheory.FIND_thm]
+QED
+
+Theorem distinct_function_names_unique:
+  !functions fn1 fn2 name.
+    ALL_DISTINCT (MAP (\fn. fn.fn_name) functions) /\
+    MEM fn1 functions /\ MEM fn2 functions /\
+    fn1.fn_name = name /\ fn2.fn_name = name ==>
+    fn1 = fn2
+Proof
+  Induct_on `functions`
+  >- simp[]
+  >> rpt strip_tac >>
+  Cases_on `fn1 = h` >> Cases_on `fn2 = h` >>
+  gvs[listTheory.MEM_MAP] >> metis_tac[]
+QED
+
+Theorem lookup_function_result_name:
+  !name functions fn.
+    lookup_function name functions = SOME fn ==> fn.fn_name = name
+Proof
+  Induct_on `functions`
+  >- simp[lookup_function_def, listTheory.FIND_thm]
+  >> rpt strip_tac >> Cases_on `h.fn_name = name` >>
+  gvs[lookup_function_def, listTheory.FIND_thm]
+QED
+
+Theorem invoke_target_resolves_uniquely:
+  ctx_distinct_fn_names ctx /\ wf_invoke_targets ctx /\
+  MEM caller ctx.ctx_functions /\ MEM inst (fn_insts caller) /\
+  inst.inst_opcode = INVOKE ==>
+  ?label rest callee.
+    inst.inst_operands = Label label :: rest /\
+    lookup_function label ctx.ctx_functions = SOME callee /\
+    !fn. MEM fn ctx.ctx_functions /\ fn.fn_name = label ==> fn = callee
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `wf_invoke_targets ctx` mp_tac >>
+  simp[wf_invoke_targets_def] >>
+  disch_then (qspecl_then [`caller`, `inst`] mp_tac) >>
+  simp[] >> strip_tac >>
+  fs[ctx_fn_names_def] >>
+  drule lookup_function_exists_for_name >> strip_tac >>
+  qexists `fn` >> simp[] >>
+  rpt strip_tac >>
+  imp_res_tac lookup_function_MEM >>
+  imp_res_tac lookup_function_result_name >>
+  qspecl_then [`ctx.ctx_functions`, `fn'`, `fn`, `fn'.fn_name`] irule
+    distinct_function_names_unique >>
+  gvs[ctx_distinct_fn_names_def, ctx_fn_names_def] >>
+  qexists `ctx` >> simp[]
+QED
+
+Theorem run_lowering_integrity:
+  run_lowering selectors external_fns internal_fns fallback_fn rpolicy
+    bucket_count fn_metadata_bytes dense_buckets entry_info entry_label = SOME unit ==>
+  ctx_distinct_fn_names unit.cu_context /\
+  wf_invoke_targets unit.cu_context
+Proof
+  simp[run_lowering_def] >> rpt strip_tac >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  metis_tac[lowering_context_ok_integrity]
+QED
+
+Theorem run_deploy_lowering_integrity:
+  run_deploy_lowering has_constructor rpolicy runtime_bytecode immutables_len
+    constructor_args data_size ctor_internal_fns cenv (ctor_stmts : stmt list) is_payable
+    is_nonreentrant nkey use_transient entry_label = SOME unit ==>
+  ctx_distinct_fn_names unit.cu_context /\
+  wf_invoke_targets unit.cu_context
+Proof
+  simp[run_deploy_lowering_def] >> rpt strip_tac >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  metis_tac[lowering_context_ok_integrity]
+QED
