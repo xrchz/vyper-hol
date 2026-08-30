@@ -611,6 +611,20 @@ Proof
        compileEnvTheory.emit_def, nested_foo_x_operand_def,
        nested_after_foo_entry_state_def, nested_after_foo_name_state_def]
 QED
+
+Theorem nested_foo_singleton_args_stage_eq:
+  compile_multi_exprs
+    (\cenv ty e st. compile_expr cenv ty e st)
+    nested_external_cenv
+    [Name (BaseT (UintT 256)) "x"]
+    nested_after_foo_entry_state =
+  ([nested_foo_x_operand], nested_after_foo_name_state)
+Proof
+  simp[SF ETA_ss, exprLoweringTheory.compile_multi_exprs_def,
+       vyperASTTheory.expr_type_def,
+       GSYM nested_foo_name_stage_def, nested_foo_name_stage_eq,
+       compileEnvTheory.comp_bind_def, compileEnvTheory.comp_return_def]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
