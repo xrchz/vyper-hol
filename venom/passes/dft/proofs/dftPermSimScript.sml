@@ -450,7 +450,7 @@ Proof
   strip_tac >>
   Cases_on `is_alloca_op a.inst_opcode`
   >- (drule_all step_alloca_preserves >> simp[])
-  >> 
+  >>
   (qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
         write_effects_sound_returndata >> simp[] >>
       disch_then irule >>
