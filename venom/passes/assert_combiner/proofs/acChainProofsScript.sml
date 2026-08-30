@@ -1088,7 +1088,7 @@ Proof
          finite_mapTheory.FLOOKUP_UPDATE] >>
   `step_inst fuel ctx assert_inst s_iz =
    Abort Revert_abort (revert_state (set_returndata [] s_iz))` by (
-    Cases_on `assert_inst` >> gvs[step_inst_non_invoke, step_inst_base_def]) >>
+    irule step_assert_abort >> simp[]) >>
   (* Step 5: Combine into run_insts *)
   simp[run_insts_append, run_insts_def] >>
   (* Step 6: execution_equiv UNIV between abort states *)
