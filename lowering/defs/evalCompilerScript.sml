@@ -759,6 +759,92 @@ Proof
        (rewrite_tac[GSYM listTheory.APPEND_ASSOC] >> simp[])
   >> simp[]
 QED
+
+Definition nested_foo_external_return_stage_def:
+  nested_foo_external_return_stage =
+    compile_external_return (SOME nested_foo_mid_call_operand) T F
+      AbiPrimWord 32 F 0 F F
+End
+
+Definition nested_after_foo_body_state_def:
+  nested_after_foo_body_state =
+    nested_after_foo_mid_call_state with
+      <| cs_next_var := 18;
+         cs_next_id := 28;
+         cs_current_insts :=
+           nested_after_foo_mid_call_state.cs_current_insts ++
+             [mk_inst 25 ALLOCA [Lit 32w] ["%17"];
+              mk_inst 26 MSTORE [Var "%17"; nested_foo_mid_call_operand] [];
+              mk_inst 27 RETURN [Var "%17"; Lit 32w] []] |>
+End
+
+Theorem nested_foo_external_return_stage_eq:
+  nested_foo_external_return_stage nested_after_foo_mid_call_state =
+    ((), nested_after_foo_body_state)
+Proof
+  simp[nested_foo_external_return_stage_def,
+       stmtLoweringTheory.compile_external_return_def,
+       contextTheory.compile_alloc_buffer_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       nested_foo_mid_call_operand_def,
+       nested_after_foo_body_state_def,
+       nested_after_foo_mid_call_state_def]
+  >> `(nested_after_foo_name_state.cs_current_insts ++
+         [mk_inst 21 ALLOCA [Lit 32w] ["%14"];
+          mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"];
+          mk_inst 23 MSTORE [Var "%14"; Var "%15"] [];
+          mk_inst 24 MLOAD [Var "%14"] ["%16"]]) ++
+        [mk_inst 25 ALLOCA [Lit 32w] ["%17"]] ++
+        [mk_inst 26 MSTORE [Var "%17"; Var "%16"] []] ++
+        [mk_inst 27 RETURN [Var "%17"; Lit 32w] []] =
+      (nested_after_foo_name_state.cs_current_insts ++
+         [mk_inst 21 ALLOCA [Lit 32w] ["%14"];
+          mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"];
+          mk_inst 23 MSTORE [Var "%14"; Var "%15"] [];
+          mk_inst 24 MLOAD [Var "%14"] ["%16"]]) ++
+        [mk_inst 25 ALLOCA [Lit 32w] ["%17"];
+         mk_inst 26 MSTORE [Var "%17"; Var "%16"] [];
+         mk_inst 27 RETURN [Var "%17"; Lit 32w] []]` by
+       (rewrite_tac[GSYM listTheory.APPEND_ASSOC] >> simp[])
+  >> simp[]
+QED
+
+
+Theorem nested_LAST_APPEND_NONEMPTY_SUFFIX:
+  !prefix suffix. suffix <> [] ==>
+    LAST (prefix ++ suffix) = LAST suffix
+Proof
+  rpt strip_tac
+  >> Cases_on `suffix`
+  >> gvs[listTheory.LAST_APPEND_CONS]
+QED
+Theorem nested_after_foo_body_state_terminated:
+  block_is_terminated nested_after_foo_body_state
+Proof
+  `nested_after_foo_body_state.cs_current_insts <> []` by
+    simp[nested_after_foo_body_state_def,
+         nested_after_foo_mid_call_state_def]
+  >> `LAST nested_after_foo_body_state.cs_current_insts =
+        mk_inst 27 RETURN [Var "%17"; Lit 32w] []` by
+       simp[nested_after_foo_body_state_def,
+            nested_after_foo_mid_call_state_def,
+            nested_LAST_APPEND_NONEMPTY_SUFFIX]
+  >> Cases_on `nested_after_foo_body_state.cs_current_insts`
+  >- gvs[]
+  >> FIRST
+       [qpat_assum `nested_after_foo_body_state.cs_current_insts = _`
+          (fn th => rewrite_tac[th]),
+        qpat_assum `_ = nested_after_foo_body_state.cs_current_insts`
+          (fn th => rewrite_tac[GSYM th])]
+  >> simp[compileEnvTheory.block_is_terminated_def,
+          venomInstTheory.mk_inst_def,
+          venomInstTheory.is_terminator_def]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
