@@ -10,7 +10,7 @@
  *    sizes match), pointer safety (confined, affine ops, no OOB
  *    arithmetic, phi-preserve variables), preservation of invariants
  *    across eval_phis/exec_block/step_inst, excluded opcodes (no
- *    INVOKE/NOP/MEMTOP/LOG/MCOPY/EXTCODECOPY/ext_call),
+ *    INVOKE/NOP/MEMTOP/LOG/MCOPY/EXTCODECOPY/DRET/ext_call),
  *    all_mem_via_pointer, mem_size_non_pv, mem_write_tail_non_pv,
  *    and concretize_rel on initial states, the transformed program
  *    preserves semantics under the liveness-aware concretize_rel.
@@ -89,6 +89,7 @@ Theorem concretize_function_correct:
                 EVERY (\i. i.inst_opcode <> LOG) bb.bb_instructions /\
                 EVERY (\i. i.inst_opcode <> MCOPY) bb.bb_instructions /\
                 EVERY (\i. i.inst_opcode <> EXTCODECOPY) bb.bb_instructions /\
+                EVERY (\i. i.inst_opcode <> DRET) bb.bb_instructions /\
                 EVERY (\i. ~is_ext_call_op i.inst_opcode) bb.bb_instructions)
       fn.fn_blocks /\
     concretize_rel amap fn livesets init s1 s2 ==>

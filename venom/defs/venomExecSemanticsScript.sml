@@ -1637,6 +1637,20 @@ Proof
   rw[Once step_inst_def]
 QED
 
+Theorem step_inst_param_ok_or_error:
+  !inst fuel ctx s.
+    is_param_opcode inst.inst_opcode ==>
+    (?s'. step_inst fuel ctx inst s = OK s') \/
+    (?e. step_inst fuel ctx inst s = Error e)
+Proof
+  rpt strip_tac >>
+  fs[is_param_opcode_iff] >>
+  simp[step_inst_non_invoke] >>
+  Cases_on `inst` >>
+  simp[step_inst_base_def] >>
+  rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[step_inst_base_def])
+QED
+
 (* --------------------------------------------------------------------------
    Function Entry Point
 
