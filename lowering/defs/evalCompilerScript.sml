@@ -572,6 +572,45 @@ Proof
        compileEnvTheory.emit_def,
        nested_after_dispatch_state_def, nested_after_foo_entry_state_def]
 QED
+
+Definition nested_foo_name_stage_def:
+  nested_foo_name_stage =
+    lower_value compile_expr nested_external_cenv (BaseT (UintT 256))
+      (Name (BaseT (UintT 256)) "x")
+End
+
+Definition nested_foo_x_operand_def:
+  nested_foo_x_operand = Var "%13"
+End
+
+Definition nested_after_foo_name_state_def:
+  nested_after_foo_name_state =
+    nested_after_foo_entry_state with
+      <| cs_next_var := 14;
+         cs_next_id := 21;
+         cs_current_insts :=
+           nested_after_foo_entry_state.cs_current_insts ++
+             [mk_inst 20 MLOAD [Lit 0w] ["%13"]] |>
+End
+
+Theorem nested_foo_name_stage_eq:
+  nested_foo_name_stage nested_after_foo_entry_state =
+    (nested_foo_x_operand, nested_after_foo_name_state)
+Proof
+  simp[nested_foo_name_stage_def, exprLoweringTheory.lower_value_def,
+       Once exprLoweringTheory.compile_expr_def,
+       exprLoweringTheory.compile_name_vv_def,
+       nested_external_cenv_body_facts,
+       exprLoweringTheory.unwrap_value_def,
+       vyperASTTheory.expr_type_def,
+       compileEnvTheory.is_word_type_def, contextTheory.mk_ptr_def,
+       contextTheory.compile_ptr_load_def, emitHelperTheory.emit_op_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def, nested_foo_x_operand_def,
+       nested_after_foo_entry_state_def, nested_after_foo_name_state_def]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
