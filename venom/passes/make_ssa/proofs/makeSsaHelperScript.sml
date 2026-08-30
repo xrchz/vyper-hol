@@ -395,6 +395,91 @@ Proof
   BasicProvers.every_case_tac >> metis_tac[]
 QED
 
+(* Small output-arity interface used to keep opcode branches local. *)
+Theorem fdom_union_two_outputs_intro[local]:
+  !d x a b.
+    (x IN d \/ x = a \/ x = b) ==>
+    x IN d UNION set [a; b]
+Proof
+  simp[IN_UNION]
+QED
+
+(* Exact two-output shape exposed by the BUMP branch. *)
+Theorem fdom_union_two_outputs_bump_probe[local]:
+  !d outs x ptr_out next_out.
+    outs = [ptr_out; next_out] /\ x = next_out ==>
+    x IN d UNION set outs
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `outs = [ptr_out; next_out]` SUBST_ALL_TAC >>
+  irule fdom_union_two_outputs_intro >>
+  disj2_tac >> disj2_tac >>
+  qpat_assum `x = next_out` ACCEPT_TAC
+QED
+
+Theorem step_inst_base_DRET_not_OK_local[local]:
+  !inst s r. inst.inst_opcode = DRET ==>
+    step_inst_base inst s <> OK r
+Proof
+  rpt strip_tac >>
+  gvs[step_inst_base_def] >>
+  Cases_on `inst.inst_outputs = []` >> gvs[] >>
+  Cases_on `parse_dret_shape inst` >> gvs[] >>
+  PairCases_on `x` >> gvs[] >>
+  Cases_on `eval_operands inst.inst_operands s` >> gvs[] >>
+  Cases_on `pair_dret_words
+    (TAKE (2 * x1) (DROP (1 + x0) x))` >> gvs[] >>
+  pairarg_tac >> gvs[]
+QED
+
+Theorem step_inst_base_RETFMP_not_OK_local[local]:
+  !inst s r. inst.inst_opcode = RETFMP ==>
+    step_inst_base inst s <> OK r
+Proof
+  rpt strip_tac >> gvs[step_inst_base_def] >>
+  Cases_on `eval_operands inst.inst_operands s` >> gvs[] >>
+  Cases_on `x` >> gvs[]
+QED
+
+val make_ssa_term_ok_jump_tac =
+  qpat_x_assum `step_inst_base _ _ = OK _` mp_tac >>
+  simp[step_inst_base_def, eval_operands_def, eval_operand_def,
+       AllCaseEqs()] >>
+  rpt CASE_TAC >> gvs[] >> rpt strip_tac >> pairarg_tac >> gvs[];
+
+Theorem step_inst_base_ok_terminator_jump_local[local]:
+  !inst s s'.
+    is_terminator inst.inst_opcode /\
+    step_inst_base inst s = OK s' ==>
+    inst.inst_opcode = JMP \/ inst.inst_opcode = JNZ \/
+    inst.inst_opcode = DJMP
+Proof
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
+  TRY (rename1 `inst.inst_opcode = DRET` >>
+       metis_tac[step_inst_base_DRET_not_OK_local]) >>
+  TRY (rename1 `inst.inst_opcode = RETFMP` >>
+       metis_tac[step_inst_base_RETFMP_not_OK_local]) >>
+  TRY (rename1 `inst.inst_opcode = RET` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = RETURN` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = REVERT` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = STOP` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = SINK` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = SELFDESTRUCT` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = INVALID` >> make_ssa_term_ok_jump_tac)
+QED
+
+Theorem step_inst_base_as_step_inst_local[local]:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode ==>
+    step_inst 0 ARB inst s = OK s'
+Proof
+  rw[Once step_inst_def] >>
+  gvs[step_inst_base_def]
+QED
+
+
 (* step_inst_base only adds variables from inst_outputs.
    Key helper for vars_colon_free preservation.
    Strategy: ONCE_REWRITE to avoid full expansion, then per-opcode TRY. *)
@@ -403,34 +488,18 @@ Theorem step_inst_base_vars_subset[local]:
     step_inst_base inst s = OK s' ==>
     FDOM s'.vs_vars SUBSET FDOM s.vs_vars UNION set inst.inst_outputs
 Proof
-  rpt gen_tac >>
-  ONCE_REWRITE_TAC[step_inst_base_def] >>
-  Cases_on `inst.inst_opcode` >>
-  PURE_REWRITE_TAC[venomInstTheory.opcode_case_def] >>
-  (* Uniform handler for all exec_* helpers + direct cases *)
-  gvs[exec_pure1_def] >>
-  gvs[exec_pure2_def] >>
-  gvs[exec_pure3_def] >>
-  gvs[exec_read0_def, exec_read1_def] >>
-  gvs[exec_write2_def, exec_alloca_def] >>
-  gvs[exec_ext_call_def] >>
-  gvs[exec_delegatecall_def] >>
-  gvs[exec_create_def] >>
-  gvs[extract_venom_result_def] >>
-  gvs[AllCaseEqs(), LET_THM] >>
-  gvs[update_var_def, FDOM_FUPDATE] >>
-  gvs[jump_to_def, mcopy_def, mstore_def, mstore8_def] >>
-  gvs[sstore_def, tstore_def] >>
-  gvs[halt_state_def, revert_state_def, set_returndata_def] >>
-  rpt strip_tac >> gvs[SUBSET_DEF, IN_INSERT, IN_UNION] >>
-  (* Remaining: ext_call/staticcall/delegatecall/create/create2 lambda pairs,
-     DLOADBYTES, CODECOPY write_memory_with_expansion *)
-  TRY (gvs[write_memory_with_expansion_def, LET_THM] >> NO_TAC) >>
-  TRY (pairarg_tac >> gvs[update_var_def, FDOM_FUPDATE] >>
-       gvs[SUBSET_DEF, IN_INSERT, IN_UNION] >> NO_TAC) >>
-  TRY (Cases_on `result` >> gvs[AllCaseEqs()]) >>
-  TRY (Cases_on `y` >> gvs[AllCaseEqs()]) >>
-  rpt gen_tac >> strip_tac >> gvs[]
+  rpt gen_tac >> strip_tac >>
+  rw[SUBSET_DEF] >> rpt strip_tac >>
+  Cases_on `is_terminator inst.inst_opcode`
+  >- (drule_all step_inst_base_ok_terminator_jump_local >>
+      strip_tac >>
+      gvs[step_inst_base_def, jump_to_def, AllCaseEqs()]) >>
+  Cases_on `MEM x inst.inst_outputs`
+  >- simp[IN_UNION] >>
+  `lookup_var x s' = lookup_var x s` by
+    metis_tac[step_inst_base_as_step_inst_local,
+              venomInstProofsTheory.step_preserves_non_output_vars] >>
+  gvs[lookup_var_def, FLOOKUP_DEF, IN_UNION]
 QED
 
 (* FOLDL update_var adds output names to vs_vars *)
