@@ -322,19 +322,25 @@ Triviality step_param_ok_same_vs_params:
     ?s2'. step_inst fuel ctx inst s2 = OK s2'
 Proof
   rpt strip_tac >>
-  fs[is_param_opcode_iff] >>
-  qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
-  simp[Once step_inst_def, step_inst_base_def] >>
-  rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[])
-  >- (rpt strip_tac >>
+  fs[is_param_opcode_iff]
+  >- (qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
+      simp[Once step_inst_def, step_inst_base_def] >>
+      rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[]) >>
+      rpt strip_tac >>
       rename [`inst.inst_outputs = [out]`, `inst.inst_operands = [Lit idx]`] >>
       qexists_tac `update_var out (EL (w2n idx) s2.vs_params) s2` >>
       simp[Once step_inst_def, step_inst_base_def])
-  >- (rpt strip_tac >>
+  >- (qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
+      simp[Once step_inst_def, step_inst_base_def] >>
+      rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[]) >>
+      rpt strip_tac >>
       rename [`inst.inst_outputs = [out]`, `inst.inst_operands = [Lit idx]`] >>
       qexists_tac `update_var out (EL (w2n idx) s2.vs_params) s2` >>
       simp[Once step_inst_def, step_inst_base_def])
-  >- (rpt strip_tac >>
+  >- (qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
+      simp[Once step_inst_def, step_inst_base_def] >>
+      rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[]) >>
+      rpt strip_tac >>
       rename [`inst.inst_outputs = [out]`, `inst.inst_operands = [Lit idx]`] >>
       qexists_tac `update_var out s2.vs_return_pc_token s2` >>
       simp[Once step_inst_def, step_inst_base_def])
