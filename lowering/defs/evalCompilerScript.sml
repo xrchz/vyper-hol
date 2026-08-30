@@ -395,6 +395,56 @@ Proof
        nested_internal_call_program_def, assign_nkeys_def]
 QED
 
+Definition nested_fallback_label_def:
+  nested_fallback_label = fresh_label_output "fallback" 0
+End
+
+Definition nested_dispatch_stage_def:
+  nested_dispatch_stage =
+    do fallback_lbl <- fresh_label "fallback";
+       compile_selector_dispatch_linear [(801029432, "fn_foo")] fallback_lbl;
+       return fallback_lbl
+    od
+End
+
+Definition nested_after_dispatch_state_def:
+  nested_after_dispatch_state : compile_state =
+    <| cs_next_var := 6;
+       cs_next_label := 4;
+       cs_next_id := 10;
+       cs_current_bb := fresh_label_output "next" 3;
+       cs_current_insts :=
+         [mk_inst 9 JMP [Label nested_fallback_label] []];
+       cs_blocks :=
+         [<| bb_label := fresh_label_output "match" 2;
+             bb_instructions :=
+               [mk_inst 8 JMP [Label "fn_foo"] []] |>;
+          <| bb_label := fresh_label_output "dispatch" 1;
+             bb_instructions :=
+               [mk_inst 4 CALLDATALOAD [Lit 0w] ["%3"];
+                mk_inst 5 SHR [Lit 224w; Var "%3"] ["%4"];
+                mk_inst 6 EQ [Var "%4"; Lit (n2w 801029432)] ["%5"];
+                mk_inst 7 JNZ
+                  [Var "%5"; Label (fresh_label_output "match" 2);
+                   Label (fresh_label_output "next" 3)] []] |>;
+          <| bb_label := "__entry";
+             bb_instructions :=
+               [mk_inst 0 CALLDATASIZE [] ["%0"];
+                mk_inst 1 LT [Var "%0"; Lit 4w] ["%1"];
+                mk_inst 2 ISZERO [Var "%1"] ["%2"];
+                mk_inst 3 JNZ
+                  [Var "%2"; Label (fresh_label_output "dispatch" 1);
+                   Label nested_fallback_label] []] |>];
+       cs_data_sections := [] |>
+End
+
+Theorem nested_dispatch_stage_eq:
+  nested_dispatch_stage (initial_compile_state "__entry") =
+    (nested_fallback_label, nested_after_dispatch_state)
+Proof
+  EVAL_TAC
+QED
+
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
