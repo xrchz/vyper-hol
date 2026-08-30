@@ -193,6 +193,38 @@ Proof
   simp[]
 QED
 
+Theorem dalloca_ld_ok_exempt[local]:
+  !inst s1 s2 vars s1'.
+    ld_ok vars s1 s2 /\
+    inst.inst_opcode = DALLOCA /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    (!out. MEM out inst.inst_outputs ==> out IN vars) /\
+    step_inst_base inst s1 = OK s1' ==>
+    ?s2'. step_inst_base inst s2 = OK s2' /\ ld_ok vars s1' s2'
+Proof
+  rpt strip_tac >>
+  `?size_op. inst.inst_operands = [size_op]` by (
+    Cases_on `inst.inst_operands` >>
+    gvs[step_inst_base_def, AllCaseEqs()] >>
+    Cases_on `t` >> gvs[step_inst_base_def, AllCaseEqs()]) >>
+  qpat_x_assum `step_inst_base inst s1 = OK s1'` mp_tac >>
+  ASM_REWRITE_TAC[step_inst_base_def] >>
+  gvs[AllCaseEqs()] >>
+  `eval_operand size_op s1 = eval_operand size_op s2` by (
+    irule ld_eval_operand_agree >>
+    qexists_tac `vars` >> simp[] >>
+    rw[] >> first_x_assum irule >> simp[]) >>
+  strip_tac >> gvs[] >>
+  qexists_tac
+    `update_var out s2.vs_fmp
+      (s2 with vs_fmp := s2.vs_fmp + n2w (ceil32 (w2n sz)))` >>
+  simp[step_inst_base_def] >>
+  qpat_x_assum `SOME sz = eval_operand size_op s2` (assume_tac o SYM) >>
+  simp[] >>
+  irule ld_ok_update_exempt >> simp[] >>
+  gvs[ld_ok_def, lookup_var_def]
+QED
+
 (* ===== Generic operand agreement tactic ===== *)
 
 (* Derives eval_operand agreement for ALL operands in assumptions.
