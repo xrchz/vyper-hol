@@ -166,10 +166,21 @@ Definition invoke_target_ok_def:
     else T
 End
 
+Theorem EVERY_fn_insts_blocks:
+  !p blocks.
+    EVERY p (fn_insts_blocks blocks) <=>
+    EVERY (\bb. EVERY p bb.bb_instructions) blocks
+Proof
+  Induct_on `blocks` >>
+  simp[fn_insts_blocks_def, listTheory.EVERY_APPEND]
+QED
+
 Definition wf_invoke_targets_check_def:
   wf_invoke_targets_check ctx <=>
     EVERY
-      (\fn. EVERY (invoke_target_ok (ctx_fn_names ctx)) (fn_insts fn))
+      (\fn. EVERY
+        (\bb. EVERY (invoke_target_ok (ctx_fn_names ctx)) bb.bb_instructions)
+        fn.fn_blocks)
       ctx.ctx_functions
 End
 
@@ -182,7 +193,8 @@ End
 Theorem wf_invoke_targets_check_eq:
   !ctx. wf_invoke_targets_check ctx <=> wf_invoke_targets ctx
 Proof
-  simp[wf_invoke_targets_check_def, listTheory.EVERY_MEM,
+  simp[wf_invoke_targets_check_def, GSYM EVERY_fn_insts_blocks,
+       fn_insts_def, listTheory.EVERY_MEM,
        invoke_target_ok_def, wf_invoke_targets_def] >>
   gen_tac >> eq_tac
   >- (rpt strip_tac >>

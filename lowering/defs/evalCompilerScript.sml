@@ -8,7 +8,7 @@
 
 Theory evalCompiler
 Ancestors compileVyper concretizeMemLocDefs alist byte integer_word option
-Libs finite_mapLib computeLib wordsLib
+Libs finite_mapLib computeLib wordsLib cv_transLib
 
 val () = computeLib.upd_compset add_finite_map_compset
 val () = computeLib.upd_compset (computeLib.add_thms [fmap_to_alist_FEMPTY])
@@ -278,6 +278,196 @@ Definition internal_call_arg_program_def:
              [Name (BaseT (UintT 256)) "x"] NONE))]]
 End
 
+
+Definition nested_internal_call_program_def:
+  nested_internal_call_program =
+    [FunctionDecl Internal Nonpayable F F "leaf"
+       [("z", BaseT (UintT 256))] ([] : expr list) (BaseT (UintT 256))
+       [Return (SOME (Name (BaseT (UintT 256)) "z"))];
+     FunctionDecl Internal Nonpayable F F "mid"
+       [("y", BaseT (UintT 256))] ([] : expr list) (BaseT (UintT 256))
+       [Return (SOME
+          (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+             [Name (BaseT (UintT 256)) "y"] NONE))];
+     FunctionDecl External Nonpayable F F "foo"
+       [("x", BaseT (UintT 256))] ([] : expr list) (BaseT (UintT 256))
+       [Return (SOME
+          (Call (BaseT (UintT 256)) (IntCall (NONE, "mid"))
+             [Name (BaseT (UintT 256)) "x"] NONE))]]
+End
+
+Theorem nested_internal_call_source_descriptors:
+  let (_, internal_fns, _, _) =
+    classify_functions nested_internal_call_program in
+  MAP (source_internal_fn_descriptor nested_internal_call_program)
+    internal_fns = [("leaf", F, 1); ("mid", F, 1)]
+Proof
+  EVAL_TAC
+QED
+
+Definition nested_external_source_def:
+  nested_external_source =
+    (Nonpayable, F, F, "foo", [("x", BaseT (UintT 256))],
+     ([] : expr list), BaseT (UintT 256),
+     [Return (SOME
+        (Call (BaseT (UintT 256)) (IntCall (NONE, "mid"))
+           [Name (BaseT (UintT 256)) "x"] NONE))])
+End
+
+Definition nested_leaf_source_def:
+  nested_leaf_source =
+    (Nonpayable, F, F, "leaf", [("z", BaseT (UintT 256))],
+     ([] : expr list), BaseT (UintT 256),
+     [Return (SOME (Name (BaseT (UintT 256)) "z"))])
+End
+
+Definition nested_mid_source_def:
+  nested_mid_source =
+    (Nonpayable, F, F, "mid", [("y", BaseT (UintT 256))],
+     ([] : expr list), BaseT (UintT 256),
+     [Return (SOME
+        (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+           [Name (BaseT (UintT 256)) "y"] NONE))])
+End
+
+Theorem nested_internal_call_classify:
+  classify_functions nested_internal_call_program =
+    ([nested_external_source],
+     [nested_leaf_source; nested_mid_source], NONE, NONE)
+Proof
+  EVAL_TAC
+QED
+
+Theorem nested_foo_function_selector:
+  function_selector "foo" [Uint 256] =
+    ([47w; 190w; 189w; 56w] : byte list)
+Proof
+  CONV_TAC cv_eval
+QED
+
+Theorem nested_internal_call_selectors:
+  build_selectors (type_env nested_internal_call_program)
+    [nested_external_source] = [(801029432, "fn_foo", F)]
+Proof
+  simp[build_selectors_def, compute_selector_def,
+       nested_external_source_def, nested_internal_call_program_def,
+       vyperContextTheory.type_env_def,
+       vyperContextTheory.type_env_for_module_def,
+       nested_foo_function_selector,
+       selectorDispatchTheory.calldata_method_id_def,
+       selector_has_trailing_zeroes_def]
+QED
+
+Definition nested_external_cenv_def:
+  nested_external_cenv =
+    update_cenv_nonreentrant
+      (update_cenv_ret_abi
+        ((build_compile_env nested_internal_call_program External Nonpayable
+            "foo" [("x", BaseT (UintT 256))] (BaseT (UintT 256))
+            [Return (SOME
+              (Call (BaseT (UintT 256)) (IntCall (NONE, "mid"))
+                [Name (BaseT (UintT 256)) "x"] NONE))] F)
+          with ce_raw_return := F)
+        (BaseT (UintT 256))) F 0 F F
+End
+
+Definition nested_external_package_def:
+  nested_external_package =
+    ("fn_foo", nested_external_cenv,
+     build_positional_args nested_external_cenv
+       [("x", BaseT (UintT 256))],
+     min_calldata_size nested_external_cenv
+       [("x", BaseT (UintT 256))] 0,
+     F, F, 0n, F, F,
+     [Return (SOME
+       (Call (BaseT (UintT 256)) (IntCall (NONE, "mid"))
+         [Name (BaseT (UintT 256)) "x"] NONE))],
+     SOME (BaseT (UintT 256)))
+End
+
+Theorem nested_internal_call_external_package:
+  MAP (package_external_fn nested_internal_call_program F
+         (assign_nkeys nested_internal_call_program 0))
+      [nested_external_source] = [nested_external_package]
+Proof
+  simp[nested_external_source_def, nested_external_package_def,
+       nested_external_cenv_def, package_external_fn_def,
+       nested_internal_call_program_def, assign_nkeys_def]
+QED
+
+Definition nested_leaf_cenv_def:
+  nested_leaf_cenv =
+    update_cenv_nonreentrant
+      ((build_compile_env nested_internal_call_program Internal Nonpayable
+          "leaf" [("z", BaseT (UintT 256))] (BaseT (UintT 256))
+          [Return (SOME (Name (BaseT (UintT 256)) "z"))] F)
+        with <| ce_is_ctor := F; ce_raw_return := F |>)
+      F 0 F F
+End
+
+Definition nested_leaf_package_def:
+  nested_leaf_package =
+    ("leaf", nested_leaf_cenv, [("z", T)], F,
+     F, 0n, F, F, F, 0n,
+     [Return (SOME (Name (BaseT (UintT 256)) "z"))],
+     SOME (BaseT (UintT 256)))
+End
+
+Definition nested_mid_cenv_def:
+  nested_mid_cenv =
+    update_cenv_nonreentrant
+      ((build_compile_env nested_internal_call_program Internal Nonpayable
+          "mid" [("y", BaseT (UintT 256))] (BaseT (UintT 256))
+          [Return (SOME
+            (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+              [Name (BaseT (UintT 256)) "y"] NONE))] F)
+        with <| ce_is_ctor := F; ce_raw_return := F |>)
+      F 0 F F
+End
+
+Definition nested_mid_package_def:
+  nested_mid_package =
+    ("mid", nested_mid_cenv, [("y", T)], F,
+     F, 0n, F, F, F, 0n,
+     [Return (SOME
+       (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+         [Name (BaseT (UintT 256)) "y"] NONE))],
+     SOME (BaseT (UintT 256)))
+End
+
+Theorem nested_internal_call_internal_packages:
+  MAP (package_internal_fn nested_internal_call_program F
+         (assign_nkeys nested_internal_call_program 0) F)
+      [nested_leaf_source; nested_mid_source] =
+    [nested_leaf_package; nested_mid_package]
+Proof
+  simp[nested_leaf_source_def, nested_mid_source_def,
+       nested_leaf_package_def, nested_mid_package_def,
+       nested_leaf_cenv_def, nested_mid_cenv_def,
+       package_internal_fn_def, nested_internal_call_program_def,
+       assign_nkeys_def, make_struct_fields_map_def,
+       compileEnvTheory.returns_stack_count_def,
+       compileEnvTheory.compute_pass_via_stack_def,
+       compileEnvTheory.is_word_type_def,
+       compileEnvTheory.MAX_STACK_ARGS_def]
+QED
+
+Theorem nested_internal_call_packaged_descriptors:
+  !use_trans nkey_map is_ctor_context.
+    let (_, internal_fns, _, _) =
+      classify_functions nested_internal_call_program in
+    internal_fn_descriptors
+      (MAP (package_internal_fn nested_internal_call_program
+              use_trans nkey_map is_ctor_context) internal_fns) =
+    [("leaf", F, 1); ("mid", F, 1)]
+Proof
+  rpt strip_tac
+  >> rewrite_tac[internal_fn_descriptors_MAP_package_internal_fn]
+  >> MATCH_ACCEPT_TAC nested_internal_call_source_descriptors
+QED
+
+
+
 Theorem empty_compiles:
   IS_SOME
     (compile_vyper ([] : toplevel list)
@@ -460,4 +650,36 @@ Theorem internal_call_arg_compiles:
        concretize_context_eval Linear)
 Proof
   EVAL_TAC
+QED
+
+
+
+Theorem nested_internal_call_packaging:
+  case lower_vyper_runtime_unit nested_internal_call_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |> of
+    NONE => F
+  | SOME unit =>
+      let ctx = unit.cu_context in
+      ctx_fn_names ctx = ["__entry"; "leaf"; "mid"] /\
+      ALL_DISTINCT (ctx_fn_names ctx) /\
+      wf_invoke_targets ctx /\
+      OPTION_MAP (\fn. fn.fn_name)
+        (lookup_function "leaf" ctx.ctx_functions) = SOME "leaf" /\
+      OPTION_MAP (\fn. fn.fn_name)
+        (lookup_function "mid" ctx.ctx_functions) = SOME "mid" /\
+      MAP (\fn. (fn.fn_name, fn.fn_call_abi, fn.fn_noinline,
+                 fn.fn_eom, fn.fn_fmp_signature)) ctx.ctx_functions =
+        [("__entry", default_internal_call_abi, F, NONE, NONE);
+         ("leaf",
+          <| ica_has_memory_return_buffer := SOME F;
+             ica_user_return_count := SOME 1 |>, F, NONE, NONE);
+         ("mid",
+          <| ica_has_memory_return_buffer := SOME F;
+             ica_user_return_count := SOME 1 |>, F, NONE, NONE)] /\
+      EVERY (\fn. fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE)
+        ctx.ctx_functions
+Proof
+  rewrite_tac[GSYM wf_invoke_targets_check_eq] >> EVAL_TAC
 QED
