@@ -308,4 +308,120 @@ Definition fresh_ir_label_def:
                         irs_used_labels := name :: s.irs_used_labels |>)
 End
 
+Definition ir_supply_inst_ok_def:
+  ir_supply_inst_ok s <=>
+    EVERY (\id. id < s.irs_next_inst) s.irs_used_inst_ids
+End
+
+Theorem foldl_max_bound:
+  !(x:num) (base:num) xs.
+  x <= base \/ MEM x xs ==> x <= FOLDL MAX base xs
+Proof
+  Induct_on `xs`
+  >- simp[]
+  >> rpt strip_tac >> simp[] >>
+  first_x_assum irule >>
+  gvs[arithmeticTheory.MAX_DEF] >> decide_tac
+QED
+
+Theorem init_ir_supply_fields:
+  (init_ir_supply unit).irs_used_inst_ids = unit_ir_inst_ids unit /\
+  (init_ir_supply unit).irs_used_vars = unit_ir_vars unit /\
+  (init_ir_supply unit).irs_used_labels = unit_ir_labels unit /\
+  (init_ir_supply unit).irs_next_var = 0 /\
+  (init_ir_supply unit).irs_next_label = 0
+Proof
+  simp[init_ir_supply_def]
+QED
+
+Theorem init_ir_supply_inst_id_bound:
+  MEM id (unit_ir_inst_ids unit) ==>
+  id < (init_ir_supply unit).irs_next_inst
+Proof
+  simp[init_ir_supply_def] >> strip_tac >>
+  `id <= FOLDL MAX 0 (unit_ir_inst_ids unit)` by
+    (irule foldl_max_bound >> simp[]) >>
+  decide_tac
+QED
+
+Theorem init_ir_supply_inst_ok:
+  ir_supply_inst_ok (init_ir_supply unit)
+Proof
+  simp[ir_supply_inst_ok_def, EVERY_MEM, init_ir_supply_def] >>
+  rpt strip_tac >>
+  `id <= FOLDL MAX 0 (unit_ir_inst_ids unit)` by
+    (irule foldl_max_bound >> simp[]) >>
+  decide_tac
+QED
+
+Theorem init_ir_supply_covers_inst:
+  MEM fn unit.cu_context.ctx_functions /\
+  MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions ==>
+  MEM inst.inst_id (init_ir_supply unit).irs_used_inst_ids /\
+  inst.inst_id < (init_ir_supply unit).irs_next_inst
+Proof
+  strip_tac >>
+  `MEM inst.inst_id (unit_ir_inst_ids unit)` by
+    (simp[MEM_unit_ir_inst_ids] >> metis_tac[]) >>
+  conj_tac
+  >- simp[init_ir_supply_def]
+  >> simp[init_ir_supply_def] >>
+  `inst.inst_id <= FOLDL MAX 0 (unit_ir_inst_ids unit)` by
+    (irule foldl_max_bound >> simp[]) >>
+  decide_tac
+QED
+
+Theorem init_ir_supply_covers_var:
+  MEM fn unit.cu_context.ctx_functions /\
+  MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
+  (MEM v inst.inst_outputs \/ MEM v (inst_uses inst)) ==>
+  MEM v (init_ir_supply unit).irs_used_vars
+Proof
+  simp[init_ir_supply_def, MEM_unit_ir_vars] >> metis_tac[]
+QED
+
+Theorem init_ir_supply_covers_entry:
+  unit.cu_context.ctx_entry = SOME l ==>
+  MEM l (init_ir_supply unit).irs_used_labels
+Proof
+  simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_entry]
+QED
+
+Theorem init_ir_supply_covers_function_label:
+  MEM fn unit.cu_context.ctx_functions ==>
+  MEM fn.fn_name (init_ir_supply unit).irs_used_labels
+Proof
+  simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_function]
+QED
+
+Theorem init_ir_supply_covers_block_label:
+  MEM fn unit.cu_context.ctx_functions /\ MEM bb fn.fn_blocks ==>
+  MEM bb.bb_label (init_ir_supply unit).irs_used_labels
+Proof
+  simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_block]
+QED
+
+Theorem init_ir_supply_covers_operand_label:
+  MEM fn unit.cu_context.ctx_functions /\
+  MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
+  MEM (Label l) inst.inst_operands ==>
+  MEM l (init_ir_supply unit).irs_used_labels
+Proof
+  simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_operand]
+QED
+
+Theorem init_ir_supply_covers_section_label:
+  MEM section unit.cu_data_segment ==>
+  MEM section.ds_label (init_ir_supply unit).irs_used_labels
+Proof
+  simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_section]
+QED
+
+Theorem init_ir_supply_covers_data_label:
+  MEM section unit.cu_data_segment /\ MEM (DataLabel l) section.ds_items ==>
+  MEM l (init_ir_supply unit).irs_used_labels
+Proof
+  simp[init_ir_supply_def] >> metis_tac[unit_ir_labels_data_item]
+QED
+
 val _ = export_theory ();
