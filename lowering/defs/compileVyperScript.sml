@@ -440,6 +440,17 @@ Proof
   >> rpt (pairarg_tac >> gvs[])
 QED
 
+Theorem build_compile_env_ce_func_info:
+  !tops vis mut func_name args ret_type (body : stmt list) use_trans.
+    (build_compile_env tops vis mut func_name args ret_type body use_trans).
+      ce_func_info =
+    build_func_info (get_struct_fields (make_struct_fields_map tops)) tops
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
 Theorem build_compile_env_external_single_uint_arg_lookup:
   !tops mut func_name arg_name ret_type (body : stmt list) use_trans.
     add_module_var_locations tops FEMPTY = FEMPTY /\
