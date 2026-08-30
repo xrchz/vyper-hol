@@ -465,4 +465,80 @@ Proof
   gvs[]
 QED
 
+
+Theorem fresh_ir_var_contract:
+  fresh_ir_var s = (v,s') ==>
+  ~MEM v s.irs_used_vars /\
+  s'.irs_used_vars = v :: s.irs_used_vars /\
+  s.irs_next_var < s'.irs_next_var /\
+  s'.irs_next_inst = s.irs_next_inst /\
+  s'.irs_next_label = s.irs_next_label /\
+  s'.irs_used_inst_ids = s.irs_used_inst_ids /\
+  s'.irs_used_labels = s.irs_used_labels /\
+  (?suffix. v = STRCAT "formal_var_" suffix)
+Proof
+  Cases_on `seek_fresh_name "formal_var_" s.irs_used_vars s.irs_next_var
+                            (LENGTH s.irs_used_vars)` >>
+  rename1 `seek_fresh_name _ _ _ _ = (name,k)` >>
+  drule seek_fresh_name_interface >> strip_tac >>
+  gvs[fresh_ir_var_def] >> strip_tac >> gvs[]
+QED
+
+Theorem fresh_ir_label_contract:
+  fresh_ir_label s = (l,s') ==>
+  ~MEM l s.irs_used_labels /\
+  s'.irs_used_labels = l :: s.irs_used_labels /\
+  s.irs_next_label < s'.irs_next_label /\
+  s'.irs_next_inst = s.irs_next_inst /\
+  s'.irs_next_var = s.irs_next_var /\
+  s'.irs_used_inst_ids = s.irs_used_inst_ids /\
+  s'.irs_used_vars = s.irs_used_vars /\
+  (?suffix. l = STRCAT "formal_label_" suffix)
+Proof
+  Cases_on `seek_fresh_name "formal_label_" s.irs_used_labels s.irs_next_label
+                            (LENGTH s.irs_used_labels)` >>
+  rename1 `seek_fresh_name _ _ _ _ = (name,k)` >>
+  drule seek_fresh_name_interface >> strip_tac >>
+  gvs[fresh_ir_label_def] >> strip_tac >> gvs[]
+QED
+
+Theorem fresh_ir_var_preserves_old:
+  fresh_ir_var s = (v,s') /\ MEM old s.irs_used_vars ==>
+  MEM old s'.irs_used_vars
+Proof
+  strip_tac >> drule fresh_ir_var_contract >> strip_tac >> gvs[]
+QED
+
+Theorem fresh_ir_label_preserves_old:
+  fresh_ir_label s = (l,s') /\ MEM old s.irs_used_labels ==>
+  MEM old s'.irs_used_labels
+Proof
+  strip_tac >> drule fresh_ir_label_contract >> strip_tac >> gvs[]
+QED
+
+Theorem fresh_ir_var_two_calls_distinct:
+  fresh_ir_var s = (v1,s1) /\ fresh_ir_var s1 = (v2,s2) ==>
+  v2 <> v1
+Proof
+  strip_tac >>
+  qpat_assum `fresh_ir_var s = (v1,s1)`
+    (mp_tac o MATCH_MP fresh_ir_var_contract) >> strip_tac >>
+  `MEM v1 s1.irs_used_vars` by gvs[] >>
+  qpat_assum `fresh_ir_var s1 = (v2,s2)`
+    (mp_tac o MATCH_MP fresh_ir_var_contract) >> strip_tac >>
+  metis_tac[]
+QED
+
+Theorem fresh_ir_label_two_calls_distinct:
+  fresh_ir_label s = (l1,s1) /\ fresh_ir_label s1 = (l2,s2) ==>
+  l2 <> l1
+Proof
+  strip_tac >>
+  qpat_assum `fresh_ir_label s = (l1,s1)`
+    (mp_tac o MATCH_MP fresh_ir_label_contract) >> strip_tac >>
+  `MEM l1 s1.irs_used_labels` by gvs[] >>
+  qpat_assum `fresh_ir_label s1 = (l2,s2)`
+    (mp_tac o MATCH_MP fresh_ir_label_contract) >> strip_tac >>
+  metis_tac[]
+QED
 val _ = export_theory ();
