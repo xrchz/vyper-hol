@@ -1108,7 +1108,8 @@ Theorem ci_mono_compile_store_bytestring[local]:
   ∀ val_op dst_op sa.
     ci_mono sa (SND (compile_store_bytestring val_op dst_op sa))
 Proof
-  simp[contextTheory.compile_store_bytestring_def, LET_THM] >>
+  simp[contextTheory.compile_store_bytestring_def,
+       contextTheory.compile_bytestring_copy_len_def, LET_THM] >>
   rpt (CHANGED_TAC (rpt gen_tac >>
     (TRY (irule ci_mono_bind >> conj_tac) >>
      TRY (irule ci_mono_ignore_bind >> conj_tac) >>

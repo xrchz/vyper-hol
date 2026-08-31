@@ -264,7 +264,6 @@ Proof
   simp[compile_mcopy_guard_def]
 QED
 
-
 Definition compile_internal_return_def:
   compile_internal_return cenv ret_val return_pc returns_count
                           ret_type src_type elem_types return_buf =
@@ -284,23 +283,38 @@ Definition compile_internal_return_def:
                           elem_types 0;
                emit_inst RET (elems ++ [return_pc]) []
             od
+    else if is_abi_dynamic cenv.ce_struct_fields ret_type then
+      (* At this boundary only a top-level bytes/string has one directly
+         representable dynamic source range.  Nested dynamic layouts are
+         rejected rather than being emitted with a malformed envelope. *)
+      case (return_buf, ret_val) of
+        (SOME buf_op, SOME val_op) =>
+          if is_bytestring_type ret_type /\
+             is_bytestring_type src_type then
+            (* The guard surrounds the complete size/DRET computation, so an
+               unsupported target emits INVALID before any MCOPY-dependent
+               raw behavior. *)
+            compile_mcopy_guard cenv
+              (do copy_len <- compile_bytestring_copy_len val_op;
+                  (case mk_dret_operands [] [(val_op, copy_len)] return_pc of
+                     SOME ops => emit_inst DRET ops []
+                   | NONE => emit_inst INVALID [] [])
+               od)
+          else emit_inst INVALID [] []
+      | _ => emit_inst INVALID [] []
     else
       case return_buf of
         SOME buf_op =>
           (case ret_val of
              NONE => emit_inst RET [return_pc] []
            | SOME val_op =>
-               (* Memory return: layout-aware copy to caller's buffer.
-                  Uses compile_store_memory_typed to handle type
-                  mismatch between source and declared return type.
-                  Mirrors Python: ctx.store_memory(ret_val, return_buffer,
-                    ret_typ, src_typ=ret_src_typ) *)
+               (* Fixed-size memory return: retain the ordinary buffered RET
+                  path. *)
                do compile_store_memory_typed cenv buf_op ret_type
                                              val_op src_type;
                   emit_inst RET [return_pc] []
                od)
-      | NONE =>
-          emit_inst RET [return_pc] []
+      | NONE => emit_inst RET [return_pc] []
 End
 
 (* ===== External Return ===== *)

@@ -651,22 +651,27 @@ Definition compile_with_byte_offset_def:
 End
 
 (* ===== Store Memory for Bytestrings ===== *)
+(* Compute 32 + ceil32(actual_length), the exact memory range occupied by an
+   in-memory bytes/string value.  This boundary is also used by DRET lowering,
+   which publishes the same source range without first copying it. *)
+Definition compile_bytestring_copy_len_def:
+  compile_bytestring_copy_len val_op =
+    do src_len <- emit_op MLOAD [val_op];
+       padded_len <- emit_op ADD [src_len; Lit 31w];
+       let mask = i2w (- &32) : bytes32 in
+       do rounded <- emit_op AND [padded_len; Lit mask];
+          emit_op ADD [rounded; Lit 32w]
+       od
+    od
+End
+
 (* Copy bytestring to memory: copies 32 + ceil32(actual_length) bytes.
    Mirrors Python: context.py store_memory for _BytestringT.
    Placed before typed copy defs since they dispatch to it. *)
 Definition compile_store_bytestring_def:
   compile_store_bytestring val_op dst_op =
-    do (* Load actual length from val *)
-       src_len <- emit_op MLOAD [val_op];
-       (* ceil32(length) = (length + 31) & ~31 *)
-       padded_len <- emit_op ADD [src_len; Lit 31w];
-       (* ~31 = 0xffffffffffffffe0 *)
-       let mask = i2w (- &32) : bytes32 in
-       do rounded <- emit_op AND [padded_len; Lit mask];
-          (* Total copy: 32 (length word) + ceil32(length) *)
-          copy_len <- emit_op ADD [rounded; Lit 32w];
-          emit_void MCOPY [dst_op; val_op; copy_len]
-       od
+    do copy_len <- compile_bytestring_copy_len val_op;
+       emit_void MCOPY [dst_op; val_op; copy_len]
     od
 End
 
