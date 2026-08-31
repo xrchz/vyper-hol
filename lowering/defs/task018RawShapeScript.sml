@@ -441,6 +441,98 @@ Proof
   >> EVAL_TAC
 QED
 
+Theorem task18_nested_entry_block_succs:
+  bb_succs task18_nested_entry_block =
+    ["@fallback_0"; "@dispatch_1"]
+Proof
+  pure_rewrite_tac[venomInstTheory.bb_succs_def,
+                   task18_nested_entry_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_dispatch_block_succs:
+  bb_succs task18_nested_dispatch_block =
+    ["@next_3"; "@match_2"]
+Proof
+  pure_rewrite_tac[venomInstTheory.bb_succs_def,
+                   task18_nested_dispatch_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_match_block_succs:
+  bb_succs task18_nested_match_block = ["fn_foo"]
+Proof
+  pure_rewrite_tac[venomInstTheory.bb_succs_def,
+                   task18_nested_match_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_next_block_succs:
+  bb_succs task18_nested_next_block = ["@fallback_0"]
+Proof
+  pure_rewrite_tac[venomInstTheory.bb_succs_def,
+                   task18_nested_next_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_foo_block_succs:
+  bb_succs task18_nested_foo_block = []
+Proof
+  pure_rewrite_tac[venomInstTheory.bb_succs_def,
+                   task18_nested_foo_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_fallback_block_succs:
+  bb_succs task18_nested_fallback_block = []
+Proof
+  pure_rewrite_tac[venomInstTheory.bb_succs_def,
+                   task18_nested_fallback_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
 Theorem task18_nested_runtime_entry_member:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
