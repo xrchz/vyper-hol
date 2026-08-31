@@ -165,6 +165,173 @@ Definition extract_context_with_internals_def:
            REVERSE st.cs_data_sections)
 End
 
+(* A captured forced key is admissible only in the function that contains the
+   corresponding ALLOCA instruction. *)
+Definition forced_alloc_key_in_function_def:
+  forced_alloc_key_in_function fn id <=>
+    ?inst. MEM inst (fn_insts fn) /\
+           inst.inst_id = id /\ inst.inst_opcode = ALLOCA
+End
+
+Definition forced_pairs_for_name_def:
+  forced_pairs_for_name name metadata =
+    MAP (\(_, id, pos). (id, pos))
+      (FILTER (\(owner, _, _). owner = name) metadata)
+End
+
+Definition forced_metadata_ok_def:
+  forced_metadata_ok functions metadata <=>
+    ALL_DISTINCT (MAP (\fn. fn.fn_name) functions) /\
+    ALL_DISTINCT (MAP (\(_, id, _). id) metadata) /\
+    EVERY
+      (\(owner, id, _).
+         MEM owner (MAP (\fn. fn.fn_name) functions) /\
+         EVERY
+           (\fn. fn.fn_name = owner ==>
+                 forced_alloc_key_in_function fn id)
+           functions)
+      metadata
+End
+
+(* Checked attachment rejects absent/duplicate owners and duplicate or
+   non-ALLOCA keys before changing any function. *)
+Definition attach_forced_metadata_def:
+  attach_forced_metadata metadata functions =
+    if forced_metadata_ok functions metadata then
+      SOME
+        (MAP
+          (\fn. fn with fn_forced_alloc_positions :=
+                    FUPDATE_LIST FEMPTY
+                      (forced_pairs_for_name fn.fn_name metadata))
+          functions)
+    else NONE
+End
+
+Definition extract_context_with_forced_internals_def:
+  extract_context_with_forced_internals entry_label internal_fns metadata
+                                                (st : compile_state) =
+    let current_bb = <| bb_label := st.cs_current_bb;
+                        bb_instructions := st.cs_current_insts |> in
+    let all_blocks = REVERSE st.cs_blocks ++ [current_bb] in
+    case package_internal_blocks (internal_fn_descriptors internal_fns) all_blocks of
+      NONE => NONE
+    | SOME (entry_blocks, internal_functions) =>
+        case attach_forced_metadata metadata
+               (mk_raw_function entry_label entry_blocks :: internal_functions) of
+          NONE => NONE
+
+        | SOME functions =>
+            SOME
+              (mk_venom_context functions (SOME entry_label),
+               REVERSE st.cs_data_sections)
+End
+
+Definition function_forced_metadata_ok_def:
+  function_forced_metadata_ok fn <=>
+    FEVERY (\(id, _). forced_alloc_key_in_function fn id)
+      fn.fn_forced_alloc_positions
+End
+
+
+Theorem forced_pairs_for_name_all_distinct:
+  !metadata name.
+    ALL_DISTINCT (MAP (\(_, id, _). id) metadata) ==>
+    ALL_DISTINCT (MAP FST (forced_pairs_for_name name metadata))
+Proof
+  Induct_on `metadata` >- simp[forced_pairs_for_name_def] >>
+  rpt gen_tac >> PairCases_on `h` >>
+  simp[forced_pairs_for_name_def] >> strip_tac >>
+  Cases_on `h0 = name`
+  >- (gvs[] >> first_x_assum (qspec_then `h0` assume_tac) >>
+      gvs[forced_pairs_for_name_def, listTheory.MEM_MAP,
+          listTheory.MEM_FILTER, pairTheory.EXISTS_PROD]) >>
+  gvs[] >> first_x_assum (qspec_then `name` assume_tac) >>
+  gvs[forced_pairs_for_name_def]
+QED
+Theorem attach_forced_metadata_integrity:
+  !metadata functions functions'.
+    attach_forced_metadata metadata functions = SOME functions' ==>
+    EVERY function_forced_metadata_ok functions'
+Proof
+  simp[attach_forced_metadata_def, forced_metadata_ok_def, AllCaseEqs()] >>
+  rpt strip_tac >>
+  simp[listTheory.EVERY_MAP, listTheory.EVERY_MEM] >>
+  rpt strip_tac >>
+  simp[function_forced_metadata_ok_def, forced_alloc_key_in_function_def,
+       fn_insts_def] >>
+  `ALL_DISTINCT
+     (MAP FST (forced_pairs_for_name fn.fn_name metadata))` by
+    metis_tac[forced_pairs_for_name_all_distinct] >>
+  simp[finite_mapTheory.FEVERY_FUPDATE_LIST] >>
+  simp[listTheory.EVERY_MEM] >> rpt strip_tac >>
+  gvs[forced_pairs_for_name_def, listTheory.MEM_MAP,
+      listTheory.MEM_FILTER, pairTheory.EXISTS_PROD] >>
+  fs[listTheory.EVERY_MEM] >>
+  res_tac >>
+  gvs[forced_alloc_key_in_function_def, fn_insts_def] >>
+  simp[finite_mapTheory.FEVERY_FEMPTY]
+QED
+
+Theorem function_forced_metadata_ok_lookup:
+  !fn id pos.
+    function_forced_metadata_ok fn /\
+    FLOOKUP fn.fn_forced_alloc_positions id = SOME pos ==>
+    forced_alloc_key_in_function fn id
+Proof
+  simp[function_forced_metadata_ok_def] >>
+  rpt strip_tac >>
+  drule finite_mapTheory.FEVERY_FLOOKUP >>
+  disch_then drule >> simp[]
+QED
+
+Definition function_raw_metadata_defaults_def:
+  function_raw_metadata_defaults fn <=>
+    fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE
+End
+
+Theorem attach_forced_metadata_preserves_raw_defaults:
+  !metadata functions functions'.
+    EVERY function_raw_metadata_defaults functions /\
+    attach_forced_metadata metadata functions = SOME functions' ==>
+    EVERY function_raw_metadata_defaults functions'
+Proof
+  simp[attach_forced_metadata_def, AllCaseEqs(), listTheory.EVERY_MEM,
+       function_raw_metadata_defaults_def] >>
+  rpt strip_tac >>
+  gvs[listTheory.MEM_MAP] >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem package_internal_blocks_raw_defaults:
+  !descriptors blocks entry_blocks functions.
+    package_internal_blocks descriptors blocks = SOME (entry_blocks, functions) ==>
+    EVERY function_raw_metadata_defaults functions
+Proof
+  Induct_on `descriptors` >- simp[package_internal_blocks_def] >>
+  rpt gen_tac >> strip_tac >> PairCases_on `h` >>
+  gvs[package_internal_blocks_def, AllCaseEqs()] >>
+  simp[function_raw_metadata_defaults_def, mk_internal_function_def,
+       mk_raw_function_def] >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem extract_context_with_forced_internals_metadata:
+  !entry_label internal_fns metadata st ctx data.
+    extract_context_with_forced_internals entry_label internal_fns metadata st =
+      SOME (ctx, data) ==>
+    EVERY function_forced_metadata_ok ctx.ctx_functions /\
+    EVERY function_raw_metadata_defaults ctx.ctx_functions
+Proof
+  simp[extract_context_with_forced_internals_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[mk_venom_context_def]
+  >- (drule attach_forced_metadata_integrity >> simp[])
+  >>
+  `EVERY function_raw_metadata_defaults
+     (mk_raw_function entry_label entry_blocks :: internal_functions)` by
+    (simp[function_raw_metadata_defaults_def, mk_raw_function_def] >>
+     drule package_internal_blocks_raw_defaults >> simp[]) >>
+  drule_all attach_forced_metadata_preserves_raw_defaults >> simp[]
+QED
 Definition invoke_target_ok_def:
   invoke_target_ok names inst <=>
     if inst.inst_opcode = INVOKE then
