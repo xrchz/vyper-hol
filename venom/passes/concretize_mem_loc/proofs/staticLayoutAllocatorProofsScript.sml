@@ -2,7 +2,7 @@
 
 Theory staticLayoutAllocatorProofs
 Ancestors
-  concretizeMemLocDefs staticLayoutDefs list
+  concretizeMemLocDefs staticLayoutDefs list finite_map
 
 Definition reserved_positions_sorted_def:
   reserved_positions_sorted [] = T /\
@@ -168,6 +168,143 @@ Proof
      simp[sort_reserved_by_pos_sorted, sort_reserved_by_pos_wf]) >>
   gvs[EVERY_sort_reserved_by_pos, reserved_intervals_wf_def,
       reserved_interval_wf_def]
+QED
+
+Theorem collect_static_allocas_MEM:
+  !insts items item.
+    collect_static_allocas insts = SOME items ==>
+    (MEM item items <=>
+     ?inst. MEM inst insts /\ exact_static_alloca inst = SOME item)
+Proof
+  Induct_on `insts`
+  >- simp[collect_static_allocas_def]
+  >> gen_tac >> rpt gen_tac >>
+  Cases_on `collect_static_allocas insts` >>
+  gvs[collect_static_allocas_def] >>
+  Cases_on `h.inst_opcode = ALLOCA` >> gvs[]
+  >- (Cases_on `exact_static_alloca h` >> gvs[] >>
+      Cases_on `MEM (FST x') (MAP FST x)` >> gvs[] >>
+      strip_tac >> gvs[] >> eq_tac
+      >- (strip_tac >> Cases_on `item = x'`
+          >- (qexists `h` >> gvs[])
+          >> gvs[] >> qexists `inst` >> simp[])
+      >> strip_tac >> gvs[] >> disj2_tac >>
+         qexists `inst` >> simp[])
+  >> `exact_static_alloca h = NONE` by
+       simp[exact_static_alloca_def, exact_static_alloca_size_def] >>
+     strip_tac >> gvs[] >> eq_tac >> strip_tac
+  >- (qexists `inst` >> simp[])
+  >> gvs[] >> qexists `inst` >> simp[]
+QED
+
+Theorem collect_static_allocas_ALL_DISTINCT:
+  !insts items.
+    collect_static_allocas insts = SOME items ==>
+    ALL_DISTINCT (MAP FST items)
+Proof
+  Induct_on `insts`
+  >- simp[collect_static_allocas_def]
+  >> gen_tac >> gen_tac >>
+  Cases_on `collect_static_allocas insts` >>
+  gvs[collect_static_allocas_def] >>
+  Cases_on `h.inst_opcode = ALLOCA` >> gvs[] >>
+  Cases_on `exact_static_alloca h` >> gvs[] >>
+  Cases_on `MEM (FST x') (MAP FST x)` >> gvs[] >>
+  strip_tac >> gvs[]
+QED
+
+Theorem exact_static_alloca_opcode[local]:
+  exact_static_alloca inst = SOME item ==>
+  inst.inst_opcode = ALLOCA
+Proof
+  Cases_on `inst.inst_opcode = ALLOCA` >>
+  simp[exact_static_alloca_def, exact_static_alloca_size_def]
+QED
+
+Theorem static_alloca_items_MEM:
+  static_alloca_items fn = SOME items ==>
+  (MEM item items <=>
+   ?inst. MEM inst (fn_insts fn) /\
+          inst.inst_opcode = ALLOCA /\
+          exact_static_alloca inst = SOME item)
+Proof
+  simp[static_alloca_items_def] >> strip_tac >>
+  drule collect_static_allocas_MEM >>
+  disch_then (qspec_then `item` assume_tac) >>
+  eq_tac >> strip_tac
+  >- (gvs[] >> qexists `inst` >> simp[] >>
+      irule exact_static_alloca_opcode >> simp[])
+  >> gvs[] >> qexists `inst` >> simp[]
+QED
+
+Theorem static_alloca_items_ALL_DISTINCT:
+  static_alloca_items fn = SOME items ==>
+  ALL_DISTINCT (MAP FST items)
+Proof
+  simp[static_alloca_items_def] >> strip_tac >>
+  drule collect_static_allocas_ALL_DISTINCT >> simp[]
+QED
+
+Theorem merge_forced_positions_extends:
+  !items forced positions merged.
+    merge_forced_positions items forced positions = SOME merged ==>
+    !alloc pos.
+      FLOOKUP positions alloc = SOME pos ==>
+      FLOOKUP merged alloc = SOME pos
+Proof
+  Induct_on `items`
+  >- simp[merge_forced_positions_def]
+  >> gen_tac >> PairCases_on `h` >> rpt gen_tac >>
+  Cases_on `FLOOKUP forced (allocation_id h0)` >>
+  gvs[merge_forced_positions_def]
+  >- metis_tac[]
+  >> Cases_on `FLOOKUP positions h0` >> gvs[]
+  >- (strip_tac >> rpt gen_tac >> strip_tac >>
+      qpat_x_assum `!forced positions merged. _`
+        (qspecl_then [`forced`,`positions |+ (h0,x)`,`merged`] mp_tac) >>
+      simp[] >> disch_then irule >>
+      Cases_on `alloc = h0` >> gvs[FLOOKUP_UPDATE])
+  >> Cases_on `x' = x` >> gvs[] >> metis_tac[]
+QED
+
+Theorem merge_forced_positions_forced:
+  !items forced positions merged.
+    merge_forced_positions items forced positions = SOME merged ==>
+    !alloc pos.
+      MEM alloc (MAP FST items) /\
+      FLOOKUP forced (allocation_id alloc) = SOME pos ==>
+      FLOOKUP merged alloc = SOME pos
+Proof
+  Induct_on `items`
+  >- simp[merge_forced_positions_def]
+  >> gen_tac >> PairCases_on `h` >> rpt gen_tac >>
+  Cases_on `FLOOKUP forced (allocation_id h0)` >>
+  gvs[merge_forced_positions_def]
+  >- (strip_tac >> rpt gen_tac >> strip_tac >>
+      Cases_on `alloc = h0` >> gvs[] >>
+      first_x_assum drule >> simp[])
+  >> Cases_on `FLOOKUP positions h0` >> gvs[]
+  >- (strip_tac >> rpt gen_tac >> strip_tac >>
+      Cases_on `alloc = h0` >> gvs[]
+      >- (drule merge_forced_positions_extends >>
+          disch_then (qspecl_then [`alloc`,`pos`] mp_tac) >>
+          simp[FLOOKUP_UPDATE])
+      >> first_x_assum drule >> simp[])
+  >> Cases_on `x' = x` >> gvs[] >> strip_tac >>
+     rpt gen_tac >> strip_tac >> Cases_on `alloc = h0` >> gvs[]
+  >- (drule merge_forced_positions_extends >> simp[])
+  >> first_x_assum drule >> simp[]
+QED
+
+Theorem merge_forced_positions_forced_aid:
+  merge_forced_positions items forced positions = SOME merged ==>
+  !aid pos.
+    FLOOKUP forced aid = SOME pos /\
+    MEM (Allocation aid) (MAP FST items) ==>
+    FLOOKUP merged (Allocation aid) = SOME pos
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  drule merge_forced_positions_forced >> simp[allocation_id_def]
 QED
 
 val _ = export_theory();
