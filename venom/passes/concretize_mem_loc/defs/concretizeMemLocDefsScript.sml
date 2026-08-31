@@ -924,28 +924,50 @@ Definition compute_function_alloc_map_eval_def:
     compute_alloc_map_linear (fn_insts fn) 0
 End
 
+Definition fn_has_static_layout_def:
+  fn_has_static_layout fn = IS_SOME fn.fn_eom
+End
+
+Definition apply_concretize_layout_def:
+  apply_concretize_layout layout fn =
+    (concretize_function_with_positions layout.cl_positions fn) with
+      <| fn_forced_alloc_positions := FEMPTY;
+         fn_eom := SOME layout.cl_eom |>
+End
+
 Definition concretize_function_fuel_def:
-  concretize_function_fuel fuel fn =
-    if fn_has_alloca fn then
-      concretize_function (compute_function_alloc_map_fuel fuel fn) fn
-    else fn
+  concretize_function_fuel fuel reserved fn =
+    if fn_has_static_layout fn then
+      if ~fn_has_alloca fn /\ fn.fn_forced_alloc_positions = FEMPTY
+      then SOME fn else NONE
+    else
+      case compute_function_layout_fuel fuel reserved fn of
+        NONE => NONE
+      | SOME layout => SOME (apply_concretize_layout layout fn)
 End
 
 Definition concretize_function_eval_def:
-  concretize_function_eval fn =
-    if fn_has_alloca fn then
-      concretize_function (compute_function_alloc_map_eval fn) fn
-    else fn
+  concretize_function_eval reserved fn =
+    if fn_has_static_layout fn then
+      if ~fn_has_alloca fn /\ fn.fn_forced_alloc_positions = FEMPTY
+      then SOME fn else NONE
+    else
+      case compute_function_layout_eval reserved fn of
+        NONE => NONE
+      | SOME layout => SOME (apply_concretize_layout layout fn)
 End
 
-Definition concretize_context_fuel_def:
-  concretize_context_fuel fuel ctx =
-    ctx with ctx_functions :=
-      MAP (concretize_function_fuel fuel) ctx.ctx_functions
-End
-
-Definition concretize_context_eval_def:
-  concretize_context_eval ctx =
-    ctx with ctx_functions :=
-      MAP concretize_function_eval ctx.ctx_functions
-End
+Theorem concretize_function_eval_static_guard:
+  let clean = (mk_raw_function "clean" []) with fn_eom := SOME 0 in
+  let stale_forced = clean with
+    fn_forced_alloc_positions := FEMPTY |+ (7,32) in
+  let stale_alloca = (mk_raw_function "stale"
+    [<| bb_label := "entry";
+        bb_instructions := [mk_inst 1 ALLOCA [Lit 4w] ["x"]] |>]) with
+    fn_eom := SOME 4 in
+    concretize_function_eval [(0,0)] clean = SOME clean /\
+    concretize_function_eval [] stale_forced = NONE /\
+    concretize_function_eval [] stale_alloca = NONE
+Proof
+  EVAL_TAC >> simp[]
+QED
