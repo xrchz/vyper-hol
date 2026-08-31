@@ -581,4 +581,59 @@ Proof
   >> Cases_on `fn_memory_return_buffer_param fn`
   >> simp[fn_return_abi_matches_def]
 QED
+
+Definition fn_expected_user_return_arity_def:
+  fn_expected_user_return_arity fn =
+    case fn.fn_call_abi.ica_user_return_count of
+      SOME n => SOME n
+    | NONE => fn_unique_return_arity fn
+End
+
+Definition invoke_input_arity_ok_def:
+  invoke_input_arity_ok callee sig inst <=>
+    inst.inst_opcode = INVOKE /\
+    case inst.inst_operands of
+      Label callee_name::args =>
+        LENGTH args = LENGTH (fn_user_param_insts callee) +
+          (if sig.fms_has_fmp_param then 1 else 0)
+    | _ => F
+End
+
+Definition invoke_output_arity_ok_def:
+  invoke_output_arity_ok callee sig inst <=>
+    inst.inst_opcode = INVOKE /\
+    (case inst.inst_operands of Label callee_name::args => T | _ => F) /\
+    case fn_expected_user_return_arity callee of
+      NONE => F
+    | SOME n =>
+        LENGTH inst.inst_outputs =
+          n + (if sig.fms_publishes then 1 else 0)
+End
+
+Theorem invoke_input_arity_ok_iff:
+  invoke_input_arity_ok callee sig inst <=>
+    inst.inst_opcode = INVOKE /\
+    ?callee_name args.
+      inst.inst_operands = Label callee_name::args /\
+      LENGTH args = LENGTH (fn_user_param_insts callee) +
+        (if sig.fms_has_fmp_param then 1 else 0)
+Proof
+  simp[invoke_input_arity_ok_def]
+  >> Cases_on `inst.inst_operands` >> simp[]
+  >> Cases_on `h` >> simp[]
+QED
+
+Theorem invoke_output_arity_ok_iff:
+  invoke_output_arity_ok callee sig inst <=>
+    inst.inst_opcode = INVOKE /\
+    (?callee_name args. inst.inst_operands = Label callee_name::args) /\
+    ?n. fn_expected_user_return_arity callee = SOME n /\
+        LENGTH inst.inst_outputs =
+          n + (if sig.fms_publishes then 1 else 0)
+Proof
+  simp[invoke_output_arity_ok_def]
+  >> Cases_on `inst.inst_operands` >> simp[]
+  >> Cases_on `h` >> simp[]
+  >> Cases_on `fn_expected_user_return_arity callee` >> simp[]
+QED
 val _ = export_theory();

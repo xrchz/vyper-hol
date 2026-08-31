@@ -152,4 +152,54 @@ Theorem fn_return_abi_matches_eval:
 Proof
   EVAL_TAC >> decide_tac
 QED
+
+Definition layout_test_sig_def:
+  layout_test_sig has_fmp publishes = <|
+    fms_has_fmp_param := has_fmp;
+    fms_publishes := publishes
+  |>
+End
+
+Theorem invoke_arity_positive_eval:
+  let callee = layout_test_fn_with_abi
+      [mk_inst 0 PARAM [Lit 0w] ["u0"];
+       mk_inst 1 PARAM [Lit 1w] ["u1"];
+       mk_inst 2 RET [Var "r0"; Var "r1"; Var "rpc"] []]
+      [] NONE (SOME 2) in
+    invoke_input_arity_ok callee (layout_test_sig F F)
+      (mk_inst 10 INVOKE [Label "callee"; Var "a0"; Var "a1"]
+        ["o0"; "o1"]) /\
+    invoke_input_arity_ok callee (layout_test_sig T F)
+      (mk_inst 11 INVOKE
+        [Label "callee"; Var "a0"; Var "a1"; Var "hidden_fmp"]
+        ["o0"; "o1"]) /\
+    invoke_output_arity_ok callee (layout_test_sig F F)
+      (mk_inst 12 INVOKE [Label "callee"; Var "a0"; Var "a1"]
+        ["o0"; "o1"]) /\
+    invoke_output_arity_ok callee (layout_test_sig F T)
+      (mk_inst 13 INVOKE [Label "callee"; Var "a0"; Var "a1"]
+        ["o0"; "o1"; "published_fmp"])
+Proof
+  EVAL_TAC
+QED
+
+Theorem invoke_arity_fallback_and_malformed_eval:
+  let inferred = layout_test_fn
+      [mk_inst 0 PARAM [Lit 0w] ["u0"];
+       mk_inst 1 RET [Var "r0"; Var "rpc"] []] [] in
+    invoke_output_arity_ok inferred (layout_test_sig F F)
+      (mk_inst 20 INVOKE [Label "callee"; Var "a0"] ["o0"]) /\
+    ~invoke_input_arity_ok inferred (layout_test_sig F F)
+      (mk_inst 21 INVOKE [Label "callee"] ["o0"]) /\
+    ~invoke_input_arity_ok inferred (layout_test_sig T F)
+      (mk_inst 22 INVOKE [Label "callee"; Var "a0"] ["o0"]) /\
+    ~invoke_output_arity_ok inferred (layout_test_sig F T)
+      (mk_inst 23 INVOKE [Label "callee"; Var "a0"] ["o0"]) /\
+    ~invoke_output_arity_ok inferred (layout_test_sig F F)
+      (mk_inst 24 ADD [Label "callee"; Var "a0"] ["o0"]) /\
+    ~invoke_input_arity_ok inferred (layout_test_sig F F)
+      (mk_inst 25 INVOKE [Var "not_a_label"; Var "a0"] ["o0"])
+Proof
+  EVAL_TAC
+QED
 val _ = export_theory();
