@@ -1193,6 +1193,44 @@ Proof
           venomInstTheory.is_terminator_def]
 QED
 
+
+Theorem nested_leaf_entry_continuation_eq:
+  !k.
+    (do new_block "leaf";
+        return ();
+        return_buf_var <- return (NONE : operand option);
+        param_idx_start <- return 0;
+        params_result <-
+          compile_internal_params nested_leaf_cenv [("z", T)] param_idx_start;
+        cenv2 <- return (FST params_result);
+        next_idx <- return (SND params_result);
+        return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+        (case FLOOKUP cenv2.ce_vars "__return_pc__" of
+           SOME (MemLoc rpc_off _) =>
+             emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+         | _ => return ());
+        return ();
+        k cenv2 return_pc
+     od) nested_after_fallback_state =
+    k nested_leaf_cenv nested_leaf_return_pc_operand
+      nested_after_leaf_entry_state
+Proof
+  gen_tac
+  >> simp[moduleLoweringTheory.compile_internal_params_def,
+       nested_leaf_cenv_entry_facts,
+       compileEnvTheory.new_block_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       nested_leaf_z_operand_def,
+       nested_leaf_return_pc_operand_def,
+       nested_after_leaf_entry_state_def,
+       nested_after_fallback_state_def,
+       nested_after_foo_body_state_def]
+QED
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
