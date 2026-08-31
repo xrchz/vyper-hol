@@ -165,10 +165,17 @@ Definition compile_revert_with_reason_def:
 End
 
 (* ===== Internal Return ===== *)
-(* Lower internal function return: load values and pass via RET.
-   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_internal_return
-   returns_count: number of stack-returned values.
-   return_pc: operand holding the return address.
+(* Pinned frontend convention (VYPER_PIN cd74ce4f57e3771aeeab8f061fa3be45bfe8a29c,
+   vyper/codegen_venom/stmt.py:_lower_internal_return): ordinary RET operands
+   are the user values followed by the separate return PC.  A dynamic DRET is
+   [Lit dynamic_count] ++ ordinary values ++ flattened (pointer,size) pairs in
+   source order ++ [return_pc], with dynamic_count > 0.  The count and return
+   PC are raw control operands, not user return values.  DRET lowering copies
+   the dynamic ranges with MCOPY, so the resolved frontend policy must reject a
+   target without CapMcopy before this raw form is emitted.
+
+   returns_count: number of stack-returned user values.
+   return_pc: operand holding the separate return address.
    return_buf: SOME ptr for memory return, NONE otherwise. *)
 (* ===== Load Tuple Elements for Stack Return ===== *)
 (* Load n elements from a memory pointer, each at 32-byte intervals.

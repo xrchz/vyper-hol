@@ -850,9 +850,11 @@ End
 (* compile_store_bytestring moved before typed copy defs (forward ref) *)
 
 (* ===== Load Memory ===== *)
-(* Mirrors Python: context.py load_memory
-   Primitive types: mload the value.
-   Complex types: return the pointer. *)
+(* Pinned convention (VYPER_PIN cd74ce4f57e3771aeeab8f061fa3be45bfe8a29c;
+   introduced by vyperlang/vyper@61507a045f34ab8ee5776de04c5b40ee1d1310e4,
+   vyper/codegen_venom/context.py:VenomCodegenContext.load_memory): MLOAD
+   primitive words and complex values whose memory representation is exactly
+   one 32-byte word; retain a pointer for larger complex values. *)
 Definition compile_load_memory_def:
   compile_load_memory ptr_op is_prim_word =
     if is_prim_word then
