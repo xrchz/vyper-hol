@@ -1075,7 +1075,8 @@ Theorem compute_function_layout_eval_rejections:
     compute_function_layout_eval [(0,4)] reserved_collision = NONE /\
     compute_function_layout_eval [] overflow = NONE /\
     compute_function_layout_eval [] duplicate = NONE /\
-    compute_function_layout_eval [] malformed = NONE
+    compute_function_layout_eval [] malformed = NONE /\
+    compute_function_layout_eval [(0,0)] good = NONE
 Proof
   EVAL_TAC >>
   simp[wordsTheory.dimword_def, reserved_intervals_wf_def,
