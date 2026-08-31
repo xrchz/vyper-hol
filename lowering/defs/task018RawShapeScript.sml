@@ -53,6 +53,20 @@ Proof
   simp[listTheory.EVERY_MEM]
 QED
 
+Theorem task18_lower_runtime_integrity[local]:
+  lower_vyper_runtime_unit tops rpolicy = SOME unit ==>
+  ctx_distinct_fn_names unit.cu_context /\
+  wf_invoke_targets unit.cu_context /\
+  ctx_inst_ids_distinct unit.cu_context /\
+  forced_alloc_inputs_check unit.cu_context
+Proof
+  simp[compileVyperTheory.lower_vyper_runtime_unit_def]
+  >> pairarg_tac
+  >> gvs[]
+  >> metis_tac[vyperCompilerTheory.run_lowering_integrity,
+               vyperCompilerTheory.run_lowering_static_integrity]
+QED
+
 Definition task18_initial_state_def:
   task18_initial_state : compile_state =
     <| cs_next_var := 0;
@@ -967,6 +981,7 @@ Theorem task18_nested_runtime_entry_member:
             rpol_final_assembly := FAP_Optimize |> of
     NONE => F
   | SOME unit =>
+      unit.cu_context.ctx_entry = SOME "__entry" /\
       HD unit.cu_context.ctx_functions = task18_nested_entry_fn
 Proof
   pure_rewrite_tac[compileVyperTheory.lower_vyper_runtime_unit_def,
@@ -1009,6 +1024,23 @@ Proof
           venomInstTheory.mk_raw_function_def]
 QED
 
+Theorem task18_nested_data_sections_empty:
+  nested_after_mid_body_state.cs_data_sections = []
+Proof
+  simp[nested_after_mid_body_state_def]
+  >> simp[nested_after_mid_leaf_call_state_def]
+  >> simp[nested_after_mid_name_state_def]
+  >> simp[nested_after_mid_entry_state_def]
+  >> simp[nested_after_leaf_body_state_def]
+  >> simp[nested_after_leaf_entry_state_def]
+  >> simp[nested_after_fallback_state_def]
+  >> simp[nested_after_foo_body_state_def]
+  >> simp[nested_after_foo_mid_call_state_def]
+  >> simp[nested_after_foo_name_state_def]
+  >> simp[nested_after_foo_entry_state_def]
+  >> simp[nested_after_dispatch_state_def]
+QED
+
 Theorem task18_nested_runtime_functions:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
@@ -1016,6 +1048,7 @@ Theorem task18_nested_runtime_functions:
             rpol_final_assembly := FAP_Optimize |> of
     NONE => F
   | SOME unit =>
+      unit.cu_data_segment = [] /\
       unit.cu_context.ctx_functions =
         [task18_nested_entry_fn;
          task18_nested_leaf_fn;
@@ -1055,7 +1088,7 @@ Proof
           task18_nested_mid_block_def,
           vyperCompilerTheory.mk_internal_function_def]
   >> IF_CASES_TAC
-  >- simp[]
+  >- simp[task18_nested_data_sections_empty]
   >> mp_tac nested_internal_call_extracted_context
   >> pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
   >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
@@ -1072,6 +1105,96 @@ Proof
           task18_nested_mid_fn_def,
           task18_nested_mid_block_def]
 QED
+Theorem task18_nested_functions_wf:
+  EVERY (\fn. wf_function fn /\ fn_inst_wf fn)
+    [task18_nested_entry_fn; task18_nested_leaf_fn; task18_nested_mid_fn]
+Proof
+  simp[task18_nested_entry_fn_wf,
+       task18_nested_leaf_fn_wf,
+       task18_nested_mid_fn_wf,
+       task18_nested_entry_fn_inst_wf,
+       task18_nested_leaf_fn_inst_wf,
+       task18_nested_mid_fn_inst_wf]
+QED
+
+Theorem task18_nested_runtime_unit_wf:
+  case lower_vyper_runtime_unit nested_internal_call_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |> of
+    NONE => F
+  | SOME unit => unit_wf unit
+Proof
+  Cases_on `lower_vyper_runtime_unit nested_internal_call_program
+    <| rpol_target := prague_capabilities;
+       rpol_frontend_dispatch := Linear;
+       rpol_final_assembly := FAP_Optimize |>`
+  >- (mp_tac nested_internal_call_packaging >> simp[])
+  >> mp_tac task18_nested_runtime_entry_member
+  >> mp_tac task18_nested_runtime_functions
+  >> mp_tac nested_internal_call_packaging
+  >> simp[]
+  >> rpt strip_tac
+  >> drule task18_lower_runtime_integrity
+  >> strip_tac
+  >> `ctx_wf x.cu_context` by
+       gvs[venomWfTheory.ctx_wf_def,
+           venomWfTheory.ctx_has_entry_def,
+           venomWfTheory.ctx_distinct_fn_names_def]
+  >> `!fn. MEM fn x.cu_context.ctx_functions ==>
+             wf_function fn /\ fn_inst_wf fn` by
+       (qpat_assum `x.cu_context.ctx_functions = _`
+          (fn th => rewrite_tac[th])
+        >> rpt strip_tac
+        >> gvs[task18_nested_entry_fn_wf,
+               task18_nested_leaf_fn_wf,
+               task18_nested_mid_fn_wf,
+               task18_nested_entry_fn_inst_wf,
+               task18_nested_leaf_fn_inst_wf,
+               task18_nested_mid_fn_inst_wf])
+  >> `unit_labels_wf x` by
+       gvs[venomCompilerWfTheory.unit_labels_wf_def,
+           venomCompilerWfTheory.unit_label_namespace_def,
+           venomCompilerWfTheory.unit_data_labels_consistent_def,
+           venomCompilerWfTheory.unit_data_label_refs_def,
+           task18_nested_entry_fn_labels,
+           task18_nested_leaf_fn_labels,
+           task18_nested_mid_fn_labels]
+  >> irule task18_unit_wf_intro
+  >> simp[]
+QED
+Theorem task18_nested_runtime_prechecks:
+  case lower_vyper_runtime_unit nested_internal_call_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |> of
+    NONE => F
+  | SOME unit =>
+      unit_wf unit /\
+      lowering_context_ok unit.cu_context /\
+      unit.cu_context.ctx_global_reserved = [] /\
+      EVERY function_forced_metadata_ok unit.cu_context.ctx_functions /\
+      EVERY (\fn. fn.fn_forced_alloc_positions = FEMPTY)
+        unit.cu_context.ctx_functions /\
+      target_capabilities_wf prague_capabilities /\
+      prague_capabilities CapMcopy
+Proof
+  Cases_on `lower_vyper_runtime_unit nested_internal_call_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |>`
+  >- (mp_tac nested_internal_call_packaging >> simp[])
+  >> mp_tac task18_nested_runtime_unit_wf
+  >> mp_tac nested_internal_call_packaging
+  >> simp[]
+  >> rpt strip_tac
+  >> drule task18_lower_runtime_integrity
+  >> gvs[vyperCompilerTheory.lowering_context_ok_def,
+         GSYM vyperCompilerTheory.wf_invoke_targets_check_eq,
+         venomPolicyTypesTheory.prague_capabilities_wf,
+         venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
 (* TASK_018 unsupported-shape inventory (and only this boundary):
    1. A top-level bytes/string dynamic return without CapMcopy emits INVALID
       before length computation, MCOPY-dependent behavior, or DRET.
@@ -1160,6 +1283,126 @@ Theorem task18_incompatible_one_word_tuple_fails:
   task18_all_dret_wf (task18_emitted_insts task18_incompatible_tuple_unpack)
 Proof
   EVAL_TAC
+QED
+
+Definition task18_immutable_deploy_unit_def:
+  task18_immutable_deploy_unit =
+    THE (lower_vyper_deploy_unit immutable_multi_deploy_program
+      <| rpol_target := prague_capabilities;
+         rpol_frontend_dispatch := Linear;
+         rpol_final_assembly := FAP_Optimize |>
+      ([170w; 187w] : byte list))
+End
+
+Definition task18_immutable_deploy_fn_def:
+  task18_immutable_deploy_fn =
+    EL 0 task18_immutable_deploy_unit.cu_context.ctx_functions
+End
+
+Definition task18_immutable_helper_fn_def:
+  task18_immutable_helper_fn =
+    EL 1 task18_immutable_deploy_unit.cu_context.ctx_functions
+End
+
+Theorem task18_immutable_deploy_functions:
+  lower_vyper_deploy_unit immutable_multi_deploy_program
+      <| rpol_target := prague_capabilities;
+         rpol_frontend_dispatch := Linear;
+         rpol_final_assembly := FAP_Optimize |>
+      ([170w; 187w] : byte list) = SOME task18_immutable_deploy_unit /\
+  task18_immutable_deploy_unit.cu_context.ctx_functions =
+    [task18_immutable_deploy_fn; task18_immutable_helper_fn]
+Proof
+  Cases_on `lower_vyper_deploy_unit immutable_multi_deploy_program
+      <| rpol_target := prague_capabilities;
+         rpol_frontend_dispatch := Linear;
+         rpol_final_assembly := FAP_Optimize |>
+      ([170w; 187w] : byte list)`
+  >- (mp_tac immutable_multi_deploy_static_inputs >> simp[])
+  >> `task18_immutable_deploy_unit = x` by
+       simp[task18_immutable_deploy_unit_def]
+  >> simp[]
+  >> mp_tac immutable_multi_deploy_static_inputs
+  >> simp[]
+  >> strip_tac
+  >> Cases_on `x.cu_context.ctx_functions`
+  >> gvs[task18_immutable_deploy_fn_def,
+         task18_immutable_helper_fn_def]
+  >> qpat_x_assum `[h; fn] = _`
+       (fn th => rewrite_tac[GSYM th])
+  >> simp[]
+QED
+
+Definition task18_immutable_deploy_block_def:
+  task18_immutable_deploy_block =
+    <| bb_label := "__deploy";
+       bb_instructions :=
+         [mk_inst 0 CALLVALUE [] ["%0"];
+          mk_inst 1 ISZERO [Var "%0"] ["%1"];
+          mk_inst 2 ASSERT [Var "%1"] [];
+          mk_inst 3 ALLOCA [Lit 32w] ["%2"];
+          mk_inst 4 MLOAD [Lit 0w] ["%3"];
+          mk_inst 5 ALLOCA [Lit 34w] ["%4"];
+          mk_inst 6 ADD [Var "%4"; Lit 2w] ["%5"];
+          mk_inst 7 MCOPY [Var "%5"; Var "%2"; Lit 32w] [];
+          mk_inst 8 OFFSET [Lit 0w; Label "runtime_begin"] ["%6"];
+          mk_inst 9 CODECOPY [Var "%4"; Var "%6"; Lit 2w] []] ++
+         [mk_inst 10 RETURN [Var "%4"; Lit 34w] []] |>
+End
+
+Definition task18_immutable_helper_block_def:
+  task18_immutable_helper_block =
+    <| bb_label := "helper";
+       bb_instructions :=
+         [mk_inst 11 ALLOCA [Lit 32w] ["%7"];
+          mk_inst 12 MLOAD [Lit 0w] ["%8"];
+          mk_inst 13 PARAM [Lit 0w] ["%9"];
+          mk_inst 14 MSTORE [Lit 0w; Var "%9"] [];
+          mk_inst 15 INVALID [] []] |>
+End
+
+Theorem task18_immutable_deploy_projections:
+  task18_immutable_deploy_fn.fn_blocks = [task18_immutable_deploy_block] /\
+  task18_immutable_helper_fn.fn_blocks = [task18_immutable_helper_block] /\
+  unit_data_label_refs task18_immutable_deploy_unit = []
+Proof
+  mp_tac immutable_multi_deploy_static_inputs
+  >> EVAL_TAC
+  >> IF_CASES_TAC
+  >- (gvs[vyperCompilerTheory.invoke_target_ok_def]
+      >> IF_CASES_TAC
+      >- (gvs[]
+          >> pure_rewrite_tac[
+               vyperCompilerTheory.function_forced_metadata_ok_def,
+               vyperCompilerTheory.forced_alloc_key_in_function_def,
+               venomInstTheory.fn_insts_def]
+          >> simp[finite_mapTheory.FEVERY_FEMPTY,
+                  finite_mapTheory.FEVERY_FUPDATE,
+                  finite_mapTheory.FLOOKUP_UPDATE,
+                  venomInstTheory.fn_insts_blocks_def,
+                  LEFT_AND_OVER_OR, EXISTS_OR_THM, DISJ_IMP_THM]
+          >> simp[venomCompilerWfTheory.data_section_label_refs_def,
+                  venomCompilerWfTheory.data_item_label_refs_def])
+      >> gvs[vyperCompilerTheory.function_forced_metadata_ok_def,
+             vyperCompilerTheory.forced_alloc_key_in_function_def,
+             venomInstTheory.fn_insts_def,
+             finite_mapTheory.FEVERY_FEMPTY,
+             finite_mapTheory.FEVERY_FUPDATE,
+             venomInstTheory.fn_insts_blocks_def])
+  >> gvs[]
+QED
+
+Theorem task18_immutable_deploy_block_wf:
+  bb_well_formed task18_immutable_deploy_block /\
+  EVERY inst_wf task18_immutable_deploy_block.bb_instructions
+Proof
+  conj_tac
+  >- (pure_rewrite_tac[task18_immutable_deploy_block_def]
+      >> irule task18_bb_well_formed_snoc
+      >> EVAL_TAC)
+  >> simp[task18_immutable_deploy_block_def,
+          venomWfTheory.inst_wf_def,
+          venomInstTheory.mk_inst_def]
 QED
 
 val _ = export_theory();
