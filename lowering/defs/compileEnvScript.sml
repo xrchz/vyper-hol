@@ -404,6 +404,15 @@ Definition comp_set_def:
   comp_set (cs':compile_state) (_:compile_state) = ((), cs')
 End
 
+
+Theorem comp_bind_assoc:
+  comp_bind (comp_bind m f) g =
+  comp_bind m (\x. comp_bind (f x) g)
+Proof
+  rw[FUN_EQ_THM]
+  >> Cases_on `m x`
+  >> simp[comp_bind_def]
+QED
 (* Congruence rule for comp_bind — needed for recursive definitions using the monad *)
 Theorem comp_bind_cong[defncong]:
   ∀m1 m2 f1 f2.
