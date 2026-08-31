@@ -402,7 +402,8 @@ Definition build_compile_env_def:
           case ALOOKUP (REVERSE (args ++ locals)) n of
             SOME ty => SOME ty
           | NONE => var_type_map n) in
-    <| ce_vars := all_vars;
+    <| ce_target := prague_capabilities;
+       ce_vars := all_vars;
        ce_storage_layout := storage_layout;
        (* TODO: NONE = main module. For multi-module (imports), should
           be SOME src_id. Currently single-module only. *)
@@ -430,6 +431,17 @@ Definition build_compile_env_def:
        ce_raw_return := F
     |> : compile_env
 End
+
+Theorem build_compile_env_ce_target[simp]:
+  !tops vis mut func_name args ret_type (body : stmt list) use_trans.
+    (build_compile_env tops vis mut func_name args ret_type body use_trans).
+      ce_target = prague_capabilities
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
 Theorem build_compile_env_ce_struct_fields:
   !tops vis mut func_name args ret_type (body : stmt list) use_trans.
     (build_compile_env tops vis mut func_name args ret_type body use_trans).
@@ -498,6 +510,38 @@ Definition update_cenv_nonreentrant_def:
   update_cenv_nonreentrant cenv is_nr nkey use_trans is_view =
     cenv with ce_nonreentrant := (is_nr, nkey, use_trans, is_view)
 End
+
+Theorem update_cenv_ret_abi_ce_target[simp]:
+  (update_cenv_ret_abi cenv ret_type).ce_target = cenv.ce_target
+Proof
+  simp[update_cenv_ret_abi_def]
+QED
+
+Theorem update_cenv_nonreentrant_ce_target[simp]:
+  (update_cenv_nonreentrant cenv nr nkey use_trans is_view).ce_target =
+  cenv.ce_target
+Proof
+  simp[update_cenv_nonreentrant_def]
+QED
+Theorem compile_env_ce_raw_return_fupd[simp]:
+  (cenv with ce_raw_return := rr).ce_target = cenv.ce_target
+Proof
+  Cases_on `cenv` >> simp[]
+QED
+
+Theorem compile_env_ce_is_ctor_fupd[simp]:
+  (cenv with ce_is_ctor := is_ctor).ce_target = cenv.ce_target
+Proof
+  Cases_on `cenv` >> simp[]
+QED
+
+
+Theorem compile_env_target_update_id:
+  cenv.ce_target = target ==>
+  (cenv with ce_target := target) = cenv
+Proof
+  Cases_on `cenv` >> simp[compile_env_component_equality]
+QED
 
 (* ===== Selector Construction ===== *)
 
@@ -707,6 +751,136 @@ Definition build_dense_entry_info_def:
           else rest_map n)) /\
   build_dense_entry_info _ _ = K ("", 0n, F)
 End
+(* Install the one resolved target into packaged function environments without
+   changing source-visible ABI metadata or any other package field. *)
+Definition set_external_package_target_def:
+  set_external_package_target target
+    (entry_lbl, cenv, pos_args, min_cds, is_payable, nr, nkey, use_trans,
+     is_view, body, ret) =
+    (entry_lbl, cenv with ce_target := target, pos_args, min_cds, is_payable,
+     nr, nkey, use_trans, is_view, body, ret)
+End
+
+Definition set_internal_package_target_def:
+  set_internal_package_target target
+    (fn_lbl, cenv, params, has_ret_buf, nr, nkey, use_trans, is_view,
+     is_ctor, immutables_len, body, ret) =
+    (fn_lbl, cenv with ce_target := target, params, has_ret_buf, nr, nkey,
+     use_trans, is_view, is_ctor, immutables_len, body, ret)
+End
+
+Definition set_fallback_package_target_def:
+  set_fallback_package_target target NONE = NONE /\
+  set_fallback_package_target target
+    (SOME (cenv, is_payable, nr, nkey, use_trans, is_view, body, ret)) =
+    SOME (cenv with ce_target := target, is_payable, nr, nkey, use_trans,
+          is_view, body, ret)
+End
+
+Definition set_constructor_package_target_def:
+  set_constructor_package_target target
+    (cenv, pos_args, is_payable, nr, nkey, use_trans, body, ret) =
+    (cenv with ce_target := target, pos_args, is_payable, nr, nkey,
+     use_trans, body, ret)
+End
+
+Theorem internal_fn_descriptors_set_internal_package_target:
+  internal_fn_descriptors
+    (MAP (set_internal_package_target target) internal_fns) =
+  internal_fn_descriptors internal_fns
+Proof
+  Induct_on `internal_fns`
+  >- simp[internal_fn_descriptors_def]
+  >> Cases_on `h` >> PairCases_on `r`
+  >> simp[set_internal_package_target_def, internal_fn_descriptors_def]
+QED
+
+Theorem set_internal_package_target_capability:
+  set_internal_package_target target
+    (fn_lbl, cenv, params, has_ret_buf, nr, nkey, use_trans, is_view,
+     is_ctor, immutables_len, body, ret) =
+    (fn_lbl, cenv', params, has_ret_buf, nr, nkey, use_trans, is_view,
+     is_ctor, immutables_len, body, ret) ==>
+  cenv'.ce_target = target /\
+  cenv'.ce_returns_count = cenv.ce_returns_count
+Proof
+  simp[set_internal_package_target_def] >> strip_tac >> gvs[]
+QED
+
+Theorem set_external_package_target_prague[simp]:
+  set_external_package_target prague_capabilities
+    (package_external_fn tops use_trans nkey_map source) =
+  package_external_fn tops use_trans nkey_map source
+Proof
+  Cases_on `source` >> PairCases_on `r` >>
+  simp[set_external_package_target_def, package_external_fn_def] >>
+  irule compile_env_target_update_id >> IF_CASES_TAC >> simp[]
+QED
+
+Theorem set_internal_package_target_prague[simp]:
+  set_internal_package_target prague_capabilities
+    (package_internal_fn tops use_trans nkey_map is_ctor immutables_len source) =
+  package_internal_fn tops use_trans nkey_map is_ctor immutables_len source
+Proof
+  Cases_on `source` >> PairCases_on `r` >>
+  simp[set_internal_package_target_def, package_internal_fn_def] >>
+  irule compile_env_target_update_id >> simp[]
+QED
+
+Theorem set_fallback_package_target_prague[simp]:
+  set_fallback_package_target prague_capabilities
+    (package_fallback_fn tops use_trans nkey_map source) =
+  package_fallback_fn tops use_trans nkey_map source
+Proof
+  Cases_on `source`
+  >- simp[set_fallback_package_target_def, package_fallback_fn_def]
+  >> Cases_on `x` >> PairCases_on `r` >>
+  simp[set_fallback_package_target_def, package_fallback_fn_def] >>
+  irule compile_env_target_update_id >> simp[]
+QED
+
+Theorem set_constructor_package_target_prague[simp]:
+  set_constructor_package_target prague_capabilities
+    (package_constructor tops use_trans nkey_map source) =
+  package_constructor tops use_trans nkey_map source
+Proof
+  Cases_on `source` >> PairCases_on `r` >>
+  simp[set_constructor_package_target_def, package_constructor_def] >>
+  irule compile_env_target_update_id >> simp[]
+QED
+
+Theorem set_external_package_target_all[simp]:
+  set_external_package_target (K T)
+    (package_external_fn tops use_trans nkey_map source) =
+  package_external_fn tops use_trans nkey_map source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem set_internal_package_target_all[simp]:
+  set_internal_package_target (K T)
+    (package_internal_fn tops use_trans nkey_map is_ctor immutables_len source) =
+  package_internal_fn tops use_trans nkey_map is_ctor immutables_len source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem set_fallback_package_target_all[simp]:
+  set_fallback_package_target (K T)
+    (package_fallback_fn tops use_trans nkey_map source) =
+  package_fallback_fn tops use_trans nkey_map source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem set_constructor_package_target_all[simp]:
+  set_constructor_package_target (K T)
+    (package_constructor tops use_trans nkey_map source) =
+  package_constructor tops use_trans nkey_map source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
 
 (* ===== Policy-driven complete-unit lowering ===== *)
 
@@ -721,11 +895,15 @@ Definition lower_vyper_runtime_unit_def:
     let use_trans = F in
     let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
     let selectors = build_selectors tenv ext_fns in
-    let external_fns = MAP (package_external_fn tops use_trans nkey_map)
-                           ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F 0)
-                              int_fns in
-    let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
+    let external_fns =
+          MAP (set_external_package_target rpolicy.rpol_target o
+               package_external_fn tops use_trans nkey_map) ext_fns in
+    let runtime_int_fns =
+          MAP (set_internal_package_target rpolicy.rpol_target o
+               package_internal_fn tops use_trans nkey_map F 0) int_fns in
+    let fallback_fn =
+          set_fallback_package_target rpolicy.rpol_target
+            (package_fallback_fn tops use_trans nkey_map fb_fn) in
     let entry_info = build_dense_entry_info selectors external_fns in
     run_lowering selectors external_fns runtime_int_fns fallback_fn
       rpolicy 0 0 ([] : dense_bucket list) entry_info "__entry"
@@ -744,14 +922,17 @@ Definition lower_vyper_deploy_unit_def:
     let use_trans = F in
     let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
     let has_constructor = IS_SOME ctor_fn in
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T immutables_len)
-                             int_fns in
+    let deploy_int_fns =
+          MAP (set_internal_package_target rpolicy.rpol_target o
+               package_internal_fn tops use_trans nkey_map T immutables_len)
+              int_fns in
     let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
          ctor_trans, ctor_body, ctor_ret) =
-      case ctor_fn of
-        SOME cf => package_constructor tops use_trans nkey_map cf
-      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
-                 F, F, 0n, F, ([] : stmt list), NoneT) in
+      set_constructor_package_target rpolicy.rpol_target
+        (case ctor_fn of
+           SOME cf => package_constructor tops use_trans nkey_map cf
+         | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
+                    F, F, 0n, F, ([] : stmt list), NoneT)) in
     run_deploy_lowering has_constructor rpolicy runtime_bytecode
       immutables_len ctor_args 0 deploy_int_fns ctor_cenv ctor_body
       ctor_payable ctor_nr ctor_nkey ctor_trans "__deploy"

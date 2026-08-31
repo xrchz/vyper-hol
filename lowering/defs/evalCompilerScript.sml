@@ -403,6 +403,14 @@ Proof
        nested_external_cenv_def, package_external_fn_def,
        nested_internal_call_program_def, assign_nkeys_def]
 QED
+Theorem nested_external_package_eq:
+  package_external_fn nested_internal_call_program F
+    (assign_nkeys nested_internal_call_program 0) nested_external_source =
+  nested_external_package
+Proof
+  mp_tac nested_internal_call_external_package >> simp[]
+QED
+
 
 Definition nested_fallback_label_def:
   nested_fallback_label = fresh_label_output "fallback" 0
@@ -1007,6 +1015,62 @@ Proof
        compileEnvTheory.is_word_type_def,
        compileEnvTheory.MAX_STACK_ARGS_def]
 QED
+
+Theorem nested_leaf_package_eq:
+  package_internal_fn nested_internal_call_program F
+    (assign_nkeys nested_internal_call_program 0) F 0 nested_leaf_source =
+  nested_leaf_package
+Proof
+  mp_tac nested_internal_call_internal_packages >> simp[]
+QED
+
+Theorem nested_mid_package_eq:
+  package_internal_fn nested_internal_call_program F
+    (assign_nkeys nested_internal_call_program 0) F 0 nested_mid_source =
+  nested_mid_package
+Proof
+  mp_tac nested_internal_call_internal_packages >> simp[]
+QED
+Theorem nested_external_target_packages:
+  MAP (set_external_package_target prague_capabilities o
+       package_external_fn nested_internal_call_program F
+         (assign_nkeys nested_internal_call_program 0))
+      [nested_external_source] = [nested_external_package]
+Proof
+  simp[nested_external_package_eq]
+QED
+
+Theorem nested_internal_target_packages:
+  MAP (set_internal_package_target prague_capabilities o
+       package_internal_fn nested_internal_call_program F
+         (assign_nkeys nested_internal_call_program 0) F 0)
+      [nested_leaf_source; nested_mid_source] =
+    [nested_leaf_package; nested_mid_package]
+Proof
+  simp[nested_leaf_package_eq, nested_mid_package_eq]
+QED
+
+Theorem nested_external_package_target_id[simp]:
+  set_external_package_target (K T) nested_external_package =
+  nested_external_package
+Proof
+  rw[GSYM nested_external_package_eq]
+QED
+
+Theorem nested_leaf_package_target_id[simp]:
+  set_internal_package_target (K T) nested_leaf_package =
+  nested_leaf_package
+Proof
+  rw[GSYM nested_leaf_package_eq]
+QED
+
+Theorem nested_mid_package_target_id[simp]:
+  set_internal_package_target (K T) nested_mid_package =
+  nested_mid_package
+Proof
+  rw[GSYM nested_mid_package_eq]
+QED
+
 
 Theorem nested_internal_call_packaged_descriptors:
   !use_trans nkey_map is_ctor_context immutables_len.
@@ -2120,13 +2184,19 @@ Theorem nested_internal_call_packaging:
       EVERY (\fn. fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE)
         ctx.ctx_functions
 Proof
-  simp[compileVyperTheory.lower_vyper_runtime_unit_def,
-       nested_internal_call_classify,
+  pure_rewrite_tac[compileVyperTheory.lower_vyper_runtime_unit_def,
+                   vyperCompilerTheory.run_lowering_def]
+  >> rewrite_tac[nested_internal_call_classify,
+                 nested_internal_call_selectors]
+  >> rewrite_tac[nested_external_target_packages,
+                 nested_internal_target_packages]
+  >> simp[nested_internal_call_classify,
        nested_internal_call_selectors,
-       nested_internal_call_external_package,
-       nested_internal_call_internal_packages,
+       nested_external_package_eq,
+       nested_leaf_package_eq,
+       nested_mid_package_eq,
        compileVyperTheory.package_fallback_fn_def,
-       vyperCompilerTheory.run_lowering_def,
+       compileVyperTheory.set_fallback_package_target_def,
        vyperCompilerTheory.lowering_policy_ok_def,
        venomPolicyTypesTheory.prague_capabilities_wf,
        venomPolicyTypesTheory.prague_capabilities_def,

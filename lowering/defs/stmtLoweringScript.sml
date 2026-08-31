@@ -17,7 +17,7 @@
 
 Theory stmtLowering
 Ancestors
-  exprLowering context compileEnv venomInst abiEncoder
+  exprLowering context compileEnv venomInst abiEncoder dretShapeDefs
 Libs
   monadsyntax
 
@@ -202,6 +202,68 @@ Definition compile_load_tuple_elements_def:
         return (val_op :: rest)
      od)
 End
+
+Definition mk_dret_operands_def:
+  mk_dret_operands (ordinary : operand list)
+                   (dynamic : (operand # operand) list) return_pc =
+    if 0 < LENGTH dynamic /\ LENGTH dynamic < dimword(:256) then
+      SOME (Lit (n2w (LENGTH dynamic)) ::
+            ordinary ++
+            FLAT (MAP (\p. [FST p; SND p]) dynamic) ++
+            [return_pc])
+    else NONE
+End
+
+Theorem mk_dret_dynamic_payload_length:
+  LENGTH (FLAT (MAP (\p. [FST p; SND p]) dynamic)) =
+  2 * LENGTH dynamic
+Proof
+  Induct_on `dynamic` >> simp[]
+QED
+
+Theorem mk_dret_operands_parse:
+  mk_dret_operands ordinary dynamic return_pc = SOME ops ==>
+  parse_dret_shape (mk_inst id DRET ops outs) =
+    SOME (LENGTH ordinary, LENGTH dynamic)
+Proof
+  simp[mk_dret_operands_def, parse_dret_shape_def, mk_inst_def,
+       mk_dret_dynamic_payload_length] >>
+  strip_tac >> gvs[] >>
+  simp[mk_dret_dynamic_payload_length]
+QED
+
+Theorem mk_dret_operands_zero[simp]:
+  mk_dret_operands ordinary [] return_pc = NONE
+Proof
+  simp[mk_dret_operands_def]
+QED
+
+Theorem mk_dret_operands_overflow:
+  dimword(:256) <= LENGTH dynamic ==>
+  mk_dret_operands ordinary dynamic return_pc = NONE
+Proof
+  simp[mk_dret_operands_def]
+QED
+Definition compile_mcopy_guard_def:
+  compile_mcopy_guard cenv (supported : unit compiler) =
+    if cenv.ce_target CapMcopy then supported
+    else emit_inst INVALID [] []
+End
+
+Theorem compile_mcopy_guard_supported[simp]:
+  cenv.ce_target CapMcopy ==>
+  compile_mcopy_guard cenv supported = supported
+Proof
+  simp[compile_mcopy_guard_def]
+QED
+
+Theorem compile_mcopy_guard_unsupported[simp]:
+  ~cenv.ce_target CapMcopy ==>
+  compile_mcopy_guard cenv supported = emit_inst INVALID [] []
+Proof
+  simp[compile_mcopy_guard_def]
+QED
+
 
 Definition compile_internal_return_def:
   compile_internal_return cenv ret_val return_pc returns_count

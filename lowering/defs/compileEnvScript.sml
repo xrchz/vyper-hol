@@ -25,7 +25,7 @@
 
 Theory compileEnv
 Ancestors
-  valueEncoding venomExecSemantics venomInst
+  valueEncoding venomExecSemantics venomInst venomPolicyTypes
   vyperState vyperContext vyperValue vyperABI contractABI
   byte keccak finite_map pred_set
 Libs
@@ -286,6 +286,8 @@ End
 (* Static info about the compilation target *)
 Datatype:
   compile_env = <|
+    (* Resolved target capabilities used by target-sensitive raw lowering. *)
+    ce_target : target_capabilities;
     ce_vars : (string, var_location) fmap;
     ce_storage_layout : (string, bytes32) fmap;
     ce_module : num option;
