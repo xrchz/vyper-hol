@@ -636,4 +636,95 @@ Proof
   >> Cases_on `h` >> simp[]
   >> Cases_on `fn_expected_user_return_arity callee` >> simp[]
 QED
+
+(* A lowered return has an exact user prefix of length [n], followed by
+ * either just RETPC or an adopted-FMP value immediately before RETPC.
+ * TAKE/DROP keep this predicate executable while exposing an append witness
+ * through the interface theorems below. *)
+Definition lowered_return_inst_layout_wf_def:
+  lowered_return_inst_layout_wf publishes n inst <=>
+    inst.inst_opcode = RET /\
+    LENGTH (TAKE n inst.inst_operands) = n /\
+    DROP n inst.inst_operands =
+      if publishes then
+        [EL n inst.inst_operands; LAST inst.inst_operands]
+      else
+        [LAST inst.inst_operands]
+End
+
+Definition lowered_return_layout_wf_def:
+  lowered_return_layout_wf sig fn <=>
+    case fn_expected_user_return_arity fn of
+      NONE => F
+    | SOME n =>
+        EVERY (lowered_return_inst_layout_wf sig.fms_publishes n)
+          (fn_return_insts fn)
+End
+
+Theorem lowered_return_inst_layout_wf_nonpublishing:
+  lowered_return_inst_layout_wf F n inst ==>
+  ?users rpc.
+    inst.inst_operands = users ++ [rpc] /\ LENGTH users = n
+Proof
+  simp[lowered_return_inst_layout_wf_def] >> strip_tac
+  >> qexistsl [`TAKE n inst.inst_operands`, `LAST inst.inst_operands`]
+  >> simp[]
+  >> metis_tac[listTheory.TAKE_DROP]
+QED
+
+Theorem lowered_return_inst_layout_wf_publishing:
+  lowered_return_inst_layout_wf T n inst ==>
+  ?users adopted_fmp rpc.
+    inst.inst_operands = users ++ [adopted_fmp; rpc] /\ LENGTH users = n
+Proof
+  simp[lowered_return_inst_layout_wf_def] >> strip_tac
+  >> qexistsl [`TAKE n inst.inst_operands`, `EL n inst.inst_operands`,
+               `LAST inst.inst_operands`]
+  >> simp[]
+  >> metis_tac[listTheory.TAKE_DROP]
+QED
+
+Theorem lowered_return_inst_layout_wf_length:
+  lowered_return_inst_layout_wf publishes n inst ==>
+  LENGTH inst.inst_operands = n + (if publishes then 2 else 1)
+Proof
+  Cases_on `publishes`
+  >- (strip_tac >> drule lowered_return_inst_layout_wf_publishing
+      >> strip_tac >> simp[])
+  >> strip_tac >> drule lowered_return_inst_layout_wf_nonpublishing
+  >> strip_tac >> simp[]
+QED
+
+Theorem lowered_return_layout_wf_iff:
+  lowered_return_layout_wf sig fn <=>
+  ?n. fn_expected_user_return_arity fn = SOME n /\
+      !inst. MEM inst (fn_return_insts fn) ==>
+             lowered_return_inst_layout_wf sig.fms_publishes n inst
+Proof
+  Cases_on `fn_expected_user_return_arity fn`
+  >> simp[lowered_return_layout_wf_def, listTheory.EVERY_MEM]
+QED
+
+Theorem lowered_return_layout_wf_inst:
+  lowered_return_layout_wf sig fn /\
+  MEM inst (fn_return_insts fn) ==>
+  ?n. fn_expected_user_return_arity fn = SOME n /\
+      lowered_return_inst_layout_wf sig.fms_publishes n inst
+Proof
+  metis_tac[lowered_return_layout_wf_iff]
+QED
+
+Theorem lowered_return_layout_wf_length:
+  lowered_return_layout_wf sig fn /\
+  MEM inst (fn_return_insts fn) ==>
+  ?n. fn_expected_user_return_arity fn = SOME n /\
+      LENGTH inst.inst_operands =
+        n + (if sig.fms_publishes then 2 else 1)
+Proof
+  strip_tac
+  >> drule (iffLR lowered_return_layout_wf_iff) >> strip_tac
+  >> qexists `n` >> simp[]
+  >> irule lowered_return_inst_layout_wf_length
+  >> first_x_assum irule >> simp[]
+QED
 val _ = export_theory();

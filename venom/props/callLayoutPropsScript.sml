@@ -202,4 +202,57 @@ Theorem invoke_arity_fallback_and_malformed_eval:
 Proof
   EVAL_TAC
 QED
+
+
+Theorem lowered_return_layout_positive_eval:
+  lowered_return_layout_wf (layout_test_sig F F)
+    (layout_test_fn_with_abi
+      [mk_inst 0 RET [Var "u0"; Var "u1"; Var "rpc"] []]
+      [] NONE (SOME 2)) /\
+  lowered_return_layout_wf (layout_test_sig F T)
+    (layout_test_fn_with_abi
+      [mk_inst 1 RET
+        [Var "u0"; Var "u1"; Var "adopted_fmp"; Var "rpc"] []]
+      [] NONE (SOME 2))
+Proof
+  EVAL_TAC
+QED
+
+Theorem lowered_return_layout_malformed_eval:
+  (* publishing return is missing its adopted-FMP slot *)
+  ~lowered_return_layout_wf (layout_test_sig F T)
+    (layout_test_fn_with_abi
+      [mk_inst 10 RET [Var "u0"; Var "u1"; Var "rpc"] []]
+      [] NONE (SOME 2)) /\
+  (* publishing return has two hidden slots *)
+  ~lowered_return_layout_wf (layout_test_sig F T)
+    (layout_test_fn_with_abi
+      [mk_inst 11 RET
+        [Var "u0"; Var "u1"; Var "fmp0"; Var "fmp1"; Var "rpc"] []]
+      [] NONE (SOME 2)) /\
+  (* a hidden slot is misplaced on a nonpublishing return *)
+  ~lowered_return_layout_wf (layout_test_sig F F)
+    (layout_test_fn_with_abi
+      [mk_inst 12 RET
+        [Var "u0"; Var "u1"; Var "misplaced_fmp"; Var "rpc"] []]
+      [] NONE (SOME 2)) /\
+  (* all lowered paths must agree with the single expected user arity *)
+  ~lowered_return_layout_wf (layout_test_sig F F)
+    (layout_test_fn_with_abi
+      [mk_inst 13 RET [Var "u0"; Var "rpc"] [];
+       mk_inst 14 RET [Var "u0"; Var "u1"; Var "rpc"] []]
+      [] NONE (SOME 1)) /\
+  (* raw return forms are relevant paths but are not lowered RET forms *)
+  ~lowered_return_layout_wf (layout_test_sig F T)
+    (layout_test_fn_with_abi
+      [mk_inst 15 RETFMP [Var "u0"; Var "fmp"; Var "rpc"] []]
+      [] NONE (SOME 1)) /\
+  ~lowered_return_layout_wf (layout_test_sig F F)
+    (layout_test_fn_with_abi
+      [mk_inst 16 DRET
+        [Lit 1w; Var "u0"; Var "src"; Lit 32w; Var "rpc"] []]
+      [] NONE (SOME 2))
+Proof
+  EVAL_TAC
+QED
 val _ = export_theory();
