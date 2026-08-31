@@ -56,6 +56,35 @@ Proof
   Cases_on `op` >> simp[is_alloca_op_def]
 QED
 
+Theorem collect_static_allocas_no_alloca[local]:
+  (!inst. MEM inst insts ==> inst.inst_opcode <> ALLOCA) ==>
+  collect_static_allocas insts = SOME []
+Proof
+  Induct_on `insts` >> simp[collect_static_allocas_def] >> metis_tac[]
+QED
+
+Theorem complete_alloc_positions_aux_no_alloca[local]:
+  (!inst. MEM inst insts ==> inst.inst_opcode <> ALLOCA) ==>
+  complete_alloc_positions_aux insts positions occupied = SOME positions
+Proof
+  Induct_on `insts` >> simp[complete_alloc_positions_aux_def] >> metis_tac[]
+QED
+
+Theorem allocation_eom_fold_no_alloca[local]:
+  (!inst. MEM inst insts ==> inst.inst_opcode <> ALLOCA) ==>
+  allocation_eom_fold positions insts acc = SOME acc
+Proof
+  Induct_on `insts` >> simp[allocation_eom_fold_def] >> metis_tac[]
+QED
+
+Theorem static_alloca_items_no_alloca[local]:
+  ~fn_has_alloca fn ==> static_alloca_items fn = SOME []
+Proof
+  simp[fn_has_alloca_def, EXISTS_MEM, is_alloca_op_eq_alloca,
+       static_alloca_items_def] >>
+  metis_tac[collect_static_allocas_no_alloca]
+QED
+
 Theorem fn_insts_blocks_map_transform_mem[local]:
   MEM e (fn_insts_blocks (MAP (block_map_transform transform) blocks)) ==>
   ?inst. MEM inst (fn_insts_blocks blocks) /\ e = transform inst
@@ -131,7 +160,7 @@ Proof
   Cases_on `static_alloca_items fn` >> gvs[]
 QED
 
-Theorem compute_function_layout_eval_wf[local]:
+Theorem compute_function_layout_eval_wf:
   compute_function_layout_eval reserved fn = SOME layout ==>
   concretize_layout_wf reserved fn layout
 Proof
@@ -177,6 +206,55 @@ Proof
   gvs[] >> simp[static_position_wf_def]
 QED
 
+
+Theorem compute_function_layout_eval_global_bound:
+  compute_function_layout_eval reserved fn = SOME layout /\
+  global_reserved_end reserved 0 = SOME global_end ==>
+  global_end <= layout.cl_eom
+Proof
+  strip_tac >>
+  `concretize_layout_wf reserved fn layout` by
+    metis_tac[compute_function_layout_eval_wf] >>
+  fs[concretize_layout_wf_def] >>
+  gvs[] >>
+  metis_tac[allocation_eom_fold_acc_bound]
+QED
+
+Theorem concretize_layout_wf_local_bound:
+  concretize_layout_wf reserved fn layout /\
+  MEM inst (fn_insts fn) /\ inst.inst_opcode = ALLOCA ==>
+  ?size pos. inst.inst_operands = [Lit size] /\
+    FLOOKUP layout.cl_positions (Allocation inst.inst_id) = SOME pos /\
+    pos + w2n size <= layout.cl_eom
+Proof
+  simp[concretize_layout_wf_def] >> metis_tac[]
+QED
+
+Theorem compute_function_layout_eval_empty:
+  ~fn_has_alloca fn /\
+  fn.fn_forced_alloc_positions = FEMPTY /\
+  reserved_intervals_wf reserved /\
+  global_reserved_end reserved 0 = SOME global_end ==>
+  ?layout. compute_function_layout_eval reserved fn = SOME layout /\
+           layout.cl_eom = global_end
+Proof
+  rpt strip_tac >>
+  `static_alloca_items fn = SOME []` by
+    metis_tac[static_alloca_items_no_alloca] >>
+  `!inst. MEM inst (fn_insts fn) ==> inst.inst_opcode <> ALLOCA` by
+    (gvs[fn_has_alloca_def, EXISTS_MEM, is_alloca_op_eq_alloca] >>
+     metis_tac[]) >>
+  `complete_alloc_positions FEMPTY reserved fn FEMPTY = SOME FEMPTY` by
+    (simp[complete_alloc_positions_def, forced_alloc_keys_valid_def,
+          candidate_alloc_keys_valid_def, merge_forced_positions_def,
+          checked_preserved_intervals_def,
+          checked_preserved_intervals_aux_def] >>
+     irule complete_alloc_positions_aux_no_alloca >> simp[]) >>
+  `allocation_eom_fold FEMPTY (fn_insts fn) global_end = SOME global_end` by
+    metis_tac[allocation_eom_fold_no_alloca] >>
+  qexists `<| cl_positions := FEMPTY; cl_eom := global_end |>` >>
+  simp[compute_function_layout_eval_def, mk_concretize_layout_def]
+QED
 Theorem concretize_function_fuel_removes_alloca:
   concretize_function_fuel fuel reserved fn = SOME fn' ==>
   ~fn_has_alloca fn'

@@ -123,6 +123,12 @@ Proof
   >> qpat_x_assum `!inst alloc_end. _ ==> alloc_end <= b` irule
   >> qexists `inst` >> simp[]
 QED
+
+Theorem allocation_eom_fold_acc_bound:
+  allocation_eom_fold positions insts acc = SOME eom ==> acc <= eom
+Proof
+  metis_tac[allocation_eom_fold_success]
+QED
 Theorem allocation_eom_fold_lt_dimword:
   !positions insts e0 e.
     allocation_eom_fold positions insts e0 = SOME e /\
