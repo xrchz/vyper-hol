@@ -24,7 +24,9 @@
  *   copy_sarray_typed   — per-element SArray copy with different layouts
  *   copy_dynarray_typed — per-element DynArray copy with different layouts
  *
- * Mirrors Python: ~/vyper/vyper/codegen_venom/context.py, buffer.py, value.py
+ * Mirrors Python: vyper/codegen_venom/context.py:Context,
+ *                 vyper/codegen_venom/buffer.py:Buffer,
+ *                 vyper/codegen_venom/value.py:VyperValue
  *)
 
 Theory context
@@ -245,17 +247,55 @@ Definition compile_memory_to_transient_def:
 End
 
 (* ===== Allocate Buffer ===== *)
-(* Allocate memory buffer with provenance tracking.
+(* Allocate a fixed-capacity memory buffer with provenance tracking.
    Returns buffer in monad.
    buffer.buf_operand is the IR operand; buffer.buf_size is the allocation size.
    Use base_ptr buf for a LocatedValue with provenance.
-   Mirrors Python: context.py allocate_buffer → Buffer *)
+   Mirrors Python: vyper/codegen_venom/context.py:Context.new_internal_variable *)
 Definition compile_alloc_buffer_def:
   compile_alloc_buffer size =
     do op <- emit_op ALLOCA [Lit (n2w size)];
        return <| buf_operand := op; buf_size := size |>
     od
 End
+
+(* Runtime-sized allocation boundary.  The size is an SSA operand, so this
+   returns only the allocated pointer rather than fabricating a static buffer
+   capacity.  Mirrors Python:
+   vyper/codegen_venom/context.py:Context.new_internal_variable. *)
+Definition compile_alloc_dynamic_def:
+  compile_alloc_dynamic (size_op:operand) = emit_op DALLOCA [size_op]
+End
+
+Theorem compile_alloc_dynamic_result:
+  !(size_op:operand) (st:compile_state) (ptr:operand) (st':compile_state).
+  compile_alloc_dynamic size_op st = (ptr, st') ==>
+  ptr = Var ("%" ++ toString st.cs_next_var) /\
+  st'.cs_next_id = st.cs_next_id + 1 /\
+  st'.cs_next_var = st.cs_next_var + 1 /\
+  st'.cs_current_insts =
+    st.cs_current_insts ++
+      [mk_inst st.cs_next_id DALLOCA [size_op]
+         ["%" ++ toString st.cs_next_var]]
+Proof
+  simp[compile_alloc_dynamic_def, emit_op_def, fresh_id_def, fresh_var_def,
+       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def]
+QED
+
+(* Closed counter-separation probe: DALLOCA consumes exactly the supplied
+   runtime operand and emits one output using the variable counter. *)
+Theorem compile_alloc_dynamic_counter_probe:
+  !(st:compile_state) (ptr:operand) (st':compile_state).
+  st.cs_next_id = 41 /\ st.cs_next_var = 7 /\
+  compile_alloc_dynamic (Var "%size") st = (ptr, st') ==>
+  ptr = Var "%7" /\
+  st'.cs_next_id = 42 /\ st'.cs_next_var = 8 /\
+  LAST st'.cs_current_insts = mk_inst 41 DALLOCA [Var "%size"] ["%7"]
+Proof
+  simp[compile_alloc_dynamic_def, emit_op_def, fresh_id_def, fresh_var_def,
+       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def] >>
+  EVAL_TAC >> simp[]
+QED
 
 (* Static allocation boundary.  Unlike compile_alloc_buffer, this exposes the
    instruction ID as a separate result so fixed-placement metadata is keyed by
