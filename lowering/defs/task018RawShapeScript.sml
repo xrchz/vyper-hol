@@ -562,6 +562,262 @@ Proof
       >> EVAL_TAC)
   >> EVAL_TAC
 QED
+
+Definition task18_nested_leaf_block_def:
+  task18_nested_leaf_block =
+    <| bb_label := nested_after_leaf_body_state.cs_current_bb;
+       bb_instructions := nested_after_leaf_body_state.cs_current_insts |>
+End
+
+Definition task18_nested_leaf_fn_def:
+  task18_nested_leaf_fn =
+    mk_internal_function "leaf" [task18_nested_leaf_block] F 1
+End
+
+Definition task18_nested_mid_block_def:
+  task18_nested_mid_block =
+    <| bb_label := nested_after_mid_body_state.cs_current_bb;
+       bb_instructions := nested_after_mid_body_state.cs_current_insts |>
+End
+
+Definition task18_nested_mid_fn_def:
+  task18_nested_mid_fn =
+    mk_internal_function "mid" [task18_nested_mid_block] F 1
+End
+
+Theorem task18_nested_leaf_block_exact:
+  task18_nested_leaf_block =
+    <| bb_label := "leaf";
+       bb_instructions :=
+         [mk_inst 29 PARAM [Lit 0w] ["%18"];
+          mk_inst 30 MSTORE [Lit 0w; nested_leaf_z_operand] [];
+          mk_inst 31 PARAM [Lit 1w] ["%19"];
+          mk_inst 32 MSTORE [Lit 32w; nested_leaf_return_pc_operand] [];
+          mk_inst 33 MLOAD [Lit 0w] ["%20"];
+          mk_inst 34 MLOAD [Lit 32w] ["%21"]] ++
+         [mk_inst 35 RET
+            [nested_leaf_value_operand;
+             nested_leaf_loaded_return_pc_operand] []] |>
+Proof
+  simp[task18_nested_leaf_block_def,
+       nested_after_leaf_body_state_def,
+       nested_after_leaf_entry_state_def]
+QED
+
+Theorem task18_nested_mid_block_exact:
+  task18_nested_mid_block =
+    <| bb_label := "mid";
+       bb_instructions :=
+         [mk_inst 36 PARAM [Lit 0w] ["%22"];
+          mk_inst 37 MSTORE [Lit 0w; nested_mid_y_operand] [];
+          mk_inst 38 PARAM [Lit 1w] ["%23"];
+          mk_inst 39 MSTORE [Lit 32w; nested_mid_return_pc_operand] [];
+          mk_inst 40 MLOAD [Lit 0w] ["%24"];
+          mk_inst 41 ALLOCA [Lit 32w] ["%25"];
+          mk_inst 42 INVOKE [Label "leaf"; nested_mid_y_value_operand] ["%26"];
+          mk_inst 43 MSTORE [Var "%25"; Var "%26"] [];
+          mk_inst 44 MLOAD [Var "%25"] ["%27"];
+          mk_inst 45 MLOAD [Lit 32w] ["%28"]] ++
+         [mk_inst 46 RET
+            [nested_mid_leaf_call_operand;
+             nested_mid_loaded_return_pc_operand] []] |>
+Proof
+  simp[task18_nested_mid_block_def,
+       nested_after_mid_body_state_def,
+       nested_after_mid_leaf_call_state_def,
+       nested_after_mid_name_state_def,
+       nested_after_mid_entry_state_def]
+QED
+
+Theorem task18_nested_leaf_block_wf:
+  bb_well_formed task18_nested_leaf_block
+Proof
+  rewrite_tac[task18_nested_leaf_block_exact]
+  >> irule task18_bb_well_formed_snoc
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_mid_block_wf:
+  bb_well_formed task18_nested_mid_block
+Proof
+  rewrite_tac[task18_nested_mid_block_exact]
+  >> irule task18_bb_well_formed_snoc
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_leaf_block_succs:
+  bb_succs task18_nested_leaf_block = []
+Proof
+  simp[task18_nested_leaf_block_def,
+       nested_after_leaf_body_state_def,
+       nested_after_leaf_entry_state_def,
+       venomInstTheory.bb_succs_def]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_mid_block_succs:
+  bb_succs task18_nested_mid_block = []
+Proof
+  simp[task18_nested_mid_block_def,
+       nested_after_mid_body_state_def,
+       nested_after_mid_leaf_call_state_def,
+       nested_after_mid_name_state_def,
+       nested_after_mid_entry_state_def,
+       venomInstTheory.bb_succs_def]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_leaf_fn_ids:
+  FLAT (MAP (\bb. MAP (\i. i.inst_id) bb.bb_instructions)
+    task18_nested_leaf_fn.fn_blocks) = [29; 30; 31; 32; 33; 34; 35]
+Proof
+  simp[task18_nested_leaf_fn_def,
+       vyperCompilerTheory.mk_internal_function_def,
+       venomInstTheory.mk_raw_function_def,
+       task18_nested_leaf_block_exact,
+       venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_nested_mid_fn_ids:
+  FLAT (MAP (\bb. MAP (\i. i.inst_id) bb.bb_instructions)
+    task18_nested_mid_fn.fn_blocks) =
+  [36; 37; 38; 39; 40; 41; 42; 43; 44; 45; 46]
+Proof
+  simp[task18_nested_mid_fn_def,
+       vyperCompilerTheory.mk_internal_function_def,
+       venomInstTheory.mk_raw_function_def,
+       task18_nested_mid_block_exact,
+       venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_nested_leaf_fn_wf:
+  wf_function task18_nested_leaf_fn
+Proof
+  rewrite_tac[venomWfTheory.wf_function_def]
+  >> conj_tac
+  >- simp[task18_nested_leaf_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          venomInstTheory.fn_labels_def,
+          task18_nested_leaf_block_exact]
+  >> conj_tac
+  >- simp[venomWfTheory.fn_has_entry_def,
+          task18_nested_leaf_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def]
+  >> conj_tac
+  >- simp[task18_nested_leaf_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_leaf_block_wf]
+  >> conj_tac
+  >- simp[venomWfTheory.fn_succs_closed_def,
+          task18_nested_leaf_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_leaf_block_succs]
+  >> simp[venomWfTheory.fn_inst_ids_distinct_def,
+          task18_nested_leaf_fn_ids]
+QED
+
+Theorem task18_nested_mid_fn_wf:
+  wf_function task18_nested_mid_fn
+Proof
+  rewrite_tac[venomWfTheory.wf_function_def]
+  >> conj_tac
+  >- simp[task18_nested_mid_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          venomInstTheory.fn_labels_def,
+          task18_nested_mid_block_exact]
+  >> conj_tac
+  >- simp[venomWfTheory.fn_has_entry_def,
+          task18_nested_mid_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def]
+  >> conj_tac
+  >- simp[task18_nested_mid_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_mid_block_wf]
+  >> conj_tac
+  >- simp[venomWfTheory.fn_succs_closed_def,
+          task18_nested_mid_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_mid_block_succs]
+  >> simp[venomWfTheory.fn_inst_ids_distinct_def,
+          task18_nested_mid_fn_ids]
+QED
+Theorem task18_nested_entry_fn_labels:
+  fn_labels task18_nested_entry_fn =
+    ["__entry"; "@dispatch_1"; "@match_2"; "@next_3";
+     "fn_foo"; "@fallback_0"]
+Proof
+  pure_rewrite_tac[venomInstTheory.fn_labels_def,
+                   task18_nested_entry_fn_blocks,
+                   task18_nested_entry_block_def,
+                   task18_nested_dispatch_block_def,
+                   task18_nested_match_block_def,
+                   task18_nested_next_block_def,
+                   task18_nested_foo_block_def,
+                   task18_nested_fallback_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> EVAL_TAC
+QED
+
+Theorem task18_nested_leaf_fn_labels:
+  fn_labels task18_nested_leaf_fn = ["leaf"]
+Proof
+  simp[venomInstTheory.fn_labels_def,
+       task18_nested_leaf_fn_def,
+       vyperCompilerTheory.mk_internal_function_def,
+       venomInstTheory.mk_raw_function_def,
+       task18_nested_leaf_block_exact]
+QED
+
+Theorem task18_nested_mid_fn_labels:
+  fn_labels task18_nested_mid_fn = ["mid"]
+Proof
+  simp[venomInstTheory.fn_labels_def,
+       task18_nested_mid_fn_def,
+       vyperCompilerTheory.mk_internal_function_def,
+       venomInstTheory.mk_raw_function_def,
+       task18_nested_mid_block_exact]
+QED
+
+Theorem task18_nested_context_entry:
+  (mk_venom_context
+     [task18_nested_entry_fn; task18_nested_leaf_fn; task18_nested_mid_fn]
+     (SOME "__entry")).ctx_entry = SOME "__entry"
+Proof
+  simp[venomInstTheory.mk_venom_context_def]
+QED
+
+Theorem task18_nested_unit_labels_wf:
+  unit_labels_wf
+    <| cu_context :=
+         mk_venom_context
+           [task18_nested_entry_fn; task18_nested_leaf_fn;
+            task18_nested_mid_fn] (SOME "__entry");
+       cu_data_segment := [] |>
+Proof
+  simp[venomCompilerWfTheory.unit_labels_wf_def,
+       venomCompilerWfTheory.unit_label_namespace_def,
+       venomCompilerWfTheory.unit_data_labels_consistent_def,
+       venomCompilerWfTheory.unit_data_label_refs_def,
+       venomInstTheory.mk_venom_context_def,
+       task18_nested_entry_fn_labels,
+       task18_nested_leaf_fn_labels,
+       task18_nested_mid_fn_labels]
+QED
+
 Theorem task18_nested_runtime_entry_member:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
@@ -609,6 +865,70 @@ Proof
   >> rewrite_tac[nested_internal_blocks_partition]
   >> simp[venomInstTheory.mk_venom_context_def,
           venomInstTheory.mk_raw_function_def]
+QED
+
+Theorem task18_nested_runtime_functions:
+  case lower_vyper_runtime_unit nested_internal_call_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |> of
+    NONE => F
+  | SOME unit =>
+      unit.cu_context.ctx_functions =
+        [task18_nested_entry_fn;
+         task18_nested_leaf_fn;
+         task18_nested_mid_fn]
+Proof
+  pure_rewrite_tac[compileVyperTheory.lower_vyper_runtime_unit_def,
+                   vyperCompilerTheory.run_lowering_def]
+  >> rewrite_tac[nested_internal_call_classify,
+                 nested_internal_call_selectors]
+  >> rewrite_tac[nested_external_target_packages,
+                 nested_internal_target_packages]
+  >> simp[nested_internal_call_classify,
+       nested_internal_call_selectors,
+       nested_external_package_eq,
+       nested_leaf_package_eq,
+       nested_mid_package_eq,
+       compileVyperTheory.package_fallback_fn_def,
+       compileVyperTheory.set_fallback_package_target_def,
+       vyperCompilerTheory.lowering_policy_ok_def,
+       venomPolicyTypesTheory.prague_capabilities_wf,
+       venomPolicyTypesTheory.prague_capabilities_def,
+       venomPolicyTypesTheory.target_capabilities_wf_def,
+       nested_runtime_final_state_eq,
+       nested_internal_call_extracted_context]
+  >> pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
+  >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
+          nested_leaf_package_def, nested_mid_package_def,
+          nested_leaf_cenv_entry_facts, nested_mid_cenv_entry_facts]
+  >> rewrite_tac[nested_internal_blocks_partition]
+  >> simp[venomInstTheory.mk_venom_context_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_entry_fn_def,
+          task18_nested_entry_blocks_def,
+          task18_nested_leaf_fn_def,
+          task18_nested_leaf_block_def,
+          task18_nested_mid_fn_def,
+          task18_nested_mid_block_def,
+          vyperCompilerTheory.mk_internal_function_def]
+  >> IF_CASES_TAC
+  >- simp[]
+  >> mp_tac nested_internal_call_extracted_context
+  >> pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
+  >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
+          nested_leaf_package_def, nested_mid_package_def,
+          nested_leaf_cenv_entry_facts, nested_mid_cenv_entry_facts]
+  >> rewrite_tac[nested_internal_blocks_partition]
+  >> simp[venomInstTheory.mk_venom_context_def,
+          venomInstTheory.mk_raw_function_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          task18_nested_entry_fn_def,
+          task18_nested_entry_blocks_def,
+          task18_nested_leaf_fn_def,
+          task18_nested_leaf_block_def,
+          task18_nested_mid_fn_def,
+          task18_nested_mid_block_def]
 QED
 (* TASK_018 unsupported-shape inventory (and only this boundary):
    1. A top-level bytes/string dynamic return without CapMcopy emits INVALID
