@@ -123,4 +123,47 @@ Proof
 QED
 
 
+Definition positive_preserved_item_def[local]:
+  positive_preserved_item items positions item interval <=>
+    ?alloc sz pos.
+      item = (alloc,sz) /\ interval = (pos,sz) /\
+      MEM (alloc,sz) items /\ FLOOKUP positions alloc = SOME pos /\
+      0 < sz
+End
+
+Theorem positive_preserved_item_intro[local]:
+  MEM (alloc,sz) items /\ FLOOKUP positions alloc = SOME pos /\ 0 < sz ==>
+  positive_preserved_item items positions (alloc,sz) (pos,sz)
+Proof
+  simp[positive_preserved_item_def] >> metis_tac[]
+QED
+
+Theorem positive_preserved_item_elim[local]:
+  positive_preserved_item items positions (alloc,sz) interval ==>
+  MEM (alloc,sz) items /\ 0 < sz /\
+  ?pos. interval = (pos,sz) /\ FLOOKUP positions alloc = SOME pos
+Proof
+  simp[positive_preserved_item_def] >> metis_tac[]
+QED
+
+Theorem positive_preserved_item_tail_mono[local]:
+  positive_preserved_item items positions item interval ==>
+  positive_preserved_item (h::items) positions item interval
+Proof
+  simp[positive_preserved_item_def] >> metis_tac[]
+QED
+
+Theorem positive_preserved_item_lookup_NONE[local]:
+  FLOOKUP positions alloc = NONE ==>
+  ~positive_preserved_item items positions (alloc,sz) interval
+Proof
+  simp[positive_preserved_item_def] >> metis_tac[]
+QED
+
+Theorem positive_preserved_item_zero[local]:
+  ~positive_preserved_item items positions (alloc,0) interval
+Proof
+  simp[positive_preserved_item_def]
+QED
+
 val _ = export_theory();
