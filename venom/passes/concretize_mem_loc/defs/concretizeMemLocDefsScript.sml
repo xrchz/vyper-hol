@@ -998,3 +998,122 @@ Theorem concretize_context_eval_empty:
 Proof
   EVAL_TAC
 QED
+
+
+(* TASK_021 executable acceptance regressions.  These inspect the checked API
+   results, not only the private validation predicates. *)
+Theorem concretize_function_eval_completion_result:
+  let fn = (mk_raw_function "f"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 1 ALLOCA [Lit 4w] ["x"];
+           mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>]) with
+      fn_forced_alloc_positions := FEMPTY |+ (2,16) in
+  concretize_function_eval [(0,4)] fn =
+    SOME ((mk_raw_function "f"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 1 ASSIGN [Lit 4w] ["x"];
+             mk_inst 2 ASSIGN [Lit 16w] ["y"]] |>]) with
+      <| fn_forced_alloc_positions := FEMPTY;
+         fn_eom := SOME 20 |>)
+Proof
+  EVAL_TAC >>
+  simp[wordsTheory.dimword_def, checked_first_fit_def,
+       checked_first_fit_scan_def, sort_reserved_by_pos_def,
+       insert_reserved_by_pos_def, reserved_intervals_wf_def,
+       reserved_interval_wf_def, reserved_intervals_disjoint_def,
+       mk_concretize_layout_def, global_reserved_end_def,
+       allocation_eom_fold_def, allocation_end_def] >>
+  EVAL_TAC
+QED
+
+Theorem compute_function_layout_fuel_missing_liveness_alloca:
+  let fn = mk_raw_function "missing-live"
+    [<| bb_label := "entry";
+        bb_instructions := [mk_inst 3 ALLOCA [Lit 4w] ["z"]] |>] in
+  compute_function_layout_fuel 0 [] fn =
+    SOME <| cl_positions := FEMPTY |+ (Allocation 3,0);
+            cl_eom := 4 |>
+Proof
+  EVAL_TAC >>
+  simp[wordsTheory.dimword_def, checked_first_fit_def,
+       checked_first_fit_scan_def, sort_reserved_by_pos_def,
+       insert_reserved_by_pos_def, reserved_intervals_wf_def,
+       reserved_interval_wf_def, reserved_intervals_disjoint_def,
+       mk_concretize_layout_def, global_reserved_end_def,
+       allocation_eom_fold_def, allocation_end_def] >>
+  EVAL_TAC
+QED
+
+Theorem compute_function_layout_eval_rejections:
+  let good = mk_raw_function "good"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 1 ALLOCA [Lit 4w] ["x"];
+           mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>] in
+  let unknown = good with
+    fn_forced_alloc_positions := FEMPTY |+ (7,0) in
+  let overlap = good with
+    fn_forced_alloc_positions := FEMPTY |+ (1,0) |+ (2,2) in
+  let reserved_collision = good with
+    fn_forced_alloc_positions := FEMPTY |+ (1,2) in
+  let overflow = (mk_raw_function "overflow"
+    [<| bb_label := "entry";
+        bb_instructions := [mk_inst 1 ALLOCA [Lit 1w] ["x"]] |>]) with
+    fn_forced_alloc_positions := FEMPTY |+ (1,dimword (:256) - 1) in
+  let duplicate = mk_raw_function "duplicate"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 1 ALLOCA [Lit 1w] ["x"];
+           mk_inst 1 ALLOCA [Lit 1w] ["y"]] |>] in
+  let malformed = mk_raw_function "malformed"
+    [<| bb_label := "entry";
+        bb_instructions := [mk_inst 1 ALLOCA [] ["x"]] |>] in
+    compute_function_layout_eval [] unknown = NONE /\
+    compute_function_layout_eval [] overlap = NONE /\
+    compute_function_layout_eval [(0,4)] reserved_collision = NONE /\
+    compute_function_layout_eval [] overflow = NONE /\
+    compute_function_layout_eval [] duplicate = NONE /\
+    compute_function_layout_eval [] malformed = NONE
+Proof
+  EVAL_TAC >>
+  simp[wordsTheory.dimword_def, reserved_intervals_wf_def,
+       reserved_interval_wf_def, reserved_intervals_disjoint_def]
+QED
+
+Theorem concretize_function_eval_global_only:
+  concretize_function_eval [(8,4)] (mk_raw_function "global" []) =
+    SOME ((mk_raw_function "global" []) with fn_eom := SOME 12)
+Proof
+  EVAL_TAC >>
+  simp[wordsTheory.dimword_def, mk_concretize_layout_def,
+       global_reserved_end_def, allocation_eom_fold_def, allocation_end_def,
+       reserved_intervals_wf_def, reserved_interval_wf_def]
+QED
+
+Theorem concretize_context_eval_shared_global_reservation:
+  let f = \name id out. mk_raw_function name
+    [<| bb_label := "entry";
+        bb_instructions := [mk_inst id ALLOCA [Lit 4w] [out]] |>] in
+  let ctx = (mk_venom_context [f "f" 1 "x"; f "g" 2 "y"] NONE) with
+    ctx_global_reserved := [(0,4)] in
+  case concretize_context_eval ctx of
+    NONE => F
+  | SOME out =>
+      MAP (\fn.
+        (fn.fn_eom, fn.fn_forced_alloc_positions,
+         MAP (\inst. (inst.inst_opcode, inst.inst_operands)) (fn_insts fn)))
+        out.ctx_functions =
+      [(SOME 8, FEMPTY, [(ASSIGN,[Lit 4w])]);
+       (SOME 8, FEMPTY, [(ASSIGN,[Lit 4w])])]
+Proof
+  EVAL_TAC >>
+  simp[wordsTheory.dimword_def, checked_first_fit_def,
+       checked_first_fit_scan_def, sort_reserved_by_pos_def,
+       insert_reserved_by_pos_def, reserved_intervals_wf_def,
+       reserved_interval_wf_def, reserved_intervals_disjoint_def,
+       mk_concretize_layout_def, global_reserved_end_def,
+       allocation_eom_fold_def, allocation_end_def] >>
+  EVAL_TAC
+QED
