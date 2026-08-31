@@ -95,4 +95,73 @@ Definition replace_dret_inst_def:
                   s3))
 End
 
+Definition dret_desugar_insts_def:
+  dret_desugar_insts s entry_cursor [] = SOME ([],s) /\
+  dret_desugar_insts s entry_cursor (inst::insts) =
+    if inst.inst_opcode = DRET then
+      case replace_dret_inst s entry_cursor inst of
+        NONE => NONE
+      | SOME (replacement,s1) =>
+          case dret_desugar_insts s1 entry_cursor insts of
+            NONE => NONE
+          | SOME (tail,s2) => SOME (replacement ++ tail,s2)
+    else
+      case dret_desugar_insts s entry_cursor insts of
+        NONE => NONE
+      | SOME (tail,s1) => SOME (inst::tail,s1)
+End
+
+Definition dret_desugar_blocks_def:
+  dret_desugar_blocks s entry_cursor [] = SOME ([],s) /\
+  dret_desugar_blocks s entry_cursor (bb::bbs) =
+    case dret_desugar_insts s entry_cursor bb.bb_instructions of
+      NONE => NONE
+    | SOME (insts,s1) =>
+        case dret_desugar_blocks s1 entry_cursor bbs of
+          NONE => NONE
+        | SOME (tail,s2) =>
+            SOME ((bb with bb_instructions := insts)::tail,s2)
+End
+
+Definition dret_desugar_function_def:
+  dret_desugar_function target s fn =
+    if no_dret fn then SOME (fn,s)
+    else if ~(dret_desugar_input fn /\ target CapMcopy) then NONE
+    else
+      case fn.fn_blocks of
+        [] => NONE
+      | first::rest =>
+          (case fresh_ir_var s of (entry_v,s1) =>
+           case fresh_inst_id s1 of (getfmp_id,s2) =>
+           case dret_desugar_blocks s2 (Var entry_v) (first::rest) of
+             NONE => NONE
+           | SOME (blocks,s3) =>
+               case blocks of
+                 [] => NONE
+               | first'::rest' =>
+                   SOME
+                     (fn with fn_blocks :=
+                       (first' with bb_instructions :=
+                         mk_inst getfmp_id GETFMP [] [entry_v] ::
+                         first'.bb_instructions)::rest',
+                      s3))
+End
+
+Definition dret_desugar_context_def:
+  dret_desugar_context target s ctx =
+    map_ctx_functions_supply (dret_desugar_function target) s ctx
+End
+
+Definition dret_desugar_configured_with_supply_def:
+  dret_desugar_configured_with_supply target unit =
+    case dret_desugar_context target (init_ir_supply unit) unit.cu_context of
+      NONE => NONE
+    | SOME (ctx,s) => SOME (unit with cu_context := ctx,s)
+End
+
+Definition dret_desugar_configured_def:
+  dret_desugar_configured target unit =
+    OPTION_MAP FST (dret_desugar_configured_with_supply target unit)
+End
+
 val _ = export_theory();
