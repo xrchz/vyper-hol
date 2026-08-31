@@ -17,7 +17,8 @@ Ancestors
 Definition static_position_wf_def:
   static_position_wf reserved pos size <=>
     pos + w2n size < dimword (:256) /\
-    EVERY (reserved_intervals_disjoint (pos,w2n size)) reserved
+    (0 < w2n size ==>
+     EVERY (reserved_intervals_disjoint (pos,w2n size)) reserved)
 End
 
 (* Every externally forced numeric ID must identify a well-shaped source

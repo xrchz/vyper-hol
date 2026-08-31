@@ -2,7 +2,7 @@
 
 Theory staticLayoutCompletionProofs
 Ancestors
-  staticLayoutAllocatorProofs concretizeMemLocDefs staticLayoutDefs
+  staticLayoutAllocatorProofs concretizeMemLocDefs staticLayoutDefs staticLayoutWf
   list finite_map arithmetic
 
 Theorem reserved_intervals_disjoint_sym_completion[local]:
@@ -424,6 +424,69 @@ Resume complete_alloc_positions_aux_invariant[nonalloc]:
 QED
 
 Finalise complete_alloc_positions_aux_invariant
+
+Theorem complete_alloc_positions_aux_keys_valid[local]:
+  !insts allocs positions occupied completed.
+    (!inst alloc sz. MEM inst insts /\
+       exact_static_alloca inst = SOME (alloc,sz) ==> MEM alloc allocs) /\
+    candidate_alloc_keys_valid allocs positions /\
+    complete_alloc_positions_aux insts positions occupied = SOME completed ==>
+    candidate_alloc_keys_valid allocs completed
+Proof
+  Induct
+  >- simp[complete_alloc_positions_aux_def]
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `h.inst_opcode = ALLOCA`
+  >- (Cases_on `exact_static_alloca_size h`
+      >> gvs[complete_alloc_positions_aux_def]
+      >> Cases_on `FLOOKUP positions (Allocation h.inst_id)`
+      >- (Cases_on `checked_first_fit occupied x`
+          >> gvs[complete_alloc_positions_aux_def]
+          >> first_x_assum irule
+          >> conj_tac >- metis_tac[]
+          >> qexistsl
+               [`if x = 0 then occupied else (x',x)::occupied`,
+                `positions |+ (Allocation h.inst_id,x')`]
+          >> simp[]
+          >> simp[candidate_alloc_keys_valid_def, FDOM_FUPDATE]
+          >> qpat_x_assum `!inst alloc sz. _`
+               (qspecl_then [`h`,`Allocation h.inst_id`,`x`] mp_tac)
+          >> simp[exact_static_alloca_def] >> strip_tac
+          >> fs[candidate_alloc_keys_valid_def])
+      >> gvs[complete_alloc_positions_aux_def] >> first_x_assum irule
+      >> metis_tac[])
+  >> gvs[complete_alloc_positions_aux_def, exact_static_alloca_def,
+         exact_static_alloca_size_def]
+  >> first_x_assum irule >> metis_tac[]
+QED
+
+
+Theorem merge_forced_positions_keys_valid[local]:
+  !items allocs forced positions merged.
+    (!item. MEM item items ==> MEM (FST item) allocs) /\
+    candidate_alloc_keys_valid allocs positions /\
+    merge_forced_positions items forced positions = SOME merged ==>
+    candidate_alloc_keys_valid allocs merged
+Proof
+  Induct
+  >- simp[merge_forced_positions_def]
+  >> rpt gen_tac >> strip_tac >> PairCases_on `h`
+  >> Cases_on `FLOOKUP forced (allocation_id h0)`
+  >- (gvs[merge_forced_positions_def] >> first_x_assum irule >> metis_tac[])
+  >> Cases_on `FLOOKUP positions h0`
+  >- (gvs[merge_forced_positions_def]
+      >> first_x_assum
+           (qspecl_then [`allocs`,`forced`,`positions |+ (h0,x)`,`merged`] mp_tac)
+      >> simp[] >> (impl_tac
+          >- (simp[candidate_alloc_keys_valid_def, FDOM_FUPDATE] >> conj_tac
+              >- (qpat_x_assum `!item. _`
+                    (qspec_then `(h0,h1)` mp_tac) >> simp[])
+              >> fs[candidate_alloc_keys_valid_def]))
+      >> simp[])
+  >> Cases_on `x' = x` >> gvs[merge_forced_positions_def]
+  >> first_x_assum irule >> metis_tac[]
+QED
+
 Theorem complete_alloc_positions_aux_success:
   ALL_DISTINCT (MAP FST items) /\
   (!inst item. MEM inst insts /\ exact_static_alloca inst = SOME item ==>
@@ -482,8 +545,10 @@ Proof
       >> simp[] >> metis_tac[])
   >> rpt gen_tac >> strip_tac
   >> qpat_x_assum `!alloc1 sz1 pos1 alloc2 sz2 pos2. _`
+
        (qspecl_then [`alloc1`,`sz1`,`pos1`,`alloc2`,`sz2`,`pos2`] mp_tac)
   >> simp[]
 QED
+
 
 val _ = export_theory();
