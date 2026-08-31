@@ -840,6 +840,66 @@ Definition compute_function_alloc_map_fuel_def:
     alloc_result_to_map fn result
 End
 
+
+(* Convert only source-known forced IDs to the allocation-keyed seed required
+   by the liveness allocator.  complete_alloc_positions still validates the
+   raw forced domain and all resulting placements. *)
+Definition forced_candidate_positions_def:
+  forced_candidate_positions [] forced result = result /\
+  forced_candidate_positions ((alloc,sz)::items) forced result =
+    case FLOOKUP forced (allocation_id alloc) of
+      NONE => forced_candidate_positions items forced result
+    | SOME pos =>
+        forced_candidate_positions items forced (result |+ (alloc,pos))
+End
+
+Definition compute_function_layout_fuel_def:
+  compute_function_layout_fuel fuel reserved fn =
+    case static_alloca_items fn of
+      NONE => NONE
+    | SOME items =>
+        let seed = forced_candidate_positions items
+          fn.fn_forced_alloc_positions FEMPTY in
+        let cfg = cfg_analyze fn in
+        let bpr = bp_analyze_fuel fuel cfg fn in
+        let candidate =
+          compute_alloc_map_fuel fuel fn bpr (K ([] : allocation list))
+            ([] : allocation list) cfg seed reserved in
+          case complete_alloc_positions fn.fn_forced_alloc_positions
+                 reserved fn candidate of
+            NONE => NONE
+          | SOME completed => mk_concretize_layout reserved completed fn
+End
+
+Definition compute_function_layout_eval_def:
+  compute_function_layout_eval reserved fn =
+    case complete_alloc_positions fn.fn_forced_alloc_positions
+           reserved fn FEMPTY of
+      NONE => NONE
+    | SOME completed => mk_concretize_layout reserved completed fn
+End
+
+Theorem compute_function_layout_eval_forced:
+  compute_function_layout_eval [(0,4)]
+    ((mk_raw_function "f"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 1 ALLOCA [Lit 4w] ["x"];
+             mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>]) with
+       fn_forced_alloc_positions := FEMPTY |+ (2,16)) =
+  SOME <| cl_positions :=
+            FEMPTY |+ (Allocation 2,16) |+ (Allocation 1,4);
+          cl_eom := 20 |>
+Proof
+  EVAL_TAC >>
+  simp[wordsTheory.dimword_def, checked_first_fit_def,
+       checked_first_fit_scan_def, sort_reserved_by_pos_def,
+       insert_reserved_by_pos_def, reserved_intervals_wf_def,
+       reserved_interval_wf_def, reserved_intervals_disjoint_def,
+       mk_concretize_layout_def, global_reserved_end_def,
+       allocation_eom_fold_def, allocation_end_def] >>
+  EVAL_TAC
+QED
 Definition fn_has_alloca_def:
   fn_has_alloca fn =
     EXISTS (\inst. is_alloca_op inst.inst_opcode) (fn_insts fn)
