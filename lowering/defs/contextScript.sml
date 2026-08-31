@@ -297,6 +297,29 @@ Proof
   EVAL_TAC >> simp[]
 QED
 
+(* TASK_017 allocation-classification audit (vyperlang/vyper@e1dead045).
+
+   Runtime extents (operand-valued) use compile_alloc_dynamic:
+   - builtinSystem.compile_msg_data_to_memory: CALLDATASIZE;
+   - builtinCreate.compile_create_copy: EXTCODESIZE + 32;
+   - builtinCreate.compile_create_blueprint: code size + optional args length.
+
+   Fixed capacities (HOL num-valued) retain compile_alloc_buffer/ALLOCA:
+   - context: declared alloca_size/type-memory bounds and immutable frames;
+   - abiEncoder/builtinAbi: 32-byte cursors and ABI size/max-length bounds;
+   - exprLowering/stmtLowering: type_memory_bytes, return ABI, tuple, log,
+     internal-call and normalization bounds;
+   - builtinBytes/builtinStrings: declared output maxima;
+   - builtinHashing/builtinMisc: fixed 32/64/96/128-byte scratch frames;
+   - builtinCreate/builtinSystem: fixed raw-create/proxy/call-output bounds;
+   - builtinSimple/moduleLowering: declared type/module layout capacities.
+
+   Unsupported statement shapes with missing compiler-environment bindings
+   emit INVALID (AnnAssign, Assign, AugAssign, range-loop and iteration-loop
+   targets),
+   while the general expression and statement catch-alls already emit INVALID.
+   Thus no audited unsupported branch is an undocumented identity lowering. *)
+
 (* Static allocation boundary.  Unlike compile_alloc_buffer, this exposes the
    instruction ID as a separate result so fixed-placement metadata is keyed by
    the emitted ALLOCA, never by its SSA output variable. *)
