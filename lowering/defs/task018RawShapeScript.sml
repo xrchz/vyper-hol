@@ -201,4 +201,94 @@ Proof
   >> gvs[]
 QED
 
+(* TASK_018 unsupported-shape inventory (and only this boundary):
+   1. A top-level bytes/string dynamic return without CapMcopy emits INVALID
+      before length computation, MCOPY-dependent behavior, or DRET.
+   2. A nested ABI-dynamic return, or a bytes/string return with a non-
+      bytestring source representation, emits INVALID; this port does not
+      synthesize a malformed flattened dynamic envelope.
+   3. Complex tuple staging without CapMcopy emits INVALID before allocation or
+      MCOPY.  If pass 1 materializes a one-word complex source but the target
+      requires multiple words, pass 2 emits INVALID rather than treating the
+      materialized word as a pointer. *)
+
+Definition task18_nested_dynamic_type_def:
+  task18_nested_dynamic_type = TupleT [task18_bytes_type]
+End
+
+Definition task18_nested_dynamic_return_def:
+  task18_nested_dynamic_return =
+    compile_internal_return task18_prague_cenv
+      (SOME (Var "%value")) (Var "%return_pc") 0
+      task18_nested_dynamic_type task18_nested_dynamic_type []
+      (SOME (Var "%return_buf"))
+End
+
+Definition task18_mismatched_dynamic_return_def:
+  task18_mismatched_dynamic_return =
+    compile_internal_return task18_prague_cenv
+      (SOME (Var "%value")) (Var "%return_pc") 0
+      task18_bytes_type (BaseT (UintT 256)) [] (SOME (Var "%return_buf"))
+End
+
+Theorem task18_unsupported_dynamic_shapes:
+  task18_emitted_insts task18_nested_dynamic_return =
+    [mk_inst 0 INVALID [] []] /\
+  task18_emitted_insts task18_mismatched_dynamic_return =
+    [mk_inst 0 INVALID [] []] /\
+  ~MEM MCOPY (task18_emitted_opcodes task18_nested_dynamic_return) /\
+  ~MEM DRET (task18_emitted_opcodes task18_nested_dynamic_return) /\
+  task18_all_dret_wf (task18_emitted_insts task18_nested_dynamic_return)
+Proof
+  EVAL_TAC
+QED
+
+Definition task18_no_mcopy_tuple_unpack_def:
+  task18_no_mcopy_tuple_unpack =
+    compile_tuple_unpack task18_no_mcopy_cenv
+      (TupleT [task18_one_word_complex_type])
+      [BaseTarget (NameTarget "x")] (Var "%source")
+End
+
+Theorem task18_no_mcopy_tuple_fails_early:
+  task18_emitted_insts task18_no_mcopy_tuple_unpack =
+    [mk_inst 0 INVALID [] []] /\
+  ~MEM ALLOCA (task18_emitted_opcodes task18_no_mcopy_tuple_unpack) /\
+  ~MEM MCOPY (task18_emitted_opcodes task18_no_mcopy_tuple_unpack) /\
+  task18_all_dret_wf (task18_emitted_insts task18_no_mcopy_tuple_unpack)
+Proof
+  EVAL_TAC
+QED
+
+Definition task18_two_word_complex_type_def:
+  task18_two_word_complex_type =
+    TupleT [BaseT (UintT 256); BaseT (UintT 256)]
+End
+
+Definition task18_incompatible_tuple_cenv_def:
+  task18_incompatible_tuple_cenv : compile_env =
+    task18_prague_cenv with
+      <| ce_vars := FEMPTY |+ ("x", MemLoc 64 64);
+         ce_var_type :=
+           (\name. if name = "x" then SOME task18_two_word_complex_type
+                   else NONE) |>
+End
+
+Definition task18_incompatible_tuple_unpack_def:
+  task18_incompatible_tuple_unpack =
+    compile_tuple_unpack task18_incompatible_tuple_cenv
+      (TupleT [task18_one_word_complex_type])
+      [BaseTarget (NameTarget "x")] (Var "%source")
+End
+
+Theorem task18_incompatible_one_word_tuple_fails:
+  task18_emitted_opcodes task18_incompatible_tuple_unpack =
+    [ALLOCA; MCOPY; MLOAD; INVALID] /\
+  LAST (task18_emitted_insts task18_incompatible_tuple_unpack) =
+    mk_inst 3 INVALID [] [] /\
+  task18_all_dret_wf (task18_emitted_insts task18_incompatible_tuple_unpack)
+Proof
+  EVAL_TAC
+QED
+
 val _ = export_theory();
