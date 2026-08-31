@@ -3,7 +3,7 @@
 Theory concretizeMemLocTransitionProofs
 Ancestors
   staticLayoutCompletionProofs staticLayoutAllocatorProofs
-  staticLayoutWf concretizeMemLocDefs staticLayoutDefs
+  staticLayoutFoldProofs staticLayoutWf concretizeMemLocDefs staticLayoutDefs
   passSimulationDefs passSharedDefs passSharedProps venomInst list
 
 (* Disprove-first probe for the proposed certificate boundary. *)
@@ -115,5 +115,110 @@ Proof
   strip_tac >> metis_tac[]
 QED
 
-val _ = export_theory();
+Theorem compute_function_layout_fuel_static_items[local]:
+  compute_function_layout_fuel fuel reserved fn = SOME layout ==>
+  ?items. static_alloca_items fn = SOME items
+Proof
+  simp[compute_function_layout_fuel_def] >>
+  Cases_on `static_alloca_items fn` >> gvs[]
+QED
+
+Theorem compute_function_layout_eval_static_items[local]:
+  compute_function_layout_eval reserved fn = SOME layout ==>
+  ?items. static_alloca_items fn = SOME items
+Proof
+  simp[compute_function_layout_eval_def, complete_alloc_positions_def] >>
+  Cases_on `static_alloca_items fn` >> gvs[]
+QED
+
+Theorem compute_function_layout_eval_wf[local]:
+  compute_function_layout_eval reserved fn = SOME layout ==>
+  concretize_layout_wf reserved fn layout
+Proof
+  strip_tac >>
+  `?items. static_alloca_items fn = SOME items` by
+    metis_tac[compute_function_layout_eval_static_items] >>
+  qpat_x_assum `compute_function_layout_eval reserved fn = SOME layout` mp_tac >>
+  simp[compute_function_layout_eval_def] >>
+  Cases_on `complete_alloc_positions fn.fn_forced_alloc_positions
+              reserved fn FEMPTY` >> gvs[] >>
+  Cases_on `global_reserved_end reserved 0` >>
+  gvs[mk_concretize_layout_def] >>
+  Cases_on `allocation_eom_fold x (fn_insts fn) x'` >>
+  gvs[mk_concretize_layout_def] >>
+  strip_tac >> gvs[] >>
+  drule complete_alloc_positions_success >> strip_tac >>
+  simp[concretize_layout_wf_def] >>
+  drule allocation_eom_fold_success >> strip_tac >>
+  `x' < dimword (:256)` by
+    (qspecl_then [`reserved`,`0`,`x'`] mp_tac
+       global_reserved_end_lt_dimword >> simp[]) >>
+  conj_tac
+  >- (qspecl_then [`x`,`fn_insts fn`,`x'`,`x''`] mp_tac
+        allocation_eom_fold_lt_dimword >> simp[]) >>
+  rpt gen_tac >> strip_tac >>
+  `?size. inst.inst_operands = [Lit size] /\
+           exact_static_alloca inst =
+             SOME (Allocation inst.inst_id,w2n size)` by
+    metis_tac[static_alloca_items_ALLOCA_exact] >>
+  qpat_x_assum `!inst alloc sz. _`
+    (qspecl_then [`inst`,`Allocation inst.inst_id`,`w2n size'`] mp_tac) >>
+  simp[] >> strip_tac >>
+  qpat_x_assum `!inst. MEM inst (fn_insts fn) /\ _ ==> _`
+    (qspec_then `inst` mp_tac) >>
+  simp[] >> strip_tac >>
+  qpat_x_assum `allocation_end x inst = SOME alloc_end` mp_tac >>
+  simp[allocation_end_def] >> strip_tac >>
+  qpat_x_assum `!alloc pos. FLOOKUP x alloc = SOME pos ==> _`
+    (qspecl_then [`Allocation inst.inst_id`,`pos`] mp_tac) >>
+  simp[] >> strip_tac >>
+  `w2n size' = sz` by
+    metis_tac[static_alloca_items_exact_key_size_unique] >>
+  gvs[] >> simp[static_position_wf_def]
+QED
+
+Theorem concretize_function_fuel_removes_alloca:
+  concretize_function_fuel fuel reserved fn = SOME fn' ==>
+  ~fn_has_alloca fn'
+Proof
+  simp[concretize_function_fuel_def] >>
+  Cases_on `fn_has_static_layout fn`
+  >- (rpt strip_tac >> gvs[]) >>
+  Cases_on `compute_function_layout_fuel fuel reserved fn`
+  >- gvs[] >>
+  gvs[] >>
+  drule compute_function_layout_fuel_static_items >> strip_tac >>
+  `concretize_layout_wf reserved fn x` by
+    metis_tac[compute_function_layout_fuel_wf] >>
+  `~fn_has_alloca
+      (concretize_function_with_positions x.cl_positions fn)` by
+    (irule concretize_function_with_positions_removes_alloca >>
+     metis_tac[]) >>
+  rpt strip_tac >>
+  gvs[apply_concretize_layout_def, fn_has_alloca_def, fn_insts_def,
+      EVERY_MEM, EXISTS_MEM] >> metis_tac[]
+QED
+
+Theorem concretize_function_eval_removes_alloca:
+  concretize_function_eval reserved fn = SOME fn' ==>
+  ~fn_has_alloca fn'
+Proof
+  simp[concretize_function_eval_def] >>
+  Cases_on `fn_has_static_layout fn`
+  >- (rpt strip_tac >> gvs[]) >>
+  Cases_on `compute_function_layout_eval reserved fn`
+  >- gvs[] >>
+  gvs[] >>
+  drule compute_function_layout_eval_static_items >> strip_tac >>
+  `concretize_layout_wf reserved fn x` by
+    metis_tac[compute_function_layout_eval_wf] >>
+  `~fn_has_alloca
+      (concretize_function_with_positions x.cl_positions fn)` by
+    (irule concretize_function_with_positions_removes_alloca >>
+     metis_tac[]) >>
+  rpt strip_tac >>
+  gvs[apply_concretize_layout_def, fn_has_alloca_def, fn_insts_def,
+      EVERY_MEM, EXISTS_MEM] >> metis_tac[]
+QED
+
 val _ = export_theory();
