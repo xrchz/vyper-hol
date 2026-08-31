@@ -235,6 +235,102 @@ Proof
   >> gvs[]
 QED
 
+
+Definition task18_nested_entry_blocks_def:
+  task18_nested_entry_blocks =
+    REVERSE nested_after_foo_body_state.cs_blocks ++
+      [<| bb_label := nested_after_foo_body_state.cs_current_bb;
+          bb_instructions := nested_after_foo_body_state.cs_current_insts |>;
+       <| bb_label := nested_after_fallback_state.cs_current_bb;
+          bb_instructions := nested_after_fallback_state.cs_current_insts |>]
+End
+
+Definition task18_nested_entry_block_def:
+  task18_nested_entry_block = EL 0 task18_nested_entry_blocks
+End
+
+Definition task18_nested_dispatch_block_def:
+  task18_nested_dispatch_block = EL 1 task18_nested_entry_blocks
+End
+
+Definition task18_nested_match_block_def:
+  task18_nested_match_block = EL 2 task18_nested_entry_blocks
+End
+
+Definition task18_nested_next_block_def:
+  task18_nested_next_block = EL 3 task18_nested_entry_blocks
+End
+
+Definition task18_nested_foo_block_def:
+  task18_nested_foo_block = EL 4 task18_nested_entry_blocks
+End
+
+Definition task18_nested_fallback_block_def:
+  task18_nested_fallback_block = EL 5 task18_nested_entry_blocks
+End
+
+Definition task18_nested_entry_fn_def:
+  task18_nested_entry_fn =
+    mk_raw_function "__entry" task18_nested_entry_blocks
+End
+
+Theorem task18_nested_entry_fn_blocks:
+  task18_nested_entry_fn.fn_blocks =
+    [task18_nested_entry_block; task18_nested_dispatch_block;
+     task18_nested_match_block; task18_nested_next_block;
+     task18_nested_foo_block; task18_nested_fallback_block]
+Proof
+  EVAL_TAC
+QED
+
+Theorem task18_nested_runtime_entry_member:
+  case lower_vyper_runtime_unit nested_internal_call_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |> of
+    NONE => F
+  | SOME unit =>
+      HD unit.cu_context.ctx_functions = task18_nested_entry_fn
+Proof
+  pure_rewrite_tac[compileVyperTheory.lower_vyper_runtime_unit_def,
+                   vyperCompilerTheory.run_lowering_def]
+  >> rewrite_tac[nested_internal_call_classify,
+                 nested_internal_call_selectors]
+  >> rewrite_tac[nested_external_target_packages,
+                 nested_internal_target_packages]
+  >> simp[nested_internal_call_classify,
+       nested_internal_call_selectors,
+       nested_external_package_eq,
+       nested_leaf_package_eq,
+       nested_mid_package_eq,
+       compileVyperTheory.package_fallback_fn_def,
+       compileVyperTheory.set_fallback_package_target_def,
+       vyperCompilerTheory.lowering_policy_ok_def,
+       venomPolicyTypesTheory.prague_capabilities_wf,
+       venomPolicyTypesTheory.prague_capabilities_def,
+       venomPolicyTypesTheory.target_capabilities_wf_def,
+       nested_runtime_final_state_eq,
+       nested_internal_call_extracted_context]
+  >> pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
+  >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
+          nested_leaf_package_def, nested_mid_package_def,
+          nested_leaf_cenv_entry_facts, nested_mid_cenv_entry_facts]
+  >> rewrite_tac[nested_internal_blocks_partition]
+  >> simp[venomInstTheory.mk_venom_context_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_entry_fn_def,
+          task18_nested_entry_blocks_def]
+  >> IF_CASES_TAC
+  >- simp[]
+  >> mp_tac nested_internal_call_extracted_context
+  >> pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
+  >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
+          nested_leaf_package_def, nested_mid_package_def,
+          nested_leaf_cenv_entry_facts, nested_mid_cenv_entry_facts]
+  >> rewrite_tac[nested_internal_blocks_partition]
+  >> simp[venomInstTheory.mk_venom_context_def,
+          venomInstTheory.mk_raw_function_def]
+QED
 (* TASK_018 unsupported-shape inventory (and only this boundary):
    1. A top-level bytes/string dynamic return without CapMcopy emits INVALID
       before length computation, MCOPY-dependent behavior, or DRET.
