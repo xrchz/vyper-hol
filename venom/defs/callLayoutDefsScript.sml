@@ -87,4 +87,190 @@ Definition canonical_param_prefix_def:
         canonical_entry_params_from 0 entry.bb_instructions /\
         EVERY (\bb. no_param_insts bb.bb_instructions) rest
 End
+
+Theorem canonical_after_fmp_iff:
+  !k insts.
+    canonical_after_fmp k insts <=>
+    ?retpc body.
+      insts = retpc ++ body /\
+      (retpc = [] \/ ?inst. retpc = [inst] /\
+                              inst.inst_opcode = RETPC_PARAM) /\
+      param_insts_from k retpc /\
+      no_param_insts body
+Proof
+  rpt gen_tac >> Cases_on `insts` >-
+    simp[canonical_after_fmp_def, param_insts_from_def, no_param_insts_def]
+  >> rename1 `inst::insts`
+  >> Cases_on `inst.inst_opcode = RETPC_PARAM`
+  >- (simp[canonical_after_fmp_def] >> eq_tac
+      >- (strip_tac >> qexistsl [`[inst]`, `insts`] >>
+          simp[param_insts_from_def])
+      >> strip_tac
+      >> gvs[param_insts_from_def, no_param_insts_def,
+             is_param_opcode_def])
+  >> simp[canonical_after_fmp_def] >> eq_tac
+  >- (strip_tac >> qexistsl [`[]`, `inst::insts`] >>
+      simp[param_insts_from_def, no_param_insts_def])
+  >> strip_tac
+  >> gvs[param_insts_from_def, no_param_insts_def, is_param_opcode_def]
+QED
+
+
+Theorem canonical_entry_params_from_sound:
+  !k insts.
+    canonical_entry_params_from k insts ==>
+    ?users fmp retpc body.
+      insts = users ++ fmp ++ retpc ++ body /\
+      EVERY (\inst. inst.inst_opcode = PARAM) users /\
+      (fmp = [] \/ ?inst. fmp = [inst] /\
+                           inst.inst_opcode = FMP_PARAM) /\
+      (retpc = [] \/ ?inst. retpc = [inst] /\
+                              inst.inst_opcode = RETPC_PARAM) /\
+      param_insts_from k (users ++ fmp ++ retpc) /\
+      no_param_insts body
+Proof
+  Induct_on `insts` >-
+    simp[canonical_entry_params_from_def, param_insts_from_def,
+         no_param_insts_def]
+  >> rpt gen_tac
+  >> rename1 `inst::insts`
+  >> Cases_on `inst.inst_opcode = PARAM`
+  >- (simp[canonical_entry_params_from_def] >> strip_tac
+      >> qpat_x_assum `!k. canonical_entry_params_from k insts ==> _`
+           (qspec_then `SUC k` mp_tac)
+      >> simp[] >> strip_tac
+      >> qexistsl [`inst::users`, `fmp`, `retpc`, `body`]
+      >> qpat_x_assum `fmp = _` SUBST_ALL_TAC
+      >> qpat_x_assum `retpc = _` SUBST_ALL_TAC
+      >> fs[listTheory.APPEND_NIL]
+      >> simp[param_insts_from_def])
+  >> Cases_on `inst.inst_opcode = FMP_PARAM`
+  >- (simp[canonical_entry_params_from_def, canonical_after_fmp_iff]
+      >> strip_tac
+      >> qexistsl [`[]`, `[inst]`, `retpc`, `body`]
+      >> qpat_x_assum `retpc = _` SUBST_ALL_TAC
+      >> fs[listTheory.APPEND_NIL]
+      >> simp[param_insts_from_def])
+  >> Cases_on `inst.inst_opcode = RETPC_PARAM`
+  >- (simp[canonical_entry_params_from_def] >> strip_tac
+      >> qexistsl [`[]`, `[]`, `[inst]`, `insts`]
+      >> simp[param_insts_from_def])
+  >> simp[canonical_entry_params_from_def] >> strip_tac
+  >> qexistsl [`[]`, `[]`, `[]`, `inst::insts`]
+  >> simp[param_insts_from_def, no_param_insts_def]
+QED
+
+
+Theorem param_insts_from_append:
+  !k xs ys.
+    param_insts_from k (xs ++ ys) <=>
+    param_insts_from k xs /\
+    param_insts_from (k + LENGTH xs) ys
+Proof
+  Induct_on `xs`
+  >> simp[param_insts_from_def, arithmeticTheory.ADD_CLAUSES]
+  >> metis_tac[]
+QED
+
+Theorem canonical_entry_params_from_prepend_users:
+  !k users suffix.
+    EVERY (\inst. inst.inst_opcode = PARAM) users /\
+    param_insts_from k users /\
+    canonical_entry_params_from (k + LENGTH users) suffix ==>
+    canonical_entry_params_from k (users ++ suffix)
+Proof
+  Induct_on `users`
+  >> simp[canonical_entry_params_from_def, param_insts_from_def,
+          arithmeticTheory.ADD_CLAUSES]
+QED
+
+Theorem canonical_entry_params_from_hidden_suffix:
+  !k fmp retpc body.
+    (fmp = [] \/ ?inst. fmp = [inst] /\
+                         inst.inst_opcode = FMP_PARAM) /\
+    (retpc = [] \/ ?inst. retpc = [inst] /\
+                            inst.inst_opcode = RETPC_PARAM) /\
+    param_insts_from k (fmp ++ retpc) /\
+    no_param_insts body ==>
+    canonical_entry_params_from k (fmp ++ retpc ++ body)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[]
+  >> simp[canonical_entry_params_from_def, canonical_after_fmp_def,
+          param_insts_from_def, no_param_insts_def, is_param_opcode_iff,
+          listTheory.APPEND_NIL]
+  >> Cases_on `body`
+  >> gvs[canonical_entry_params_from_def, canonical_after_fmp_def,
+         no_param_insts_def, param_insts_from_def, is_param_opcode_iff]
+QED
+
+Theorem canonical_entry_params_from_complete:
+  !k users fmp retpc body.
+    EVERY (\inst. inst.inst_opcode = PARAM) users /\
+    (fmp = [] \/ ?inst. fmp = [inst] /\
+                         inst.inst_opcode = FMP_PARAM) /\
+    (retpc = [] \/ ?inst. retpc = [inst] /\
+                            inst.inst_opcode = RETPC_PARAM) /\
+    param_insts_from k (users ++ fmp ++ retpc) /\
+    no_param_insts body ==>
+    canonical_entry_params_from k (users ++ fmp ++ retpc ++ body)
+Proof
+  rpt gen_tac >> strip_tac
+  >> `param_insts_from k (users ++ (fmp ++ retpc))` by
+       gvs[listTheory.APPEND_ASSOC]
+  >> drule (iffLR param_insts_from_append)
+  >> strip_tac
+  >> `canonical_entry_params_from (k + LENGTH users)
+        (fmp ++ retpc ++ body)` by
+       (irule canonical_entry_params_from_hidden_suffix >> simp[])
+  >> `canonical_entry_params_from k
+        (users ++ (fmp ++ retpc ++ body))` by
+       (irule canonical_entry_params_from_prepend_users
+        >> rpt conj_tac >> first_assum ACCEPT_TAC)
+  >> qpat_x_assum
+       `canonical_entry_params_from k (users ++ (fmp ++ retpc ++ body))`
+       mp_tac
+  >> pure_rewrite_tac[listTheory.APPEND_ASSOC]
+  >> simp[]
+QED
+Theorem canonical_entry_params_from_iff:
+  !k insts.
+    canonical_entry_params_from k insts <=>
+    ?users fmp retpc body.
+      insts = users ++ fmp ++ retpc ++ body /\
+      EVERY (\inst. inst.inst_opcode = PARAM) users /\
+      (fmp = [] \/ ?inst. fmp = [inst] /\
+                           inst.inst_opcode = FMP_PARAM) /\
+      (retpc = [] \/ ?inst. retpc = [inst] /\
+                              inst.inst_opcode = RETPC_PARAM) /\
+      param_insts_from k (users ++ fmp ++ retpc) /\
+      no_param_insts body
+Proof
+  rpt gen_tac >> eq_tac
+  >- (strip_tac
+      >> drule canonical_entry_params_from_sound
+      >> simp[])
+  >> strip_tac
+  >> qpat_x_assum `insts = _` SUBST_ALL_TAC
+  >> irule canonical_entry_params_from_complete
+  >> metis_tac[]
+QED
+
+Theorem canonical_param_prefix_iff:
+  canonical_param_prefix fn <=>
+  ?entry rest users fmp retpc body.
+    fn.fn_blocks = entry::rest /\
+    entry.bb_instructions = users ++ fmp ++ retpc ++ body /\
+    EVERY (\inst. inst.inst_opcode = PARAM) users /\
+    (fmp = [] \/ ?inst. fmp = [inst] /\
+                         inst.inst_opcode = FMP_PARAM) /\
+    (retpc = [] \/ ?inst. retpc = [inst] /\
+                            inst.inst_opcode = RETPC_PARAM) /\
+    param_insts_from 0 (users ++ fmp ++ retpc) /\
+    no_param_insts body /\
+    EVERY (\bb. no_param_insts bb.bb_instructions) rest
+Proof
+  Cases_on `fn.fn_blocks`
+  >> simp[canonical_param_prefix_def, canonical_entry_params_from_iff]
+  >> metis_tac[]
+QED
 val _ = export_theory();
