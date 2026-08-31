@@ -70,5 +70,50 @@ Proof
   >> qexists `inst` >> simp[]
 QED
 
+Theorem transformed_blocks_have_no_alloca[local]:
+  (!inst. MEM inst (fn_insts_blocks blocks) ==>
+          (transform inst).inst_opcode <> ALLOCA) ==>
+  ~EXISTS (\inst. is_alloca_op inst.inst_opcode)
+    (fn_insts_blocks (MAP (block_map_transform transform) blocks))
+Proof
+  strip_tac >> strip_tac >>
+  gvs[EXISTS_MEM, is_alloca_op_eq_alloca] >>
+  drule fn_insts_blocks_map_transform_mem >>
+  strip_tac >> gvs[] >> metis_tac[]
+QED
+
+Theorem concretize_function_with_positions_removes_alloca:
+  static_alloca_items fn = SOME items /\
+  concretize_layout_wf reserved fn layout ==>
+  ~fn_has_alloca
+    (concretize_function_with_positions layout.cl_positions fn)
+Proof
+  strip_tac >>
+  qabbrev_tac `mapped =
+    function_map_transform
+      (block_map_transform
+        (concretize_inst_with_positions layout.cl_positions)) fn` >>
+  `~EXISTS (\inst. is_alloca_op inst.inst_opcode)
+      (fn_insts_blocks
+        (MAP (block_map_transform
+          (concretize_inst_with_positions layout.cl_positions))
+          fn.fn_blocks))` by
+    (irule transformed_blocks_have_no_alloca >>
+     rpt strip_tac >>
+     `(concretize_inst_with_positions layout.cl_positions inst).inst_opcode <>
+       ALLOCA` by
+       (irule concretize_inst_with_positions_not_alloca >>
+        simp[fn_insts_def] >> metis_tac[]) >>
+     metis_tac[]) >>
+  `~fn_has_alloca mapped` by
+    simp[fn_has_alloca_def, Abbr `mapped`, function_map_transform_def,
+         fn_insts_def] >>
+  simp[concretize_function_with_positions_def, Abbr `mapped`] >>
+  strip_tac >>
+  gvs[fn_has_alloca_def, EXISTS_MEM] >>
+  drule clear_nops_fn_insts_subset >>
+  strip_tac >> metis_tac[]
+QED
+
 val _ = export_theory();
 val _ = export_theory();
