@@ -43,6 +43,16 @@ Proof
   >> gvs[listTheory.EL_APPEND_EQN]
 QED
 
+Theorem task18_fn_inst_wf_from_blocks[local]:
+  (!bb. MEM bb fn.fn_blocks ==>
+        EVERY inst_wf bb.bb_instructions) ==>
+  fn_inst_wf fn
+Proof
+  rw[venomWfTheory.fn_inst_wf_def] >>
+  first_x_assum drule >>
+  simp[listTheory.EVERY_MEM]
+QED
+
 Definition task18_initial_state_def:
   task18_initial_state : compile_state =
     <| cs_next_var := 0;
