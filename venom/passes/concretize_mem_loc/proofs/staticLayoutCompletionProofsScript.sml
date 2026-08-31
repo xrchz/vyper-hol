@@ -487,6 +487,63 @@ Proof
   >> first_x_assum irule >> metis_tac[]
 QED
 
+Theorem complete_alloc_positions_aux_reserved_disjoint:
+  !insts items positions occupied completed fixed.
+    ALL_DISTINCT (MAP FST items) /\
+    (!inst item. MEM inst insts /\ exact_static_alloca inst = SOME item ==>
+       MEM item items) /\
+    (!r. MEM r fixed ==> MEM r occupied) /\
+    (!a sz p r. MEM (a,sz) items /\ FLOOKUP positions a = SOME p /\
+       0 < sz /\ MEM r fixed ==>
+       reserved_intervals_disjoint (p,sz) r) /\
+    complete_alloc_positions_aux insts positions occupied = SOME completed ==>
+    !a sz p r. MEM (a,sz) items /\ FLOOKUP completed a = SOME p /\
+      0 < sz /\ MEM r fixed ==>
+      reserved_intervals_disjoint (p,sz) r
+Proof
+  Induct
+  >- (simp[complete_alloc_positions_aux_def] >> metis_tac[])
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `h.inst_opcode = ALLOCA`
+  >- (Cases_on `exact_static_alloca_size h`
+      >> gvs[complete_alloc_positions_aux_def]
+      >> Cases_on `FLOOKUP positions (Allocation h.inst_id)`
+      >- (Cases_on `checked_first_fit occupied x`
+          >> gvs[complete_alloc_positions_aux_def]
+          >> `MEM (Allocation h.inst_id,x) items` by
+               (qpat_x_assum `!inst item. _`
+                  (qspecl_then [`h`,`(Allocation h.inst_id,x)`] mp_tac) >>
+                simp[exact_static_alloca_def])
+          >> qpat_x_assum `!items positions occupied completed fixed. _`
+               (qspecl_then
+                 [`items`,`positions |+ (Allocation h.inst_id,x')`,
+                  `if x = 0 then occupied else (x',x)::occupied`,
+                  `completed`,`fixed`] mp_tac)
+          >> simp[] >> (impl_tac
+              >- (conj_tac >- metis_tac[]
+                  >> conj_tac
+                  >- (rpt strip_tac >> Cases_on `x = 0` >> gvs[])
+                  >> rpt gen_tac >> strip_tac
+                  >> Cases_on `a = Allocation h.inst_id`
+                  >- (`sz = x` by metis_tac[all_distinct_item_key_unique]
+                      >> gvs[FLOOKUP_UPDATE]
+                      >> qpat_x_assum `checked_first_fit occupied x = SOME x'`
+                           (fn th => assume_tac (MATCH_MP checked_first_fit_SOME th))
+                      >> gvs[EVERY_MEM])
+                  >> gvs[FLOOKUP_UPDATE]
+                  >> metis_tac[]))
+          >> simp[])
+      >> gvs[complete_alloc_positions_aux_def]
+      >> qpat_x_assum `!items positions occupied completed fixed. _`
+           (qspecl_then [`items`,`positions`,`occupied`,`completed`,`fixed`] mp_tac)
+      >> simp[] >> metis_tac[])
+  >> gvs[complete_alloc_positions_aux_def, exact_static_alloca_def,
+         exact_static_alloca_size_def]
+  >> qpat_x_assum `!items positions occupied completed fixed. _`
+       (qspecl_then [`items`,`positions`,`occupied`,`completed`,`fixed`] mp_tac)
+  >> simp[] >> metis_tac[]
+QED
+
 Theorem complete_alloc_positions_aux_success:
   ALL_DISTINCT (MAP FST items) /\
   (!inst item. MEM inst insts /\ exact_static_alloca inst = SOME item ==>
