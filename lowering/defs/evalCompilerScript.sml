@@ -1612,6 +1612,29 @@ Proof
   >> simp[listTheory.APPEND_ASSOC]
 QED
 
+
+Theorem nested_mid_applied_return_stage_eq:
+  (\(_0, cs'). ((), cs'))
+    ((\(rpc, cs').
+        compile_internal_return nested_mid_cenv
+          (SOME nested_mid_leaf_call_operand) rpc 1
+          (BaseT (UintT 256)) (BaseT (UintT 256)) [] NONE cs')
+      (emit_op MLOAD [Lit 32w] nested_after_mid_leaf_call_state)) =
+    ((), nested_after_mid_body_state)
+Proof
+  simp[nested_mid_cenv_entry_facts,
+       stmtLoweringTheory.compile_internal_return_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_inst_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       nested_mid_leaf_call_operand_def,
+       nested_mid_loaded_return_pc_operand_def,
+       nested_after_mid_body_state_def,
+       nested_after_mid_leaf_call_state_def,
+       listTheory.APPEND_ASSOC]
+QED
 Theorem nested_after_mid_body_state_terminated:
   block_is_terminated nested_after_mid_body_state
 Proof
@@ -1634,6 +1657,131 @@ Proof
           venomInstTheory.mk_inst_def,
           venomInstTheory.is_terminator_def]
 QED
+
+Theorem nested_mid_applied_entry_continuation_eq:
+  !k.
+    (\(_0, cs').
+       (\(params_result, cs').
+          (\(return_pc, cs').
+             (\(_0, cs').
+                k (FST params_result) return_pc cs')
+               ((case FLOOKUP (FST params_result).ce_vars "__return_pc__" of
+                   NONE => comp_return ()
+                 | SOME (MemLoc rpc_off _) =>
+                     emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+                 | SOME (StorageLoc _) => comp_return ()
+                 | SOME (TransientLoc _) => comp_return ()
+                 | SOME (ImmutableLoc _) => comp_return ()
+                 | SOME (PtrVar _ _) => comp_return ()) cs'))
+            (emit_op PARAM [Lit (n2w (SND params_result))] cs'))
+         (compile_internal_params nested_mid_cenv [("y", T)] 0 cs'))
+      (new_block "mid" nested_after_leaf_body_state) =
+    k nested_mid_cenv nested_mid_return_pc_operand
+      nested_after_mid_entry_state
+Proof
+  gen_tac
+  >> simp[moduleLoweringTheory.compile_internal_params_def,
+       nested_mid_cenv_entry_facts,
+       compileEnvTheory.new_block_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       nested_mid_y_operand_def, nested_mid_return_pc_operand_def,
+       nested_after_mid_entry_state_def,
+       nested_after_leaf_body_state_def]
+QED
+
+
+Theorem nested_after_mid_entry_state_not_terminated:
+  ~block_is_terminated nested_after_mid_entry_state
+Proof
+  simp[nested_after_mid_entry_state_def,
+       compileEnvTheory.block_is_terminated_def,
+       venomInstTheory.mk_inst_def,
+       venomInstTheory.is_terminator_def]
+QED
+Definition nested_mid_body_stage_def:
+  nested_mid_body_stage =
+    compile_stmts nested_mid_cenv NoLoop (BaseT (UintT 256))
+      [Return (SOME
+        (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+          [Name (BaseT (UintT 256)) "y"] NONE))]
+End
+
+Theorem nested_mid_body_stage_eq:
+  nested_mid_body_stage nested_after_mid_entry_state =
+    ((), nested_after_mid_body_state)
+Proof
+  simp[nested_mid_body_stage_def,
+       nested_after_mid_entry_state_not_terminated,
+       nested_mid_cenv_entry_facts,
+       stmtLoweringTheory.compile_stmt_def,
+       vyperASTTheory.expr_type_def,
+       compileEnvTheory.is_word_type_def,
+       GSYM nested_mid_leaf_call_stage_def,
+       nested_mid_leaf_call_stage_eq,
+       compileEnvTheory.comp_get_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def]
+  >> MATCH_ACCEPT_TAC nested_mid_applied_return_stage_eq
+QED
+
+Definition nested_mid_stage_def:
+  nested_mid_stage =
+    do new_block "mid";
+       compile_internal_function nested_mid_cenv [("y", T)]
+         F F 0 F F F 0
+         [Return (SOME
+           (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+             [Name (BaseT (UintT 256)) "y"] NONE))]
+         (SOME (BaseT (UintT 256)))
+    od
+End
+
+Theorem nested_mid_stage_eq:
+  nested_mid_stage nested_after_leaf_body_state =
+    ((), nested_after_mid_body_state)
+Proof
+  pure_rewrite_tac[nested_mid_stage_def,
+                   moduleLoweringTheory.compile_internal_function_def]
+  >> simp[nested_mid_applied_entry_continuation_eq,
+          compileEnvTheory.comp_get_def,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+  >> rewrite_tac[GSYM nested_mid_body_stage_def,
+                 nested_mid_body_stage_eq]
+  >> simp[nested_after_mid_body_state_terminated,
+          compileEnvTheory.comp_get_def,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
+
+Theorem nested_internal_fn_bodies_eq:
+  compile_internal_fn_bodies [nested_leaf_package; nested_mid_package]
+    nested_after_fallback_state =
+  ((), nested_after_mid_body_state)
+Proof
+  `compile_internal_fn_bodies [nested_leaf_package; nested_mid_package] =
+    (do nested_leaf_stage;
+        nested_mid_stage;
+        return ()
+     od)` by
+    simp[moduleLoweringTheory.compile_internal_fn_bodies_def,
+         nested_leaf_package_def, nested_mid_package_def,
+         nested_leaf_stage_def, nested_mid_stage_def,
+         comp_ignore_bind_assoc]
+  >> pop_assum (fn th => rewrite_tac[th])
+  >> simp[nested_leaf_stage_eq, nested_mid_stage_eq,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
+
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
