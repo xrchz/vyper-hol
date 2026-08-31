@@ -659,6 +659,19 @@ Proof
   >> EVAL_TAC
 QED
 
+Theorem task18_nested_mid_block_inst_wf:
+  EVERY inst_wf task18_nested_mid_block.bb_instructions
+Proof
+  rewrite_tac[task18_nested_mid_block_exact]
+  >> simp[venomWfTheory.inst_wf_def,
+          venomInstTheory.mk_inst_def,
+          nested_mid_y_operand_def,
+          nested_mid_return_pc_operand_def,
+          nested_mid_y_value_operand_def,
+          nested_mid_leaf_call_operand_def,
+          nested_mid_loaded_return_pc_operand_def]
+QED
+
 Theorem task18_nested_mid_block_wf:
   bb_well_formed task18_nested_mid_block
 Proof
