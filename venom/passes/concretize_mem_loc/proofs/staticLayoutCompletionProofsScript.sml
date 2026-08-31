@@ -945,6 +945,37 @@ Proof
   >> first_assum ACCEPT_TAC
 QED
 
+Theorem complete_alloc_positions_forced:
+  complete_alloc_positions forced reserved fn positions = SOME completed /\
+  static_alloca_items fn = SOME items /\
+  FLOOKUP forced aid = SOME pos /\
+  MEM (Allocation aid) (MAP FST items) ==>
+  FLOOKUP completed (Allocation aid) = SOME pos
+Proof
+  simp[complete_alloc_positions_def]
+  >> Cases_on `static_alloca_items fn` >> gvs[]
+  >> Cases_on `forced_alloc_keys_valid (MAP FST x) forced` >> gvs[]
+  >> Cases_on `candidate_alloc_keys_valid (MAP FST x) positions` >> gvs[]
+  >> Cases_on `merge_forced_positions x forced positions` >> gvs[]
+  >> Cases_on `checked_preserved_intervals x x' reserved` >> gvs[]
+  >> strip_tac
+  >> `ALL_DISTINCT (MAP FST x)` by
+       metis_tac[static_alloca_items_ALL_DISTINCT]
+  >> `candidate_alloc_keys_valid (MAP FST x) x'` by
+       (qspecl_then [`x`,`MAP FST x`,`forced`,`positions`,`x'`] mp_tac
+          merge_forced_positions_keys_valid
+        >> simp[] >> (impl_tac
+            >- (rpt strip_tac >> PairCases_on `item`
+                >> simp[MEM_MAP] >> qexists `(item0,item1)` >> simp[]))
+        >> simp[])
+  >> drule prepared_aux_completion_certificate
+  >> disch_then (qspecl_then [`reserved`,`x'`,`completed`,`x''`] mp_tac)
+  >> simp[] >> strip_tac
+  >> `FLOOKUP x' (Allocation aid) = SOME pos` by
+       (drule merge_forced_positions_forced_aid >> simp[])
+  >> metis_tac[]
+QED
+
 Theorem compute_function_layout_fuel_wf:
   compute_function_layout_fuel fuel reserved fn = SOME layout ==>
   concretize_layout_wf reserved fn layout
