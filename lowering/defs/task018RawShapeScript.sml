@@ -372,6 +372,57 @@ Proof
   >> EVAL_TAC
 QED
 
+Theorem task18_nested_foo_block_wf:
+  bb_well_formed task18_nested_foo_block
+Proof
+  pure_rewrite_tac[task18_nested_foo_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> `[mk_inst 10 CALLVALUE [] ["%6"];
+       mk_inst 11 ISZERO [Var "%6"] ["%7"];
+       mk_inst 12 ASSERT [Var "%7"] [];
+       mk_inst 13 CALLDATASIZE [] ["%8"];
+       mk_inst 14 LT [Var "%8"; Lit 36w] ["%9"];
+       mk_inst 15 ISZERO [Var "%9"] ["%10"];
+       mk_inst 16 ASSERT [Var "%10"] [];
+       mk_inst 17 CALLDATASIZE [] ["%11"];
+       mk_inst 18 CALLDATALOAD [Lit 4w] ["%12"];
+       mk_inst 19 MSTORE [Lit 0w; Var "%12"] [];
+       mk_inst 20 MLOAD [Lit 0w] ["%13"];
+       mk_inst 21 ALLOCA [Lit 32w] ["%14"];
+       mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"];
+       mk_inst 23 MSTORE [Var "%14"; Var "%15"] [];
+       mk_inst 24 MLOAD [Var "%14"] ["%16"];
+       mk_inst 25 ALLOCA [Lit 32w] ["%17"];
+       mk_inst 26 MSTORE [Var "%17"; nested_foo_mid_call_operand] [];
+       mk_inst 27 RETURN [Var "%17"; Lit 32w] []] =
+      [mk_inst 10 CALLVALUE [] ["%6"];
+       mk_inst 11 ISZERO [Var "%6"] ["%7"];
+       mk_inst 12 ASSERT [Var "%7"] [];
+       mk_inst 13 CALLDATASIZE [] ["%8"];
+       mk_inst 14 LT [Var "%8"; Lit 36w] ["%9"];
+       mk_inst 15 ISZERO [Var "%9"] ["%10"];
+       mk_inst 16 ASSERT [Var "%10"] [];
+       mk_inst 17 CALLDATASIZE [] ["%11"];
+       mk_inst 18 CALLDATALOAD [Lit 4w] ["%12"];
+       mk_inst 19 MSTORE [Lit 0w; Var "%12"] [];
+       mk_inst 20 MLOAD [Lit 0w] ["%13"];
+       mk_inst 21 ALLOCA [Lit 32w] ["%14"];
+       mk_inst 22 INVOKE [Label "mid"; nested_foo_x_operand] ["%15"];
+       mk_inst 23 MSTORE [Var "%14"; Var "%15"] [];
+       mk_inst 24 MLOAD [Var "%14"] ["%16"];
+       mk_inst 25 ALLOCA [Lit 32w] ["%17"];
+       mk_inst 26 MSTORE [Var "%17"; nested_foo_mid_call_operand] []] ++
+      [mk_inst 27 RETURN [Var "%17"; Lit 32w] []]` by simp[]
+  >> pop_assum (fn th => pure_once_rewrite_tac[th])
+  >> irule task18_bb_well_formed_snoc
+  >> EVAL_TAC
+QED
+
 Theorem task18_nested_runtime_entry_member:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
