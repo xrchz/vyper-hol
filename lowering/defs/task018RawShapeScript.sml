@@ -293,6 +293,67 @@ Proof
   EVAL_TAC
 QED
 
+Theorem task18_nested_entry_block_inst_wf:
+  EVERY inst_wf task18_nested_entry_block.bb_instructions
+Proof
+  pure_rewrite_tac[task18_nested_entry_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[venomWfTheory.inst_wf_def, venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_nested_dispatch_block_inst_wf:
+  EVERY inst_wf task18_nested_dispatch_block.bb_instructions
+Proof
+  pure_rewrite_tac[task18_nested_dispatch_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[venomWfTheory.inst_wf_def, venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_nested_match_block_inst_wf:
+  EVERY inst_wf task18_nested_match_block.bb_instructions
+Proof
+  pure_rewrite_tac[task18_nested_match_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[venomWfTheory.inst_wf_def, venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_nested_next_block_inst_wf:
+  EVERY inst_wf task18_nested_next_block.bb_instructions
+Proof
+  pure_rewrite_tac[task18_nested_next_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[venomWfTheory.inst_wf_def, venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_nested_fallback_block_inst_wf:
+  EVERY inst_wf task18_nested_fallback_block.bb_instructions
+Proof
+  pure_rewrite_tac[task18_nested_fallback_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[venomWfTheory.inst_wf_def, venomInstTheory.mk_inst_def]
+QED
+
 
 Theorem task18_nested_entry_block_wf:
   bb_well_formed task18_nested_entry_block
