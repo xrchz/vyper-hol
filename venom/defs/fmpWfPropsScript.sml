@@ -594,6 +594,54 @@ Proof
           fmp_positive_entry_sig_def, venomInstTheory.mk_inst_def]
 QED
 
+Theorem fmp_positive_callee_adopted_rooted:
+  fmp_value_rooted fmp_positive_ctx fmp_positive_callee_sig
+    fmp_positive_callee "cadopt"
+Proof
+  rewrite_tac[fmp_value_rooted_def,
+              cj 2 fmp_positive_defined_values_lengths]
+  >> qspec_then `3` mp_tac fmp_positive_callee_adopted_fuel
+  >> simp[]
+QED
+
+Theorem fmp_positive_callee_return_inst_wf:
+  fmp_runner_inst_wf fmp_positive_ctx fmp_positive_callee_sig
+    fmp_positive_callee
+    (mk_inst 24 RET [Var "cu"; Var "cadopt"; Var "crpc"] [])
+Proof
+  simp[fmp_runner_inst_wf_def, fmp_bump_consumer_wf_def,
+       fmp_invoke_consumer_wf_def, fmp_return_consumer_wf_def,
+       venomInstTheory.mk_inst_def]
+  >> strip_tac
+  >> qexistsl [`1`, `"cadopt"`]
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> irule fmp_positive_callee_adopted_rooted
+QED
+
+Theorem fmp_positive_callee_insts:
+  fn_insts fmp_positive_callee =
+    [mk_inst 20 PARAM [Lit 0w] ["cu"];
+     mk_inst 21 FMP_PARAM [Lit 1w] ["cfmp"];
+     mk_inst 22 RETPC_PARAM [Lit 2w] ["crpc"];
+     mk_inst 23 ADD [Var "cfmp"; Lit 1w] ["cadopt"];
+     mk_inst 24 RET [Var "cu"; Var "cadopt"; Var "crpc"] []]
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_positive_callee_runner_wf:
+  fmp_runner_rooted_wf fmp_positive_ctx fmp_positive_callee_sig
+    fmp_positive_callee
+Proof
+  rewrite_tac[fmp_runner_rooted_wf_def, fmp_positive_callee_insts]
+  >> simp[fmp_positive_callee_return_inst_wf,
+          fmp_runner_inst_wf_def, fmp_bump_consumer_wf_def,
+          fmp_invoke_consumer_wf_def, fmp_return_consumer_wf_def,
+          venomInstTheory.mk_inst_def]
+QED
+
 Theorem fmp_positive_boundary_eval:
   fmp_signature_matches_fn fmp_positive_ctx fmp_positive_entry /\
   fmp_signature_matches_fn fmp_positive_ctx fmp_positive_callee /\
