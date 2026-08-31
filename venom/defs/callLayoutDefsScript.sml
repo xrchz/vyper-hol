@@ -36,7 +36,7 @@ Definition param_inst_at_def:
   param_inst_at k inst <=>
     is_param_opcode inst.inst_opcode /\
     inst.inst_operands = [Lit (n2w k)] /\
-    ?out. inst.inst_outputs = [out]
+    LENGTH inst.inst_outputs = 1
 End
 
 Definition erase_param_index_def:
