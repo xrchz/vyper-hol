@@ -87,6 +87,58 @@ Definition fmp_value_rooted_def:
       (SUC (LENGTH (fn_defined_values fn))) v
 End
 
+Definition fmp_bump_consumer_wf_def:
+  fmp_bump_consumer_wf ctx sig fn inst <=>
+    if inst.inst_opcode = BUMP then
+      ?base size old new.
+        inst.inst_operands = [Var base; size] /\
+        inst.inst_outputs = [old; new] /\
+        fmp_value_rooted ctx sig fn base
+    else T
+End
+
+(* The hidden input is after all user inputs, never simply the last operand of
+ * the whole instruction (whose first operand is the callee label). *)
+Definition fmp_invoke_consumer_wf_def:
+  fmp_invoke_consumer_wf ctx caller_sig fn inst <=>
+    if inst.inst_opcode = INVOKE then
+      ?callee_name args callee callee_sig.
+        inst.inst_operands = Label callee_name::args /\
+        lookup_function callee_name ctx.ctx_functions = SOME callee /\
+        callee.fn_fmp_signature = SOME callee_sig /\
+        fmp_signature_syntax_wf callee_sig callee /\
+        invoke_input_arity_ok callee callee_sig inst /\
+        invoke_output_arity_ok callee callee_sig inst /\
+        (callee_sig.fms_has_fmp_param ==>
+          ?hidden.
+            EL (LENGTH (fn_user_param_insts callee)) args = Var hidden /\
+            fmp_value_rooted ctx caller_sig fn hidden)
+    else T
+End
+
+Definition fmp_return_consumer_wf_def:
+  fmp_return_consumer_wf ctx sig fn inst <=>
+    if inst.inst_opcode = RET /\ sig.fms_publishes then
+      ?n adopted.
+        fn_expected_user_return_arity fn = SOME n /\
+        lowered_return_inst_layout_wf T n inst /\
+        operand_var (EL n inst.inst_operands) = SOME adopted /\
+        fmp_value_rooted ctx sig fn adopted
+    else T
+End
+
+Definition fmp_runner_inst_wf_def:
+  fmp_runner_inst_wf ctx sig fn inst <=>
+    fmp_bump_consumer_wf ctx sig fn inst /\
+    fmp_invoke_consumer_wf ctx sig fn inst /\
+    fmp_return_consumer_wf ctx sig fn inst
+End
+
+Definition fmp_runner_rooted_wf_def:
+  fmp_runner_rooted_wf ctx sig fn <=>
+    EVERY (fmp_runner_inst_wf ctx sig fn) (fn_insts fn)
+End
+
 (* A closed sanity check for the least-closure behavior: fuel does not turn an
  * unseeded cyclic alias into a root. *)
 Definition fmp_cycle_probe_fn_def:
