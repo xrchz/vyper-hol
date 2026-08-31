@@ -550,7 +550,7 @@ End
                     F in runtime context.
    Mirrors Python: _generate_internal_function(is_ctor_context=...) *)
 Definition package_internal_fn_def:
-  package_internal_fn tops use_trans nkey_map is_ctor_context
+  package_internal_fn tops use_trans nkey_map is_ctor_context immutables_len
     (mut, nr, rr, fname, fargs, _, ret, body) =
     let fn_lbl = fname in
     let sft = make_struct_fields_map tops in
@@ -571,13 +571,15 @@ Definition package_internal_fn_def:
     let params = ZIP (MAP FST fargs, pvs) in
     (fn_lbl, cenv_final, params, has_ret_buf,
      nr, nkey, use_trans, is_view,
-     is_ctor_context, 0n,
+     is_ctor_context, (if is_ctor_context then immutables_len else 0n),
      body, SOME ret)
 End
 
 Theorem package_internal_fn_call_label:
-  !tops use_trans nkey_map is_ctor_context mut nr rr fname fargs dflts ret body.
+  !tops use_trans nkey_map is_ctor_context immutables_len
+   mut nr rr fname fargs dflts ret body.
     FST (package_internal_fn tops use_trans nkey_map is_ctor_context
+           immutables_len
            (mut, nr, rr, fname, fargs, dflts, ret, body)) =
     nsid_to_string (NONE, fname)
 Proof
@@ -608,10 +610,11 @@ Proof
 QED
 
 Theorem package_internal_fn_descriptor:
-  !tops use_trans nkey_map is_ctor_context
+  !tops use_trans nkey_map is_ctor_context immutables_len
    mut nr rr fname fargs dflts ret body.
     internal_fn_descriptors
       [package_internal_fn tops use_trans nkey_map is_ctor_context
+         immutables_len
          (mut, nr, rr, fname, fargs, dflts, ret, body)] =
     [source_internal_fn_descriptor tops
        (mut, nr, rr, fname, fargs, dflts, ret, body)]
@@ -622,9 +625,10 @@ Proof
 QED
 
 Theorem internal_fn_descriptors_MAP_package_internal_fn:
-  !fs tops use_trans nkey_map is_ctor_context.
+  !fs tops use_trans nkey_map is_ctor_context immutables_len.
     internal_fn_descriptors
-      (MAP (package_internal_fn tops use_trans nkey_map is_ctor_context) fs) =
+      (MAP (package_internal_fn tops use_trans nkey_map is_ctor_context
+              immutables_len) fs) =
     MAP (source_internal_fn_descriptor tops) fs
 Proof
   Induct
@@ -719,7 +723,7 @@ Definition lower_vyper_runtime_unit_def:
     let selectors = build_selectors tenv ext_fns in
     let external_fns = MAP (package_external_fn tops use_trans nkey_map)
                            ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F)
+    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F 0)
                               int_fns in
     let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
     let entry_info = build_dense_entry_info selectors external_fns in
@@ -740,7 +744,7 @@ Definition lower_vyper_deploy_unit_def:
     let use_trans = F in
     let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
     let has_constructor = IS_SOME ctor_fn in
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T)
+    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T immutables_len)
                              int_fns in
     let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
          ctor_trans, ctor_body, ctor_ret) =
@@ -762,7 +766,8 @@ Theorem lower_vyper_runtime_unit_empty_prague:
          rpol_frontend_dispatch := Linear;
          rpol_final_assembly := FAP_Optimize |>)
 Proof
-  EVAL_TAC >> simp[venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+  EVAL_TAC >> simp[finite_mapTheory.FEVERY_FEMPTY,
+                    venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
 QED
 
 Theorem lower_vyper_deploy_unit_empty_installs_runtime:
@@ -777,7 +782,8 @@ Theorem lower_vyper_deploy_unit_empty_installs_runtime:
              ds_items := [DataBytes ([170w; 187w] : byte list)] |>
           u.cu_data_segment
 Proof
-  EVAL_TAC >> simp[venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+  EVAL_TAC >> simp[finite_mapTheory.FEVERY_FEMPTY,
+                    venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
 QED
 
 Theorem lower_vyper_runtime_unit_rejects_missing_mcopy:
@@ -812,7 +818,7 @@ Definition compile_vyper_def:
     let selectors = build_selectors tenv ext_fns in
     let external_fns = MAP (package_external_fn tops use_trans nkey_map)
                            ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F)
+    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F 0)
                               int_fns in
     let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
     let entry_label = "__entry" in
@@ -846,7 +852,7 @@ Definition compile_vyper_def:
     (* Deploy internal fns: is_ctor_context = T
        Conservative: all internal fns are ctor-reachable.
        TODO: compute actual reachability from __init__. *)
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T)
+    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T immutables_len)
                              int_fns in
     let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
          ctor_trans, ctor_body, ctor_ret) =
@@ -885,7 +891,7 @@ Definition compile_vyper_eval_def:
     let selectors = build_selectors tenv ext_fns in
     let external_fns = MAP (package_external_fn tops use_trans nkey_map)
                            ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F)
+    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F 0)
                               int_fns in
     let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
     let entry_label = "__entry" in
@@ -914,7 +920,7 @@ Definition compile_vyper_eval_def:
       NONE => NONE
     | SOME runtime_bytecode =>
     let has_constructor = IS_SOME ctor_fn in
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T)
+    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T immutables_len)
                              int_fns in
     let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
          ctor_trans, ctor_body, ctor_ret) =

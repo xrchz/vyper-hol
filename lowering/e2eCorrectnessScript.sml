@@ -798,7 +798,7 @@ Theorem compile_vyper_runtime_bytecode:
     let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
     let selectors = build_selectors tenv ext_fns in
     let external_fns = MAP (package_external_fn tops F nkey_map) ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops F nkey_map F) int_fns in
+    let runtime_int_fns = MAP (package_internal_fn tops F nkey_map F 0) int_fns in
     let fallback_fn = package_fallback_fn tops F nkey_map fb_fn in
       ?bucket_count fn_meta_bytes dense_buckets entry_info.
         compile_vyper_raw selectors external_fns runtime_int_fns fallback_fn

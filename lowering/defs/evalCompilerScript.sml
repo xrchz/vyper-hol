@@ -296,6 +296,15 @@ Definition nested_internal_call_program_def:
              [Name (BaseT (UintT 256)) "x"] NONE))]]
 End
 
+Definition immutable_multi_deploy_program_def:
+  immutable_multi_deploy_program =
+    [VariableDecl Private Immutable "locked" (BaseT (UintT 256)) (SOME 0);
+     FunctionDecl Internal Nonpayable F F "helper"
+       ([] : (string # type) list) ([] : expr list) NoneT [Pass];
+     FunctionDecl Deploy Nonpayable F F "__init__"
+       ([] : (string # type) list) ([] : expr list) NoneT [Pass]]
+End
+
 Theorem nested_internal_call_source_descriptors:
   let (_, internal_fns, _, _) =
     classify_functions nested_internal_call_program in
@@ -890,6 +899,15 @@ Proof
        compileEnvTheory.comp_bind_assoc]
 QED
 
+Theorem comp_ignore_bind_then_bind[local]:
+  !m n f.
+    comp_ignore_bind m (comp_bind n f) =
+    comp_bind (comp_ignore_bind m n) f
+Proof
+  simp[compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.comp_bind_assoc]
+QED
+
 Theorem nested_external_fn_bodies_eq:
   compile_external_fn_bodies [nested_external_package]
     nested_after_dispatch_state = ((), nested_after_foo_body_state)
@@ -975,7 +993,7 @@ End
 
 Theorem nested_internal_call_internal_packages:
   MAP (package_internal_fn nested_internal_call_program F
-         (assign_nkeys nested_internal_call_program 0) F)
+         (assign_nkeys nested_internal_call_program 0) F 0)
       [nested_leaf_source; nested_mid_source] =
     [nested_leaf_package; nested_mid_package]
 Proof
@@ -991,12 +1009,12 @@ Proof
 QED
 
 Theorem nested_internal_call_packaged_descriptors:
-  !use_trans nkey_map is_ctor_context.
+  !use_trans nkey_map is_ctor_context immutables_len.
     let (_, internal_fns, _, _) =
       classify_functions nested_internal_call_program in
     internal_fn_descriptors
       (MAP (package_internal_fn nested_internal_call_program
-              use_trans nkey_map is_ctor_context) internal_fns) =
+              use_trans nkey_map is_ctor_context immutables_len) internal_fns) =
     [("leaf", F, 1); ("mid", F, 1)]
 Proof
   rpt strip_tac
@@ -1282,7 +1300,7 @@ End
 
 Theorem nested_leaf_stage_eq:
   nested_leaf_stage nested_after_fallback_state =
-    ((), nested_after_leaf_body_state)
+    (NONE, nested_after_leaf_body_state)
 Proof
   pure_rewrite_tac[nested_leaf_stage_def,
                    moduleLoweringTheory.compile_internal_function_def]
@@ -1743,7 +1761,7 @@ End
 
 Theorem nested_mid_stage_eq:
   nested_mid_stage nested_after_leaf_body_state =
-    ((), nested_after_mid_body_state)
+    (NONE, nested_after_mid_body_state)
 Proof
   pure_rewrite_tac[nested_mid_stage_def,
                    moduleLoweringTheory.compile_internal_function_def]
@@ -1764,24 +1782,57 @@ QED
 Theorem nested_internal_fn_bodies_eq:
   compile_internal_fn_bodies [nested_leaf_package; nested_mid_package]
     nested_after_fallback_state =
-  ((), nested_after_mid_body_state)
+  ([], nested_after_mid_body_state)
 Proof
   `compile_internal_fn_bodies [nested_leaf_package; nested_mid_package] =
-    (do nested_leaf_stage;
-        nested_mid_stage;
-        return ()
-     od)` by
+    comp_bind nested_leaf_stage
+      (\forced_id.
+         comp_bind (compile_internal_fn_bodies [nested_mid_package])
+           (\rest_forced.
+              comp_return
+                (case forced_id of
+                   NONE => rest_forced
+                 | SOME id => ("leaf", id, 0) :: rest_forced)))` by
     simp[moduleLoweringTheory.compile_internal_fn_bodies_def,
-         nested_leaf_package_def, nested_mid_package_def,
-         nested_leaf_stage_def, nested_mid_stage_def,
-         comp_ignore_bind_assoc]
+         nested_leaf_package_def, nested_leaf_stage_def,
+         GSYM comp_ignore_bind_then_bind]
   >> pop_assum (fn th => rewrite_tac[th])
-  >> simp[nested_leaf_stage_eq, nested_mid_stage_eq,
-          compileEnvTheory.comp_return_def,
-          compileEnvTheory.comp_bind_def,
-          compileEnvTheory.comp_ignore_bind_def]
+  >> simp[nested_leaf_stage_eq, compileEnvTheory.comp_bind_def]
+  >> `compile_internal_fn_bodies [nested_mid_package] =
+      comp_bind nested_mid_stage
+        (\forced_id.
+           comp_bind (compile_internal_fn_bodies [])
+             (\rest_forced.
+                comp_return
+                  (case forced_id of
+                     NONE => rest_forced
+                   | SOME id => ("mid", id, 0) :: rest_forced)))` by
+       simp[moduleLoweringTheory.compile_internal_fn_bodies_def,
+            nested_mid_package_def, nested_mid_stage_def,
+            GSYM comp_ignore_bind_then_bind]
+  >> pop_assum (fn th => rewrite_tac[th])
+  >> simp[nested_mid_stage_eq,
+          moduleLoweringTheory.compile_internal_fn_bodies_def,
+          compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def]
 QED
 
+Definition nested_internal_fn_bodies_ignored_stage_def:
+  nested_internal_fn_bodies_ignored_stage =
+    comp_ignore_bind
+      (compile_internal_fn_bodies [nested_leaf_package; nested_mid_package])
+      (comp_return ())
+End
+
+Theorem nested_internal_fn_bodies_ignored_stage_eq:
+  nested_internal_fn_bodies_ignored_stage nested_after_fallback_state =
+    ((), nested_after_mid_body_state)
+Proof
+  simp[nested_internal_fn_bodies_ignored_stage_def,
+       nested_internal_fn_bodies_eq,
+       compileEnvTheory.comp_return_def,
+       compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def]
+QED
 
 
 Theorem nested_applied_dispatch_continuation_eq:
@@ -1797,79 +1848,6 @@ Proof
 QED
 
 
-Theorem nested_runtime_dispatch_remainder_eq:
-  (\(fallback_lbl, cs').
-     (\(_0, cs').
-        (\(_0, cs').
-           (\(_0, cs').
-              (\(_0, cs').
-                 compile_internal_fn_bodies
-                   [nested_leaf_package; nested_mid_package] cs')
-                (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
-             (new_block fallback_lbl cs'))
-          (compile_external_fn_bodies [nested_external_package] cs'))
-       (compile_selector_dispatch_linear
-          [(801029432, "fn_foo")] fallback_lbl cs'))
-    (fresh_label "fallback" (initial_compile_state "__entry")) =
-  (\(_0, cs').
-     (\(_0, cs').
-        (\(_0, cs').
-           compile_internal_fn_bodies
-             [nested_leaf_package; nested_mid_package] cs')
-          (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
-       (new_block nested_fallback_label cs'))
-    (compile_external_fn_bodies
-       [nested_external_package] nested_after_dispatch_state)
-Proof
-  qspec_then
-    `\fallback_lbl cs'.
-       (\(_0, cs').
-          (\(_0, cs').
-             (\(_0, cs').
-                compile_internal_fn_bodies
-                  [nested_leaf_package; nested_mid_package] cs')
-               (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
-            (new_block fallback_lbl cs'))
-         (compile_external_fn_bodies [nested_external_package] cs')`
-    mp_tac nested_applied_dispatch_continuation_eq
-  >> simp[]
-QED
-
-Theorem nested_runtime_after_dispatch_eq:
-  !entry_info.
-    compile_generate_runtime
-      [(801029432, "fn_foo", F)]
-      [nested_external_package]
-      [nested_leaf_package; nested_mid_package]
-      NONE Linear 0 0 [] entry_info
-      (initial_compile_state "__entry") =
-    (\(_0, cs').
-       (\(_0, cs').
-          (\(_0, cs').
-             compile_internal_fn_bodies
-               [nested_leaf_package; nested_mid_package] cs')
-            (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
-         (new_block nested_fallback_label cs'))
-      (compile_external_fn_bodies
-         [nested_external_package] nested_after_dispatch_state)
-Proof
-  gen_tac
-  >> pure_rewrite_tac[moduleLoweringTheory.compile_generate_runtime_def]
-  >> qspec_then
-    `\fallback_lbl cs'.
-       (\(_0, cs').
-          (\(_0, cs').
-             (\(_0, cs').
-                compile_internal_fn_bodies
-                  [nested_leaf_package; nested_mid_package] cs')
-               (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
-            (new_block fallback_lbl cs'))
-         (compile_external_fn_bodies [nested_external_package] cs')`
-    mp_tac nested_applied_dispatch_continuation_eq
-  >> simp[compileEnvTheory.comp_return_def,
-          compileEnvTheory.comp_bind_def,
-          compileEnvTheory.comp_ignore_bind_def]
-QED
 
 Definition nested_runtime_tail_stage_def:
   nested_runtime_tail_stage =
@@ -1879,7 +1857,7 @@ Definition nested_runtime_tail_stage_def:
         (new_block nested_fallback_label)
         (comp_ignore_bind
           (emit_inst REVERT [Lit 0w; Lit 0w] [])
-          (compile_internal_fn_bodies [nested_leaf_package; nested_mid_package])))
+          nested_internal_fn_bodies_ignored_stage))
 End
 
 Theorem nested_runtime_to_tail_eq:
@@ -1899,10 +1877,10 @@ Proof
            (new_block fallback_lbl)
            (comp_ignore_bind
              (emit_inst REVERT [Lit 0w; Lit 0w] [])
-             (compile_internal_fn_bodies
-               [nested_leaf_package; nested_mid_package]))) cs'`
+             nested_internal_fn_bodies_ignored_stage)) cs'`
     mp_tac nested_applied_dispatch_continuation_eq
   >> simp[nested_runtime_tail_stage_def,
+          nested_internal_fn_bodies_ignored_stage_def,
           compileEnvTheory.comp_return_def,
           compileEnvTheory.comp_bind_def,
           compileEnvTheory.comp_ignore_bind_def]
@@ -1917,13 +1895,13 @@ Proof
        (comp_ignore_bind
          (compile_external_fn_bodies [nested_external_package])
          nested_fallback_stage)
-       (compile_internal_fn_bodies [nested_leaf_package; nested_mid_package])` by
+       nested_internal_fn_bodies_ignored_stage` by
     simp[nested_runtime_tail_stage_def, nested_fallback_stage_def,
          comp_ignore_bind_assoc]
   >> pop_assum (fn th => rewrite_tac[th])
   >> simp[nested_external_fn_bodies_eq,
           nested_fallback_stage_eq,
-          nested_internal_fn_bodies_eq,
+          nested_internal_fn_bodies_ignored_stage_eq,
           compileEnvTheory.comp_return_def,
           compileEnvTheory.comp_bind_def,
           compileEnvTheory.comp_ignore_bind_def]
@@ -2085,6 +2063,31 @@ Proof
   >> pure_rewrite_tac[nested_after_dispatch_state_def]
   >> simp[vyperCompilerTheory.invoke_target_ok_def]
   >> simp[venomInstTheory.mk_inst_def]
+  >> EVAL_TAC
+  >> simp[finite_mapTheory.FEVERY_FEMPTY]
+QED
+
+Theorem nested_internal_call_extracted_static_inputs:
+  case extract_context_with_internals "__entry"
+         [nested_leaf_package; nested_mid_package]
+         nested_after_mid_body_state of
+    NONE => F
+  | SOME (ctx, data) =>
+      ctx.ctx_global_reserved = [] /\
+      EVERY function_forced_metadata_ok ctx.ctx_functions /\
+      EVERY (\fn. fn.fn_forced_alloc_positions = FEMPTY) ctx.ctx_functions
+Proof
+  pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
+  >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
+          nested_leaf_package_def, nested_mid_package_def,
+          nested_leaf_cenv_entry_facts, nested_mid_cenv_entry_facts]
+  >> rewrite_tac[nested_internal_blocks_partition]
+  >> simp[venomInstTheory.mk_venom_context_def,
+          vyperCompilerTheory.mk_internal_function_metadata,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          vyperCompilerTheory.function_forced_metadata_ok_def,
+          finite_mapTheory.FEVERY_FEMPTY]
 QED
 
 Theorem nested_internal_call_packaging:
@@ -2095,6 +2098,9 @@ Theorem nested_internal_call_packaging:
     NONE => F
   | SOME unit =>
       let ctx = unit.cu_context in
+      ctx.ctx_global_reserved = [] /\
+      EVERY function_forced_metadata_ok ctx.ctx_functions /\
+      EVERY (\fn. fn.fn_forced_alloc_positions = FEMPTY) ctx.ctx_functions /\
       ctx_fn_names ctx = ["__entry"; "leaf"; "mid"] /\
       ALL_DISTINCT (ctx_fn_names ctx) /\
       wf_invoke_targets ctx /\
@@ -2134,8 +2140,80 @@ Proof
   >- (mp_tac nested_internal_call_extracted_context >> gvs[])
   >> PairCases_on `x`
   >> qpat_x_assum `_ = SOME (x0,x1)`
-       (fn th => mp_tac
-          (REWRITE_RULE [th] nested_internal_call_extracted_context))
+       (fn th =>
+          mp_tac (REWRITE_RULE [th] nested_internal_call_extracted_context)
+          >> mp_tac
+               (REWRITE_RULE [th]
+                  nested_internal_call_extracted_static_inputs))
   >> simp[vyperCompilerTheory.lowering_context_ok_def,
           GSYM vyperCompilerTheory.wf_invoke_targets_check_eq]
+QED
+
+Theorem immutable_multi_deploy_static_inputs:
+  case lower_vyper_deploy_unit immutable_multi_deploy_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |>
+         ([170w; 187w] : byte list) of
+    NONE => F
+  | SOME u =>
+      u.cu_context.ctx_global_reserved = [(0, 32)] /\
+      EVERY (\(lo, hi). lo < hi /\ hi < dimword (:256))
+        u.cu_context.ctx_global_reserved /\
+      ctx_inst_ids_distinct u.cu_context /\
+      EVERY function_forced_metadata_ok u.cu_context.ctx_functions /\
+      MAP (\fn. (fn.fn_name,
+                  FLOOKUP fn.fn_forced_alloc_positions 3,
+                  FLOOKUP fn.fn_forced_alloc_positions 11))
+        u.cu_context.ctx_functions =
+        [("__deploy", SOME 0, NONE); ("helper", NONE, SOME 0)] /\
+      LENGTH u.cu_context.ctx_functions = 2 /\
+      EVERY (\fn. fn.fn_eom = NONE) u.cu_context.ctx_functions
+Proof
+  EVAL_TAC
+  >> IF_CASES_TAC
+  >- (gvs[vyperCompilerTheory.invoke_target_ok_def]
+      >> IF_CASES_TAC
+      >- (gvs[]
+          >> pure_rewrite_tac[
+               vyperCompilerTheory.function_forced_metadata_ok_def,
+               vyperCompilerTheory.forced_alloc_key_in_function_def,
+               venomInstTheory.fn_insts_def]
+          >> simp[finite_mapTheory.FEVERY_FEMPTY,
+                  finite_mapTheory.FEVERY_FUPDATE,
+                  finite_mapTheory.FLOOKUP_UPDATE,
+                  venomInstTheory.fn_insts_blocks_def,
+                  LEFT_AND_OVER_OR, EXISTS_OR_THM, DISJ_IMP_THM]
+          >> metis_tac[])
+      >> gvs[vyperCompilerTheory.function_forced_metadata_ok_def,
+             vyperCompilerTheory.forced_alloc_key_in_function_def,
+             venomInstTheory.fn_insts_def,
+             finite_mapTheory.FEVERY_FEMPTY,
+             finite_mapTheory.FEVERY_FUPDATE,
+             venomInstTheory.fn_insts_blocks_def]
+      >- (first_x_assum
+            (qspec_then
+              `<| inst_id := 3; inst_opcode := ALLOCA;
+                  inst_operands := [Lit 32w]; inst_outputs := ["%2"] |>`
+              mp_tac)
+          >> simp[])
+      >> first_x_assum
+           (qspec_then
+             `<| inst_id := 11; inst_opcode := ALLOCA;
+                 inst_operands := [Lit 32w]; inst_outputs := ["%7"] |>`
+             mp_tac)
+      >> simp[])
+  >> gvs[]
+  >- (first_x_assum
+        (qspec_then
+          `<| inst_id := 3; inst_opcode := ALLOCA;
+              inst_operands := [Lit 32w]; inst_outputs := ["%2"] |>`
+          mp_tac)
+      >> simp[])
+  >> first_x_assum
+       (qspec_then
+         `<| inst_id := 11; inst_opcode := ALLOCA;
+             inst_operands := [Lit 32w]; inst_outputs := ["%7"] |>`
+         mp_tac)
+  >> simp[]
 QED
