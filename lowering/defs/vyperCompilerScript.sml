@@ -451,7 +451,7 @@ Definition run_deploy_lowering_pair_compat_def:
                        nkey use_transient
                        (entry_label : string) =
     let st0 = initial_compile_state entry_label in
-    let ((), st1) =
+    let (forced_metadata, st1) =
       compile_generate_deploy has_constructor runtime_size immutables_len
         constructor_args data_size ctor_internal_fns
         cenv body is_payable is_nonreentrant nkey use_transient st0
@@ -482,6 +482,12 @@ Definition run_lowering_def:
     else NONE
 End
 
+
+Definition install_immutable_reservation_def:
+  install_immutable_reservation immutables_len ctx =
+    ctx with ctx_global_reserved :=
+      (if immutables_len = 0 then [] else [(0, immutables_len)])
+End
 (* Deploy lowering owns both the runtime size and runtime data installation. *)
 Definition run_deploy_lowering_def:
   run_deploy_lowering has_constructor (rpolicy : resolved_compiler_policy)
@@ -492,15 +498,17 @@ Definition run_deploy_lowering_def:
                        (entry_label : string) : compilation_unit option =
     if lowering_policy_ok rpolicy then
       let st0 = initial_compile_state entry_label in
-      let ((), st1) =
+      let (forced_metadata, st1) =
         compile_generate_deploy has_constructor (LENGTH runtime_bytecode)
           immutables_len constructor_args data_size ctor_internal_fns
           cenv body is_payable is_nonreentrant nkey use_transient st0 in
-      case extract_context_with_internals entry_label ctor_internal_fns st1 of
+      case extract_context_with_forced_internals entry_label ctor_internal_fns
+             forced_metadata st1 of
         NONE => NONE
       | SOME (ctx, data) =>
-          if lowering_context_ok ctx then
-            SOME <| cu_context := ctx;
+          let ctx' = install_immutable_reservation immutables_len ctx in
+          if lowering_context_ok ctx' then
+            SOME <| cu_context := ctx';
                     cu_data_segment :=
                       data ++
                       [<| ds_label := "runtime_begin";
@@ -508,6 +516,29 @@ Definition run_deploy_lowering_def:
           else NONE
     else NONE
 End
+
+Theorem run_deploy_lowering_global_reserved:
+  run_deploy_lowering has_constructor rpolicy runtime_bytecode immutables_len
+    constructor_args data_size ctor_internal_fns cenv stmts is_payable
+    is_nonreentrant nkey use_transient entry_label = SOME u ==>
+  u.cu_context.ctx_global_reserved =
+    (if immutables_len = 0 then [] else [(0, immutables_len)])
+Proof
+  Cases_on `immutables_len = 0` >>
+  simp[run_deploy_lowering_def, install_immutable_reservation_def] >>
+  pairarg_tac >> gvs[AllCaseEqs()] >> rpt strip_tac >> gvs[]
+QED
+
+Theorem run_lowering_global_reserved:
+  run_lowering selectors external_fns internal_fns fallback_fn rpolicy
+    bucket_count fn_metadata_bytes dense_buckets entry_info entry_label =
+      SOME u ==>
+  u.cu_context.ctx_global_reserved = []
+Proof
+  simp[run_lowering_def, extract_context_with_internals_def,
+       mk_venom_context_def] >>
+  pairarg_tac >> gvs[AllCaseEqs()] >> rpt strip_tac >> gvs[]
+QED
 
 
 Theorem lookup_function_exists_for_name:
