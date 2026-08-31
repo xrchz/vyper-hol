@@ -572,6 +572,24 @@ Definition concretize_function_with_positions_def:
         fn)
 End
 
+(* Regression: output-variable equality must not collapse allocation identity. *)
+Theorem concretize_function_with_positions_equal_outputs:
+  concretize_function_with_positions
+    (FEMPTY |+ (Allocation 1,32) |+ (Allocation 2,64))
+    (mk_raw_function "f"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 1 ALLOCA [Lit 1w] ["%same"];
+             mk_inst 2 ALLOCA [Lit 1w] ["%same"]] |>]) =
+  mk_raw_function "f"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 1 ASSIGN [Lit 32w] ["%same"];
+           mk_inst 2 ASSIGN [Lit 64w] ["%same"]] |>]
+Proof
+  EVAL_TAC
+QED
+
 Definition compute_function_alloc_map_fuel_def:
   compute_function_alloc_map_fuel fuel fn =
     let cfg = cfg_analyze fn in
