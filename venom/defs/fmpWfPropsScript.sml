@@ -421,6 +421,28 @@ Proof
   >> qexists `mk_inst 21 FMP_PARAM [Lit 1w] ["cfmp"]` >> EVAL_TAC
 QED
 
+Theorem fmp_positive_callee_adopted_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_callee_sig
+    fmp_positive_callee (SUC (SUC fuel)) "cadopt"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_arith
+  >> qexists `mk_inst 23 ADD [Var "cfmp"; Lit 1w] ["cadopt"]`
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >-
+    simp[venomInstTheory.mk_inst_def, venomInstTheory.operand_vars_def,
+         venomInstTheory.operand_var_def, fmp_positive_callee_fuel]
+  >> conj_tac >- EVAL_TAC
+  >> EVAL_TAC
+QED
+
+Theorem fmp_positive_defined_values_lengths:
+  LENGTH (fn_defined_values fmp_positive_entry) = 10 /\
+  LENGTH (fn_defined_values fmp_positive_callee) = 4
+Proof
+  EVAL_TAC
+QED
+
 Theorem fmp_positive_root_propagation_eval:
   fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
     fmp_positive_entry "root" /\
@@ -439,24 +461,137 @@ Theorem fmp_positive_root_propagation_eval:
   fmp_value_rooted fmp_positive_ctx fmp_positive_callee_sig
     fmp_positive_callee "cfmp"
 Proof
-  conj_tac >- EVAL_TAC
+  conj_tac >-
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `10` mp_tac fmp_positive_root_fuel >> simp[])
   >> conj_tac >-
-    (simp[fmp_value_rooted_def, fmp_positive_entry_def,
-          fn_defined_values_def, venomInstTheory.fn_insts_def, venomInstTheory.fn_insts_blocks_def,
-          fmp_positive_invoke_def]
-     >> irule fmp_value_rooted_fuel_assign
-     >> qexistsl [`mk_inst 2 ASSIGN [Var "root"] ["alias"]`, `"root"`]
-     >> conj_tac >- EVAL_TAC
-     >> conj_tac >- EVAL_TAC
-     >> conj_tac >- EVAL_TAC
-     >> conj_tac >- EVAL_TAC
-     >> EVAL_TAC)
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `9` mp_tac fmp_positive_alias_fuel >> simp[])
+  >> conj_tac >-
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `8` mp_tac fmp_positive_joined_fuel >> simp[])
+  >> conj_tac >-
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `7` mp_tac fmp_positive_new_fuel >> simp[])
+  >> conj_tac >-
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `6` mp_tac fmp_positive_plus_fuel >> simp[])
+  >> conj_tac >-
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `5` mp_tac fmp_positive_minus_fuel >> simp[])
+  >> conj_tac >-
+    (rewrite_tac[fmp_value_rooted_def,
+                 cj 1 fmp_positive_defined_values_lengths]
+     >> qspec_then `4` mp_tac fmp_positive_published_fuel >> simp[])
+  >> rewrite_tac[fmp_value_rooted_def,
+                 cj 2 fmp_positive_defined_values_lengths]
+  >> qspec_then `4` mp_tac fmp_positive_callee_fuel >> simp[]
+QED
+
+Theorem fmp_positive_entry_syntax_wf:
+  fmp_signature_syntax_wf fmp_positive_entry_sig fmp_positive_entry
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_positive_callee_syntax_wf:
+  fmp_signature_syntax_wf fmp_positive_callee_sig fmp_positive_callee
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_positive_static_layout_wf:
+  concretized_static_layouts_wf fmp_positive_ctx
+Proof
+  EVAL_TAC >> rpt strip_tac
+  >> gvs[venomInstTheory.fn_insts_blocks_def]
+QED
+
+Theorem fmp_positive_entry_basics_wf:
+  IS_SOME fmp_positive_entry.fn_eom /\
+  no_raw_fmp_ops fmp_positive_entry /\
+  call_abi_matches_fn fmp_positive_entry
+Proof
+  EVAL_TAC >> rpt strip_tac >> gvs[venomInstTheory.is_raw_fmp_opcode_def]
+QED
+
+Theorem fmp_positive_callee_basics_wf:
+  IS_SOME fmp_positive_callee.fn_eom /\
+  no_raw_fmp_ops fmp_positive_callee /\
+  call_abi_matches_fn fmp_positive_callee
+Proof
+  EVAL_TAC >> rpt strip_tac >> gvs[venomInstTheory.is_raw_fmp_opcode_def]
+QED
+Theorem fmp_positive_function_basics_wf:
+  !fn. MEM fn fmp_positive_ctx.ctx_functions ==>
+    IS_SOME fn.fn_eom /\ no_raw_fmp_ops fn /\ call_abi_matches_fn fn
+Proof
+  simp[fmp_positive_ctx_def, venomInstTheory.mk_venom_context_def]
+  >> metis_tac[fmp_positive_entry_basics_wf,
+               fmp_positive_callee_basics_wf]
+QED
+
+Theorem fmp_positive_entry_bump_inst_wf:
+  fmp_runner_inst_wf fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry
+    (mk_inst 4 BUMP [Var "joined"; Lit 32w] ["old"; "new"])
+Proof
+  simp[fmp_runner_inst_wf_def, fmp_bump_consumer_wf_def,
+       fmp_invoke_consumer_wf_def, fmp_return_consumer_wf_def,
+       venomInstTheory.mk_inst_def, fmp_positive_root_propagation_eval]
+QED
+
+Theorem fmp_positive_entry_invoke_inst_wf:
+  fmp_runner_inst_wf fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry fmp_positive_invoke
+Proof
+  simp[fmp_runner_inst_wf_def, fmp_bump_consumer_wf_def,
+       fmp_invoke_consumer_wf_def, fmp_return_consumer_wf_def,
+       fmp_positive_invoke_def, venomInstTheory.mk_inst_def]
+  >> qexistsl [`fmp_positive_callee`, `fmp_positive_callee_sig`]
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >-
+    simp[fmp_seal_layout_matches_fn_def, fmp_positive_callee_def,
+         fmp_positive_callee_syntax_wf]
   >> conj_tac >- EVAL_TAC
   >> conj_tac >- EVAL_TAC
+  >> strip_tac
+  >> qexists `"minus"`
   >> conj_tac >- EVAL_TAC
-  >> conj_tac >- EVAL_TAC
-  >> conj_tac >- EVAL_TAC
-  >> EVAL_TAC
+  >> simp[fmp_positive_root_propagation_eval]
+QED
+
+Theorem fmp_positive_entry_insts:
+  fn_insts fmp_positive_entry =
+    [mk_inst 0 RETPC_PARAM [Lit 0w] ["rpc"];
+     mk_inst 1 INITIAL_FMP [] ["root"];
+     mk_inst 2 ASSIGN [Var "root"] ["alias"];
+     mk_inst 3 PHI [Label "entry"; Var "alias"] ["joined"];
+     mk_inst 4 BUMP [Var "joined"; Lit 32w] ["old"; "new"];
+     mk_inst 5 ADD [Var "new"; Lit 1w] ["plus"];
+     mk_inst 6 SUB [Var "plus"; Lit 1w] ["minus"];
+     fmp_positive_invoke;
+     mk_inst 9 RET [Var "published"; Var "rpc"] []]
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_positive_entry_runner_wf:
+  fmp_runner_rooted_wf fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry
+Proof
+  rewrite_tac[fmp_runner_rooted_wf_def, fmp_positive_entry_insts]
+  >> simp[fmp_positive_entry_bump_inst_wf,
+          fmp_positive_entry_invoke_inst_wf,
+          fmp_runner_inst_wf_def, fmp_bump_consumer_wf_def,
+          fmp_invoke_consumer_wf_def, fmp_return_consumer_wf_def,
+          fmp_positive_entry_sig_def, venomInstTheory.mk_inst_def]
 QED
 
 Theorem fmp_positive_boundary_eval:
