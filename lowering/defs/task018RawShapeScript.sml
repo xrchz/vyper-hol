@@ -423,6 +423,24 @@ Proof
   >> EVAL_TAC
 QED
 
+Theorem task18_nested_fallback_block_wf:
+  bb_well_formed task18_nested_fallback_block
+Proof
+  pure_rewrite_tac[task18_nested_fallback_block_def,
+                   task18_nested_entry_blocks_def,
+                   nested_after_fallback_state_def,
+                   nested_after_foo_body_state_def,
+                   nested_after_foo_mid_call_state_def,
+                   nested_after_foo_name_state_def,
+                   nested_after_foo_entry_state_def]
+  >> simp[]
+  >> `[mk_inst 28 REVERT [Lit 0w; Lit 0w] []] =
+      [] ++ [mk_inst 28 REVERT [Lit 0w; Lit 0w] []]` by simp[]
+  >> pop_assum (fn th => pure_once_rewrite_tac[th])
+  >> irule task18_bb_well_formed_snoc
+  >> EVAL_TAC
+QED
+
 Theorem task18_nested_runtime_entry_member:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
