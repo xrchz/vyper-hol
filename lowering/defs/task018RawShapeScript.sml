@@ -8,7 +8,21 @@
 Theory task018RawShape
 Ancestors
   evalCompiler
+  venomCompilerWf
 
+
+Theorem task18_unit_wf_intro[local]:
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context /\
+  ctx_inst_ids_distinct unit.cu_context /\
+  (!fn. MEM fn unit.cu_context.ctx_functions ==>
+        wf_function fn /\ fn_inst_wf fn) /\
+  unit_labels_wf unit ==>
+  unit_wf unit
+Proof
+  rw[venomCompilerWfTheory.unit_wf_def,
+     venomWfTheory.venom_wf_def]
+QED
 Definition task18_initial_state_def:
   task18_initial_state : compile_state =
     <| cs_next_var := 0;
