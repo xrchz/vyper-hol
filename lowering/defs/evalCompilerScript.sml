@@ -880,6 +880,38 @@ Proof
        nested_foo_external_return_stage_eq,
        nested_after_foo_body_state_terminated]
 QED
+
+Theorem comp_ignore_bind_assoc[local]:
+  !m n p.
+    comp_ignore_bind (comp_ignore_bind m n) p =
+    comp_ignore_bind m (comp_ignore_bind n p)
+Proof
+  simp[compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.comp_bind_assoc]
+QED
+
+Theorem nested_external_fn_bodies_eq:
+  compile_external_fn_bodies [nested_external_package]
+    nested_after_dispatch_state = ((), nested_after_foo_body_state)
+Proof
+  `compile_external_fn_bodies [nested_external_package] =
+    (do nested_foo_entry_stage;
+        nested_foo_guarded_body_stage;
+        return ()
+     od)` by
+    simp[moduleLoweringTheory.compile_external_fn_bodies_def,
+         nested_external_package_def,
+         moduleLoweringTheory.compile_external_function_body_def,
+         nested_foo_entry_stage_def,
+         nested_foo_guarded_body_stage_def,
+         comp_ignore_bind_assoc]
+  >> pop_assum (fn th => rewrite_tac[th])
+  >> simp[nested_foo_entry_stage_eq,
+          nested_foo_guarded_body_stage_eq,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
@@ -889,6 +921,27 @@ Definition nested_leaf_cenv_def:
         with <| ce_is_ctor := F; ce_raw_return := F |>)
       F 0 F F
 End
+
+Theorem nested_leaf_cenv_entry_facts:
+  FLOOKUP nested_leaf_cenv.ce_vars "z" = SOME (MemLoc 0 32) /\
+  FLOOKUP nested_leaf_cenv.ce_vars "__return_pc__" = SOME (MemLoc 32 32) /\
+  FLOOKUP nested_leaf_cenv.ce_vars "__return_buf__" = NONE /\
+  nested_leaf_cenv.ce_returns_count = 1
+Proof
+  simp[nested_leaf_cenv_def, update_cenv_nonreentrant_def,
+       build_compile_env_def, nested_internal_call_program_def,
+       add_module_var_locations_def, collect_locals_def,
+       allocate_args_def, allocate_internal_special_vars_def,
+       make_struct_fields_map_def, compileEnvTheory.get_struct_fields_def,
+       compileEnvTheory.returns_stack_count_def,
+       compileEnvTheory.is_word_type_def,
+       type_mem_bytes_def]
+  >> pairarg_tac
+  >> pop_assum (fn th => rewrite_tac[th])
+  >> simp[finite_mapTheory.FLOOKUP_UPDATE,
+          finite_mapTheory.FLOOKUP_EMPTY]
+QED
+
 
 Definition nested_leaf_package_def:
   nested_leaf_package =
@@ -953,191 +1006,96 @@ QED
 
 
 
-Theorem empty_compiles:
-  IS_SOME
-    (compile_vyper ([] : toplevel list)
-       concretize_context_eval Linear)
+Definition nested_fallback_stage_def:
+  nested_fallback_stage =
+    do new_block nested_fallback_label;
+       emit_inst REVERT [Lit 0w; Lit 0w] []
+    od
+End
+
+Definition nested_after_fallback_state_def:
+  nested_after_fallback_state =
+    nested_after_foo_body_state with
+      <| cs_next_id := 29;
+         cs_current_bb := nested_fallback_label;
+         cs_current_insts := [mk_inst 28 REVERT [Lit 0w; Lit 0w] []];
+         cs_blocks :=
+           <| bb_label := nested_after_foo_body_state.cs_current_bb;
+              bb_instructions := nested_after_foo_body_state.cs_current_insts |> ::
+           nested_after_foo_body_state.cs_blocks |>
+End
+
+Theorem nested_fallback_stage_eq:
+  nested_fallback_stage nested_after_foo_body_state =
+    ((), nested_after_fallback_state)
 Proof
-  EVAL_TAC
+  simp[nested_fallback_stage_def, nested_after_fallback_state_def,
+       compileEnvTheory.new_block_def, emitHelperTheory.emit_inst_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.emit_def,
+       compileEnvTheory.comp_bind_def, compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.comp_return_def, nested_after_foo_body_state_def]
 QED
 
-Theorem noop_compiles:
-  IS_SOME
-    (compile_vyper noop_program
-       concretize_context_eval Linear)
+Definition nested_leaf_entry_stage_def:
+  nested_leaf_entry_stage =
+    do new_block "leaf";
+       params_result <- compile_internal_params nested_leaf_cenv [("z", T)] 0;
+       cenv2 <- return (FST params_result);
+       next_idx <- return (SND params_result);
+       return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+       (case FLOOKUP cenv2.ce_vars "__return_pc__" of
+          SOME (MemLoc rpc_off _) =>
+            emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+        | _ => return ());
+       return (cenv2, return_pc)
+    od
+End
+
+Definition nested_leaf_z_operand_def:
+  nested_leaf_z_operand = Var "%18"
+End
+
+Definition nested_leaf_return_pc_operand_def:
+  nested_leaf_return_pc_operand = Var "%19"
+End
+
+Definition nested_after_leaf_entry_state_def:
+  nested_after_leaf_entry_state =
+    nested_after_fallback_state with
+      <| cs_next_var := 20;
+         cs_next_id := 33;
+         cs_current_bb := "leaf";
+         cs_current_insts :=
+           [mk_inst 29 PARAM [Lit 0w] ["%18"];
+            mk_inst 30 MSTORE [Lit 0w; nested_leaf_z_operand] [];
+            mk_inst 31 PARAM [Lit 1w] ["%19"];
+            mk_inst 32 MSTORE [Lit 32w; nested_leaf_return_pc_operand] []];
+         cs_blocks :=
+           <| bb_label := nested_after_fallback_state.cs_current_bb;
+              bb_instructions := nested_after_fallback_state.cs_current_insts |> ::
+           nested_after_fallback_state.cs_blocks |>
+End
+
+Theorem nested_leaf_entry_stage_eq:
+  nested_leaf_entry_stage nested_after_fallback_state =
+    ((nested_leaf_cenv, nested_leaf_return_pc_operand),
+     nested_after_leaf_entry_state)
 Proof
-  EVAL_TAC
+  simp[nested_leaf_entry_stage_def,
+       moduleLoweringTheory.compile_internal_params_def,
+       nested_leaf_cenv_entry_facts,
+       compileEnvTheory.new_block_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       nested_leaf_z_operand_def, nested_leaf_return_pc_operand_def,
+       nested_after_leaf_entry_state_def,
+       nested_after_fallback_state_def,
+       nested_after_foo_body_state_def]
 QED
-
-Theorem return_uint_compiles:
-  IS_SOME
-    (compile_vyper return_uint_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem return_arg_compiles:
-  IS_SOME
-    (compile_vyper return_arg_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem local_uint_compiles:
-  IS_SOME
-    (compile_vyper local_uint_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem add_arg_compiles:
-  IS_SOME
-    (compile_vyper add_arg_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem two_external_compiles:
-  IS_SOME
-    (compile_vyper two_external_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem storage_read_compiles:
-  IS_SOME
-    (compile_vyper storage_read_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem storage_write_compiles:
-  IS_SOME
-    (compile_vyper storage_write_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem deploy_storage_compiles:
-  IS_SOME
-    (compile_vyper deploy_storage_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem event_log_compiles:
-  IS_SOME
-    (compile_vyper event_log_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem indexed_event_log_compiles:
-  IS_SOME
-    (compile_vyper indexed_event_log_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem mixed_event_log_compiles:
-  IS_SOME
-    (compile_vyper mixed_event_log_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem hashmap_read_compiles:
-  IS_SOME
-    (compile_vyper hashmap_read_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem hashmap_write_compiles:
-  IS_SOME
-    (compile_vyper hashmap_write_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem if_bool_compiles:
-  IS_SOME
-    (compile_vyper if_bool_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem if_join_compiles:
-  IS_SOME
-    (compile_vyper if_join_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem for_pass_compiles:
-  IS_SOME
-    (compile_vyper for_pass_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem for_accum_compiles:
-  IS_SOME
-    (compile_vyper for_accum_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem for_continue_compiles:
-  IS_SOME
-    (compile_vyper for_continue_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem for_break_compiles:
-  IS_SOME
-    (compile_vyper for_break_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem internal_call_compiles:
-  IS_SOME
-    (compile_vyper internal_call_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-Theorem internal_call_arg_compiles:
-  IS_SOME
-    (compile_vyper internal_call_arg_program
-       concretize_context_eval Linear)
-Proof
-  EVAL_TAC
-QED
-
-
 
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
@@ -1166,5 +1124,5 @@ Theorem nested_internal_call_packaging:
       EVERY (\fn. fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE)
         ctx.ctx_functions
 Proof
-  rewrite_tac[GSYM wf_invoke_targets_check_eq] >> EVAL_TAC
+  rewrite_tac[GSYM vyperCompilerTheory.wf_invoke_targets_check_eq] >> EVAL_TAC
 QED
