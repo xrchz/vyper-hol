@@ -85,6 +85,45 @@ Proof
   metis_tac[collect_static_allocas_no_alloca]
 QED
 
+Theorem OPT_MMAP_success_LIST_REL[local]:
+  OPT_MMAP f xs = SOME ys ==>
+  LIST_REL (\x y. f x = SOME y) xs ys
+Proof
+  qid_spec_tac `ys` >> Induct_on `xs`
+  >- simp[]
+  >> rpt gen_tac
+  >> Cases_on `f h` >> simp[]
+  >> Cases_on `OPT_MMAP f xs` >> simp[]
+  >> first_x_assum (qspec_then `x'` mp_tac) >> simp[] >> metis_tac[]
+QED
+
+Theorem LIST_REL_mono_imp[local]:
+  LIST_REL r xs ys /\ (!x y. r x y ==> s x y) ==>
+  LIST_REL s xs ys
+Proof
+  qid_spec_tac `ys` >> Induct_on `xs`
+  >- simp[]
+  >> Cases_on `ys` >> simp[] >> metis_tac[]
+QED
+
+Theorem LIST_REL_right_EVERY[local]:
+  LIST_REL r xs ys /\ (!x y. r x y ==> p y) ==>
+  EVERY p ys
+Proof
+  qid_spec_tac `ys` >> Induct_on `xs`
+  >- simp[]
+  >> Cases_on `ys` >> simp[] >> metis_tac[]
+QED
+
+Theorem LIST_REL_MEM_right[local]:
+  LIST_REL r xs ys /\ MEM y ys ==>
+  ?x. MEM x xs /\ r x y
+Proof
+  qid_spec_tac `ys` >> Induct_on `xs`
+  >- simp[]
+  >> Cases_on `ys` >> simp[] >> metis_tac[]
+QED
+
 Theorem fn_insts_blocks_map_transform_mem[local]:
   MEM e (fn_insts_blocks (MAP (block_map_transform transform) blocks)) ==>
   ?inst. MEM inst (fn_insts_blocks blocks) /\ e = transform inst
@@ -446,5 +485,94 @@ Proof
   metis_tac[compute_function_layout_eval_wf,
             compute_function_layout_eval_global_bound,
             concretize_layout_wf_local_bound]
+QED
+
+Theorem concretize_context_eval_complete:
+  concretize_context_eval ctx = SOME ctx' ==>
+  ctx'.ctx_global_reserved = ctx.ctx_global_reserved /\
+  LIST_REL
+    (\fn fn'. ~fn_has_alloca fn' /\
+      fn'.fn_forced_alloc_positions = FEMPTY /\
+      IS_SOME fn'.fn_eom /\
+      fn_identity_metadata_eq fn' fn /\
+      fn_fmp_convention_eq fn' fn)
+    ctx.ctx_functions ctx'.ctx_functions
+Proof
+  simp[concretize_context_eval_def] >>
+  Cases_on `OPT_MMAP
+    (concretize_function_eval ctx.ctx_global_reserved) ctx.ctx_functions` >>
+  gvs[] >> strip_tac >> gvs[] >>
+  drule OPT_MMAP_success_LIST_REL >> strip_tac >>
+  drule LIST_REL_mono_imp >>
+  disch_then irule >>
+  rpt strip_tac >>
+  metis_tac[concretize_function_eval_success]
+QED
+
+Theorem concretize_context_fuel_complete:
+  concretize_context_fuel fuel ctx = SOME ctx' ==>
+  ctx'.ctx_global_reserved = ctx.ctx_global_reserved /\
+  LIST_REL
+    (\fn fn'. ~fn_has_alloca fn' /\
+      fn'.fn_forced_alloc_positions = FEMPTY /\
+      IS_SOME fn'.fn_eom /\
+      fn_identity_metadata_eq fn' fn /\
+      fn_fmp_convention_eq fn' fn)
+    ctx.ctx_functions ctx'.ctx_functions
+Proof
+  simp[concretize_context_fuel_def] >>
+  Cases_on `OPT_MMAP
+    (concretize_function_fuel fuel ctx.ctx_global_reserved)
+    ctx.ctx_functions` >>
+  gvs[] >> strip_tac >> gvs[] >>
+  drule OPT_MMAP_success_LIST_REL >> strip_tac >>
+  drule LIST_REL_mono_imp >>
+  disch_then irule >>
+  rpt strip_tac >>
+  metis_tac[concretize_function_fuel_success]
+QED
+
+Theorem concretize_context_eval_wf:
+  raw_static_inputs_wf ctx /\
+  concretize_context_eval ctx = SOME ctx' ==>
+  concretized_static_layouts_wf ctx'
+Proof
+  strip_tac >>
+  drule concretize_context_eval_complete >> strip_tac >>
+  fs[raw_static_inputs_wf_def, concretized_static_layouts_wf_def] >>
+  rpt strip_tac >>
+  `?fn0. MEM fn0 ctx.ctx_functions /\
+          ~fn_has_alloca fn /\
+          fn.fn_forced_alloc_positions = FEMPTY /\
+          IS_SOME fn.fn_eom /\
+          fn_identity_metadata_eq fn fn0 /\
+          fn_fmp_convention_eq fn fn0` by
+    (drule LIST_REL_MEM_right >> disch_then drule >> strip_tac >>
+     qexists `x` >> gvs[]) >>
+  simp[] >>
+  fs[fn_has_alloca_def, EXISTS_MEM, is_alloca_op_eq_alloca] >>
+  metis_tac[]
+QED
+
+Theorem concretize_context_fuel_wf:
+  raw_static_inputs_wf ctx /\
+  concretize_context_fuel fuel ctx = SOME ctx' ==>
+  concretized_static_layouts_wf ctx'
+Proof
+  strip_tac >>
+  drule concretize_context_fuel_complete >> strip_tac >>
+  fs[raw_static_inputs_wf_def, concretized_static_layouts_wf_def] >>
+  rpt strip_tac >>
+  `?fn0. MEM fn0 ctx.ctx_functions /\
+          ~fn_has_alloca fn /\
+          fn.fn_forced_alloc_positions = FEMPTY /\
+          IS_SOME fn.fn_eom /\
+          fn_identity_metadata_eq fn fn0 /\
+          fn_fmp_convention_eq fn fn0` by
+    (drule LIST_REL_MEM_right >> disch_then drule >> strip_tac >>
+     qexists `x` >> gvs[]) >>
+  simp[] >>
+  fs[fn_has_alloca_def, EXISTS_MEM, is_alloca_op_eq_alloca] >>
+  metis_tac[]
 QED
 val _ = export_theory();
