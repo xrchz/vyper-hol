@@ -257,6 +257,50 @@ Definition compile_alloc_buffer_def:
     od
 End
 
+(* Static allocation boundary.  Unlike compile_alloc_buffer, this exposes the
+   instruction ID as a separate result so fixed-placement metadata is keyed by
+   the emitted ALLOCA, never by its SSA output variable. *)
+Definition compile_alloc_buffer_with_id_def:
+  compile_alloc_buffer_with_id size =
+    do id <- fresh_id;
+       out <- fresh_var;
+       emit (mk_inst id ALLOCA [Lit (n2w size)] [out]);
+       return (id, <| buf_operand := Var out; buf_size := size |>)
+    od
+End
+
+Theorem compile_alloc_buffer_with_id_result:
+  !(size:num) (st:compile_state) (id:num) (buf:buffer) (st':compile_state).
+  compile_alloc_buffer_with_id size st = ((id, buf), st') ==>
+  id = st.cs_next_id /\
+  buf.buf_operand = Var ("%" ++ toString st.cs_next_var) /\
+  buf.buf_size = size /\
+  st'.cs_next_id = st.cs_next_id + 1 /\
+  st'.cs_next_var = st.cs_next_var + 1 /\
+  st'.cs_current_insts =
+    st.cs_current_insts ++
+      [mk_inst st.cs_next_id ALLOCA [Lit (n2w size)]
+         ["%" ++ toString st.cs_next_var]]
+Proof
+  simp[compile_alloc_buffer_with_id_def, fresh_id_def, fresh_var_def,
+       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def]
+QED
+
+(* Closed counter-separation probe: the instruction ID is 41 while the SSA
+   output is %7, making accidental output-keying observable. *)
+Theorem compile_alloc_buffer_with_id_counter_probe:
+  !(st:compile_state) (id:num) (buf:buffer) (st':compile_state).
+  st.cs_next_id = 41 /\ st.cs_next_var = 7 /\
+  compile_alloc_buffer_with_id 64 st = ((id, buf), st') ==>
+  id = 41 /\ buf.buf_operand = Var "%7" /\
+  st'.cs_next_id = 42 /\
+  LAST st'.cs_current_insts = mk_inst 41 ALLOCA [Lit (n2w 64)] ["%7"]
+Proof
+  simp[compile_alloc_buffer_with_id_def, fresh_id_def, fresh_var_def,
+       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def] >>
+  EVAL_TAC >> simp[]
+QED
+
 (* ===== Load/Store Storage ===== *)
 (* Mirrors Python: context.py load_storage
    Primitive: sload directly.
