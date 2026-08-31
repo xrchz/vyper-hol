@@ -232,4 +232,21 @@ Proof
   >> gvs[checked_preserved_intervals_aux_def]
 QED
 
+Theorem checked_preserved_intervals_pairwise:
+  checked_preserved_intervals items positions reserved = SOME occupied /\
+  MEM (alloc1,sz1) items /\ MEM (alloc2,sz2) items /\
+  FLOOKUP positions alloc1 = SOME pos1 /\
+  FLOOKUP positions alloc2 = SOME pos2 /\
+  0 < sz1 /\ 0 < sz2 /\ (alloc1,sz1) <> (alloc2,sz2) ==>
+  reserved_intervals_disjoint (pos1,sz1) (pos2,sz2)
+Proof
+  simp[checked_preserved_intervals_def] >> strip_tac
+  >> qspecl_then [`items`,`positions`,`reserved`,`[]`,`occupied`] mp_tac
+       checked_preserved_intervals_aux_relational
+  >> simp[] >> disch_then strip_assume_tac
+  >> qpat_x_assum `!item1 i1 item2 i2. _` irule
+  >> qexistsl [`(alloc1,sz1)`,`(alloc2,sz2)`]
+  >> simp[positive_preserved_item_intro] >> metis_tac[]
+QED
+
 val _ = export_theory();
