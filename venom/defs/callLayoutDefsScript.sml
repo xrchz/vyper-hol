@@ -7,6 +7,7 @@
 Theory callLayoutDefs
 Ancestors
   venomInst
+  dretShapeDefs
 
 Definition fn_entry_insts_def:
   fn_entry_insts fn =
@@ -457,5 +458,127 @@ Proof
         >> irule take_length_append_eq)
   >> drule canonical_phase_erase >> disch_then assume_tac
   >> simp[]
+QED
+
+Definition is_raw_return_opcode_def:
+  is_raw_return_opcode op <=>
+    op = RET \/ op = RETFMP \/ op = DRET
+End
+
+Definition raw_return_user_arity_def:
+  raw_return_user_arity inst =
+    case inst.inst_opcode of
+      RET => if NULL inst.inst_operands then NONE
+             else SOME (LENGTH inst.inst_operands - 1)
+    | RETFMP => if NULL inst.inst_operands then NONE
+                else SOME (LENGTH inst.inst_operands - 1)
+    | DRET => OPTION_MAP (\p. FST p + SND p) (parse_dret_shape inst)
+    | _ => NONE
+End
+
+Definition fn_return_insts_def:
+  fn_return_insts fn =
+    FILTER (\inst. is_raw_return_opcode inst.inst_opcode)
+      (FLAT (MAP (\bb. bb.bb_instructions) fn.fn_blocks))
+End
+
+Definition fn_unique_return_arity_def:
+  fn_unique_return_arity fn =
+    case fn_return_insts fn of
+      [] => NONE
+    | first::rest =>
+        case raw_return_user_arity first of
+          NONE => NONE
+        | SOME n =>
+            if EVERY (\inst. raw_return_user_arity inst = SOME n) rest
+            then SOME n else NONE
+End
+
+Definition fn_memory_return_buffer_param_def:
+  fn_memory_return_buffer_param fn =
+    if fn.fn_call_abi.ica_has_memory_return_buffer = SOME T then
+      case fn_user_param_insts fn of
+        [] => NONE
+      | inst::_ => SOME inst
+    else NONE
+End
+
+Definition fn_return_abi_matches_def:
+  fn_return_abi_matches fn <=>
+    case fn_unique_return_arity fn of
+      NONE => F
+    | SOME n =>
+        (fn.fn_call_abi.ica_user_return_count = NONE \/
+         fn.fn_call_abi.ica_user_return_count = SOME n) /\
+        (fn.fn_call_abi.ica_has_memory_return_buffer = SOME T ==>
+         fn_memory_return_buffer_param fn <> NONE)
+End
+
+Theorem raw_return_user_arity_RET:
+  raw_return_user_arity (inst with inst_opcode := RET) =
+    if NULL inst.inst_operands then NONE
+    else SOME (LENGTH inst.inst_operands - 1)
+Proof
+  simp[raw_return_user_arity_def]
+QED
+
+Theorem raw_return_user_arity_RETFMP:
+  raw_return_user_arity (inst with inst_opcode := RETFMP) =
+    if NULL inst.inst_operands then NONE
+    else SOME (LENGTH inst.inst_operands - 1)
+Proof
+  simp[raw_return_user_arity_def]
+QED
+
+Theorem raw_return_user_arity_DRET:
+  raw_return_user_arity (inst with inst_opcode := DRET) =
+    OPTION_MAP (\p. FST p + SND p)
+      (parse_dret_shape (inst with inst_opcode := DRET))
+Proof
+  simp[raw_return_user_arity_def]
+QED
+
+Theorem raw_return_user_arity_DRET_some:
+  parse_dret_shape (inst with inst_opcode := DRET) = SOME (ordinary,dynamic) ==>
+  raw_return_user_arity (inst with inst_opcode := DRET) =
+    SOME (ordinary + dynamic)
+Proof
+  simp[raw_return_user_arity_DRET]
+QED
+Theorem raw_return_user_arity_DRET_length:
+  raw_return_user_arity (inst with inst_opcode := DRET) = SOME n ==>
+  ?ordinary dynamic.
+    n = ordinary + dynamic /\
+    LENGTH inst.inst_operands = 2 + ordinary + 2 * dynamic
+Proof
+  simp[raw_return_user_arity_DRET]
+  >> Cases_on `parse_dret_shape (inst with inst_opcode := DRET)`
+  >> simp[] >> PairCases_on `x` >> simp[] >> strip_tac
+  >> drule parse_dret_shape_length >> strip_tac
+  >> qexistsl [`x0`, `x1`] >> gvs[] >> decide_tac
+QED
+
+Theorem fn_memory_return_buffer_param_some:
+  fn_memory_return_buffer_param fn = SOME inst ==>
+  fn.fn_call_abi.ica_has_memory_return_buffer = SOME T /\
+  ?rest. fn_user_param_insts fn = inst::rest
+Proof
+  simp[fn_memory_return_buffer_param_def]
+  >> Cases_on `fn.fn_call_abi.ica_has_memory_return_buffer = SOME T`
+  >> simp[]
+  >> Cases_on `fn_user_param_insts fn` >> simp[]
+QED
+
+Theorem fn_return_abi_matches_iff:
+  fn_return_abi_matches fn <=>
+    ?n. fn_unique_return_arity fn = SOME n /\
+        (fn.fn_call_abi.ica_user_return_count = NONE \/
+         fn.fn_call_abi.ica_user_return_count = SOME n) /\
+        (fn.fn_call_abi.ica_has_memory_return_buffer = SOME T ==>
+         IS_SOME (fn_memory_return_buffer_param fn))
+Proof
+  Cases_on `fn_unique_return_arity fn`
+  >> Cases_on `fn_memory_return_buffer_param fn`
+  >> simp[fn_return_abi_matches_def]
 QED
 val _ = export_theory();
