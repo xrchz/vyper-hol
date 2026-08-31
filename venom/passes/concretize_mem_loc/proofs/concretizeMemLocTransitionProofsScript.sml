@@ -380,4 +380,71 @@ Proof
   metis_tac[]
 QED
 
+Theorem concretize_function_eval_layout_idempotent:
+  fn.fn_eom = SOME eom /\ ~fn_has_alloca fn /\
+  fn.fn_forced_alloc_positions = FEMPTY ==>
+  concretize_function_eval reserved fn = SOME fn
+Proof
+  simp[concretize_function_eval_def, fn_has_static_layout_def]
+QED
+
+Theorem concretize_function_eval_rejects_stale_layout_input:
+  fn.fn_eom = SOME eom /\
+  (fn_has_alloca fn \/ fn.fn_forced_alloc_positions <> FEMPTY) ==>
+  concretize_function_eval reserved fn = NONE
+Proof
+  simp[concretize_function_eval_def, fn_has_static_layout_def] >>
+  metis_tac[]
+QED
+
+Theorem concretize_function_fuel_success:
+  concretize_function_fuel fuel reserved fn = SOME fn' ==>
+  ~fn_has_alloca fn' /\
+  fn'.fn_forced_alloc_positions = FEMPTY /\
+  IS_SOME fn'.fn_eom /\
+  fn_identity_metadata_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn
+Proof
+  metis_tac[concretize_function_fuel_removes_alloca,
+            concretize_function_fuel_metadata_transition,
+            concretize_function_fuel_sets_eom]
+QED
+
+Theorem concretize_function_eval_success:
+  concretize_function_eval reserved fn = SOME fn' ==>
+  ~fn_has_alloca fn' /\
+  fn'.fn_forced_alloc_positions = FEMPTY /\
+  IS_SOME fn'.fn_eom /\
+  fn_identity_metadata_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn
+Proof
+  metis_tac[concretize_function_eval_removes_alloca,
+            concretize_function_eval_metadata_transition,
+            concretize_function_eval_sets_eom]
+QED
+
+
+Theorem concretize_function_eval_fresh_layout:
+  fn.fn_eom = NONE /\
+  concretize_function_eval reserved fn = SOME fn' ==>
+  ?layout.
+    compute_function_layout_eval reserved fn = SOME layout /\
+    fn' = apply_concretize_layout layout fn /\
+    concretize_layout_wf reserved fn layout /\
+    (!global_end. global_reserved_end reserved 0 = SOME global_end ==>
+      global_end <= layout.cl_eom) /\
+    (!inst. MEM inst (fn_insts fn) /\ inst.inst_opcode = ALLOCA ==>
+      ?size pos. inst.inst_operands = [Lit size] /\
+        FLOOKUP layout.cl_positions (Allocation inst.inst_id) = SOME pos /\
+        pos + w2n size <= layout.cl_eom)
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `concretize_function_eval reserved fn = SOME fn'` mp_tac >>
+  simp[concretize_function_eval_def, fn_has_static_layout_def] >>
+  Cases_on `compute_function_layout_eval reserved fn` >> gvs[] >>
+  strip_tac >>
+  metis_tac[compute_function_layout_eval_wf,
+            compute_function_layout_eval_global_bound,
+            concretize_layout_wf_local_bound]
+QED
 val _ = export_theory();
