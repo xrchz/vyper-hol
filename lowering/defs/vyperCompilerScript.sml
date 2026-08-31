@@ -71,6 +71,14 @@ Definition split_blocks_at_def:
       | SOME (prefix, suffix) => SOME (bb :: prefix, suffix)
 End
 
+Theorem split_blocks_at_append_delimiter:
+  ~MEM label (MAP (\b. b.bb_label) prefix) /\ bb.bb_label = label ==>
+  split_blocks_at label (prefix ++ bb :: suffix) =
+    SOME (prefix, bb :: suffix)
+Proof
+  Induct_on `prefix` >> simp[split_blocks_at_def]
+QED
+
 (* Raw internal functions receive only metadata certified by source lowering.
    Static-layout and FMP metadata deliberately retain mk_raw_function defaults. *)
 Definition mk_internal_function_def:
