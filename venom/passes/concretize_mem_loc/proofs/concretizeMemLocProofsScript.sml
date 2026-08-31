@@ -5405,13 +5405,17 @@ Theorem concretize_step_alloca_assign:
         (step_inst_base (mk_assign_inst inst (Lit addr)) s2)
 Proof
   rpt strip_tac >>
-  gvs[step_inst_base_def, mk_assign_inst_def, eval_operand_def,
-      exec_alloca_def, update_var_def] >>
+  `step_inst_base inst s1 = exec_alloca inst s1 alloc_size` by
+    simp[step_inst_base_def] >>
+  `step_inst_base (mk_assign_inst inst (Lit addr)) s2 =
+     OK (update_var out addr s2)` by
+    simp[step_inst_base_def, mk_assign_inst_def, eval_operand_def] >>
+  rewrite_tac[] >>
   (* Case split on FLOOKUP vs_allocas inst.inst_id *)
   Cases_on `FLOOKUP s1.vs_allocas inst.inst_id`
   >- (
     (* Fresh alloca: NONE case *)
-    simp[lift_result_def, LET_THM] >>
+    simp[exec_alloca_def, update_var_def, lift_result_def, LET_THM] >>
     qexists `init \\ inst.inst_id` >>
     suspend "fresh"
   )
@@ -5419,18 +5423,21 @@ Proof
   (* Reuse alloca: SOME case *)
   rename1 `FLOOKUP s1.vs_allocas inst.inst_id = SOME entry` >>
   PairCases_on `entry` >>
-  simp[lift_result_def] >>
+  simp[exec_alloca_def, update_var_def, lift_result_def] >>
   qexists `init` >>
   suspend "reuse"
 QED
 
 Resume concretize_step_alloca_assign[fresh]:
-  match_mp_tac step_alloca_fresh_goal >> metis_tac[]
+  match_mp_tac step_alloca_fresh_goal >>
+  qexists `bb` >> simp[] >> metis_tac[ADD_COMM]
 QED
 
 Resume concretize_step_alloca_assign[reuse]:
   simp[GSYM update_var_def] >>
-  match_mp_tac step_alloca_reuse_goal >> metis_tac[]
+  match_mp_tac step_alloca_reuse_goal >>
+  qexistsl [`inst`, `bb`, `alloc_size`, `entry1`] >>
+  simp[] >> metis_tac[ADD_COMM]
 QED
 
 Finalise concretize_step_alloca_assign
