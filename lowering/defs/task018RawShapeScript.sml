@@ -23,6 +23,26 @@ Proof
   rw[venomCompilerWfTheory.unit_wf_def,
      venomWfTheory.venom_wf_def]
 QED
+
+Theorem task18_bb_well_formed_snoc[local]:
+  is_terminator term.inst_opcode /\
+  EVERY (\i. ~is_terminator i.inst_opcode) prefix /\
+  EVERY (\i. i.inst_opcode <> PHI) (prefix ++ [term]) ==>
+  bb_well_formed
+    <| bb_label := lbl; bb_instructions := prefix ++ [term] |>
+Proof
+  rw[venomWfTheory.bb_well_formed_def] >>
+  rpt strip_tac >> simp[]
+  >- (Cases_on `i < LENGTH prefix`
+      >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+      >> `i = LENGTH prefix` by decide_tac
+      >> simp[listTheory.EL_APPEND_EQN])
+  >> Cases_on `j < LENGTH prefix`
+  >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+  >> `j = LENGTH prefix` by decide_tac
+  >> gvs[listTheory.EL_APPEND_EQN]
+QED
+
 Definition task18_initial_state_def:
   task18_initial_state : compile_state =
     <| cs_next_var := 0;
