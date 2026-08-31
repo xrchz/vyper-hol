@@ -273,4 +273,138 @@ Proof
   >> simp[canonical_param_prefix_def, canonical_entry_params_from_iff]
   >> metis_tac[]
 QED
+
+
+Definition OPTION_TO_LIST_def:
+  (OPTION_TO_LIST (NONE : 'a option) = []) /\
+  (OPTION_TO_LIST (SOME x) = [x])
+End
+
+Theorem FIND_APPEND_CASE:
+  !P xs ys.
+    FIND P (xs ++ ys) =
+      case FIND P xs of
+        NONE => FIND P ys
+      | SOME x => SOME x
+Proof
+  Induct_on `xs` >> simp[listTheory.FIND_thm]
+  >> rpt gen_tac >> Cases_on `P h` >> simp[]
+QED
+
+Theorem every_user_param_queries:
+  !insts.
+    EVERY (\inst. inst.inst_opcode = PARAM) insts ==>
+    FILTER (\inst. inst.inst_opcode = PARAM) insts = insts /\
+    FIND (\inst. inst.inst_opcode = FMP_PARAM) insts = NONE /\
+    FIND (\inst. inst.inst_opcode = RETPC_PARAM) insts = NONE
+Proof
+  Induct >> simp[listTheory.FIND_thm]
+QED
+
+Theorem no_param_insts_queries:
+  !insts.
+    no_param_insts insts ==>
+    FILTER (\inst. inst.inst_opcode = PARAM) insts = [] /\
+    FIND (\inst. inst.inst_opcode = FMP_PARAM) insts = NONE /\
+    FIND (\inst. inst.inst_opcode = RETPC_PARAM) insts = NONE
+Proof
+  Induct >> simp[no_param_insts_def, listTheory.FIND_thm]
+  >> rpt gen_tac >> Cases_on `h.inst_opcode`
+  >> simp[is_param_opcode_def]
+QED
+Theorem canonical_phase_queries:
+  !insts users fmp retpc body.
+    insts = users ++ fmp ++ retpc ++ body /\
+    EVERY (\inst. inst.inst_opcode = PARAM) users /\
+    (fmp = [] \/ ?inst. fmp = [inst] /\
+                         inst.inst_opcode = FMP_PARAM) /\
+    (retpc = [] \/ ?inst. retpc = [inst] /\
+                            inst.inst_opcode = RETPC_PARAM) /\
+    no_param_insts body ==>
+    FILTER (\inst. inst.inst_opcode = PARAM) insts = users /\
+    OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = FMP_PARAM) insts) = fmp /\
+    OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = RETPC_PARAM) insts) = retpc
+Proof
+  rpt gen_tac >> strip_tac >> gvs[]
+  >> drule every_user_param_queries
+  >> drule no_param_insts_queries
+  >> simp[FIND_APPEND_CASE, listTheory.FIND_thm,
+          listTheory.FILTER_APPEND_DISTRIB, OPTION_TO_LIST_def]
+QED
+
+Theorem canonical_phase_split_unique:
+  !insts users fmp retpc body users' fmp' retpc' body'.
+    insts = users ++ fmp ++ retpc ++ body /\
+    EVERY (\inst. inst.inst_opcode = PARAM) users /\
+    (fmp = [] \/ ?inst. fmp = [inst] /\
+                         inst.inst_opcode = FMP_PARAM) /\
+    (retpc = [] \/ ?inst. retpc = [inst] /\
+                            inst.inst_opcode = RETPC_PARAM) /\
+    no_param_insts body /\
+    insts = users' ++ fmp' ++ retpc' ++ body' /\
+    EVERY (\inst. inst.inst_opcode = PARAM) users' /\
+    (fmp' = [] \/ ?inst. fmp' = [inst] /\
+                          inst.inst_opcode = FMP_PARAM) /\
+    (retpc' = [] \/ ?inst. retpc' = [inst] /\
+                             inst.inst_opcode = RETPC_PARAM) /\
+    no_param_insts body' ==>
+    users = users' /\ fmp = fmp' /\ retpc = retpc' /\ body = body'
+Proof
+  rpt gen_tac >> strip_tac
+  >> `FILTER (\inst. inst.inst_opcode = PARAM) insts = users /\
+      OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = FMP_PARAM) insts) = fmp /\
+      OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = RETPC_PARAM) insts) = retpc` by
+       (irule canonical_phase_queries >> metis_tac[])
+  >> `FILTER (\inst. inst.inst_opcode = PARAM) insts = users' /\
+      OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = FMP_PARAM) insts) = fmp' /\
+      OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = RETPC_PARAM) insts) = retpc'` by
+       (irule canonical_phase_queries >> metis_tac[])
+  >> gvs[]
+QED
+
+Theorem canonical_param_prefix_queries:
+  !fn entry rest users fmp retpc body.
+    canonical_param_prefix fn /\
+    fn.fn_blocks = entry::rest /\
+    entry.bb_instructions = users ++ fmp ++ retpc ++ body /\
+    EVERY (\inst. inst.inst_opcode = PARAM) users /\
+    (fmp = [] \/ ?inst. fmp = [inst] /\
+                         inst.inst_opcode = FMP_PARAM) /\
+    (retpc = [] \/ ?inst. retpc = [inst] /\
+                            inst.inst_opcode = RETPC_PARAM) /\
+    no_param_insts body ==>
+    fn_user_param_insts fn = users /\
+    OPTION_TO_LIST (fn_hidden_fmp_param fn) = fmp /\
+    OPTION_TO_LIST (fn_retpc_param fn) = retpc /\
+    LENGTH (fn_user_param_insts fn) = LENGTH users
+Proof
+  rpt gen_tac >> strip_tac
+  >> `FILTER (\inst. inst.inst_opcode = PARAM)
+             (users ++ fmp ++ retpc ++ body) = users /\
+      OPTION_TO_LIST
+        (FIND (\inst. inst.inst_opcode = FMP_PARAM)
+              (users ++ fmp ++ retpc ++ body)) = fmp /\
+      OPTION_TO_LIST
+        (FIND (\inst. inst.inst_opcode = RETPC_PARAM)
+              (users ++ fmp ++ retpc ++ body)) = retpc` by
+       (irule canonical_phase_queries >> metis_tac[])
+  >> `fn_entry_insts fn = users ++ fmp ++ retpc ++ body` by
+       simp[fn_entry_insts_def, entry_block_def]
+  >> `fn_user_param_insts fn = users` by
+       (rewrite_tac[fn_user_param_insts_def]
+        >> qpat_assum `fn_entry_insts fn = _` (fn th => rewrite_tac[th])
+        >> qpat_assum `FILTER (\inst. inst.inst_opcode = PARAM) _ = users`
+             ACCEPT_TAC)
+  >> `OPTION_TO_LIST (fn_hidden_fmp_param fn) = fmp` by
+       (rewrite_tac[fn_hidden_fmp_param_def]
+        >> qpat_assum `fn_entry_insts fn = _` (fn th => rewrite_tac[th])
+        >> qpat_assum `OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = FMP_PARAM) _) = fmp`
+             ACCEPT_TAC)
+  >> `OPTION_TO_LIST (fn_retpc_param fn) = retpc` by
+       (rewrite_tac[fn_retpc_param_def]
+        >> qpat_assum `fn_entry_insts fn = _` (fn th => rewrite_tac[th])
+        >> qpat_assum `OPTION_TO_LIST (FIND (\inst. inst.inst_opcode = RETPC_PARAM) _) = retpc`
+             ACCEPT_TAC)
+  >> simp[]
+QED
 val _ = export_theory();
