@@ -1231,6 +1231,74 @@ Proof
        nested_after_fallback_state_def,
        nested_after_foo_body_state_def]
 QED
+
+Theorem nested_leaf_applied_entry_continuation_eq:
+  !k.
+    (\(_0, cs').
+       (\(params_result, cs').
+          (\(return_pc, cs').
+             (\(_0, cs').
+                k (FST params_result) return_pc cs')
+               ((case FLOOKUP (FST params_result).ce_vars "__return_pc__" of
+                   NONE => comp_return ()
+                 | SOME (MemLoc rpc_off _) =>
+                     emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+                 | SOME (StorageLoc _) => comp_return ()
+                 | SOME (TransientLoc _) => comp_return ()
+                 | SOME (ImmutableLoc _) => comp_return ()
+                 | SOME (PtrVar _ _) => comp_return ()) cs'))
+            (emit_op PARAM [Lit (n2w (SND params_result))] cs'))
+         (compile_internal_params nested_leaf_cenv [("z", T)] 0 cs'))
+      (new_block "leaf" nested_after_fallback_state) =
+    k nested_leaf_cenv nested_leaf_return_pc_operand
+      nested_after_leaf_entry_state
+Proof
+  gen_tac
+  >> simp[moduleLoweringTheory.compile_internal_params_def,
+       nested_leaf_cenv_entry_facts,
+       compileEnvTheory.new_block_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       nested_leaf_z_operand_def,
+       nested_leaf_return_pc_operand_def,
+       nested_after_leaf_entry_state_def,
+       nested_after_fallback_state_def,
+       nested_after_foo_body_state_def]
+QED
+
+Definition nested_leaf_stage_def:
+  nested_leaf_stage =
+    do new_block "leaf";
+       compile_internal_function nested_leaf_cenv [("z", T)]
+         F F 0 F F F 0
+         [Return (SOME (Name (BaseT (UintT 256)) "z"))]
+         (SOME (BaseT (UintT 256)))
+    od
+End
+
+Theorem nested_leaf_stage_eq:
+  nested_leaf_stage nested_after_fallback_state =
+    ((), nested_after_leaf_body_state)
+Proof
+  pure_rewrite_tac[nested_leaf_stage_def,
+                   moduleLoweringTheory.compile_internal_function_def]
+  >> simp[nested_leaf_applied_entry_continuation_eq,
+          compileEnvTheory.comp_get_def,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+  >> rewrite_tac[GSYM nested_leaf_return_body_stage_def,
+                 nested_leaf_return_body_stage_eq]
+  >> simp[nested_after_leaf_body_state_terminated,
+          compileEnvTheory.comp_get_def,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
