@@ -27,6 +27,17 @@ Definition fmp_signature_syntax_wf_def:
     lowered_return_layout_wf sig fn
 End
 
+Definition call_abi_matches_fn_def:
+  call_abi_matches_fn fn <=>
+    canonical_param_prefix fn /\ fn_return_abi_matches fn
+End
+
+Definition fmp_seal_layout_matches_fn_def:
+  fmp_seal_layout_matches_fn fn sig <=>
+    fn.fn_fmp_signature = SOME sig /\
+    fmp_signature_syntax_wf sig fn
+End
+
 (* A publishing invoke is trusted only after resolving its current callee and
  * validating that callee's current, sealed non-recursive layout. *)
 Definition publishing_invoke_wf_def:
@@ -34,8 +45,7 @@ Definition publishing_invoke_wf_def:
     ?callee_name args callee sig.
       inst.inst_operands = Label callee_name::args /\
       lookup_function callee_name ctx.ctx_functions = SOME callee /\
-      callee.fn_fmp_signature = SOME sig /\
-      fmp_signature_syntax_wf sig callee /\
+      fmp_seal_layout_matches_fn callee sig /\
       sig.fms_publishes /\
       invoke_input_arity_ok callee sig inst /\
       invoke_output_arity_ok callee sig inst
@@ -105,8 +115,7 @@ Definition fmp_invoke_consumer_wf_def:
       ?callee_name args callee callee_sig.
         inst.inst_operands = Label callee_name::args /\
         lookup_function callee_name ctx.ctx_functions = SOME callee /\
-        callee.fn_fmp_signature = SOME callee_sig /\
-        fmp_signature_syntax_wf callee_sig callee /\
+        fmp_seal_layout_matches_fn callee callee_sig /\
         invoke_input_arity_ok callee callee_sig inst /\
         invoke_output_arity_ok callee callee_sig inst /\
         (callee_sig.fms_has_fmp_param ==>

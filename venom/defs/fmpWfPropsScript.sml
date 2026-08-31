@@ -3,6 +3,23 @@
 Theory fmpWfProps
 Ancestors
   fmpWfDefs
+Theorem call_abi_matches_fn_iff:
+  call_abi_matches_fn fn <=>
+  canonical_param_prefix fn /\ fn_return_abi_matches fn
+Proof
+  simp[call_abi_matches_fn_def]
+QED
+
+Theorem fmp_seal_layout_matches_fn_iff:
+  fmp_seal_layout_matches_fn fn sig <=>
+  fn.fn_fmp_signature = SOME sig /\
+  canonical_param_prefix fn /\
+  IS_SOME (fn_hidden_fmp_param fn) = sig.fms_has_fmp_param /\
+  lowered_return_layout_wf sig fn
+Proof
+  simp[fmp_seal_layout_matches_fn_def, fmp_signature_syntax_wf_def]
+QED
+
 
 Theorem fmp_value_rooted_fuel_intro:
   MEM inst (fn_insts fn) /\
@@ -118,7 +135,8 @@ Theorem fmp_runner_rooted_wf_invoke:
         fmp_value_rooted ctx caller_sig fn hidden)
 Proof
   simp[fmp_runner_rooted_wf_def, listTheory.EVERY_MEM,
-       fmp_runner_inst_wf_def, fmp_invoke_consumer_wf_def]
+       fmp_runner_inst_wf_def, fmp_invoke_consumer_wf_def,
+       fmp_seal_layout_matches_fn_def] >> metis_tac[]
 QED
 
 Theorem fmp_runner_rooted_wf_publishing_return:
