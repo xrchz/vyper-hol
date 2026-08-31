@@ -1386,6 +1386,185 @@ Proof
        nested_after_mid_entry_state_def,
        nested_after_leaf_body_state_def]
 QED
+
+Definition nested_mid_name_stage_def:
+  nested_mid_name_stage =
+    lower_value compile_expr nested_mid_cenv (BaseT (UintT 256))
+      (Name (BaseT (UintT 256)) "y")
+End
+
+Definition nested_mid_y_value_operand_def:
+  nested_mid_y_value_operand = Var "%24"
+End
+
+Definition nested_after_mid_name_state_def:
+  nested_after_mid_name_state =
+    nested_after_mid_entry_state with
+      <| cs_next_var := 25;
+         cs_next_id := 41;
+         cs_current_insts :=
+           nested_after_mid_entry_state.cs_current_insts ++
+             [mk_inst 40 MLOAD [Lit 0w] ["%24"]] |>
+End
+
+Theorem nested_mid_name_stage_eq:
+  nested_mid_name_stage nested_after_mid_entry_state =
+    (nested_mid_y_value_operand, nested_after_mid_name_state)
+Proof
+  simp[nested_mid_name_stage_def, exprLoweringTheory.lower_value_def,
+       Once exprLoweringTheory.compile_expr_def,
+       exprLoweringTheory.compile_name_vv_def,
+       nested_mid_cenv_entry_facts,
+       exprLoweringTheory.unwrap_value_def,
+       vyperASTTheory.expr_type_def,
+       compileEnvTheory.is_word_type_def, contextTheory.mk_ptr_def,
+       contextTheory.compile_ptr_load_def, emitHelperTheory.emit_op_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def, nested_mid_y_value_operand_def,
+       nested_after_mid_entry_state_def, nested_after_mid_name_state_def]
+QED
+
+Theorem nested_mid_singleton_args_stage_eq:
+  compile_multi_exprs
+    (\cenv ty e st. compile_expr cenv ty e st)
+    nested_mid_cenv
+    [Name (BaseT (UintT 256)) "y"]
+    nested_after_mid_entry_state =
+  ([nested_mid_y_value_operand], nested_after_mid_name_state)
+Proof
+  simp[SF ETA_ss, exprLoweringTheory.compile_multi_exprs_def,
+       vyperASTTheory.expr_type_def,
+       GSYM nested_mid_name_stage_def, nested_mid_name_stage_eq,
+       compileEnvTheory.comp_bind_def, compileEnvTheory.comp_return_def]
+QED
+
+Definition nested_mid_leaf_call_stage_def:
+  nested_mid_leaf_call_stage =
+    lower_value compile_expr nested_mid_cenv (BaseT (UintT 256))
+      (Call (BaseT (UintT 256)) (IntCall (NONE, "leaf"))
+        [Name (BaseT (UintT 256)) "y"] NONE)
+End
+
+Definition nested_mid_leaf_call_operand_def:
+  nested_mid_leaf_call_operand = Var "%27"
+End
+
+Definition nested_after_mid_alloc_state_def:
+  nested_after_mid_alloc_state =
+    nested_after_mid_name_state with
+      <| cs_next_var := 26;
+         cs_next_id := 42;
+         cs_current_insts :=
+           nested_after_mid_name_state.cs_current_insts ++
+             [mk_inst 41 ALLOCA [Lit 32w] ["%25"]] |>
+End
+
+Theorem nested_after_mid_alloc_state_next_var:
+  nested_after_mid_alloc_state.cs_next_var = 26
+Proof
+  simp[nested_after_mid_alloc_state_def]
+QED
+
+Theorem nested_mid_fresh_vars_one_eq:
+  fresh_vars 1 nested_after_mid_alloc_state =
+    (["%26"], nested_after_mid_alloc_state with cs_next_var := 27)
+Proof
+  simp[fresh_vars_one, nested_after_mid_alloc_state_next_var]
+QED
+
+Definition nested_after_mid_invoke_state_def:
+  nested_after_mid_invoke_state =
+    (nested_after_mid_alloc_state with cs_next_var := 27) with
+      <| cs_next_id := 43;
+         cs_current_insts :=
+           nested_after_mid_alloc_state.cs_current_insts ++
+             [mk_inst 42 INVOKE
+                [Label "leaf"; nested_mid_y_value_operand] ["%26"]] |>
+End
+
+Theorem nested_mid_emit_leaf_one_eq:
+  emit_multi_op INVOKE [Label "leaf"; nested_mid_y_value_operand] 1
+    nested_after_mid_alloc_state =
+  ([Var "%26"], nested_after_mid_invoke_state)
+Proof
+  simp[emitHelperTheory.emit_multi_op_def,
+       nested_mid_fresh_vars_one_eq,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.comp_bind_def, compileEnvTheory.comp_return_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.emit_def,
+       nested_after_mid_invoke_state_def]
+  >> simp[nested_after_mid_alloc_state_def]
+QED
+
+Definition nested_after_mid_leaf_call_state_def:
+  nested_after_mid_leaf_call_state =
+    nested_after_mid_name_state with
+      <| cs_next_var := 28;
+         cs_next_id := 45;
+         cs_current_insts :=
+           nested_after_mid_name_state.cs_current_insts ++
+             [mk_inst 41 ALLOCA [Lit 32w] ["%25"];
+              mk_inst 42 INVOKE
+                [Label "leaf"; nested_mid_y_value_operand] ["%26"];
+              mk_inst 43 MSTORE [Var "%25"; Var "%26"] [];
+              mk_inst 44 MLOAD [Var "%25"] ["%27"]] |>
+End
+
+Theorem nested_mid_leaf_call_stage_eq:
+  nested_mid_leaf_call_stage nested_after_mid_entry_state =
+    (nested_mid_leaf_call_operand, nested_after_mid_leaf_call_state)
+Proof
+  `nested_after_mid_name_state.cs_next_var = 25 /\
+   nested_after_mid_name_state.cs_next_id = 41` by
+    simp[nested_after_mid_name_state_def]
+  >> simp[nested_mid_leaf_call_stage_def,
+       exprLoweringTheory.lower_value_def,
+       Once exprLoweringTheory.compile_expr_def,
+       Once exprLoweringTheory.compile_call_def,
+       compileEnvTheory.nsid_to_string_def,
+       vyperASTTheory.expr_type_def,
+       nested_mid_cenv_entry_facts,
+       nested_mid_singleton_args_stage_eq,
+       exprLoweringTheory.compile_stage_intcall_args_def,
+       contextTheory.compile_alloc_buffer_def,
+       emitHelperTheory.emit_op_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       GSYM nested_after_mid_alloc_state_def]
+  >> rewrite_tac[nested_mid_emit_leaf_one_eq]
+  >> simp[exprLoweringTheory.store_multi_results_def,
+          contextTheory.base_ptr_def, exprLoweringTheory.unwrap_value_def,
+          contextTheory.compile_ptr_load_def,
+          compileEnvTheory.is_word_type_def,
+          emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+          compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def,
+          compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+          compileEnvTheory.emit_def,
+          nested_mid_leaf_call_operand_def,
+          nested_after_mid_leaf_call_state_def,
+          nested_after_mid_invoke_state_def,
+          nested_after_mid_alloc_state_def]
+  >> `nested_after_mid_name_state.cs_current_insts ++
+        [mk_inst 41 ALLOCA [Lit 32w] ["%25"]] ++
+        [mk_inst 42 INVOKE
+           [Label "leaf"; nested_mid_y_value_operand] ["%26"]] ++
+        [mk_inst 43 MSTORE [Var "%25"; Var "%26"] []] ++
+        [mk_inst 44 MLOAD [Var "%25"] ["%27"]] =
+      nested_after_mid_name_state.cs_current_insts ++
+        [mk_inst 41 ALLOCA [Lit 32w] ["%25"];
+         mk_inst 42 INVOKE
+           [Label "leaf"; nested_mid_y_value_operand] ["%26"];
+         mk_inst 43 MSTORE [Var "%25"; Var "%26"] [];
+         mk_inst 44 MLOAD [Var "%25"] ["%27"]]` by
+       (rewrite_tac[GSYM listTheory.APPEND_ASSOC] >> simp[])
+  >> simp[]
+QED
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
