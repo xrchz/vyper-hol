@@ -1097,6 +1097,102 @@ Proof
        nested_after_foo_body_state_def]
 QED
 
+Definition nested_leaf_return_body_stage_def:
+  nested_leaf_return_body_stage =
+    compile_stmts nested_leaf_cenv NoLoop (BaseT (UintT 256))
+      [Return (SOME (Name (BaseT (UintT 256)) "z"))]
+End
+
+Definition nested_leaf_value_operand_def:
+  nested_leaf_value_operand = Var "%20"
+End
+
+Definition nested_leaf_loaded_return_pc_operand_def:
+  nested_leaf_loaded_return_pc_operand = Var "%21"
+End
+
+Definition nested_after_leaf_body_state_def:
+  nested_after_leaf_body_state =
+    nested_after_leaf_entry_state with
+      <| cs_next_var := 22;
+         cs_next_id := 36;
+         cs_current_insts :=
+           nested_after_leaf_entry_state.cs_current_insts ++
+             [mk_inst 33 MLOAD [Lit 0w] ["%20"];
+              mk_inst 34 MLOAD [Lit 32w] ["%21"];
+              mk_inst 35 RET
+                [nested_leaf_value_operand;
+                 nested_leaf_loaded_return_pc_operand] []] |>
+End
+
+Theorem nested_after_leaf_entry_state_facts:
+  nested_after_leaf_entry_state.cs_next_var = 20 /\
+  nested_after_leaf_entry_state.cs_next_id = 33 /\
+  nested_after_leaf_entry_state.cs_current_insts =
+    [mk_inst 29 PARAM [Lit 0w] ["%18"];
+     mk_inst 30 MSTORE [Lit 0w; nested_leaf_z_operand] [];
+     mk_inst 31 PARAM [Lit 1w] ["%19"];
+     mk_inst 32 MSTORE [Lit 32w; nested_leaf_return_pc_operand] []] /\
+  ~block_is_terminated nested_after_leaf_entry_state
+Proof
+  simp[nested_after_leaf_entry_state_def,
+       compileEnvTheory.block_is_terminated_def,
+       venomInstTheory.mk_inst_def,
+       venomInstTheory.is_terminator_def]
+QED
+
+Theorem nested_leaf_return_body_stage_eq:
+  nested_leaf_return_body_stage nested_after_leaf_entry_state =
+    ((), nested_after_leaf_body_state)
+Proof
+  simp[nested_leaf_return_body_stage_def,
+       nested_after_leaf_entry_state_facts,
+       stmtLoweringTheory.compile_stmt_def,
+       exprLoweringTheory.lower_value_def,
+       Once exprLoweringTheory.compile_expr_def,
+       exprLoweringTheory.compile_name_vv_def,
+       exprLoweringTheory.unwrap_value_def,
+       nested_leaf_cenv_entry_facts,
+       stmtLoweringTheory.compile_internal_return_def,
+       vyperASTTheory.expr_type_def,
+       compileEnvTheory.is_word_type_def,
+       contextTheory.mk_ptr_def, contextTheory.compile_ptr_load_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_inst_def,
+       compileEnvTheory.comp_get_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       nested_leaf_value_operand_def,
+       nested_leaf_loaded_return_pc_operand_def,
+       nested_after_leaf_body_state_def]
+  >> rewrite_tac[GSYM listTheory.APPEND_ASSOC]
+  >> simp[]
+QED
+
+Theorem nested_after_leaf_body_state_terminated:
+  block_is_terminated nested_after_leaf_body_state
+Proof
+  `nested_after_leaf_body_state.cs_current_insts <> []` by
+    simp[nested_after_leaf_body_state_def]
+  >> `LAST nested_after_leaf_body_state.cs_current_insts =
+        mk_inst 35 RET
+          [nested_leaf_value_operand;
+           nested_leaf_loaded_return_pc_operand] []` by
+       simp[nested_after_leaf_body_state_def,
+            nested_LAST_APPEND_NONEMPTY_SUFFIX]
+  >> Cases_on `nested_after_leaf_body_state.cs_current_insts`
+  >- gvs[]
+  >> FIRST
+       [qpat_assum `nested_after_leaf_body_state.cs_current_insts = _`
+          (fn th => rewrite_tac[th]),
+        qpat_assum `_ = nested_after_leaf_body_state.cs_current_insts`
+          (fn th => rewrite_tac[GSYM th])]
+  >> simp[compileEnvTheory.block_is_terminated_def,
+          venomInstTheory.mk_inst_def,
+          venomInstTheory.is_terminator_def]
+QED
+
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
