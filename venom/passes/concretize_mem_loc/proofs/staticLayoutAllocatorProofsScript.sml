@@ -283,6 +283,45 @@ Proof
   drule collect_static_allocas_ALL_DISTINCT >> simp[]
 QED
 
+Theorem ALL_DISTINCT_MAP_FST_size_unique[local]:
+  !items alloc sz1 sz2.
+    ALL_DISTINCT (MAP FST items) /\
+    MEM (alloc,sz1) items /\ MEM (alloc,sz2) items ==>
+    sz1 = sz2
+Proof
+  Induct
+  >- simp[]
+  >> gen_tac >> PairCases_on `h`
+  >> simp[]
+  >> rpt gen_tac >> strip_tac >> gvs[MEM_MAP]
+  >> first_x_assum irule
+  >> qexists `alloc` >> simp[]
+QED
+
+Theorem static_alloca_items_exact_key_size_unique:
+  static_alloca_items fn = SOME items /\
+  MEM inst1 (fn_insts fn) /\
+  exact_static_alloca inst1 = SOME (alloc,sz1) /\
+  MEM inst2 (fn_insts fn) /\
+  exact_static_alloca inst2 = SOME (alloc,sz2) ==>
+  sz1 = sz2
+Proof
+  strip_tac
+  >> `ALL_DISTINCT (MAP FST items)` by
+       metis_tac[static_alloca_items_ALL_DISTINCT]
+  >> `MEM (alloc,sz1) items` by
+       (drule static_alloca_items_MEM
+        >> disch_then (qspec_then `(alloc,sz1)` (fn th => rewrite_tac[th]))
+        >> qexists `inst1` >> simp[]
+        >> irule exact_static_alloca_opcode >> simp[])
+  >> `MEM (alloc,sz2) items` by
+       (drule static_alloca_items_MEM
+        >> disch_then (qspec_then `(alloc,sz2)` (fn th => rewrite_tac[th]))
+        >> qexists `inst2` >> simp[]
+        >> irule exact_static_alloca_opcode >> simp[])
+  >> metis_tac[ALL_DISTINCT_MAP_FST_size_unique]
+QED
+
 Theorem merge_forced_positions_extends:
   !items forced positions merged.
     merge_forced_positions items forced positions = SOME merged ==>
