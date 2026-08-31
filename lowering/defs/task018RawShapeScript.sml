@@ -533,6 +533,35 @@ Proof
   >> EVAL_TAC
 QED
 
+
+Theorem task18_nested_entry_fn_wf:
+  wf_function task18_nested_entry_fn
+Proof
+  rewrite_tac[venomWfTheory.wf_function_def]
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac
+  >- (rewrite_tac[task18_nested_entry_fn_blocks]
+      >> rpt strip_tac
+      >> gvs[task18_nested_entry_block_wf,
+             task18_nested_dispatch_block_wf,
+             task18_nested_match_block_wf,
+             task18_nested_next_block_wf,
+             task18_nested_foo_block_wf,
+             task18_nested_fallback_block_wf])
+  >> conj_tac
+  >- (rewrite_tac[venomWfTheory.fn_succs_closed_def,
+                  task18_nested_entry_fn_blocks]
+      >> rpt strip_tac
+      >> gvs[task18_nested_entry_block_succs,
+             task18_nested_dispatch_block_succs,
+             task18_nested_match_block_succs,
+             task18_nested_next_block_succs,
+             task18_nested_foo_block_succs,
+             task18_nested_fallback_block_succs]
+      >> EVAL_TAC)
+  >> EVAL_TAC
+QED
 Theorem task18_nested_runtime_entry_member:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
