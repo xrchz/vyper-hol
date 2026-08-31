@@ -12,7 +12,7 @@ Ancestors
   overflowElim
   literalsCodesize
   removeUnused
-  concretizeMemLoc
+  concretizeMemLoc staticLayoutWf
   (* lower dload/dloadbytes *)
   lowerDload
   (* branch optimization *)
