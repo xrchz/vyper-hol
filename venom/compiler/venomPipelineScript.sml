@@ -3,8 +3,11 @@
  *
  * Upstream: vyperlang/vyper@a7f7bf133 (split algebraic/affine passes)
  *
- * Defines the pass pipeline for O2, O3, and Os optimization levels,
- * matching Python's vyper/venom/optimization_levels/*.py.
+ * Defines legacy/model pass sequences for O2, O3, and Os optimization levels,
+ * matching Python's vyper/venom/optimization_levels/*.py.  Their
+ * lower_dload_function occurrences are the arithmetic-ID semantic model, not a
+ * configured executable entry point.  Future configured unit composition must
+ * invoke lower_dload_configured once at the compilation-unit boundary instead.
  *
  * The pipeline has two phases:
  *   Phase 1 (global, pre-inlining):
