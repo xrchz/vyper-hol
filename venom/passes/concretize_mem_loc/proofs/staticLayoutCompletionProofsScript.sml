@@ -124,8 +124,9 @@ QED
 
 
 Definition positive_preserved_item_def[local]:
-  positive_preserved_item items positions item interval <=>
-    ?alloc sz pos.
+  positive_preserved_item items
+      (positions : (allocation,num) fmap) item interval <=>
+    ?(alloc : allocation) (sz : num) (pos : num).
       item = (alloc,sz) /\ interval = (pos,sz) /\
       MEM (alloc,sz) items /\ FLOOKUP positions alloc = SOME pos /\
       0 < sz
@@ -164,6 +165,71 @@ Theorem positive_preserved_item_zero[local]:
   ~positive_preserved_item items positions (alloc,0) interval
 Proof
   simp[positive_preserved_item_def]
+QED
+
+Theorem checked_preserved_intervals_aux_relational[local]:
+  !items positions reserved occupied result.
+    checked_preserved_intervals_aux items positions reserved occupied =
+      SOME result ==>
+    (!item i r.
+      positive_preserved_item items positions item i /\
+      MEM r (reserved ++ occupied) ==>
+      reserved_intervals_disjoint i r) /\
+    (!item1 i1 item2 i2.
+      positive_preserved_item items positions item1 i1 /\
+      positive_preserved_item items positions item2 i2 /\ item1 <> item2 ==>
+      reserved_intervals_disjoint i1 i2)
+Proof
+  Induct
+  >- simp[positive_preserved_item_def]
+  >> Cases_on `h` >> rpt gen_tac
+  >> Cases_on `FLOOKUP positions q`
+  >- (gvs[checked_preserved_intervals_aux_def,
+          positive_preserved_item_def] >> strip_tac
+      >> first_x_assum drule >> strip_tac
+      >> conj_tac
+      >- (rpt strip_tac >> gvs[] >> metis_tac[])
+      >> rpt strip_tac >> gvs[]
+      >> qpat_x_assum `!item1 i1 item2 i2. _`
+           (qspecl_then [`(alloc,sz)`,`(pos,sz)`,
+                         `(alloc',sz')`,`(pos',sz')`] mp_tac)
+      >> simp[] >> metis_tac[])
+  >> Cases_on `x + r < dimword (:256)`
+  >- (Cases_on `r = 0`
+      >- (gvs[checked_preserved_intervals_aux_def,
+              positive_preserved_item_def] >> strip_tac
+          >> first_x_assum drule >> strip_tac
+          >> conj_tac
+          >- (rpt strip_tac >> gvs[] >> metis_tac[])
+          >> rpt strip_tac >> gvs[]
+          >> qpat_x_assum `!item1 i1 item2 i2. _`
+               (qspecl_then [`(alloc,sz)`,`(pos,sz)`,
+                             `(alloc',sz')`,`(pos',sz')`] mp_tac)
+          >> simp[] >> metis_tac[])
+      >> Cases_on
+           `EVERY (reserved_intervals_disjoint (x,r))
+                  (reserved ++ occupied)`
+      >- (gvs[checked_preserved_intervals_aux_def,
+              positive_preserved_item_def, EVERY_MEM] >> strip_tac
+          >> first_x_assum drule >> strip_tac
+          >> conj_tac
+          >- (rpt strip_tac >> gvs[] >>
+              metis_tac[reserved_intervals_disjoint_sym_completion])
+          >> rpt strip_tac >> gvs[]
+          >- (qpat_assum `!item i r''. _`
+                (qspecl_then [`(alloc',sz')`,`(pos',sz')`,`(pos,r)`] mp_tac) >>
+              simp[] >>
+              metis_tac[reserved_intervals_disjoint_sym_completion])
+          >- (qpat_assum `!item i r''. _`
+                (qspecl_then [`(alloc,sz)`,`(pos,sz)`,`(pos',r)`] mp_tac) >>
+              simp[] >> metis_tac[])
+          >> qpat_assum `!item1 i1 item2 i2. _`
+               (qspecl_then [`(alloc,sz)`,`(pos,sz)`,
+                             `(alloc',sz')`,`(pos',sz')`] mp_tac)
+          >> simp[] >> metis_tac[])
+      >> gvs[checked_preserved_intervals_aux_def, EVERY_MEM, EXISTS_MEM]
+      >> strip_tac >> metis_tac[])
+  >> gvs[checked_preserved_intervals_aux_def]
 QED
 
 val _ = export_theory();
