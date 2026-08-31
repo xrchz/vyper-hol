@@ -845,6 +845,41 @@ Proof
           venomInstTheory.mk_inst_def,
           venomInstTheory.is_terminator_def]
 QED
+
+Definition nested_foo_guarded_body_stage_def:
+  nested_foo_guarded_body_stage =
+    compile_guarded_body nested_external_cenv F 0 F F
+      [Return (SOME
+        (Call (BaseT (UintT 256)) (IntCall (NONE, "mid"))
+          [Name (BaseT (UintT 256)) "x"] NONE))]
+      (SOME (BaseT (UintT 256)))
+End
+
+Theorem nested_foo_guarded_body_stage_eq:
+  nested_foo_guarded_body_stage nested_after_foo_entry_state =
+    ((), nested_after_foo_body_state)
+Proof
+  `~block_is_terminated nested_after_foo_entry_state` by
+    simp[compileEnvTheory.block_is_terminated_def,
+         nested_after_foo_entry_state_def,
+         venomInstTheory.mk_inst_def,
+         venomInstTheory.is_terminator_def]
+  >> simp[nested_foo_guarded_body_stage_def,
+       moduleLoweringTheory.compile_guarded_body_def,
+       stmtLoweringTheory.compile_stmt_def,
+       compileEnvTheory.comp_get_def,
+       compileEnvTheory.comp_return_def,
+       compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       nested_external_cenv_body_facts,
+       vyperASTTheory.expr_type_def,
+       compileEnvTheory.is_word_type_def,
+       GSYM nested_foo_mid_call_stage_def,
+       nested_foo_mid_call_stage_eq,
+       GSYM nested_foo_external_return_stage_def,
+       nested_foo_external_return_stage_eq,
+       nested_after_foo_body_state_terminated]
+QED
 Definition nested_leaf_cenv_def:
   nested_leaf_cenv =
     update_cenv_nonreentrant
