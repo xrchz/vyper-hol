@@ -1628,4 +1628,44 @@ Proof
   >> irule task18_unit_wf_intro
   >> simp[task18_immutable_deploy_unit_labels_wf]
 QED
+
+Theorem task18_immutable_deploy_prechecks:
+  case lower_vyper_deploy_unit immutable_multi_deploy_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |>
+         ([170w; 187w] : byte list) of
+    NONE => F
+  | SOME unit =>
+      unit_wf unit /\
+      lowering_context_ok unit.cu_context /\
+      unit.cu_context.ctx_global_reserved = [(0, 32)] /\
+      EVERY (\(lo, hi). lo < hi /\ hi < dimword (:256))
+        unit.cu_context.ctx_global_reserved /\
+      EVERY function_forced_metadata_ok unit.cu_context.ctx_functions /\
+      MAP (\fn. (fn.fn_name,
+                  FLOOKUP fn.fn_forced_alloc_positions 3,
+                  FLOOKUP fn.fn_forced_alloc_positions 11))
+        unit.cu_context.ctx_functions =
+        [("__deploy", SOME 0, NONE); ("helper", NONE, SOME 0)] /\
+      target_capabilities_wf prague_capabilities /\
+      prague_capabilities CapMcopy
+Proof
+  Cases_on `lower_vyper_deploy_unit immutable_multi_deploy_program
+         <| rpol_target := prague_capabilities;
+            rpol_frontend_dispatch := Linear;
+            rpol_final_assembly := FAP_Optimize |>
+         ([170w; 187w] : byte list)`
+  >- (mp_tac immutable_multi_deploy_static_inputs >> simp[])
+  >> mp_tac task18_immutable_deploy_unit_wf
+  >> mp_tac immutable_multi_deploy_static_inputs
+  >> simp[task18_immutable_deploy_unit_def]
+  >> rpt strip_tac
+  >> drule task18_lower_deploy_integrity
+  >> gvs[vyperCompilerTheory.lowering_context_ok_def,
+         venomWfTheory.ctx_distinct_fn_names_def,
+         GSYM vyperCompilerTheory.wf_invoke_targets_check_eq,
+         venomPolicyTypesTheory.prague_capabilities_wf,
+         venomPolicyTypesTheory.prague_capabilities_def]
+QED
 val _ = export_theory();
