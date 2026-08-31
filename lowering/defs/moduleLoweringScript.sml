@@ -535,15 +535,17 @@ Definition compile_internal_function_def:
                                  nkey use_transient is_view
                                  is_ctor_context immutables_len
                                  body ret_type =
-    do (* Reserve immutables region for ctor-context internal functions *)
-       (if is_ctor_context ∧ immutables_len > 0 then
-          let touch_offset = if immutables_len > 32 then immutables_len - 32
-                             else 0 in
-          do emit_op ALLOCA [Lit (n2w immutables_len)];
-             emit_op MLOAD [Lit (n2w touch_offset)];
-             return ()
-          od
-        else return ());
+    do (* Reserve immutables region for ctor-context internal functions.
+          Return the ALLOCA instruction ID for owner-tagged static metadata. *)
+       forced_alloc_id <-
+         (if is_ctor_context ∧ immutables_len > 0 then
+            let touch_offset = if immutables_len > 32 then immutables_len - 32
+                               else 0 in
+            do alloc_result <- compile_alloc_buffer_with_id immutables_len;
+               emit_op MLOAD [Lit (n2w touch_offset)];
+               return (SOME (FST alloc_result))
+            od
+          else return NONE);
        (* Return buffer pointer if memory return *)
        return_buf_var <-
          (if has_return_buf then
@@ -574,15 +576,16 @@ Definition compile_internal_function_def:
        compile_stmts cenv2 NoLoop
          (case ret_type of SOME t => t | NONE => BaseT BoolT) body;
        cs <- comp_get;
-       if block_is_terminated cs then return ()
-       else
-         do (if is_nonreentrant then
-               compile_nonreentrant_unlock nkey use_transient is_view
-             else return ());
-            (case ret_type of
-               NONE => emit_inst RET [return_pc] []
-             | SOME _ => emit_inst INVALID [] [])
-         od
+       (if block_is_terminated cs then return ()
+        else
+          do (if is_nonreentrant then
+                compile_nonreentrant_unlock nkey use_transient is_view
+              else return ());
+             (case ret_type of
+                NONE => emit_inst RET [return_pc] []
+              | SOME _ => emit_inst INVALID [] [])
+          od);
+       return forced_alloc_id
     od
 End
 
@@ -621,16 +624,20 @@ End
 
 (* ===== Generate Internal Function Bodies ===== *)
 Definition compile_internal_fn_bodies_def:
-  compile_internal_fn_bodies [] = return () ∧
+  compile_internal_fn_bodies [] = return ([] : (string # num # num) list) ∧
   compile_internal_fn_bodies ((fn_lbl, cenv, params, has_ret_buf,
                                is_nr, nkey, use_trans, is_view,
                                is_ctor, imm_len,
                                body, ret_type) :: rest) =
     do new_block fn_lbl;
-       compile_internal_function cenv params has_ret_buf
+       forced_id <- compile_internal_function cenv params has_ret_buf
          is_nr nkey use_trans is_view
          is_ctor imm_len body ret_type;
-       compile_internal_fn_bodies rest
+       rest_forced <- compile_internal_fn_bodies rest;
+       return
+         (case forced_id of
+            NONE => rest_forced
+          | SOME id => (fn_lbl, id, 0) :: rest_forced)
     od
 End
 
@@ -668,8 +675,9 @@ Definition compile_generate_runtime_def:
                 fb_transient, fb_view, fb_body, fb_ret_type) =>
             compile_fallback_body fb_cenv fb_payable fb_nonreentrant fb_nkey
                                   fb_transient fb_view fb_body fb_ret_type);
-       (* Generate internal function bodies *)
-       compile_internal_fn_bodies internal_fns
+       (* Runtime internal functions have no static immutable reservation. *)
+       _ <- compile_internal_fn_bodies internal_fns;
+       return ()
     od
 End
 
@@ -688,18 +696,23 @@ Definition compile_generate_deploy_def:
                emit_void ASSERT [no_val]
             od
           else return ());
-         (* Reserve immutables region at position 0 *)
-         imm_alloca <-
+         (* Reserve immutables region at position 0 and capture its owning
+            entry block plus instruction ID for checked packaging. *)
+         entry_cs <- comp_get;
+         imm_result <-
            (if immutables_len > 0 then
               let touch_offset = if immutables_len > 32
                                  then immutables_len - 32
                                  else 0 in
-              do imm_op_alloc <- compile_alloc_buffer immutables_len;
-                 imm_op <- return imm_op_alloc.buf_operand;
+              do alloc_result <- compile_alloc_buffer_with_id immutables_len;
+                 imm_op <- return (SND alloc_result).buf_operand;
                  emit_op MLOAD [Lit (n2w touch_offset)];
-                 return imm_op
+                 return (imm_op,
+                         [(entry_cs.cs_current_bb, FST alloc_result, 0)])
               od
-            else return (Lit 0w));
+            else return (Lit 0w, []));
+         imm_alloca <- return (FST imm_result);
+         entry_forced <- return (SND imm_result);
          (* Register constructor args from DATA section *)
          compile_register_constructor_args cenv constructor_args 0 data_size;
          (* Nonreentrant lock *)
@@ -718,10 +731,13 @@ Definition compile_generate_deploy_def:
                  imm_alloca
             od);
          (* Internal functions: generated regardless of constructor termination *)
-         compile_internal_fn_bodies ctor_internal_fns
+         internal_forced <- compile_internal_fn_bodies ctor_internal_fns;
+         return (entry_forced ++ internal_forced)
       od
     else
-      compile_simple_deploy runtime_size immutables_len
+      do compile_simple_deploy runtime_size immutables_len;
+         return ([] : (string # num # num) list)
+      od
 End
 
 (* ===== Common Function Body ===== *)
