@@ -1405,4 +1405,227 @@ Proof
           venomInstTheory.mk_inst_def]
 QED
 
+
+Theorem task18_immutable_helper_block_wf:
+  bb_well_formed task18_immutable_helper_block /\
+  EVERY inst_wf task18_immutable_helper_block.bb_instructions
+Proof
+  conj_tac
+  >- (pure_rewrite_tac[task18_immutable_helper_block_def]
+      >> `[mk_inst 11 ALLOCA [Lit 32w] ["%7"];
+           mk_inst 12 MLOAD [Lit 0w] ["%8"];
+           mk_inst 13 PARAM [Lit 0w] ["%9"];
+           mk_inst 14 MSTORE [Lit 0w; Var "%9"] [];
+           mk_inst 15 INVALID [] []] =
+          [mk_inst 11 ALLOCA [Lit 32w] ["%7"];
+           mk_inst 12 MLOAD [Lit 0w] ["%8"];
+           mk_inst 13 PARAM [Lit 0w] ["%9"];
+           mk_inst 14 MSTORE [Lit 0w; Var "%9"] []] ++
+          [mk_inst 15 INVALID [] []]` by simp[]
+      >> pop_assum (fn th => pure_once_rewrite_tac[th])
+      >> irule task18_bb_well_formed_snoc
+      >> EVAL_TAC)
+  >> simp[task18_immutable_helper_block_def,
+          venomWfTheory.inst_wf_def,
+          venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_immutable_deploy_block_succs:
+  bb_succs task18_immutable_deploy_block = []
+Proof
+  simp[task18_immutable_deploy_block_def,
+       venomInstTheory.bb_succs_def,
+       venomInstTheory.get_successors_def,
+       venomInstTheory.is_terminator_def,
+       venomStateTheory.get_label_def,
+       venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_immutable_helper_block_succs:
+  bb_succs task18_immutable_helper_block = []
+Proof
+  simp[task18_immutable_helper_block_def,
+       venomInstTheory.bb_succs_def,
+       venomInstTheory.get_successors_def,
+       venomInstTheory.is_terminator_def,
+       venomStateTheory.get_label_def,
+       venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_immutable_deploy_fn_ids:
+  FLAT (MAP (\bb. MAP (\i. i.inst_id) bb.bb_instructions)
+    task18_immutable_deploy_fn.fn_blocks) =
+  [0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10]
+Proof
+  simp[task18_immutable_deploy_projections,
+       task18_immutable_deploy_block_def,
+       venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_immutable_helper_fn_ids:
+  FLAT (MAP (\bb. MAP (\i. i.inst_id) bb.bb_instructions)
+    task18_immutable_helper_fn.fn_blocks) = [11; 12; 13; 14; 15]
+Proof
+  simp[task18_immutable_deploy_projections,
+       task18_immutable_helper_block_def,
+       venomInstTheory.mk_inst_def]
+QED
+
+Theorem task18_immutable_deploy_fn_labels:
+  fn_labels task18_immutable_deploy_fn = ["__deploy"]
+Proof
+  simp[venomInstTheory.fn_labels_def,
+       task18_immutable_deploy_projections,
+       task18_immutable_deploy_block_def]
+QED
+
+Theorem task18_immutable_helper_fn_labels:
+  fn_labels task18_immutable_helper_fn = ["helper"]
+Proof
+  simp[venomInstTheory.fn_labels_def,
+       task18_immutable_deploy_projections,
+       task18_immutable_helper_block_def]
+QED
+
+Theorem task18_immutable_deploy_fn_inst_wf:
+  fn_inst_wf task18_immutable_deploy_fn
+Proof
+  irule task18_fn_inst_wf_from_blocks
+  >> simp[task18_immutable_deploy_projections,
+          task18_immutable_deploy_block_wf]
+QED
+
+Theorem task18_immutable_helper_fn_inst_wf:
+  fn_inst_wf task18_immutable_helper_fn
+Proof
+  irule task18_fn_inst_wf_from_blocks
+  >> simp[task18_immutable_deploy_projections,
+          task18_immutable_helper_block_wf]
+QED
+
+Theorem task18_immutable_deploy_fn_wf:
+  wf_function task18_immutable_deploy_fn
+Proof
+  rewrite_tac[venomWfTheory.wf_function_def]
+  >> simp[task18_immutable_deploy_fn_labels,
+          venomWfTheory.fn_has_entry_def,
+          task18_immutable_deploy_projections,
+          task18_immutable_deploy_block_wf,
+          venomWfTheory.fn_succs_closed_def,
+          task18_immutable_deploy_block_succs,
+          venomWfTheory.fn_inst_ids_distinct_def,
+          task18_immutable_deploy_fn_ids]
+QED
+
+Theorem task18_immutable_helper_fn_wf:
+  wf_function task18_immutable_helper_fn
+Proof
+  rewrite_tac[venomWfTheory.wf_function_def]
+  >> simp[task18_immutable_helper_fn_labels,
+          venomWfTheory.fn_has_entry_def,
+          task18_immutable_deploy_projections,
+          task18_immutable_helper_block_wf,
+          venomWfTheory.fn_succs_closed_def,
+          task18_immutable_helper_block_succs,
+          venomWfTheory.fn_inst_ids_distinct_def,
+          task18_immutable_helper_fn_ids]
+QED
+
+Theorem task18_run_deploy_entry[local]:
+  run_deploy_lowering has_constructor rpolicy runtime_bytecode immutables_len
+    constructor_args data_size ctor_internal_fns cenv (stmts : stmt list) is_payable
+    is_nonreentrant nkey use_transient entry_label = SOME unit ==>
+  unit.cu_context.ctx_entry = SOME entry_label
+Proof
+  simp[vyperCompilerTheory.run_deploy_lowering_def]
+  >> pairarg_tac
+  >> gvs[AllCaseEqs(),
+         vyperCompilerTheory.extract_context_with_forced_internals_def,
+         venomInstTheory.mk_venom_context_def,
+         vyperCompilerTheory.install_immutable_reservation_def]
+  >> rpt strip_tac
+  >> gvs[]
+QED
+
+Theorem task18_lower_deploy_integrity[local]:
+  lower_vyper_deploy_unit tops rpolicy bytes = SOME unit ==>
+  ctx_distinct_fn_names unit.cu_context /\
+  wf_invoke_targets unit.cu_context /\
+  ctx_inst_ids_distinct unit.cu_context /\
+  forced_alloc_inputs_check unit.cu_context /\
+  unit.cu_context.ctx_entry = SOME "__deploy"
+Proof
+  simp[compileVyperTheory.lower_vyper_deploy_unit_def]
+  >> pairarg_tac
+  >> gvs[]
+  >> Cases_on `ctor_fn`
+  >> gvs[]
+  >> pairarg_tac
+  >> gvs[]
+  >> metis_tac[vyperCompilerTheory.run_deploy_lowering_integrity,
+               vyperCompilerTheory.run_deploy_lowering_static_integrity,
+               task18_run_deploy_entry]
+QED
+
+Theorem task18_immutable_deploy_context_entry:
+  task18_immutable_deploy_unit.cu_context.ctx_entry = SOME "__deploy"
+Proof
+  mp_tac task18_immutable_deploy_functions
+  >> strip_tac
+  >> drule task18_lower_deploy_integrity
+  >> simp[]
+QED
+
+Theorem task18_immutable_deploy_unit_labels_wf:
+  unit_labels_wf task18_immutable_deploy_unit
+Proof
+  simp[venomCompilerWfTheory.unit_labels_wf_def,
+       venomCompilerWfTheory.unit_label_namespace_def,
+       venomCompilerWfTheory.unit_data_labels_consistent_def,
+       task18_immutable_deploy_functions,
+       task18_immutable_deploy_fn_labels,
+       task18_immutable_helper_fn_labels,
+       task18_immutable_deploy_projections]
+QED
+
+
+Theorem task18_immutable_function_names:
+  task18_immutable_deploy_fn.fn_name = "__deploy" /\
+  task18_immutable_helper_fn.fn_name = "helper"
+Proof
+  mp_tac task18_immutable_deploy_functions
+  >> strip_tac
+  >> mp_tac immutable_multi_deploy_static_inputs
+  >> simp[]
+  >> strip_tac
+  >> qpat_x_assum `task18_immutable_deploy_unit.cu_context.ctx_functions = _`
+       (fn th => rewrite_tac[th])
+  >> gvs[]
+QED
+Theorem task18_immutable_deploy_unit_wf:
+  unit_wf task18_immutable_deploy_unit
+Proof
+  mp_tac task18_immutable_deploy_functions
+  >> strip_tac
+  >> drule task18_lower_deploy_integrity
+  >> strip_tac
+  >> `ctx_wf task18_immutable_deploy_unit.cu_context` by
+       gvs[venomWfTheory.ctx_wf_def,
+           venomWfTheory.ctx_has_entry_def,
+           venomWfTheory.ctx_distinct_fn_names_def,
+           task18_immutable_deploy_context_entry,
+           task18_immutable_function_names,
+           venomInstTheory.ctx_fn_names_def]
+  >> `!fn. MEM fn task18_immutable_deploy_unit.cu_context.ctx_functions ==>
+             wf_function fn /\ fn_inst_wf fn` by
+       (qpat_assum `task18_immutable_deploy_unit.cu_context.ctx_functions = _`
+          (fn th => rewrite_tac[th])
+        >> rpt strip_tac
+        >> gvs[task18_immutable_deploy_fn_wf,
+               task18_immutable_helper_fn_wf,
+               task18_immutable_deploy_fn_inst_wf,
+               task18_immutable_helper_fn_inst_wf])
+  >> irule task18_unit_wf_intro
+  >> simp[task18_immutable_deploy_unit_labels_wf]
+QED
 val _ = export_theory();
