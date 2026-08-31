@@ -424,6 +424,154 @@ Definition allocate_one_def:
     (pos, (pos, size) :: reserved)
 End
 
+
+(* =========================================================================
+   Checked static-ALLOCA completion helpers
+   ========================================================================= *)
+
+(* Unlike inst_alloca_size/get_alloca_size, this accepts only the exact source
+   shape consumed by checked concretization. *)
+Definition exact_static_alloca_size_def:
+  exact_static_alloca_size inst =
+    if inst.inst_opcode = ALLOCA then
+      case (inst.inst_operands, inst.inst_outputs) of
+        ([Lit sz], [_]) => SOME (w2n sz)
+      | _ => NONE
+    else NONE
+End
+
+(* Collect source allocation identities and sizes in instruction order, while
+   rejecting both malformed ALLOCAs and duplicate instruction identities. *)
+Definition exact_static_alloca_def:
+  exact_static_alloca inst =
+    case exact_static_alloca_size inst of
+      NONE => NONE
+    | SOME sz => SOME ((Allocation inst.inst_id), sz)
+End
+
+Definition collect_static_allocas_def:
+  collect_static_allocas ([] : instruction list) =
+    SOME ([] : (allocation # num) list) /\
+  collect_static_allocas (inst::insts) =
+    case collect_static_allocas insts of
+      NONE => NONE
+    | SOME items =>
+        if inst.inst_opcode = ALLOCA then
+          case exact_static_alloca inst of
+            NONE => NONE
+          | SOME item =>
+              if MEM (FST item) (MAP FST items) then NONE
+              else SOME (item::items)
+        else SOME items
+End
+
+Definition static_alloca_items_def:
+  static_alloca_items fn = collect_static_allocas (fn_insts fn)
+End
+
+Definition forced_alloc_keys_valid_def:
+  forced_alloc_keys_valid allocs (forced : (num,num) fmap) =
+    EVERY (\(aid,pos). MEM (Allocation aid) allocs) (fmap_to_alist forced)
+End
+Definition candidate_alloc_keys_valid_def:
+  candidate_alloc_keys_valid allocs
+      (positions : (allocation,num) fmap) =
+    EVERY (\(alloc,pos). MEM alloc allocs) (fmap_to_alist positions)
+End
+
+(* Forced positions augment a candidate map, but never silently override it. *)
+Definition merge_forced_positions_def:
+  merge_forced_positions [] positions = SOME positions /\
+  merge_forced_positions ((aid,pos)::rest) positions =
+    let alloc = Allocation aid in
+      case FLOOKUP positions alloc of
+        SOME old =>
+          if old = pos then merge_forced_positions rest positions else NONE
+      | NONE => merge_forced_positions rest (positions |+ (alloc,pos))
+End
+
+(* Validate all preserved intervals before any hole is filled.  Empty ALLOCAs
+   are admissible and occupy no interval, but their address must be in range. *)
+Definition checked_preserved_intervals_aux_def:
+  checked_preserved_intervals_aux items [] reserved occupied = SOME occupied /\
+  checked_preserved_intervals_aux items ((alloc,pos)::rest) reserved occupied =
+    case ALOOKUP items alloc of
+      NONE => NONE
+    | SOME sz =>
+        if pos + sz < dimword (:256) then
+          if sz = 0 then
+            checked_preserved_intervals_aux items rest reserved occupied
+          else if EVERY (reserved_intervals_disjoint (pos,sz))
+                        (reserved ++ occupied) then
+            checked_preserved_intervals_aux items rest reserved
+              ((pos,sz)::occupied)
+          else NONE
+        else NONE
+End
+
+Definition checked_preserved_intervals_def:
+  checked_preserved_intervals items
+      (positions : (allocation,num) fmap) reserved =
+    if reserved_intervals_wf reserved then
+      checked_preserved_intervals_aux items (fmap_to_alist positions)
+        reserved []
+    else NONE
+End
+
+(* The scan is over position-sorted, already validated nonempty intervals.
+   Every candidate exclusive endpoint is checked before it is returned. *)
+Definition checked_first_fit_scan_def:
+  checked_first_fit_scan [] sz start =
+    (if start + sz < dimword (:256) then SOME start else NONE) /\
+  checked_first_fit_scan ((rpos,rsz)::rest) sz start =
+    if start + sz >= dimword (:256) then NONE
+    else if rpos + rsz <= start then
+      checked_first_fit_scan rest sz start
+    else if start + sz <= rpos then SOME start
+    else checked_first_fit_scan rest sz (rpos + rsz)
+End
+
+Definition checked_first_fit_def:
+  checked_first_fit occupied sz =
+    if reserved_intervals_wf occupied then
+      checked_first_fit_scan
+        (QSORT (\(p1:num,_) (p2,_). p1 <= p2) occupied) sz 0
+    else NONE
+End
+
+Theorem concretize_dimindex_256[local,simp]:
+  dimindex (:256) = 256
+Proof
+  CONV_TAC fcpLib.INDEX_CONV
+QED
+
+(* Closed probes for the strict checked-helper boundary. *)
+Theorem checked_alloc_helper_edge_cases:
+  forced_alloc_keys_valid [Allocation 1]
+    (FEMPTY |+ (2,0)) = F /\
+  candidate_alloc_keys_valid [Allocation 1]
+    (FEMPTY |+ (Allocation 2,0)) = F /\
+  collect_static_allocas
+    [mk_inst 1 ALLOCA [Lit 1w] ["x"];
+     mk_inst 1 ALLOCA [Lit 2w] ["y"]] = NONE /\
+  exact_static_alloca_size (mk_inst 1 ALLOCA [] ["x"]) = NONE /\
+  exact_static_alloca_size (mk_inst 1 ALLOCA [Lit 1w] []) = NONE /\
+  merge_forced_positions [(1,8)]
+    (FEMPTY |+ (Allocation 1,4)) = NONE /\
+  checked_preserved_intervals_aux
+    [(Allocation 1,4); (Allocation 2,4)]
+    [(Allocation 1,0); (Allocation 2,2)] [] [] = NONE /\
+  checked_preserved_intervals_aux
+    [(Allocation 1,4)] [(Allocation 1,2)] [(0,4)] [] = NONE /\
+  checked_preserved_intervals
+    [(Allocation 1,4)] (FEMPTY |+ (Allocation 1,8)) [(0,0)] = NONE /\
+  checked_preserved_intervals_aux
+    [(Allocation 1,1)]
+    [(Allocation 1,dimword (:256) - 1)] [] [] = NONE /\
+  checked_first_fit [(0,1)] (dimword (:256) - 1) = NONE
+Proof
+  EVAL_TAC >> simp[wordsTheory.dimword_def]
+QED
 (* Liveness-aware allocation loop.
    already: (alloc, liveset, position, size) — pre-allocated
    to_alloc: (alloc, liveset, size) — sorted by |liveset| ascending
