@@ -971,3 +971,30 @@ Theorem concretize_function_eval_static_guard:
 Proof
   EVAL_TAC >> simp[]
 QED
+
+
+Definition concretize_context_fuel_def:
+  concretize_context_fuel fuel ctx =
+    case OPT_MMAP
+      (concretize_function_fuel fuel ctx.ctx_global_reserved)
+      ctx.ctx_functions of
+      NONE => NONE
+    | SOME fns => SOME (ctx with ctx_functions := fns)
+End
+
+Definition concretize_context_eval_def:
+  concretize_context_eval ctx =
+    case OPT_MMAP
+      (concretize_function_eval ctx.ctx_global_reserved)
+      ctx.ctx_functions of
+      NONE => NONE
+    | SOME fns => SOME (ctx with ctx_functions := fns)
+End
+
+Theorem concretize_context_eval_empty:
+  concretize_context_eval
+    ((mk_venom_context [] NONE) with ctx_global_reserved := [(0,0)]) =
+  SOME ((mk_venom_context [] NONE) with ctx_global_reserved := [(0,0)])
+Proof
+  EVAL_TAC
+QED
