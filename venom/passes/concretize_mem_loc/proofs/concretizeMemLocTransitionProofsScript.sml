@@ -220,5 +220,70 @@ Proof
   gvs[apply_concretize_layout_def, fn_has_alloca_def, fn_insts_def,
       EVERY_MEM, EXISTS_MEM] >> metis_tac[]
 QED
+Theorem apply_concretize_layout_metadata_transition[local]:
+  fn_identity_metadata_eq (apply_concretize_layout layout fn) fn /\
+  fn_fmp_convention_eq (apply_concretize_layout layout fn) fn /\
+  (apply_concretize_layout layout fn).fn_forced_alloc_positions = FEMPTY /\
+  (apply_concretize_layout layout fn).fn_eom = SOME layout.cl_eom
+Proof
+  simp[apply_concretize_layout_def, concretize_function_with_positions_def,
+       clear_nops_function_def, function_map_transform_def,
+       fn_identity_metadata_eq_def, fn_fmp_convention_eq_def]
+QED
 
+Theorem concretize_function_fuel_metadata_transition:
+  concretize_function_fuel fuel reserved fn = SOME fn' ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn /\
+  fn'.fn_forced_alloc_positions = FEMPTY
+Proof
+  simp[concretize_function_fuel_def] >>
+  Cases_on `fn_has_static_layout fn`
+  >- (rpt strip_tac >> gvs[fn_identity_metadata_eq_def,
+                            fn_fmp_convention_eq_def]) >>
+  Cases_on `compute_function_layout_fuel fuel reserved fn`
+  >- gvs[] >>
+  rpt strip_tac >> gvs[apply_concretize_layout_metadata_transition]
+QED
+
+Theorem concretize_function_eval_metadata_transition:
+  concretize_function_eval reserved fn = SOME fn' ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn /\
+  fn'.fn_forced_alloc_positions = FEMPTY
+Proof
+  simp[concretize_function_eval_def] >>
+  Cases_on `fn_has_static_layout fn`
+  >- (rpt strip_tac >> gvs[fn_identity_metadata_eq_def,
+                            fn_fmp_convention_eq_def]) >>
+  Cases_on `compute_function_layout_eval reserved fn`
+  >- gvs[] >>
+  rpt strip_tac >> gvs[apply_concretize_layout_metadata_transition]
+QED
+
+Theorem concretize_function_fuel_sets_eom:
+  concretize_function_fuel fuel reserved fn = SOME fn' ==>
+  IS_SOME fn'.fn_eom
+Proof
+  simp[concretize_function_fuel_def] >>
+  Cases_on `fn_has_static_layout fn`
+  >- (rpt strip_tac >> gvs[fn_has_static_layout_def]) >>
+  Cases_on `compute_function_layout_fuel fuel reserved fn`
+  >- gvs[] >>
+  rpt strip_tac >> gvs[apply_concretize_layout_metadata_transition]
+QED
+
+Theorem concretize_function_eval_sets_eom:
+  concretize_function_eval reserved fn = SOME fn' ==>
+  IS_SOME fn'.fn_eom
+Proof
+  simp[concretize_function_eval_def] >>
+  Cases_on `fn_has_static_layout fn`
+  >- (rpt strip_tac >> gvs[fn_has_static_layout_def]) >>
+  Cases_on `compute_function_layout_eval reserved fn`
+  >- gvs[] >>
+  rpt strip_tac >> gvs[apply_concretize_layout_metadata_transition]
+QED
+
+val _ = export_theory();
 val _ = export_theory();
