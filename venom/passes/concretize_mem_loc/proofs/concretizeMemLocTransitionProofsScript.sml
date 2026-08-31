@@ -285,5 +285,21 @@ Proof
   rpt strip_tac >> gvs[apply_concretize_layout_metadata_transition]
 QED
 
-val _ = export_theory();
+Theorem concretize_function_layout_idempotent:
+  fn.fn_eom = SOME eom /\ ~fn_has_alloca fn /\
+  fn.fn_forced_alloc_positions = FEMPTY ==>
+  concretize_function_fuel fuel reserved fn = SOME fn
+Proof
+  simp[concretize_function_fuel_def, fn_has_static_layout_def]
+QED
+
+Theorem concretize_function_rejects_stale_layout_input:
+  fn.fn_eom = SOME eom /\
+  (fn_has_alloca fn \/ fn.fn_forced_alloc_positions <> FEMPTY) ==>
+  concretize_function_fuel fuel reserved fn = NONE
+Proof
+  simp[concretize_function_fuel_def, fn_has_static_layout_def] >>
+  metis_tac[]
+QED
+
 val _ = export_theory();
