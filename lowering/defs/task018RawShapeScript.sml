@@ -639,6 +639,18 @@ Proof
        nested_after_mid_entry_state_def]
 QED
 
+Theorem task18_nested_leaf_block_inst_wf:
+  EVERY inst_wf task18_nested_leaf_block.bb_instructions
+Proof
+  rewrite_tac[task18_nested_leaf_block_exact]
+  >> simp[venomWfTheory.inst_wf_def,
+          venomInstTheory.mk_inst_def,
+          nested_leaf_z_operand_def,
+          nested_leaf_return_pc_operand_def,
+          nested_leaf_value_operand_def,
+          nested_leaf_loaded_return_pc_operand_def]
+QED
+
 Theorem task18_nested_leaf_block_wf:
   bb_well_formed task18_nested_leaf_block
 Proof
