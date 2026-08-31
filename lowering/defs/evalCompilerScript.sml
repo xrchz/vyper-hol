@@ -1299,6 +1299,93 @@ Proof
           compileEnvTheory.comp_bind_def,
           compileEnvTheory.comp_ignore_bind_def]
 QED
+
+Theorem nested_mid_cenv_entry_facts:
+  FLOOKUP nested_mid_cenv.ce_vars "y" = SOME (MemLoc 0 32) /\
+  FLOOKUP nested_mid_cenv.ce_vars "__return_pc__" = SOME (MemLoc 32 32) /\
+  FLOOKUP nested_mid_cenv.ce_vars "__return_buf__" = NONE /\
+  nested_mid_cenv.ce_returns_count = 1 /\
+  nested_mid_cenv.ce_func_info "leaf" = (1, 0, [T])
+Proof
+  simp[nested_mid_cenv_def, update_cenv_nonreentrant_def,
+       build_compile_env_def, build_compile_env_ce_func_info,
+       nested_internal_call_program_def,
+       add_module_var_locations_def, collect_locals_def,
+       allocate_args_def, allocate_internal_special_vars_def,
+       build_func_info_def, make_struct_fields_map_def,
+       compileEnvTheory.get_struct_fields_def,
+       compileEnvTheory.compute_func_info_def,
+       compileEnvTheory.returns_stack_count_def,
+       compileEnvTheory.compute_pass_via_stack_def,
+       compileEnvTheory.is_word_type_def,
+       compileEnvTheory.MAX_STACK_ARGS_def,
+       type_mem_bytes_def]
+  >> pairarg_tac
+  >> pop_assum (fn th => rewrite_tac[th])
+  >> simp[finite_mapTheory.FLOOKUP_UPDATE,
+          finite_mapTheory.FLOOKUP_EMPTY]
+QED
+
+Definition nested_mid_y_operand_def:
+  nested_mid_y_operand = Var "%22"
+End
+
+Definition nested_mid_return_pc_operand_def:
+  nested_mid_return_pc_operand = Var "%23"
+End
+
+Definition nested_after_mid_entry_state_def:
+  nested_after_mid_entry_state =
+    nested_after_leaf_body_state with
+      <| cs_next_var := 24;
+         cs_next_id := 40;
+         cs_current_bb := "mid";
+         cs_current_insts :=
+           [mk_inst 36 PARAM [Lit 0w] ["%22"];
+            mk_inst 37 MSTORE [Lit 0w; nested_mid_y_operand] [];
+            mk_inst 38 PARAM [Lit 1w] ["%23"];
+            mk_inst 39 MSTORE [Lit 32w; nested_mid_return_pc_operand] []];
+         cs_blocks :=
+           <| bb_label := nested_after_leaf_body_state.cs_current_bb;
+              bb_instructions := nested_after_leaf_body_state.cs_current_insts |> ::
+           nested_after_leaf_body_state.cs_blocks |>
+End
+
+Definition nested_mid_entry_stage_def:
+  nested_mid_entry_stage =
+    do new_block "mid";
+       params_result <-
+         compile_internal_params nested_mid_cenv [("y", T)] 0;
+       cenv2 <- return (FST params_result);
+       next_idx <- return (SND params_result);
+       return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+       (case FLOOKUP cenv2.ce_vars "__return_pc__" of
+          SOME (MemLoc rpc_off _) =>
+            emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+        | _ => return ());
+       return (cenv2, return_pc)
+    od
+End
+
+Theorem nested_mid_entry_stage_eq:
+  nested_mid_entry_stage nested_after_leaf_body_state =
+    ((nested_mid_cenv, nested_mid_return_pc_operand),
+     nested_after_mid_entry_state)
+Proof
+  simp[nested_mid_entry_stage_def,
+       moduleLoweringTheory.compile_internal_params_def,
+       nested_mid_cenv_entry_facts,
+       compileEnvTheory.new_block_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
+       emitHelperTheory.emit_inst_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       nested_mid_y_operand_def, nested_mid_return_pc_operand_def,
+       nested_after_mid_entry_state_def,
+       nested_after_leaf_body_state_def]
+QED
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
