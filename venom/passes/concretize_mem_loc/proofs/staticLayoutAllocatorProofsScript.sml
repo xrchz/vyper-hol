@@ -221,6 +221,44 @@ Proof
   simp[exact_static_alloca_def, exact_static_alloca_size_def]
 QED
 
+Theorem collect_static_allocas_ALLOCA_exact:
+  !insts items inst.
+    collect_static_allocas insts = SOME items /\
+    MEM inst insts /\ inst.inst_opcode = ALLOCA ==>
+    ?size.
+      inst.inst_operands = [Lit size] /\
+      exact_static_alloca inst =
+        SOME (Allocation inst.inst_id,w2n size)
+Proof
+  Induct
+  >- simp[collect_static_allocas_def]
+  >> rpt gen_tac
+  >> Cases_on `collect_static_allocas insts`
+  >> gvs[collect_static_allocas_def]
+  >> Cases_on `h.inst_opcode = ALLOCA` >> gvs[]
+  >- (Cases_on `exact_static_alloca h` >> gvs[]
+      >> Cases_on `MEM (FST x') (MAP FST x)` >> gvs[]
+      >> strip_tac
+      >- gvs[exact_static_alloca_def, exact_static_alloca_size_def,
+             AllCaseEqs()]
+      >> first_x_assum irule >> simp[])
+  >> strip_tac
+  >- gvs[]
+  >> first_x_assum irule >> simp[]
+QED
+
+Theorem static_alloca_items_ALLOCA_exact:
+  static_alloca_items fn = SOME items /\
+  MEM inst (fn_insts fn) /\ inst.inst_opcode = ALLOCA ==>
+  ?size.
+    inst.inst_operands = [Lit size] /\
+    exact_static_alloca inst =
+      SOME (Allocation inst.inst_id,w2n size)
+Proof
+  simp[static_alloca_items_def]
+  >> metis_tac[collect_static_allocas_ALLOCA_exact]
+QED
+
 Theorem static_alloca_items_MEM:
   static_alloca_items fn = SOME items ==>
   (MEM item items <=>
