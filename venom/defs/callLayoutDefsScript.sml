@@ -407,4 +407,55 @@ Proof
              ACCEPT_TAC)
   >> simp[]
 QED
+
+Theorem param_insts_from_erase:
+  !k insts.
+    param_insts_from k insts ==>
+    MAP erase_param_index insts =
+      MAP (\inst. inst with inst_operands := []) insts
+Proof
+  Induct_on `insts` >- simp[param_insts_from_def]
+  >> rpt gen_tac >> simp[param_insts_from_def] >> strip_tac
+  >> first_x_assum drule >> disch_then assume_tac
+  >> gvs[param_inst_at_def, erase_param_index_def]
+QED
+
+Theorem canonical_phase_erase:
+  !k users fmp retpc.
+    param_insts_from k (users ++ fmp ++ retpc) ==>
+    MAP erase_param_index (users ++ fmp ++ retpc) =
+      MAP (\inst. inst with inst_operands := [])
+          (users ++ fmp ++ retpc)
+Proof
+  metis_tac[param_insts_from_erase]
+QED
+
+
+Theorem take_length_append_eq:
+  !xs ys. TAKE (LENGTH xs) (xs ++ ys) = xs
+Proof
+  Induct >> simp[]
+QED
+Theorem canonical_param_prefix_erase:
+  !fn entry rest users fmp retpc body.
+    canonical_param_prefix fn /\
+    fn.fn_blocks = entry::rest /\
+    entry.bb_instructions = users ++ fmp ++ retpc ++ body /\
+    param_insts_from 0 (users ++ fmp ++ retpc) ==>
+    MAP erase_param_index
+        (TAKE (LENGTH (users ++ fmp ++ retpc))
+              (fn_entry_insts fn)) =
+      MAP (\inst. inst with inst_operands := [])
+          (users ++ fmp ++ retpc)
+Proof
+  rpt gen_tac >> strip_tac
+  >> `fn_entry_insts fn = users ++ fmp ++ retpc ++ body` by
+       simp[fn_entry_insts_def, entry_block_def]
+  >> `TAKE (LENGTH (users ++ fmp ++ retpc)) (fn_entry_insts fn) =
+      users ++ fmp ++ retpc` by
+       (qpat_x_assum `fn_entry_insts fn = _` (fn th => rewrite_tac[th])
+        >> irule take_length_append_eq)
+  >> drule canonical_phase_erase >> disch_then assume_tac
+  >> simp[]
+QED
 val _ = export_theory();
