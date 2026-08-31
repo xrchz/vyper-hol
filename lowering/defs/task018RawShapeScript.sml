@@ -745,6 +745,40 @@ Proof
           nested_mid_loaded_return_pc_operand_def]
 QED
 
+Theorem task18_nested_entry_fn_inst_wf:
+  fn_inst_wf task18_nested_entry_fn
+Proof
+  irule task18_fn_inst_wf_from_blocks
+  >> rewrite_tac[task18_nested_entry_fn_blocks]
+  >> rpt strip_tac
+  >> gvs[task18_nested_entry_block_inst_wf,
+         task18_nested_dispatch_block_inst_wf,
+         task18_nested_match_block_inst_wf,
+         task18_nested_next_block_inst_wf,
+         task18_nested_foo_block_inst_wf,
+         task18_nested_fallback_block_inst_wf]
+QED
+
+Theorem task18_nested_leaf_fn_inst_wf:
+  fn_inst_wf task18_nested_leaf_fn
+Proof
+  irule task18_fn_inst_wf_from_blocks
+  >> simp[task18_nested_leaf_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_leaf_block_inst_wf]
+QED
+
+Theorem task18_nested_mid_fn_inst_wf:
+  fn_inst_wf task18_nested_mid_fn
+Proof
+  irule task18_fn_inst_wf_from_blocks
+  >> simp[task18_nested_mid_fn_def,
+          vyperCompilerTheory.mk_internal_function_def,
+          venomInstTheory.mk_raw_function_def,
+          task18_nested_mid_block_inst_wf]
+QED
+
 Theorem task18_nested_mid_block_wf:
   bb_well_formed task18_nested_mid_block
 Proof
