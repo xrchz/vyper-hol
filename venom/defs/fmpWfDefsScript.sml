@@ -159,6 +159,30 @@ Definition fmp_runner_rooted_wf_def:
     EVERY (fmp_runner_inst_wf ctx sig fn) (fn_insts fn)
 End
 
+Definition fmp_signature_matches_fn_def:
+  fmp_signature_matches_fn ctx fn <=>
+    case fn.fn_fmp_signature of
+      NONE => F
+    | SOME sig =>
+        canonical_param_prefix fn /\
+        (IS_SOME (fn_hidden_fmp_param fn) = sig.fms_has_fmp_param) /\
+        lowered_return_layout_wf sig fn /\
+        fmp_runner_rooted_wf ctx sig fn
+End
+
+Definition fmp_lowered_context_wf_def:
+  fmp_lowered_context_wf ctx <=>
+    concretized_static_layouts_wf ctx /\
+    (!fn. MEM fn ctx.ctx_functions ==>
+      IS_SOME fn.fn_eom /\
+      no_raw_fmp_ops fn /\
+      call_abi_matches_fn fn /\
+      fmp_signature_matches_fn ctx fn) /\
+    (!fn inst.
+      MEM fn ctx.ctx_functions /\ MEM inst (fn_insts fn) ==>
+      invoke_layout_wf ctx inst)
+End
+
 (* A closed sanity check for the least-closure behavior: fuel does not turn an
  * unseeded cyclic alias into a root. *)
 Definition fmp_cycle_probe_fn_def:

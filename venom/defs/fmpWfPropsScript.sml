@@ -32,6 +32,35 @@ Proof
   simp[invoke_layout_wf_def]
 QED
 
+Theorem fmp_signature_matches_fn_some:
+  fn.fn_fmp_signature = SOME sig ==>
+  (fmp_signature_matches_fn ctx fn <=>
+    canonical_param_prefix fn /\
+    IS_SOME (fn_hidden_fmp_param fn) = sig.fms_has_fmp_param /\
+    lowered_return_layout_wf sig fn /\
+    fmp_runner_rooted_wf ctx sig fn)
+Proof
+  simp[fmp_signature_matches_fn_def]
+QED
+
+Theorem fmp_lowered_context_wf_function:
+  fmp_lowered_context_wf ctx /\ MEM fn ctx.ctx_functions ==>
+  IS_SOME fn.fn_eom /\
+  no_raw_fmp_ops fn /\
+  call_abi_matches_fn fn /\
+  fmp_signature_matches_fn ctx fn
+Proof
+  simp[fmp_lowered_context_wf_def]
+QED
+
+Theorem fmp_lowered_context_wf_invoke:
+  fmp_lowered_context_wf ctx /\
+  MEM fn ctx.ctx_functions /\ MEM inst (fn_insts fn) ==>
+  invoke_layout_wf ctx inst
+Proof
+  simp[fmp_lowered_context_wf_def] >> metis_tac[]
+QED
+
 
 Theorem fmp_value_rooted_fuel_intro:
   MEM inst (fn_insts fn) /\
