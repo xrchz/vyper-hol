@@ -3,11 +3,74 @@
 Theory fmpWfProps
 Ancestors
   fmpWfDefs
+
+(* Closed probes for the signature-aware current-return boundary. *)
+Definition fmp_arity_probe_publishing_sig_def:
+  fmp_arity_probe_publishing_sig =
+    <| fms_has_fmp_param := F; fms_publishes := T |>
+End
+
+Definition fmp_arity_probe_nonpublishing_sig_def:
+  fmp_arity_probe_nonpublishing_sig =
+    <| fms_has_fmp_param := F; fms_publishes := F |>
+End
+
+Definition fmp_arity_probe_publishing_fn_def:
+  fmp_arity_probe_publishing_fn =
+    mk_raw_function "arity_pub"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 0 RET [Var "user"; Var "adopted"; Var "rpc"] []] |>]
+End
+
+Definition fmp_arity_probe_nonpublishing_fn_def:
+  fmp_arity_probe_nonpublishing_fn =
+    mk_raw_function "arity_plain"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 0 RET [Var "user"; Var "rpc"] []] |>]
+End
+
+Definition fmp_arity_probe_mismatched_fn_def:
+  fmp_arity_probe_mismatched_fn =
+    fmp_arity_probe_publishing_fn with fn_call_abi :=
+      (fmp_arity_probe_publishing_fn.fn_call_abi with
+         ica_user_return_count := SOME 2)
+End
+
+Theorem fmp_current_return_arity_probe:
+  fmp_current_return_user_arity fmp_arity_probe_publishing_sig
+    (mk_inst 0 RET [Var "user"; Var "adopted"; Var "rpc"] []) = SOME 1 /\
+  fmp_unique_return_arity fmp_arity_probe_publishing_sig
+    fmp_arity_probe_publishing_fn = SOME 1 /\
+  fmp_expected_user_return_arity fmp_arity_probe_publishing_sig
+    fmp_arity_probe_publishing_fn = SOME 1 /\
+  fmp_return_abi_matches fmp_arity_probe_publishing_sig
+    fmp_arity_probe_publishing_fn /\
+  fmp_current_return_user_arity fmp_arity_probe_nonpublishing_sig
+    (mk_inst 0 RET [Var "user"; Var "rpc"] []) = SOME 1 /\
+  fmp_unique_return_arity fmp_arity_probe_nonpublishing_sig
+    fmp_arity_probe_nonpublishing_fn = SOME 1 /\
+  fmp_expected_user_return_arity fmp_arity_probe_nonpublishing_sig
+    fmp_arity_probe_nonpublishing_fn = SOME 1 /\
+  fmp_return_abi_matches fmp_arity_probe_nonpublishing_sig
+    fmp_arity_probe_nonpublishing_fn /\
+  fmp_current_return_user_arity fmp_arity_probe_publishing_sig
+    (mk_inst 0 RET [Var "rpc"] []) = NONE /\
+  ~fmp_return_abi_matches fmp_arity_probe_publishing_sig
+    fmp_arity_probe_mismatched_fn
+Proof
+  EVAL_TAC
+QED
+
 Theorem call_abi_matches_fn_iff:
   call_abi_matches_fn fn <=>
-  canonical_param_prefix fn /\ fn_return_abi_matches fn
+  ?sig. fn.fn_fmp_signature = SOME sig /\
+        canonical_param_prefix fn /\
+        fmp_return_abi_matches sig fn
 Proof
   simp[call_abi_matches_fn_def]
+  >> Cases_on `fn.fn_fmp_signature` >> simp[]
 QED
 
 Theorem fmp_seal_layout_matches_fn_iff:
@@ -15,7 +78,8 @@ Theorem fmp_seal_layout_matches_fn_iff:
   fn.fn_fmp_signature = SOME sig /\
   canonical_param_prefix fn /\
   IS_SOME (fn_hidden_fmp_param fn) = sig.fms_has_fmp_param /\
-  lowered_return_layout_wf sig fn
+  fmp_return_abi_matches sig fn /\
+  fmp_lowered_return_layout_wf sig fn
 Proof
   simp[fmp_seal_layout_matches_fn_def, fmp_signature_syntax_wf_def]
 QED
@@ -27,7 +91,7 @@ Theorem invoke_layout_wf_invoke:
     lookup_function callee_name ctx.ctx_functions = SOME callee /\
     fmp_seal_layout_matches_fn callee sig /\
     invoke_input_arity_ok callee sig inst /\
-    invoke_output_arity_ok callee sig inst
+    fmp_invoke_output_arity_ok callee sig inst
 Proof
   simp[invoke_layout_wf_def]
 QED
@@ -35,9 +99,7 @@ QED
 Theorem fmp_signature_matches_fn_some:
   fn.fn_fmp_signature = SOME sig ==>
   (fmp_signature_matches_fn ctx fn <=>
-    canonical_param_prefix fn /\
-    IS_SOME (fn_hidden_fmp_param fn) = sig.fms_has_fmp_param /\
-    lowered_return_layout_wf sig fn /\
+    fmp_signature_syntax_wf sig fn /\
     fmp_runner_rooted_wf ctx sig fn)
 Proof
   simp[fmp_signature_matches_fn_def]
@@ -115,6 +177,19 @@ Proof
   >> qexists `inst` >> simp[fmp_inst_roots_def] >> metis_tac[]
 QED
 
+Theorem fmp_value_rooted_fuel_phi_single:
+  MEM inst (fn_insts fn) /\ inst.inst_opcode = PHI /\
+  inst.inst_operands = [Label pred; Var src] /\ inst.inst_outputs = [v] /\
+  fmp_value_rooted_fuel ctx sig fn fuel src ==>
+  fmp_value_rooted_fuel ctx sig fn (SUC fuel) v
+Proof
+  strip_tac >> irule fmp_value_rooted_fuel_phi
+  >> qexists `inst`
+  >> simp[venomInstTheory.operand_vars_def,
+          venomInstTheory.operand_var_def,
+          venomInstTheory.phi_pairs_def]
+QED
+
 Theorem fmp_value_rooted_fuel_bump:
   MEM inst (fn_insts fn) /\ inst.inst_opcode = BUMP /\
   inst.inst_operands = [Var (basev:string); (sizeop:operand)] /\
@@ -169,7 +244,7 @@ Theorem fmp_runner_rooted_wf_invoke:
     callee.fn_fmp_signature = SOME callee_sig /\
     fmp_signature_syntax_wf callee_sig callee /\
     invoke_input_arity_ok callee callee_sig inst /\
-    invoke_output_arity_ok callee callee_sig inst /\
+    fmp_invoke_output_arity_ok callee callee_sig inst /\
     (callee_sig.fms_has_fmp_param ==>
       ?hidden.
         EL (LENGTH (fn_user_param_insts callee)) args = Var hidden /\
@@ -184,13 +259,213 @@ Theorem fmp_runner_rooted_wf_publishing_return:
   fmp_runner_rooted_wf ctx sig fn /\ MEM inst (fn_insts fn) /\
   inst.inst_opcode = RET /\ sig.fms_publishes ==>
   ?n adopted.
-    fn_expected_user_return_arity fn = SOME n /\
+    fmp_expected_user_return_arity sig fn = SOME n /\
     lowered_return_inst_layout_wf T n inst /\
     operand_var (EL n inst.inst_operands) = SOME adopted /\
     fmp_value_rooted ctx sig fn adopted
 Proof
   simp[fmp_runner_rooted_wf_def, listTheory.EVERY_MEM,
        fmp_runner_inst_wf_def, fmp_return_consumer_wf_def]
+QED
+
+(* Compact executable fixtures spanning every rooted producer form. *)
+Definition fmp_positive_callee_sig_def:
+  fmp_positive_callee_sig =
+    <| fms_has_fmp_param := T; fms_publishes := T |>
+End
+
+Definition fmp_positive_entry_sig_def:
+  fmp_positive_entry_sig =
+    <| fms_has_fmp_param := F; fms_publishes := F |>
+End
+
+Definition fmp_positive_callee_def:
+  fmp_positive_callee =
+    (mk_raw_function "callee"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 20 PARAM [Lit 0w] ["cu"];
+             mk_inst 21 FMP_PARAM [Lit 1w] ["cfmp"];
+             mk_inst 22 RETPC_PARAM [Lit 2w] ["crpc"];
+             mk_inst 23 ADD [Var "cfmp"; Lit 1w] ["cadopt"];
+             mk_inst 24 RET
+               [Var "cu"; Var "cadopt"; Var "crpc"] []] |>]) with <|
+      fn_eom := SOME 0;
+      fn_fmp_signature := SOME fmp_positive_callee_sig
+    |>
+End
+
+Definition fmp_positive_invoke_def:
+  fmp_positive_invoke =
+    mk_inst 8 INVOKE
+      [Label "callee"; Lit 7w; Var "minus"] ["user_out"; "published"]
+End
+
+Definition fmp_positive_entry_def:
+  fmp_positive_entry =
+    (mk_raw_function "entry"
+      [<| bb_label := "entry";
+          bb_instructions :=
+            [mk_inst 0 RETPC_PARAM [Lit 0w] ["rpc"];
+             mk_inst 1 INITIAL_FMP [] ["root"];
+             mk_inst 2 ASSIGN [Var "root"] ["alias"];
+             mk_inst 3 PHI [Label "entry"; Var "alias"] ["joined"];
+             mk_inst 4 BUMP [Var "joined"; Lit 32w] ["old"; "new"];
+             mk_inst 5 ADD [Var "new"; Lit 1w] ["plus"];
+             mk_inst 6 SUB [Var "plus"; Lit 1w] ["minus"];
+             fmp_positive_invoke;
+             mk_inst 9 RET [Var "published"; Var "rpc"] []] |>]) with <|
+      fn_eom := SOME 0;
+      fn_fmp_signature := SOME fmp_positive_entry_sig
+    |>
+End
+
+Definition fmp_positive_ctx_def:
+  fmp_positive_ctx =
+    mk_venom_context [fmp_positive_entry; fmp_positive_callee] (SOME "entry")
+End
+
+Theorem fmp_positive_root_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry (SUC fuel) "root"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_initial
+  >> conj_tac >-
+    (qexists `mk_inst 1 INITIAL_FMP [] ["root"]` >> EVAL_TAC)
+  >> EVAL_TAC
+QED
+
+Theorem fmp_positive_alias_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry (SUC (SUC fuel)) "alias"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_assign
+  >> qexistsl [`mk_inst 2 ASSIGN [Var "root"] ["alias"]`, `"root"`]
+  >> simp[fmp_positive_root_fuel] >> EVAL_TAC
+QED
+
+Theorem fmp_positive_joined_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry (SUC (SUC (SUC fuel))) "joined"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_phi_single
+  >> qexistsl [`mk_inst 3 PHI [Label "entry"; Var "alias"] ["joined"]`,
+                `"entry"`, `"alias"`]
+  >> simp[fmp_positive_alias_fuel] >> EVAL_TAC
+QED
+
+Theorem fmp_positive_new_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry (SUC (SUC (SUC (SUC fuel)))) "new"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_bump
+  >> qexistsl [`"joined"`,
+                `mk_inst 4 BUMP [Var "joined"; Lit 32w] ["old"; "new"]`,
+                `"new"`, `"old"`, `Lit 32w`]
+  >> simp[fmp_positive_joined_fuel] >> EVAL_TAC
+QED
+
+Theorem fmp_positive_plus_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry (SUC (SUC (SUC (SUC (SUC fuel))))) "plus"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_arith
+  >> qexists `mk_inst 5 ADD [Var "new"; Lit 1w] ["plus"]`
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >-
+    simp[venomInstTheory.mk_inst_def, venomInstTheory.operand_vars_def,
+         venomInstTheory.operand_var_def, fmp_positive_new_fuel]
+  >> conj_tac >- EVAL_TAC
+  >> EVAL_TAC
+QED
+
+Theorem fmp_positive_minus_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry (SUC (SUC (SUC (SUC (SUC (SUC fuel)))))) "minus"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_arith
+  >> qexists `mk_inst 6 SUB [Var "plus"; Lit 1w] ["minus"]`
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >-
+    simp[venomInstTheory.mk_inst_def, venomInstTheory.operand_vars_def,
+         venomInstTheory.operand_var_def, fmp_positive_plus_fuel]
+  >> conj_tac >- EVAL_TAC
+  >> EVAL_TAC
+QED
+
+Theorem fmp_positive_published_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry
+      (SUC (SUC (SUC (SUC (SUC (SUC (SUC fuel))))))) "published"
+Proof
+  gen_tac
+  >> `publishing_invoke_wf fmp_positive_ctx fmp_positive_invoke` by
+       (simp[publishing_invoke_wf_def]
+        >> qexistsl [`"callee"`, `[Lit 7w; Var "minus"]`,
+                     `fmp_positive_callee`, `fmp_positive_callee_sig`]
+        >> EVAL_TAC)
+  >> irule fmp_value_rooted_fuel_publishing_invoke
+  >> qexists `fmp_positive_invoke`
+  >> simp[fmp_positive_invoke_def] >> EVAL_TAC
+QED
+
+Theorem fmp_positive_callee_fuel:
+  !fuel. fmp_value_rooted_fuel fmp_positive_ctx fmp_positive_callee_sig
+    fmp_positive_callee (SUC fuel) "cfmp"
+Proof
+  gen_tac >> irule fmp_value_rooted_fuel_param
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> qexists `mk_inst 21 FMP_PARAM [Lit 1w] ["cfmp"]` >> EVAL_TAC
+QED
+
+Theorem fmp_positive_root_propagation_eval:
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "root" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "alias" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "joined" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "new" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "plus" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "minus" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_entry_sig
+    fmp_positive_entry "published" /\
+  fmp_value_rooted fmp_positive_ctx fmp_positive_callee_sig
+    fmp_positive_callee "cfmp"
+Proof
+  conj_tac >- EVAL_TAC
+  >> conj_tac >-
+    (simp[fmp_value_rooted_def, fmp_positive_entry_def,
+          fn_defined_values_def, venomInstTheory.fn_insts_def, venomInstTheory.fn_insts_blocks_def,
+          fmp_positive_invoke_def]
+     >> irule fmp_value_rooted_fuel_assign
+     >> qexistsl [`mk_inst 2 ASSIGN [Var "root"] ["alias"]`, `"root"`]
+     >> conj_tac >- EVAL_TAC
+     >> conj_tac >- EVAL_TAC
+     >> conj_tac >- EVAL_TAC
+     >> conj_tac >- EVAL_TAC
+     >> EVAL_TAC)
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> conj_tac >- EVAL_TAC
+  >> EVAL_TAC
+QED
+
+Theorem fmp_positive_boundary_eval:
+  fmp_signature_matches_fn fmp_positive_ctx fmp_positive_entry /\
+  fmp_signature_matches_fn fmp_positive_ctx fmp_positive_callee /\
+  invoke_layout_wf fmp_positive_ctx fmp_positive_invoke /\
+  fmp_lowered_context_wf fmp_positive_ctx
+Proof
+  EVAL_TAC
 QED
 
 val _ = export_theory();
