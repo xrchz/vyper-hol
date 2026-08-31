@@ -16,7 +16,7 @@
 
 Theory concretizeMemLocDefs
 Ancestors
-  passSimulationDefs passSharedDefs basePtrDefs cfgDefs enumeral toto
+  staticLayoutDefs passSimulationDefs passSharedDefs basePtrDefs cfgDefs enumeral toto
 
 (* ===== Allocation map ===== *)
 
@@ -535,6 +535,21 @@ Definition concretize_inst_def:
     else inst
 End
 
+(* Canonical static-layout rewrite: consume allocation identities directly.
+   In particular, equal output strings cannot collapse distinct ALLOCAs. *)
+Definition concretize_inst_with_positions_def:
+  concretize_inst_with_positions
+      (positions : (allocation, num) fmap) inst =
+    if inst.inst_opcode = ALLOCA then
+      (case inst.inst_outputs of
+         [out] =>
+           (case FLOOKUP positions (Allocation inst.inst_id) of
+              SOME pos => mk_assign_inst inst (Lit (n2w pos))
+            | NONE => mk_nop_inst inst)
+       | _ => inst)
+    else inst
+End
+
 (* =========================================================================
    Function-Level Transform
    ========================================================================= *)
@@ -546,6 +561,14 @@ Definition concretize_function_def:
     clear_nops_function
       (function_map_transform
         (block_map_transform (concretize_inst amap))
+        fn)
+End
+
+Definition concretize_function_with_positions_def:
+  concretize_function_with_positions positions fn =
+    clear_nops_function
+      (function_map_transform
+        (block_map_transform (concretize_inst_with_positions positions))
         fn)
 End
 
