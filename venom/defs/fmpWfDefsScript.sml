@@ -38,6 +38,17 @@ Definition fmp_seal_layout_matches_fn_def:
     fmp_signature_syntax_wf sig fn
 End
 
+Definition invoke_layout_wf_def:
+  invoke_layout_wf ctx inst <=>
+    inst.inst_opcode = INVOKE ==>
+    ?callee_name args callee sig.
+      inst.inst_operands = Label callee_name::args /\
+      lookup_function callee_name ctx.ctx_functions = SOME callee /\
+      fmp_seal_layout_matches_fn callee sig /\
+      invoke_input_arity_ok callee sig inst /\
+      invoke_output_arity_ok callee sig inst
+End
+
 (* A publishing invoke is trusted only after resolving its current callee and
  * validating that callee's current, sealed non-recursive layout. *)
 Definition publishing_invoke_wf_def:

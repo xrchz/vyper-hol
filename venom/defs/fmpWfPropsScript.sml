@@ -20,6 +20,18 @@ Proof
   simp[fmp_seal_layout_matches_fn_def, fmp_signature_syntax_wf_def]
 QED
 
+Theorem invoke_layout_wf_invoke:
+  invoke_layout_wf ctx inst /\ inst.inst_opcode = INVOKE ==>
+  ?callee_name args callee sig.
+    inst.inst_operands = Label callee_name::args /\
+    lookup_function callee_name ctx.ctx_functions = SOME callee /\
+    fmp_seal_layout_matches_fn callee sig /\
+    invoke_input_arity_ok callee sig inst /\
+    invoke_output_arity_ok callee sig inst
+Proof
+  simp[invoke_layout_wf_def]
+QED
+
 
 Theorem fmp_value_rooted_fuel_intro:
   MEM inst (fn_insts fn) /\
