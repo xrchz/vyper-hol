@@ -861,8 +861,8 @@ End
    primitive words and complex values whose memory representation is exactly
    one 32-byte word; retain a pointer for larger complex values. *)
 Definition compile_load_memory_def:
-  compile_load_memory ptr_op is_prim_word =
-    if is_prim_word then
+  compile_load_memory ptr_op is_prim_word mem_size =
+    if is_prim_word \/ mem_size = 32 then
       emit_op MLOAD [ptr_op]
     else
       return ptr_op

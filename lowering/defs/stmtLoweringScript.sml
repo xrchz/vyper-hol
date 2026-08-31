@@ -613,9 +613,7 @@ Definition compile_tuple_load_all_def:
      do src_elem <-
           (if offset = 0 then return src_op
            else emit_op ADD [src_op; Lit (n2w offset)]);
-        elem_op <-
-          (if is_word_type ty then emit_op MLOAD [src_elem]
-           else return src_elem);  (* complex: return pointer *)
+        elem_op <- compile_load_memory src_elem (is_word_type ty) mem_size;
         rest_ops <- compile_tuple_load_all cenv src_op tys
                       (offset + mem_size);
         return (elem_op :: rest_ops)
@@ -664,13 +662,18 @@ Definition compile_tuple_store_all_def:
        dst_ty <- return (case dst_ty_opt of SOME t => t | NONE => src_ty);
        is_prim <- return (is_word_type dst_ty);
        mem_sz <- return (type_memory_bytes cenv dst_ty);
-       (* Tuple elements: prim values are stack (src_loc=NONE), complex
-          pointers are into the already-staged buffer (src_loc=NONE to skip
-          re-staging in compile_assign_value, since the entire source tuple
-          is already staged). Mirrors Python pass 2 which calls
-          _store_complex_type directly (no staging wrapper). *)
-       compile_assign_value cenv dst_op dst_loc val_op is_prim
-                     NONE dst_ty src_ty NONE mem_sz;
+       src_mem_sz <- return (type_memory_bytes cenv src_ty);
+       src_is_word <- return (is_word_type src_ty \/ src_mem_sz = 32);
+       dst_is_word <- return (is_prim \/ mem_sz = 32);
+       (* Pass 1 materializes primitive and exactly-one-word complex values.
+          Consume that representation directly; larger complex values remain
+          pointers into the staged tuple. *)
+       (if src_is_word then
+          if dst_is_word then compile_store_at_loc dst_op val_op loc_opt
+          else emit_void INVALID []
+        else
+          compile_assign_value cenv dst_op dst_loc val_op is_prim
+                        NONE dst_ty src_ty NONE mem_sz);
        compile_tuple_store_all cenv src_tys targets vals
     od ∧
   (* Non-BaseTarget element: emit INVALID (shouldn't occur in valid AST) *)
@@ -698,17 +701,22 @@ Definition compile_tuple_unpack_def:
        We always stage when complex members exist (conservative but correct). *)
     let has_complex = EXISTS (λt. ¬is_word_type t) elem_types in
     let total_mem = SUM (MAP (type_memory_bytes cenv) elem_types) in
-    do staged_op <-
-         (if has_complex ∧ total_mem > 0 then
-            do staged_buf <- compile_alloc_buffer total_mem;
-               staged_ptr <- return staged_buf.buf_operand;
-               emit_void MCOPY [staged_ptr; src_op; Lit (n2w total_mem)];
-               return staged_ptr
-            od
-          else return src_op);
-       vals <- compile_tuple_load_all cenv staged_op elem_types 0;
-       compile_tuple_store_all cenv elem_types targets vals
-    od
+    if has_complex /\ total_mem > 0 /\
+       ~cenv.ce_target CapMcopy then
+      (* Reject before allocation or MCOPY-dependent staging. *)
+      emit_inst INVALID [] []
+    else
+      do staged_op <-
+           (if has_complex /\ total_mem > 0 then
+              do staged_buf <- compile_alloc_buffer total_mem;
+                 staged_ptr <- return staged_buf.buf_operand;
+                 emit_void MCOPY [staged_ptr; src_op; Lit (n2w total_mem)];
+                 return staged_ptr
+              od
+            else return src_op);
+         vals <- compile_tuple_load_all cenv staged_op elem_types 0;
+         compile_tuple_store_all cenv elem_types targets vals
+      od
 End
 
 (* ===== Range Loop Bound Checks ===== *)
