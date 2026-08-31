@@ -671,13 +671,55 @@ Proof
           venomInstTheory.mk_inst_def]
 QED
 
+Theorem fmp_positive_signature_fields:
+  fmp_positive_entry.fn_fmp_signature = SOME fmp_positive_entry_sig /\
+  fmp_positive_callee.fn_fmp_signature = SOME fmp_positive_callee_sig
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_positive_entry_signature_wf:
+  fmp_signature_matches_fn fmp_positive_ctx fmp_positive_entry
+Proof
+  simp[fmp_signature_matches_fn_def,
+       cj 1 fmp_positive_signature_fields,
+       fmp_positive_entry_syntax_wf, fmp_positive_entry_runner_wf]
+QED
+
+Theorem fmp_positive_callee_signature_wf:
+  fmp_signature_matches_fn fmp_positive_ctx fmp_positive_callee
+Proof
+  simp[fmp_signature_matches_fn_def,
+       cj 2 fmp_positive_signature_fields,
+       fmp_positive_callee_syntax_wf, fmp_positive_callee_runner_wf]
+QED
+
+Theorem fmp_positive_all_signatures_wf:
+  !fn. MEM fn fmp_positive_ctx.ctx_functions ==>
+    fmp_signature_matches_fn fmp_positive_ctx fn
+Proof
+  simp[fmp_positive_ctx_functions]
+  >> metis_tac[fmp_positive_entry_signature_wf,
+               fmp_positive_callee_signature_wf]
+QED
+
+Theorem fmp_positive_context_wf:
+  fmp_lowered_context_wf fmp_positive_ctx
+Proof
+  simp[fmp_lowered_context_wf_def, fmp_positive_static_layout_wf,
+       fmp_positive_function_basics_wf, fmp_positive_all_signatures_wf]
+  >> MATCH_ACCEPT_TAC fmp_positive_all_invoke_layouts_wf
+QED
+
 Theorem fmp_positive_boundary_eval:
   fmp_signature_matches_fn fmp_positive_ctx fmp_positive_entry /\
   fmp_signature_matches_fn fmp_positive_ctx fmp_positive_callee /\
   invoke_layout_wf fmp_positive_ctx fmp_positive_invoke /\
   fmp_lowered_context_wf fmp_positive_ctx
 Proof
-  EVAL_TAC
+  simp[fmp_positive_entry_signature_wf,
+       fmp_positive_callee_signature_wf,
+       fmp_positive_invoke_layout_wf, fmp_positive_context_wf]
 QED
 
 val _ = export_theory();
