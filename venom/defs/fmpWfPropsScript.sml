@@ -642,6 +642,35 @@ Proof
           venomInstTheory.mk_inst_def]
 QED
 
+Theorem fmp_positive_invoke_layout_wf:
+  invoke_layout_wf fmp_positive_ctx fmp_positive_invoke
+Proof
+  simp[invoke_layout_wf_def]
+  >> strip_tac
+  >> qexistsl [`"callee"`, `[Lit 7w; Var "minus"]`,
+               `fmp_positive_callee`, `fmp_positive_callee_sig`]
+  >> EVAL_TAC
+QED
+
+Theorem fmp_positive_ctx_functions:
+  fmp_positive_ctx.ctx_functions =
+    [fmp_positive_entry; fmp_positive_callee]
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_positive_all_invoke_layouts_wf:
+  !fn inst.
+    MEM fn fmp_positive_ctx.ctx_functions /\ MEM inst (fn_insts fn) ==>
+    invoke_layout_wf fmp_positive_ctx inst
+Proof
+  rpt strip_tac
+  >> gvs[fmp_positive_ctx_functions]
+  >> gvs[fmp_positive_entry_insts, fmp_positive_callee_insts]
+  >> simp[fmp_positive_invoke_layout_wf, invoke_layout_wf_def,
+          venomInstTheory.mk_inst_def]
+QED
+
 Theorem fmp_positive_boundary_eval:
   fmp_signature_matches_fn fmp_positive_ctx fmp_positive_entry /\
   fmp_signature_matches_fn fmp_positive_ctx fmp_positive_callee /\
