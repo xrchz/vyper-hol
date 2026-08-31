@@ -1782,6 +1782,311 @@ Proof
           compileEnvTheory.comp_ignore_bind_def]
 QED
 
+
+
+Theorem nested_applied_dispatch_continuation_eq:
+  !k.
+    (\(fallback_lbl, cs').
+       (\(_0, cs''). k fallback_lbl cs'')
+         (compile_selector_dispatch_linear
+            [(801029432, "fn_foo")] fallback_lbl cs'))
+      (fresh_label "fallback" (initial_compile_state "__entry")) =
+    k nested_fallback_label nested_after_dispatch_state
+Proof
+  gen_tac >> EVAL_TAC
+QED
+
+
+Theorem nested_runtime_dispatch_remainder_eq:
+  (\(fallback_lbl, cs').
+     (\(_0, cs').
+        (\(_0, cs').
+           (\(_0, cs').
+              (\(_0, cs').
+                 compile_internal_fn_bodies
+                   [nested_leaf_package; nested_mid_package] cs')
+                (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
+             (new_block fallback_lbl cs'))
+          (compile_external_fn_bodies [nested_external_package] cs'))
+       (compile_selector_dispatch_linear
+          [(801029432, "fn_foo")] fallback_lbl cs'))
+    (fresh_label "fallback" (initial_compile_state "__entry")) =
+  (\(_0, cs').
+     (\(_0, cs').
+        (\(_0, cs').
+           compile_internal_fn_bodies
+             [nested_leaf_package; nested_mid_package] cs')
+          (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
+       (new_block nested_fallback_label cs'))
+    (compile_external_fn_bodies
+       [nested_external_package] nested_after_dispatch_state)
+Proof
+  qspec_then
+    `\fallback_lbl cs'.
+       (\(_0, cs').
+          (\(_0, cs').
+             (\(_0, cs').
+                compile_internal_fn_bodies
+                  [nested_leaf_package; nested_mid_package] cs')
+               (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
+            (new_block fallback_lbl cs'))
+         (compile_external_fn_bodies [nested_external_package] cs')`
+    mp_tac nested_applied_dispatch_continuation_eq
+  >> simp[]
+QED
+
+Theorem nested_runtime_after_dispatch_eq:
+  !entry_info.
+    compile_generate_runtime
+      [(801029432, "fn_foo", F)]
+      [nested_external_package]
+      [nested_leaf_package; nested_mid_package]
+      NONE Linear 0 0 [] entry_info
+      (initial_compile_state "__entry") =
+    (\(_0, cs').
+       (\(_0, cs').
+          (\(_0, cs').
+             compile_internal_fn_bodies
+               [nested_leaf_package; nested_mid_package] cs')
+            (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
+         (new_block nested_fallback_label cs'))
+      (compile_external_fn_bodies
+         [nested_external_package] nested_after_dispatch_state)
+Proof
+  gen_tac
+  >> pure_rewrite_tac[moduleLoweringTheory.compile_generate_runtime_def]
+  >> qspec_then
+    `\fallback_lbl cs'.
+       (\(_0, cs').
+          (\(_0, cs').
+             (\(_0, cs').
+                compile_internal_fn_bodies
+                  [nested_leaf_package; nested_mid_package] cs')
+               (emit_inst REVERT [Lit 0w; Lit 0w] [] cs'))
+            (new_block fallback_lbl cs'))
+         (compile_external_fn_bodies [nested_external_package] cs')`
+    mp_tac nested_applied_dispatch_continuation_eq
+  >> simp[compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
+
+Definition nested_runtime_tail_stage_def:
+  nested_runtime_tail_stage =
+    comp_ignore_bind
+      (compile_external_fn_bodies [nested_external_package])
+      (comp_ignore_bind
+        (new_block nested_fallback_label)
+        (comp_ignore_bind
+          (emit_inst REVERT [Lit 0w; Lit 0w] [])
+          (compile_internal_fn_bodies [nested_leaf_package; nested_mid_package])))
+End
+
+Theorem nested_runtime_to_tail_eq:
+  !entry_info.
+    compile_generate_runtime [(801029432, "fn_foo", F)]
+      [nested_external_package] [nested_leaf_package; nested_mid_package]
+      NONE Linear 0 0 [] entry_info (initial_compile_state "__entry") =
+    nested_runtime_tail_stage nested_after_dispatch_state
+Proof
+  gen_tac
+  >> pure_rewrite_tac[moduleLoweringTheory.compile_generate_runtime_def]
+  >> qspec_then
+    `\fallback_lbl cs'.
+       comp_ignore_bind
+         (compile_external_fn_bodies [nested_external_package])
+         (comp_ignore_bind
+           (new_block fallback_lbl)
+           (comp_ignore_bind
+             (emit_inst REVERT [Lit 0w; Lit 0w] [])
+             (compile_internal_fn_bodies
+               [nested_leaf_package; nested_mid_package]))) cs'`
+    mp_tac nested_applied_dispatch_continuation_eq
+  >> simp[nested_runtime_tail_stage_def,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
+
+Theorem nested_runtime_tail_stage_eq:
+  nested_runtime_tail_stage nested_after_dispatch_state =
+    ((), nested_after_mid_body_state)
+Proof
+  `nested_runtime_tail_stage =
+     comp_ignore_bind
+       (comp_ignore_bind
+         (compile_external_fn_bodies [nested_external_package])
+         nested_fallback_stage)
+       (compile_internal_fn_bodies [nested_leaf_package; nested_mid_package])` by
+    simp[nested_runtime_tail_stage_def, nested_fallback_stage_def,
+         comp_ignore_bind_assoc]
+  >> pop_assum (fn th => rewrite_tac[th])
+  >> simp[nested_external_fn_bodies_eq,
+          nested_fallback_stage_eq,
+          nested_internal_fn_bodies_eq,
+          compileEnvTheory.comp_return_def,
+          compileEnvTheory.comp_bind_def,
+          compileEnvTheory.comp_ignore_bind_def]
+QED
+
+
+Theorem nested_runtime_final_state_eq:
+  !entry_info.
+    compile_generate_runtime
+      [(801029432, "fn_foo", F)]
+      [nested_external_package]
+      [nested_leaf_package; nested_mid_package]
+      NONE Linear 0 0 [] entry_info
+      (initial_compile_state "__entry") =
+    ((), nested_after_mid_body_state)
+Proof
+  gen_tac
+  >> rewrite_tac[nested_runtime_to_tail_eq]
+  >> rewrite_tac[nested_runtime_tail_stage_eq]
+QED
+
+
+Theorem nested_entry_prefix_no_leaf:
+  ~MEM "leaf" (MAP (\bb. bb.bb_label)
+    (REVERSE nested_after_foo_body_state.cs_blocks ++
+     [<| bb_label := nested_after_foo_body_state.cs_current_bb;
+         bb_instructions := nested_after_foo_body_state.cs_current_insts |>;
+      <| bb_label := nested_after_fallback_state.cs_current_bb;
+         bb_instructions := nested_after_fallback_state.cs_current_insts |>]))
+Proof
+  pure_rewrite_tac[nested_after_foo_body_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_foo_mid_call_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_foo_name_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_foo_entry_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_fallback_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_dispatch_state_def]
+  >> simp[nested_fallback_label_def,
+          compileEnvTheory.fresh_label_output_def]
+QED
+Theorem nested_internal_blocks_partition:
+  package_internal_blocks [("leaf", F, 1); ("mid", F, 1)]
+    (REVERSE nested_after_mid_body_state.cs_blocks ++
+     [<| bb_label := nested_after_mid_body_state.cs_current_bb;
+         bb_instructions := nested_after_mid_body_state.cs_current_insts |>]) =
+  SOME
+    (REVERSE nested_after_foo_body_state.cs_blocks ++
+       [<| bb_label := nested_after_foo_body_state.cs_current_bb;
+           bb_instructions := nested_after_foo_body_state.cs_current_insts |>;
+        <| bb_label := nested_after_fallback_state.cs_current_bb;
+           bb_instructions := nested_after_fallback_state.cs_current_insts |>],
+     [mk_internal_function "leaf"
+        [<| bb_label := nested_after_leaf_body_state.cs_current_bb;
+            bb_instructions := nested_after_leaf_body_state.cs_current_insts |>] F 1;
+      mk_internal_function "mid"
+        [<| bb_label := nested_after_mid_body_state.cs_current_bb;
+            bb_instructions := nested_after_mid_body_state.cs_current_insts |>] F 1])
+Proof
+  pure_rewrite_tac[nested_after_mid_body_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_mid_leaf_call_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_mid_name_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_mid_entry_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_leaf_body_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_leaf_entry_state_def]
+  >> simp[]
+  >> pure_rewrite_tac[nested_after_fallback_state_def]
+  >> simp[]
+  >> qmatch_goalsub_abbrev_tac `prefix ++ [leaf_bb] ++ [mid_bb]`
+  >> `~MEM "leaf" (MAP (\bb. bb.bb_label) prefix)` by
+       (mp_tac nested_entry_prefix_no_leaf
+        >> simp[Abbr `prefix`, nested_after_fallback_state_def])
+  >> `split_blocks_at "leaf"
+        (prefix ++ [leaf_bb] ++ [mid_bb]) =
+      SOME (prefix, [leaf_bb] ++ [mid_bb])` by
+       (CONV_TAC
+          (LHS_CONV (RAND_CONV (REWR_CONV (GSYM listTheory.APPEND_ASSOC))))
+        >> simpLib.SIMP_TAC pure_ss [listTheory.APPEND]
+        >> irule vyperCompilerTheory.split_blocks_at_append_delimiter
+        >> simp[Abbr `leaf_bb`])
+  >> simp[vyperCompilerTheory.package_internal_blocks_def,
+          vyperCompilerTheory.split_blocks_at_def,
+          Abbr `leaf_bb`, Abbr `mid_bb`, Abbr `prefix`]
+QED
+
+Theorem nested_internal_call_extracted_context:
+  case extract_context_with_internals "__entry"
+         [nested_leaf_package; nested_mid_package]
+         nested_after_mid_body_state of
+    NONE => F
+  | SOME (ctx, data) =>
+      lowering_context_ok ctx /\
+      ctx_fn_names ctx = ["__entry"; "leaf"; "mid"] /\
+      OPTION_MAP (\fn. fn.fn_name)
+        (lookup_function "leaf" ctx.ctx_functions) = SOME "leaf" /\
+      OPTION_MAP (\fn. fn.fn_name)
+        (lookup_function "mid" ctx.ctx_functions) = SOME "mid" /\
+      MAP (\fn. (fn.fn_name, fn.fn_call_abi, fn.fn_noinline,
+                 fn.fn_eom, fn.fn_fmp_signature)) ctx.ctx_functions =
+        [("__entry", default_internal_call_abi, F, NONE, NONE);
+         ("leaf",
+          <| ica_has_memory_return_buffer := SOME F;
+             ica_user_return_count := SOME 1 |>, F, NONE, NONE);
+         ("mid",
+          <| ica_has_memory_return_buffer := SOME F;
+             ica_user_return_count := SOME 1 |>, F, NONE, NONE)] /\
+      EVERY (\fn. fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE)
+        ctx.ctx_functions
+Proof
+  pure_rewrite_tac[vyperCompilerTheory.extract_context_with_internals_def]
+  >> simp[vyperCompilerTheory.internal_fn_descriptors_def,
+          nested_leaf_package_def, nested_mid_package_def,
+          nested_leaf_cenv_entry_facts, nested_mid_cenv_entry_facts]
+  >> rewrite_tac[nested_internal_blocks_partition]
+  >> simp[venomInstTheory.mk_venom_context_def,
+          venomInstTheory.ctx_fn_names_def,
+          venomInstTheory.lookup_function_def,
+          listTheory.FIND_thm,
+          vyperCompilerTheory.mk_internal_function_metadata,
+          venomInstTheory.mk_raw_function_def]
+  >> pure_rewrite_tac[vyperCompilerTheory.lowering_context_ok_def]
+  >> conj_tac
+  >- simp[venomInstTheory.ctx_fn_names_def,
+          vyperCompilerTheory.mk_internal_function_metadata]
+  >> pure_rewrite_tac[vyperCompilerTheory.wf_invoke_targets_check_def]
+  >> simp[venomInstTheory.ctx_fn_names_def,
+          vyperCompilerTheory.mk_internal_function_metadata,
+          vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_mid_body_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_mid_leaf_call_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_mid_name_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_mid_entry_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_leaf_body_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_leaf_entry_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_fallback_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_foo_body_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_foo_mid_call_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_foo_name_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_foo_entry_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> pure_rewrite_tac[nested_after_dispatch_state_def]
+  >> simp[vyperCompilerTheory.invoke_target_ok_def]
+  >> simp[venomInstTheory.mk_inst_def]
+QED
+
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
@@ -1809,5 +2114,28 @@ Theorem nested_internal_call_packaging:
       EVERY (\fn. fn.fn_eom = NONE /\ fn.fn_fmp_signature = NONE)
         ctx.ctx_functions
 Proof
-  rewrite_tac[GSYM vyperCompilerTheory.wf_invoke_targets_check_eq] >> EVAL_TAC
+  simp[compileVyperTheory.lower_vyper_runtime_unit_def,
+       nested_internal_call_classify,
+       nested_internal_call_selectors,
+       nested_internal_call_external_package,
+       nested_internal_call_internal_packages,
+       compileVyperTheory.package_fallback_fn_def,
+       vyperCompilerTheory.run_lowering_def,
+       vyperCompilerTheory.lowering_policy_ok_def,
+       venomPolicyTypesTheory.prague_capabilities_wf,
+       venomPolicyTypesTheory.prague_capabilities_def,
+       venomPolicyTypesTheory.target_capabilities_wf_def,
+       nested_runtime_final_state_eq,
+       nested_internal_call_extracted_context,
+       GSYM vyperCompilerTheory.wf_invoke_targets_check_eq]
+  >> Cases_on `extract_context_with_internals "__entry"
+        [nested_leaf_package; nested_mid_package]
+        nested_after_mid_body_state`
+  >- (mp_tac nested_internal_call_extracted_context >> gvs[])
+  >> PairCases_on `x`
+  >> qpat_x_assum `_ = SOME (x0,x1)`
+       (fn th => mp_tac
+          (REWRITE_RULE [th] nested_internal_call_extracted_context))
+  >> simp[vyperCompilerTheory.lowering_context_ok_def,
+          GSYM vyperCompilerTheory.wf_invoke_targets_check_eq]
 QED
