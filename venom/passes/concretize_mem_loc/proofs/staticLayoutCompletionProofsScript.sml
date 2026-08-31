@@ -2,8 +2,8 @@
 
 Theory staticLayoutCompletionProofs
 Ancestors
-  staticLayoutAllocatorProofs concretizeMemLocDefs staticLayoutDefs staticLayoutWf
-  list finite_map arithmetic
+  staticLayoutAllocatorProofs staticLayoutFoldProofs concretizeMemLocDefs
+  staticLayoutDefs staticLayoutWf list finite_map arithmetic
 
 Theorem reserved_intervals_disjoint_sym_completion[local]:
   !r1 r2.
@@ -774,5 +774,56 @@ Proof
   >> gvs[]
 QED
 
+Theorem compute_function_layout_fuel_wf:
+  compute_function_layout_fuel fuel reserved fn = SOME layout ==>
+  concretize_layout_wf reserved fn layout
+Proof
+  simp[compute_function_layout_fuel_def]
+  >> Cases_on `static_alloca_items fn` >> gvs[]
+  >> Cases_on `complete_alloc_positions fn.fn_forced_alloc_positions
+                 reserved fn
+                 (compute_alloc_map_fuel fuel fn
+                    (bp_analyze_fuel fuel (cfg_analyze fn) fn)
+                    (K []) [] (cfg_analyze fn)
+                    (forced_candidate_positions x
+                       fn.fn_forced_alloc_positions FEMPTY) reserved)`
+  >> gvs[]
+  >> Cases_on `global_reserved_end reserved 0` >> gvs[mk_concretize_layout_def]
+  >> Cases_on `allocation_eom_fold x' (fn_insts fn) x''`
+  >> gvs[mk_concretize_layout_def]
+  >> strip_tac >> gvs[]
+  >> drule complete_alloc_positions_success
+  >> strip_tac
+  >> simp[concretize_layout_wf_def]
+  >> drule allocation_eom_fold_success >> strip_tac
+  >> `x'' < dimword (:256)` by
+       (qspecl_then [`reserved`,`0`,`x''`] mp_tac
+          global_reserved_end_lt_dimword
+        >> simp[])
+  >> conj_tac
+  >- (qspecl_then [`x'`,`fn_insts fn`,`x''`,`x'³'`] mp_tac
+        allocation_eom_fold_lt_dimword
+      >> simp[])
+  >> rpt gen_tac >> strip_tac
+  >> `?size. inst.inst_operands = [Lit size] /\
+             exact_static_alloca inst =
+               SOME (Allocation inst.inst_id,w2n size)` by
+       metis_tac[static_alloca_items_ALLOCA_exact]
+  >> qpat_x_assum `!inst alloc sz. _`
+       (qspecl_then [`inst`,`Allocation inst.inst_id`,`w2n size'`] mp_tac)
+  >> simp[] >> strip_tac
+  >> qpat_x_assum `!inst. MEM inst (fn_insts fn) /\ _ ==> _`
+       (qspec_then `inst` mp_tac)
+  >> simp[] >> strip_tac
+  >> qpat_x_assum `allocation_end x' inst = SOME alloc_end` mp_tac
+  >> simp[allocation_end_def] >> strip_tac
+  >> qpat_x_assum `!alloc pos. FLOOKUP x' alloc = SOME pos ==> _`
+       (qspecl_then [`Allocation inst.inst_id`,`pos`] mp_tac)
+  >> simp[] >> strip_tac
+  >> `w2n size' = sz` by
+       metis_tac[static_alloca_items_exact_key_size_unique]
+  >> gvs[]
+  >> simp[static_position_wf_def]
+QED
 
 val _ = export_theory();
