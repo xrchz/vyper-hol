@@ -1565,6 +1565,75 @@ Proof
        (rewrite_tac[GSYM listTheory.APPEND_ASSOC] >> simp[])
   >> simp[]
 QED
+
+Definition nested_mid_return_stage_def:
+  nested_mid_return_stage =
+    do rpc <- emit_op MLOAD [Lit 32w];
+       compile_internal_return nested_mid_cenv
+         (SOME nested_mid_leaf_call_operand) rpc
+         nested_mid_cenv.ce_returns_count
+         (BaseT (UintT 256)) (BaseT (UintT 256)) [] NONE
+    od
+End
+
+Definition nested_mid_loaded_return_pc_operand_def:
+  nested_mid_loaded_return_pc_operand = Var "%28"
+End
+
+Definition nested_after_mid_body_state_def:
+  nested_after_mid_body_state =
+    nested_after_mid_leaf_call_state with
+      <| cs_next_var := 29;
+         cs_next_id := 47;
+         cs_current_insts :=
+           nested_after_mid_leaf_call_state.cs_current_insts ++
+             [mk_inst 45 MLOAD [Lit 32w] ["%28"]] ++
+             [mk_inst 46 RET
+                [nested_mid_leaf_call_operand;
+                 nested_mid_loaded_return_pc_operand] []] |>
+End
+
+Theorem nested_mid_return_stage_eq:
+  nested_mid_return_stage nested_after_mid_leaf_call_state =
+    ((), nested_after_mid_body_state)
+Proof
+  simp[nested_mid_return_stage_def,
+       nested_mid_cenv_entry_facts,
+       stmtLoweringTheory.compile_internal_return_def,
+       emitHelperTheory.emit_op_def, emitHelperTheory.emit_inst_def,
+       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
+       compileEnvTheory.comp_ignore_bind_def,
+       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
+       compileEnvTheory.emit_def,
+       nested_mid_leaf_call_operand_def,
+       nested_mid_loaded_return_pc_operand_def,
+       nested_after_mid_body_state_def,
+       nested_after_mid_leaf_call_state_def]
+  >> simp[listTheory.APPEND_ASSOC]
+QED
+
+Theorem nested_after_mid_body_state_terminated:
+  block_is_terminated nested_after_mid_body_state
+Proof
+  `nested_after_mid_body_state.cs_current_insts <> []` by
+    simp[nested_after_mid_body_state_def]
+  >> `LAST nested_after_mid_body_state.cs_current_insts =
+        mk_inst 46 RET
+          [nested_mid_leaf_call_operand;
+           nested_mid_loaded_return_pc_operand] []` by
+       simp[nested_after_mid_body_state_def,
+            nested_LAST_APPEND_NONEMPTY_SUFFIX]
+  >> Cases_on `nested_after_mid_body_state.cs_current_insts`
+  >- gvs[]
+  >> FIRST
+       [qpat_assum `nested_after_mid_body_state.cs_current_insts = _`
+          (fn th => rewrite_tac[th]),
+        qpat_assum `_ = nested_after_mid_body_state.cs_current_insts`
+          (fn th => rewrite_tac[GSYM th])]
+  >> simp[compileEnvTheory.block_is_terminated_def,
+          venomInstTheory.mk_inst_def,
+          venomInstTheory.is_terminator_def]
+QED
 Theorem nested_internal_call_packaging:
   case lower_vyper_runtime_unit nested_internal_call_program
          <| rpol_target := prague_capabilities;
