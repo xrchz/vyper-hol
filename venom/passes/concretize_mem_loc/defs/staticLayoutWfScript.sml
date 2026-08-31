@@ -132,4 +132,26 @@ Proof
   qexistsl [`7`,`32`] >> EVAL_TAC
 QED
 
+Theorem static_wf_dimindex_256[local,simp]:
+  dimindex (:256) = 256
+Proof
+  CONV_TAC fcpLib.INDEX_CONV
+QED
+
+
+Theorem static_position_wf_zero:
+  static_position_wf reserved pos (0w : 256 word) <=>
+  pos < dimword (:256)
+Proof
+  simp[static_position_wf_def]
+QED
+
+Theorem static_position_wf_guard_probes:
+  static_position_wf [(0,10)] 5 (0w : 256 word) /\
+  ~static_position_wf [(0,10)] 5 (1w : 256 word) /\
+  ~static_position_wf [] (dimword (:256)) (0w : 256 word)
+Proof
+  simp[static_position_wf_def, reserved_intervals_disjoint_def,
+       wordsTheory.dimword_def]
+QED
 val _ = export_theory();
