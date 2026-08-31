@@ -359,9 +359,17 @@ Definition wf_invoke_targets_check_def:
       ctx.ctx_functions
 End
 
+Definition forced_alloc_inputs_check_def:
+  forced_alloc_inputs_check ctx <=>
+    EVERY function_forced_metadata_ok ctx.ctx_functions
+End
+
 Definition lowering_context_ok_def:
   lowering_context_ok ctx <=>
-    ALL_DISTINCT (ctx_fn_names ctx) /\ wf_invoke_targets_check ctx
+    ALL_DISTINCT (ctx_fn_names ctx) /\
+    wf_invoke_targets_check ctx /\
+    ctx_inst_ids_distinct ctx /\
+    forced_alloc_inputs_check ctx
 End
 (* ===== Policy Boundary ===== *)
 
@@ -388,6 +396,13 @@ Theorem lowering_context_ok_integrity:
 Proof
   simp[lowering_context_ok_def, ctx_distinct_fn_names_def,
        wf_invoke_targets_check_eq]
+QED
+
+Theorem lowering_context_ok_static_integrity:
+  !ctx. lowering_context_ok ctx ==>
+        ctx_inst_ids_distinct ctx /\ forced_alloc_inputs_check ctx
+Proof
+  simp[lowering_context_ok_def]
 QED
 
 Definition internal_fn_matches_descriptor_def:
@@ -625,4 +640,27 @@ Proof
   simp[run_deploy_lowering_def] >> rpt strip_tac >>
   pairarg_tac >> gvs[AllCaseEqs()] >>
   metis_tac[lowering_context_ok_integrity]
+QED
+
+Theorem run_lowering_static_integrity:
+  run_lowering selectors external_fns internal_fns fallback_fn rpolicy
+    bucket_count fn_metadata_bytes dense_buckets entry_info entry_label = SOME unit ==>
+  ctx_inst_ids_distinct unit.cu_context /\
+  forced_alloc_inputs_check unit.cu_context
+Proof
+  simp[run_lowering_def] >> rpt strip_tac >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  metis_tac[lowering_context_ok_static_integrity]
+QED
+
+Theorem run_deploy_lowering_static_integrity:
+  run_deploy_lowering has_constructor rpolicy runtime_bytecode immutables_len
+    constructor_args data_size ctor_internal_fns cenv (ctor_stmts : stmt list) is_payable
+    is_nonreentrant nkey use_transient entry_label = SOME unit ==>
+  ctx_inst_ids_distinct unit.cu_context /\
+  forced_alloc_inputs_check unit.cu_context
+Proof
+  simp[run_deploy_lowering_def] >> rpt strip_tac >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  metis_tac[lowering_context_ok_static_integrity]
 QED
