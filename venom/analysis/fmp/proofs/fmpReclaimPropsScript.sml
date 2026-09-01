@@ -130,6 +130,22 @@ Proof
   simp[fmp_reclaim_plan_valid_def, fmp_restore_target_ok_def] >>
   metis_tac[]
 QED
+
+Theorem analyze_fmp_reclaims_current_function:
+  analyze_fmp_reclaims ctx name = SOME plan ==>
+  ?fn. lookup_function name ctx.ctx_functions = SOME fn
+Proof
+  strip_tac >> drule analyze_fmp_reclaims_valid >>
+  simp[fmp_reclaim_plan_valid_def] >> metis_tac[]
+QED
+
+Theorem analyze_fmp_reclaims_deterministic:
+  analyze_fmp_reclaims ctx name = SOME p /\
+  analyze_fmp_reclaims ctx name = SOME q ==>
+  p = q
+Proof
+  rpt strip_tac >> gvs[]
+QED
 Theorem analyze_fmp_reclaims_preconditions:
   !ctx name infos fn.
     analyze_fmp_context ctx = SOME infos ==>
