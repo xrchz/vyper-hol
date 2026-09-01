@@ -47,3 +47,6 @@ Ancestors
   (* invoke copy forwarding *)
   internalReturnCopyFwdProofs
   readonlyInvokeCopyFwdProofs
+
+  (* target-checked DRET desugaring *)
+  dretDesugarProps
