@@ -120,4 +120,113 @@ Definition fmp_reclaim_input_def:
     EVERY (\pb. fmp_point_well_located fn (FST pb)) plan.frp_restores
 End
 
+(* Lower one checked instruction.  Single-instruction rewrites retain the
+   source ID; a DALLOCA expansion obtains every temporary and instruction ID
+   from the unit supply. *)
+Definition fmp_lower_inst_def:
+  fmp_lower_inst infos ctx runner s inst =
+    if ~fmp_lower_inst_shape infos ctx inst then NONE
+    else
+      case inst.inst_opcode of
+        DALLOCA =>
+          (case inst.inst_operands of
+             [size_op] =>
+               (case inst.inst_outputs of
+                  [old] =>
+                    (case fresh_ir_var s of (plus31,s1) =>
+                     case fresh_ir_var s1 of (aligned,s2) =>
+                     case fresh_inst_id s2 of (add_id,s3) =>
+                     case fresh_inst_id s3 of (and_id,s4) =>
+                     case fresh_inst_id s4 of (bump_id,s5) =>
+                       SOME
+                         ([mk_inst add_id ADD [size_op; Lit 31w] [plus31];
+                           mk_inst and_id AND
+                             [Var plus31;
+                              Lit 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0w]
+                             [aligned];
+                           mk_inst bump_id BUMP
+                             [Var runner; Var aligned] [old;runner]],
+                          s5))
+                | _ => NONE)
+           | _ => NONE)
+      | DRET => NONE
+      | GETFMP =>
+          (case inst.inst_outputs of
+             [out] => SOME ([inst with <| inst_opcode := ASSIGN;
+                                        inst_operands := [Var runner] |>],s)
+           | _ => NONE)
+      | SETFMP =>
+          (case inst.inst_operands of
+             [value] => SOME ([inst with <| inst_opcode := ASSIGN;
+                                          inst_outputs := [runner] |>],s)
+           | _ => NONE)
+      | RETFMP =>
+          if NULL inst.inst_operands then NONE
+          else SOME
+            ([inst with <| inst_opcode := RET;
+                         inst_operands :=
+                           FRONT inst.inst_operands ++
+                           [Var runner; LAST inst.inst_operands] |>],s)
+      | INVOKE =>
+          (case fmp_resolve_invoke infos ctx inst of
+             NONE => NONE
+           | SOME (callee,info,args) =>
+               SOME
+                 ([inst with <|
+                     inst_operands :=
+                       Label callee.fn_name ::
+                       (args ++ if info.fi_needs_fmp then [Var runner] else []);
+                     inst_outputs :=
+                       inst.inst_outputs ++
+                       if info.fi_publishes_fmp then [runner] else [] |>],s))
+      | op =>
+          if is_raw_fmp_opcode op then NONE else SOME ([inst],s)
+End
+
+Definition fmp_lower_insts_def:
+  fmp_lower_insts infos ctx runner s [] = SOME ([],s) /\
+  fmp_lower_insts infos ctx runner s (inst::insts) =
+    case fmp_lower_inst infos ctx runner s inst of
+      NONE => NONE
+    | SOME (head,s1) =>
+        case fmp_lower_insts infos ctx runner s1 insts of
+          NONE => NONE
+        | SOME (tail,s2) => SOME (head ++ tail,s2)
+End
+
+Definition fmp_emit_restores_def:
+  fmp_emit_restores runner s [] = ([],s) /\
+  fmp_emit_restores runner s (base::bases) =
+    case fresh_inst_id s of (id,s1) =>
+    case fmp_emit_restores runner s1 bases of (tail,s2) =>
+      (mk_inst id ASSIGN [Var base] [runner]::tail,s2)
+End
+
+Datatype:
+  fmp_blocks_result =
+    FmpBlocksResult (basic_block list) ((fmp_point # string) list) ir_supply
+End
+
+(* Reclaim points refer to original instruction indices.  Each block selects
+   its exact original endpoint before rewriting; leftovers are returned for the
+   outer checked boundary to reject. *)
+Definition fmp_lower_blocks_def:
+  fmp_lower_blocks infos ctx runner s restores [] =
+    SOME (FmpBlocksResult [] restores s) /\
+  fmp_lower_blocks infos ctx runner s restores (bb::bbs) =
+    case fmp_lower_insts infos ctx runner s bb.bb_instructions of
+      NONE => NONE
+    | SOME (insts,s1) =>
+        let p = <| fp_block := bb.bb_label;
+                   fp_index := LENGTH bb.bb_instructions |> in
+        let (bases,later) = fmp_select_point_restores p restores in
+        case fmp_emit_restores runner s1 bases of (restore_insts,s2) =>
+        case fmp_lower_blocks infos ctx runner s2 later bbs of
+          NONE => NONE
+        | SOME (FmpBlocksResult tail leftover s3) =>
+            SOME (FmpBlocksResult
+              ((bb with bb_instructions := insts ++ restore_insts)::tail)
+              leftover s3)
+End
+
 val _ = export_theory();
