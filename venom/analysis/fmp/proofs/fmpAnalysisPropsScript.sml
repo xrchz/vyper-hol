@@ -591,4 +591,355 @@ Proof
   >> simp[]
 QED
 
+
+(* ------------------------------------------------------------------------- *)
+(* Bounded-round invariants and the public analysis contract. *)
+
+Theorem fmp_option_step_none_funpow[simp]:
+  !n. FUNPOW (fmp_option_step ctx) n NONE = NONE
+Proof
+  Induct >> simp[arithmeticTheory.FUNPOW, fmp_option_step_def]
+QED
+
+Theorem analyze_fmp_context_seeded:
+  analyze_fmp_context ctx = SOME infos ==>
+  ?seed. seed_fmp_context ctx = SOME seed
+Proof
+  rw[analyze_fmp_context_def]
+  >> Cases_on `seed_fmp_context ctx` >> gvs[]
+QED
+
+Theorem analyze_fmp_context_distinct:
+  analyze_fmp_context ctx = SOME infos ==>
+  ctx_distinct_fn_names ctx
+Proof
+  metis_tac[analyze_fmp_context_seeded, seed_fmp_context_distinct]
+QED
+
+Theorem fmp_option_rounds_coverage:
+  !n old out.
+    ctx_distinct_fn_names ctx /\
+    (!fn. MEM fn ctx.ctx_functions ==>
+      ?info. FLOOKUP old fn.fn_name = SOME info) /\
+    FUNPOW (fmp_option_step ctx) n (SOME old) = SOME out ==>
+    !fn. MEM fn ctx.ctx_functions ==>
+      ?info. FLOOKUP out fn.fn_name = SOME info
+Proof
+  Induct
+  >- simp[arithmeticTheory.FUNPOW]
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `fmp_context_step ctx old`
+  >> gvs[arithmeticTheory.FUNPOW, fmp_option_step_def]
+  >> first_x_assum (qspecl_then [`x`, `out`] mp_tac)
+  >> metis_tac[fmp_context_step_coverage]
+QED
+
+Theorem fmp_option_rounds_sealed_lookup:
+  !n old out.
+    ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+    fn.fn_fmp_signature = SOME sig /\
+    FUNPOW (fmp_option_step ctx) n (SOME old) = SOME out ==>
+    FLOOKUP out fn.fn_name = FLOOKUP old fn.fn_name
+Proof
+  Induct
+  >- simp[arithmeticTheory.FUNPOW]
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `fmp_context_step ctx old`
+  >> gvs[arithmeticTheory.FUNPOW, fmp_option_step_def]
+  >> first_x_assum (qspecl_then [`x`, `out`] mp_tac)
+  >> metis_tac[fmp_context_step_sealed_lookup]
+QED
+
+Theorem analyze_fmp_context_coverage:
+  analyze_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions ==>
+  ?info. FLOOKUP infos fn.fn_name = SOME info
+Proof
+  rw[analyze_fmp_context_def]
+  >> Cases_on `seed_fmp_context ctx` >> gvs[]
+  >> metis_tac[seed_fmp_context_distinct, seed_fmp_context_coverage,
+               fmp_option_rounds_coverage]
+QED
+
+Theorem analyze_fmp_context_sealed_lookup:
+  analyze_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = SOME sig ==>
+  fmp_signature_matches_fn ctx fn /\
+  FLOOKUP infos fn.fn_name = SOME (fmp_info_of_signature sig)
+Proof
+  rw[analyze_fmp_context_def]
+  >> Cases_on `seed_fmp_context ctx` >> gvs[]
+  >> metis_tac[seed_fmp_context_distinct, seed_fmp_context_sealed_lookup,
+               fmp_option_rounds_sealed_lookup]
+QED
+
+Theorem fmp_option_rounds_unsealed_old_fields_mono:
+  !n old out old_info info.
+    ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+    fn.fn_fmp_signature = NONE /\
+    FLOOKUP old fn.fn_name = SOME old_info /\
+    FUNPOW (fmp_option_step ctx) n (SOME old) = SOME out /\
+    FLOOKUP out fn.fn_name = SOME info ==>
+    (old_info.fi_needs_fmp ==> info.fi_needs_fmp) /\
+    (old_info.fi_publishes_fmp ==> info.fi_publishes_fmp)
+Proof
+  Induct
+  >- (rpt gen_tac >> strip_tac >> gvs[arithmeticTheory.FUNPOW])
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `fmp_context_step ctx old`
+  >> gvs[arithmeticTheory.FUNPOW, fmp_option_step_def]
+  >> metis_tac[fmp_context_step_coverage,
+               fmp_context_step_unsealed_old_fields_mono]
+QED
+
+Theorem fmp_seed_function_unsealed_lookup:
+  fmp_seed_function ctx fn acc = SOME acc' /\
+  fn.fn_fmp_signature = NONE ==>
+  FLOOKUP acc' fn.fn_name = SOME (fmp_direct_info fn)
+Proof
+  rw[fmp_seed_function_def]
+  >> Cases_on `fmp_function_targets ctx fn` >> gvs[]
+  >> gvs[finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_seed_functions_unsealed_lookup:
+  !fns acc out fn.
+    fmp_seed_functions ctx fns acc = SOME out /\ MEM fn fns /\
+    fn.fn_fmp_signature = NONE ==>
+    FLOOKUP out fn.fn_name = SOME (fmp_direct_info fn)
+Proof
+  Induct >> simp[fmp_seed_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_seed_function ctx h acc` >> simp[]
+  >> metis_tac[fmp_seed_function_unsealed_lookup,
+               fmp_seed_functions_preserves_lookup]
+QED
+
+Theorem seed_fmp_context_unsealed_lookup:
+  seed_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE ==>
+  FLOOKUP infos fn.fn_name = SOME (fmp_direct_info fn)
+Proof
+  simp[seed_fmp_context_def]
+  >> metis_tac[fmp_seed_functions_unsealed_lookup]
+QED
+
+Theorem analyze_fmp_context_unsealed_direct_fields:
+  analyze_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE /\
+  FLOOKUP infos fn.fn_name = SOME info ==>
+  ((fmp_direct_info fn).fi_needs_fmp ==> info.fi_needs_fmp) /\
+  ((fmp_direct_info fn).fi_publishes_fmp ==> info.fi_publishes_fmp)
+Proof
+  rw[analyze_fmp_context_def]
+  >> Cases_on `seed_fmp_context ctx` >> gvs[]
+  >> metis_tac[seed_fmp_context_distinct,
+               seed_fmp_context_unsealed_lookup,
+               fmp_option_rounds_unsealed_old_fields_mono]
+QED
+
+Theorem fmp_join_target_info_needs_iff:
+  !targets acc out.
+    fmp_join_target_info infos targets acc = SOME out ==>
+    (out.fi_needs_fmp <=>
+       acc.fi_needs_fmp \/
+       ?name info. MEM name targets /\
+         FLOOKUP infos name = SOME info /\ info.fi_needs_fmp)
+Proof
+  Induct >> simp[fmp_join_target_info_def]
+  >> rpt gen_tac
+  >> Cases_on `FLOOKUP infos h` >> simp[]
+  >> strip_tac
+  >> first_x_assum
+       (qspecl_then [`fmp_info_join acc x`, `out`] mp_tac)
+  >> simp[]
+  >> disch_then (fn th => rewrite_tac[th])
+  >> eq_tac >> strip_tac >> gvs[] >> metis_tac[]
+QED
+
+Theorem fmp_join_target_info_publishes_iff:
+  !targets acc out.
+    fmp_join_target_info infos targets acc = SOME out ==>
+    (out.fi_publishes_fmp <=>
+       acc.fi_publishes_fmp \/
+       ?name info. MEM name targets /\
+         FLOOKUP infos name = SOME info /\ info.fi_publishes_fmp)
+Proof
+  Induct >> simp[fmp_join_target_info_def]
+  >> rpt gen_tac
+  >> Cases_on `FLOOKUP infos h` >> simp[]
+  >> strip_tac
+  >> first_x_assum
+       (qspecl_then [`fmp_info_join acc x`, `out`] mp_tac)
+  >> simp[]
+  >> disch_then (fn th => rewrite_tac[th])
+  >> eq_tac >> strip_tac >> gvs[] >> metis_tac[]
+QED
+
+Definition fmp_unsealed_calls_def:
+  fmp_unsealed_calls ctx caller callee <=>
+    MEM caller ctx.ctx_functions /\
+    caller.fn_fmp_signature = NONE /\
+    MEM callee ctx.ctx_functions /\
+    ?targets. fmp_function_targets ctx caller = SOME targets /\
+              MEM callee.fn_name targets
+End
+
+Definition fmp_needs_source_def:
+  fmp_needs_source fn <=>
+    case fn.fn_fmp_signature of
+      SOME sig => (fmp_info_of_signature sig).fi_needs_fmp
+    | NONE => (fmp_direct_info fn).fi_needs_fmp
+End
+
+Definition fmp_publishes_source_def:
+  fmp_publishes_source fn <=>
+    case fn.fn_fmp_signature of
+      SOME sig => (fmp_info_of_signature sig).fi_publishes_fmp
+    | NONE => (fmp_direct_info fn).fi_publishes_fmp
+End
+
+Theorem fmp_resolve_targets_lookup:
+  !targets name.
+    fmp_resolve_targets ctx targets /\ MEM name targets ==>
+    ?fn. lookup_function name ctx.ctx_functions = SOME fn
+Proof
+  Induct >> simp[fmp_resolve_targets_def]
+  >> rpt gen_tac >> strip_tac
+  >> gvs[]
+  >> Cases_on `lookup_function h ctx.ctx_functions` >> gvs[]
+  >> metis_tac[]
+QED
+
+Theorem fmp_function_targets_lookup:
+  fmp_function_targets ctx caller = SOME targets /\ MEM name targets ==>
+  ?callee. lookup_function name ctx.ctx_functions = SOME callee
+Proof
+  rw[fmp_function_targets_def]
+  >> Cases_on `fmp_collect_invokes (fn_insts caller)` >> gvs[]
+  >> metis_tac[fmp_resolve_targets_lookup]
+QED
+
+Theorem seed_fmp_context_needs_source:
+  seed_fmp_context ctx = SOME seed /\ MEM fn ctx.ctx_functions /\
+  FLOOKUP seed fn.fn_name = SOME info ==>
+  (info.fi_needs_fmp <=> fmp_needs_source fn)
+Proof
+  Cases_on `fn.fn_fmp_signature`
+  >- (simp[fmp_needs_source_def] >> strip_tac
+      >> drule_all seed_fmp_context_unsealed_lookup >> gvs[])
+  >> simp[fmp_needs_source_def] >> strip_tac
+  >> drule_all seed_fmp_context_sealed_lookup >> gvs[]
+QED
+
+Theorem seed_fmp_context_publishes_source:
+  seed_fmp_context ctx = SOME seed /\ MEM fn ctx.ctx_functions /\
+  FLOOKUP seed fn.fn_name = SOME info ==>
+  (info.fi_publishes_fmp <=> fmp_publishes_source fn)
+Proof
+  Cases_on `fn.fn_fmp_signature`
+  >- (simp[fmp_publishes_source_def] >> strip_tac
+      >> drule_all seed_fmp_context_unsealed_lookup >> gvs[])
+  >> simp[fmp_publishes_source_def] >> strip_tac
+  >> drule_all seed_fmp_context_sealed_lookup >> gvs[]
+QED
+
+Theorem lookup_function_name:
+  !name fns fn.
+    lookup_function name fns = SOME fn ==> fn.fn_name = name
+Proof
+  Induct_on `fns` >> rw[lookup_function_def, listTheory.FIND_thm]
+  >> gvs[lookup_function_def]
+QED
+
+Theorem fmp_target_name_callee:
+  fmp_function_targets ctx caller = SOME targets /\ MEM name targets ==>
+  ?callee. MEM callee ctx.ctx_functions /\ callee.fn_name = name
+Proof
+  strip_tac
+  >> drule_all fmp_function_targets_lookup
+  >> strip_tac
+  >> qexists `callee`
+  >> metis_tac[lookup_function_MEM, lookup_function_name]
+QED
+
+Theorem fmp_target_needs_exists:
+  MEM caller ctx.ctx_functions /\ caller.fn_fmp_signature = NONE /\
+  fmp_function_targets ctx caller = SOME targets ==>
+  ((?name info. MEM name targets /\ FLOOKUP old name = SOME info /\
+                 info.fi_needs_fmp) <=>
+   ?callee info. fmp_unsealed_calls ctx caller callee /\
+     FLOOKUP old callee.fn_name = SOME info /\ info.fi_needs_fmp)
+Proof
+  strip_tac >> eq_tac
+  >- (strip_tac
+      >> drule_all fmp_target_name_callee >> strip_tac
+      >> qexistsl [`callee`, `info`]
+      >> simp[fmp_unsealed_calls_def] >> metis_tac[])
+  >> strip_tac >> gvs[fmp_unsealed_calls_def]
+  >> qexistsl [`callee.fn_name`, `info`] >> metis_tac[]
+QED
+
+Theorem fmp_target_publishes_exists:
+  MEM caller ctx.ctx_functions /\ caller.fn_fmp_signature = NONE /\
+  fmp_function_targets ctx caller = SOME targets ==>
+  ((?name info. MEM name targets /\ FLOOKUP old name = SOME info /\
+                 info.fi_publishes_fmp) <=>
+   ?callee info. fmp_unsealed_calls ctx caller callee /\
+     FLOOKUP old callee.fn_name = SOME info /\ info.fi_publishes_fmp)
+Proof
+  strip_tac >> eq_tac
+  >- (strip_tac
+      >> drule_all fmp_target_name_callee >> strip_tac
+      >> qexistsl [`callee`, `info`]
+      >> simp[fmp_unsealed_calls_def] >> metis_tac[])
+  >> strip_tac >> gvs[fmp_unsealed_calls_def]
+  >> qexistsl [`callee.fn_name`, `info`] >> metis_tac[]
+QED
+
+Theorem fmp_context_step_unsealed_needs_iff:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE /\
+  fmp_context_step ctx old = SOME out /\
+  FLOOKUP old fn.fn_name = SOME old_info /\
+  FLOOKUP out fn.fn_name = SOME info ==>
+  (info.fi_needs_fmp <=>
+    old_info.fi_needs_fmp \/ (fmp_direct_info fn).fi_needs_fmp \/
+    ?callee callee_info. fmp_unsealed_calls ctx fn callee /\
+      FLOOKUP old callee.fn_name = SOME callee_info /\
+      callee_info.fi_needs_fmp)
+Proof
+  rpt strip_tac
+  >> drule_all fmp_context_step_unsealed_lookup
+  >> strip_tac >> gvs[]
+  >> drule fmp_join_target_info_needs_iff >> simp[]
+  >> disch_then (fn th => once_rewrite_tac[th])
+  >> drule_all fmp_target_needs_exists
+  >> strip_tac
+  >> first_x_assum (qspec_then `old` mp_tac)
+  >> strip_tac >> metis_tac[]
+QED
+
+Theorem fmp_context_step_unsealed_publishes_iff:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE /\
+  fmp_context_step ctx old = SOME out /\
+  FLOOKUP old fn.fn_name = SOME old_info /\
+  FLOOKUP out fn.fn_name = SOME info ==>
+  (info.fi_publishes_fmp <=>
+    old_info.fi_publishes_fmp \/ (fmp_direct_info fn).fi_publishes_fmp \/
+    ?callee callee_info. fmp_unsealed_calls ctx fn callee /\
+      FLOOKUP old callee.fn_name = SOME callee_info /\
+      callee_info.fi_publishes_fmp)
+Proof
+  rpt strip_tac
+  >> drule_all fmp_context_step_unsealed_lookup
+  >> strip_tac >> gvs[]
+  >> drule fmp_join_target_info_publishes_iff >> simp[]
+  >> disch_then (fn th => once_rewrite_tac[th])
+  >> drule_all fmp_target_publishes_exists
+  >> strip_tac
+  >> first_x_assum (qspec_then `old` mp_tac)
+  >> strip_tac >> metis_tac[]
+QED
+
 val _ = export_theory();
