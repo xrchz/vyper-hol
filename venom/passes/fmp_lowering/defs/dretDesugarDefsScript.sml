@@ -6,11 +6,17 @@ Theory dretDesugarDefs
 Ancestors
   dretShapeDefs irSupply
 
+Definition dret_value_operand_def:
+  dret_value_operand op <=>
+    (?w. op = Lit w) \/ (?v. op = Var v)
+End
+
 Definition dret_desugar_input_def:
   dret_desugar_input fn <=>
     fn.fn_fmp_signature = NONE /\
     (!inst. MEM inst (fn_insts fn) /\ inst.inst_opcode = DRET ==>
-            IS_SOME (parse_dret_shape inst))
+            IS_SOME (parse_dret_shape inst) /\
+            EVERY dret_value_operand inst.inst_operands)
 End
 
 Definition no_dret_def:
