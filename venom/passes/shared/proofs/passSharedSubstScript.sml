@@ -697,6 +697,21 @@ val wf_opcode_finish_tac =
   Cases_on `inst.inst_opcode` >>
   ASM_REWRITE_TAC[] >>
   gvs[is_alloca_op_def];
+Triviality step_inst_base_RET_eval_operands[local]:
+  !inst new_ops st.
+    inst.inst_opcode = RET /\
+    eval_operands new_ops st = eval_operands inst.inst_operands st ==>
+    step_inst_base (inst with inst_operands := new_ops) st =
+    step_inst_base inst st
+Proof
+  rpt strip_tac >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  simp[]
+QED
+
+val ret_long_finish_tac =
+  irule step_inst_base_RET_eval_operands >> simp[];
+
 
 val long_safe_finish_tac =
   Cases_on `inst` >>
@@ -762,7 +777,7 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_alloca_op_def]
   >- long_safe_finish_tac
-  >- long_safe_finish_tac
+  >- ret_long_finish_tac
   >- long_safe_finish_tac
   >- long_safe_finish_tac
   >- long_safe_finish_tac

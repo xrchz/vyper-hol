@@ -602,6 +602,56 @@ Proof
   gvs[lift_result_def] >> ld_close_tac
 QED
 
+Theorem step_inst_base_ld_ok_dret_success[local]:
+  !inst s1 s2 vars q r vals pairs.
+    inst.inst_opcode = DRET /\ inst.inst_outputs = [] /\
+    ld_ok vars s1 s2 /\
+    parse_dret_shape inst = SOME (q,r) /\
+    eval_operands inst.inst_operands s1 = SOME vals /\
+    eval_operands inst.inst_operands s2 = SOME vals /\
+    pair_dret_words (TAKE (2 * r) (DROP (1 + q) vals)) = SOME pairs ==>
+    lift_result (ld_ok vars) (ld_equiv vars) (ld_equiv vars)
+      (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt strip_tac >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[] >> simp[] >>
+  qspecl_then [`vars`, `pairs`, `s1`, `s2`, `TAKE q (DROP 1 vals)`]
+    mp_tac pack_dret_dynamic_lift_result >> simp[]
+QED
+
+Theorem step_inst_base_ld_ok_dret[local]:
+  !inst s1 s2 vars.
+    inst.inst_opcode = DRET /\
+    ld_ok vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) ==>
+    lift_result (ld_ok vars) (ld_equiv vars) (ld_equiv vars)
+      (step_inst_base inst s1)
+      (step_inst_base inst s2)
+Proof
+  rpt strip_tac >>
+  ld_derive_agree_tac >>
+  `eval_operands inst.inst_operands s1 =
+   eval_operands inst.inst_operands s2` by
+    (irule eval_operands_agree >> rpt strip_tac >> res_tac) >>
+  reverse (Cases_on `inst.inst_outputs`)
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> simp[lift_result_def]) >>
+  Cases_on `parse_dret_shape inst`
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> simp[lift_result_def]) >>
+  Cases_on `THE (parse_dret_shape inst)` >> gvs[] >>
+  Cases_on `eval_operands inst.inst_operands s2`
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> gvs[lift_result_def]) >>
+  gvs[] >>
+  Cases_on `pair_dret_words
+    (TAKE (2 * r) (DROP (1 + q) x))`
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> gvs[lift_result_def]) >>
+  irule step_inst_base_ld_ok_dret_success >> gvs[]
+QED
+
 Theorem step_inst_base_ld_ok_terminator:
   !inst s1 s2 vars.
     ld_ok vars s1 s2 /\
@@ -622,7 +672,7 @@ Proof
   >- ld_terminator_tac
   >- ld_terminator_tac
   >- ld_terminator_tac
-  >- ld_terminator_tac
+  >- (rpt strip_tac >> irule step_inst_base_ld_ok_dret >> simp[])
   >- ld_terminator_tac
   >- ld_terminator_tac
   >- ld_terminator_tac
