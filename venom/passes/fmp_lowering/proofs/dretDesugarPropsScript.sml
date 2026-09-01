@@ -108,6 +108,9 @@ Theorem dret_multiple_expansion_eval:
       no_dret fn' /\
       dret_opcode_count GETFMP fn' = 2 /\
       dret_opcode_count MCOPY fn' = 2 /\
+      dret_opcode_count ADD fn' = 4 /\
+      dret_opcode_count AND fn' = 2 /\
+      dret_opcode_count SETFMP fn' = 2 /\
       dret_opcode_count RETFMP fn' = 2 /\
       ALL_DISTINCT (fn_ir_inst_ids fn') /\
       ALL_DISTINCT (dret_output_vars fn') /\
