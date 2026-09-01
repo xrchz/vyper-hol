@@ -56,6 +56,28 @@ Definition fcg_postorder_def:
     SND (dfs_post_walk fcg.fcg_callees [] entry)
 End
 
+Definition list_index_def:
+  list_index x xs = INDEX_OF x xs
+End
+
+Definition list_precedes_def:
+  list_precedes x y xs =
+    case (list_index x xs, list_index y xs) of
+      (SOME i, SOME j) => i < j
+    | _ => F
+End
+
+Theorem list_precedes_iff:
+  list_precedes x y xs <=>
+  ?i j. list_index x xs = SOME i /\
+        list_index y xs = SOME j /\ i < j
+Proof
+  simp[list_precedes_def] >>
+  Cases_on `list_index x xs` >>
+  Cases_on `list_index y xs` >> simp[]
+QED
+
+
 (* ==========================================================================
    Query API
 
@@ -85,6 +107,18 @@ End
 Definition fcg_get_unreachable_def:
   fcg_get_unreachable ctx fcg =
     FILTER (\f. ~MEM f.fn_name fcg.fcg_reachable) ctx.ctx_functions
+End
+
+Definition reachable_fcg_acyclic_def:
+  reachable_fcg_acyclic ctx fcg =
+    case ctx.ctx_entry of
+      NONE => T
+    | SOME entry =>
+        let order = fcg_postorder fcg entry in
+        EVERY (\caller.
+          EVERY (\callee. list_precedes callee caller order)
+                (fcg_get_callees fcg caller))
+          fcg.fcg_reachable
 End
 
 (* ==========================================================================
