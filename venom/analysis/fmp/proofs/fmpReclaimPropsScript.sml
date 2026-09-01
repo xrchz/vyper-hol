@@ -203,7 +203,7 @@ Proof
 QED
 
 
-Theorem analyze_fmp_reclaims_ready[local]:
+Theorem analyze_fmp_reclaims_ready:
   fmp_info_valid ctx infos /\ MEM fn ctx.ctx_functions /\
   wf_function fn /\ fn_inst_wf fn /\ fn.fn_fmp_signature = NONE /\
   fmp_reclaim_states fn = SOME states /\
