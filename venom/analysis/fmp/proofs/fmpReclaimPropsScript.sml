@@ -3,6 +3,7 @@
 Theory fmpReclaimProps
 Ancestors
   fmpReclaimDefs
+  fmpAnalysisProps
 
 Definition fmp_test_fn_def[local]:
   fmp_test_fn = mk_raw_function "f"
@@ -66,6 +67,69 @@ End
 Definition fmp_ctx_def[local]:
   fmp_ctx fn = mk_venom_context [fn] (SOME fn.fn_name)
 End
+
+Theorem fmp_take_reclaimable_member_ok[local]:
+  !ctx fn live p vetoed marks q base.
+    MEM (q,base) (fmp_take_reclaimable ctx fn live p vetoed marks) ==>
+    q = p /\ fmp_restore_target_ok ctx fn live p base
+Proof
+  Induct_on `marks` >> simp[fmp_take_reclaimable_def] >>
+  rpt gen_tac >> Cases_on `MEM h.fm_base vetoed` >> simp[] >>
+  Cases_on `fmp_restore_target_ok ctx fn live p h.fm_base` >> simp[] >>
+  metis_tac[]
+QED
+
+Theorem fmp_collect_block_restores_member_ok[local]:
+  !ctx fn live marks cfg bb p base.
+    MEM (p,base) (fmp_collect_block_restores ctx fn live marks cfg bb) ==>
+    fmp_restore_target_ok ctx fn live p base
+Proof
+  rpt strip_tac >>
+  Cases_on `fmp_exit_reclaim_allowed cfg bb.bb_label` >>
+  gvs[fmp_collect_block_restores_def] >>
+  Cases_on `df_at NONE marks bb.bb_label (LENGTH bb.bb_instructions)` >>
+  gvs[fmp_collect_block_restores_def] >>
+  drule fmp_take_reclaimable_member_ok >> simp[]
+QED
+
+Theorem fmp_collect_restores_member_ok[local]:
+  !bbs ctx fn live marks cfg p base.
+    MEM (p,base) (fmp_collect_restores ctx fn live marks cfg bbs) ==>
+    fmp_restore_target_ok ctx fn live p base
+Proof
+  Induct >> simp[fmp_collect_restores_def] >>
+  metis_tac[fmp_collect_block_restores_member_ok]
+QED
+
+Theorem analyze_fmp_reclaims_valid:
+  analyze_fmp_reclaims ctx name = SOME plan ==>
+  fmp_reclaim_plan_valid ctx name plan
+Proof
+  simp[analyze_fmp_reclaims_def, fmp_reclaim_plan_valid_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  metis_tac[lookup_function_name, fmp_collect_restores_member_ok]
+QED
+
+Theorem analyze_fmp_reclaims_target_checked:
+  !ctx name plan (p:fmp_point) (base:string).
+  analyze_fmp_reclaims ctx name = SOME plan /\
+  MEM (p,base) plan.frp_restores ==>
+  ?fn live mark.
+    lookup_function name ctx.ctx_functions = SOME fn /\
+    live = liveness_analyze fn /\
+    fmp_point_well_located fn p /\
+    fmp_find_base_mark base fn.fn_blocks = SOME mark /\
+    fmp_mark_matches_base fn mark base /\
+    fmp_mark_dominates_point mark p /\
+    ~MEM base (live_vars_at live p.fp_block p.fp_index) /\
+    ~fmp_target_pinned fn base /\
+    ~fmp_target_captured fn base /\
+    ~fmp_target_escapes fn base
+Proof
+  rpt strip_tac >> drule analyze_fmp_reclaims_valid >>
+  simp[fmp_reclaim_plan_valid_def, fmp_restore_target_ok_def] >>
+  metis_tac[]
+QED
 Theorem analyze_fmp_reclaims_preconditions:
   !ctx name infos fn.
     analyze_fmp_context ctx = SOME infos ==>

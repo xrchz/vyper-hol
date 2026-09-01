@@ -326,4 +326,14 @@ Definition analyze_fmp_reclaims_def:
                           frp_restores := restores |>
 End
 
+Definition fmp_reclaim_plan_valid_def:
+  fmp_reclaim_plan_valid ctx name plan <=>
+    plan.frp_function = name /\
+    ?fn live.
+      lookup_function name ctx.ctx_functions = SOME fn /\
+      live = liveness_analyze fn /\
+      !p base. MEM (p,base) plan.frp_restores ==>
+        fmp_restore_target_ok ctx fn live p base
+End
+
 val _ = export_theory();
