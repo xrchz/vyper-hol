@@ -505,4 +505,32 @@ Proof
   drule_all fmp_install_root_no_raw >> strip_tac >>
   drule fmp_seal_no_raw >> simp[]
 QED
+
+Theorem fmp_lowered_context_wf_sealed_raw_free:
+  fmp_lowered_context_wf ctx /\ MEM fn ctx.ctx_functions ==>
+  (?sig. fn.fn_fmp_signature = SOME sig) /\ no_raw_fmp_ops fn
+Proof
+  strip_tac >>
+  drule_all fmp_lowered_context_wf_function >> strip_tac >>
+  conj_tac
+  >- (Cases_on `fn.fn_fmp_signature` >>
+      gvs[fmpWfDefsTheory.fmp_signature_matches_fn_def])
+  >> simp[]
+QED
+
+Theorem fmp_lowered_context_wf_signature_matches:
+  fmp_lowered_context_wf ctx /\ MEM fn ctx.ctx_functions ==>
+  fmp_signature_matches_fn ctx fn
+Proof
+  metis_tac[fmp_lowered_context_wf_function]
+QED
+
+Theorem fmp_invalid_seal_rejected:
+  analyze_fmp_context ctx = SOME infos /\
+  fn.fn_fmp_signature = SOME sig /\
+  (~fmp_signature_matches_fn ctx fn \/ ~no_raw_fmp_ops fn) ==>
+  fmp_lower_function ctx supply fn = NONE
+Proof
+  simp[fmp_lower_function_def, fmp_lower_function_with_info_def]
+QED
 val _ = export_theory();
