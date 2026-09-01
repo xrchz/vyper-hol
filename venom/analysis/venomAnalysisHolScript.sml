@@ -21,6 +21,8 @@ Ancestors
   dominatorAnalysis
   (* base pointer *)
   basePtrAnalysis
+  (* conservative FMP reclaim analysis *)
+  fmpReclaimProps
   (* available expression *)
   availExprAnalysis
   (* stack order *)

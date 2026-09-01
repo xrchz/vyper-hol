@@ -100,6 +100,7 @@ The matrix should eventually identify exact Python modules, classes, and functio
 | Memory/allocation model | `vyper/venom/memory_allocator.py`, `memory_location.py` | unknown | Relate Python compile-time locations to HOL runtime allocation semantics. |
 | CFG analysis | `vyper/venom/analysis/cfg.py` | partially reviewed | See [`cfg_analysis_parity.md`](cfg_analysis_parity.md); revalidate against pin. |
 | Other analyses | `vyper/venom/analysis/*` | unknown | Audit those used by the mandatory pipeline first. |
+| Conservative FMP reclaim analysis (`venom/analysis/fmp/defs/fmpReclaimDefsScript.sml`, `venom/analysis/fmp/proofs/fmpReclaimPropsScript.sml`) | `vyper/venom/passes/fmp_lowering.py:FmpLoweringPass` reclaim behavior | intentional abstraction | HOL recomputes from the current context and structurally checks every emitted restore target, but conservatively vetoes alias, provenance, capture, and escape cases represented by richer Python analysis objects. Empty or no-target plans are conservative outcomes, not evidence of parity. |
 
 ### Pipeline and pass definitions
 
