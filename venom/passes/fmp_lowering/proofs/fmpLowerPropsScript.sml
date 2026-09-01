@@ -273,8 +273,7 @@ Proof
   >- simp[fmp_lower_blocks_def]
   >> rpt gen_tac >>
   Cases_on `fmp_select_point_restores
-    <| fp_block := h.bb_label; fp_index := LENGTH h.bb_instructions |>
-    restores` >>
+    (h.bb_label,LENGTH h.bb_instructions) restores` >>
   simp[fmp_lower_blocks_def, AllCaseEqs()] >>
   rpt strip_tac >> gvs[listTheory.EVERY_APPEND] >>
   metis_tac[fmp_lower_insts_no_raw, fmp_emit_restores_no_raw]

@@ -115,9 +115,9 @@ Definition fmp_select_point_restores_def:
 End
 
 Definition fmp_reclaim_input_def:
-  fmp_reclaim_input fn plan <=>
-    plan.frp_function = fn.fn_name /\
-    EVERY (\pb. fmp_point_well_located fn (FST pb)) plan.frp_restores
+  fmp_reclaim_input fn (plan:fmp_reclaim_plan) <=>
+    !p base. FLOOKUP plan p = SOME base ==>
+      fmp_point_well_located fn p
 End
 
 (* Lower one checked instruction.  Single-instruction rewrites retain the
@@ -217,8 +217,7 @@ Definition fmp_lower_blocks_def:
     case fmp_lower_insts infos ctx runner s bb.bb_instructions of
       NONE => NONE
     | SOME (insts,s1) =>
-        let p = <| fp_block := bb.bb_label;
-                   fp_index := LENGTH bb.bb_instructions |> in
+        let p = (bb.bb_label,LENGTH bb.bb_instructions) in
         let (bases,later) = fmp_select_point_restores p restores in
         case fmp_emit_restores runner s1 bases of (restore_insts,s2) =>
         case fmp_lower_blocks infos ctx runner s2 later bbs of
@@ -303,12 +302,12 @@ Definition fmp_lower_function_with_info_def:
           case FLOOKUP infos fn.fn_name of
             NONE => NONE
           | SOME info =>
-              case analyze_fmp_reclaims ctx fn.fn_name of
+              case analyze_fmp_reclaims infos ctx fn of
                 NONE => NONE
               | SOME plan =>
                   if ~fmp_reclaim_input fn plan then NONE
                   else if ~(info.fi_needs_fmp \/ info.fi_publishes_fmp) then
-                    if plan.frp_restores = [] then
+                    if plan = FEMPTY then
                       SOME (fmp_seal ctx fn info fn.fn_blocks,s)
                     else NONE
                   else
@@ -318,7 +317,7 @@ Definition fmp_lower_function_with_info_def:
                      | SOME root_layout =>
                          case fmp_lower_blocks infos ctx runner
                            (case root_layout of FmpRootLayout n r pc s2 => s2)
-                           plan.frp_restores fn.fn_blocks of
+                           (fmap_to_alist plan) fn.fn_blocks of
                            NONE => NONE
                          | SOME (FmpBlocksResult blocks leftover s3) =>
                              if leftover <> [] then NONE
