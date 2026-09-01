@@ -294,7 +294,8 @@ Definition fmp_lower_function_with_info_def:
   fmp_lower_function_with_info infos ctx s fn =
     case fn.fn_fmp_signature of
       SOME sig =>
-        if fmp_signature_matches_fn ctx fn /\ no_raw_fmp_ops fn
+        if lookup_function fn.fn_name ctx.ctx_functions = SOME fn /\
+           fmp_signature_matches_fn ctx fn /\ no_raw_fmp_ops fn
         then SOME (fn,s) else NONE
     | NONE =>
         if ~(fmp_info_valid ctx infos /\ fmp_lower_input infos ctx fn) then NONE
