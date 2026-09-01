@@ -338,6 +338,19 @@ Proof
      revert_state_def, set_returndata_def, lookup_var_def]
 QED
 
+(* A successful DALLOCA writes the input free-memory pointer to its sole output. *)
+Triviality dalloca_base_output_lookup[local]:
+  !inst s r w.
+    inst.inst_opcode = DALLOCA /\
+    step_inst_base inst s = OK r /\
+    MEM w inst.inst_outputs ==>
+    lookup_var w r = SOME s.vs_fmp
+Proof
+  rpt strip_tac >>
+  gvs[Once step_inst_base_def, AllCaseEqs(), update_var_def,
+      lookup_var_def, FLOOKUP_UPDATE]
+QED
+
 Triviality dalloca_step_output_agree[local]:
   !fuel ctx inst s1 s2 r1 r2 w.
     step_inst fuel ctx inst s1 = OK r1 /\
@@ -351,10 +364,7 @@ Proof
   `inst.inst_opcode <> INVOKE` by gvs[] >>
   `step_inst_base inst s1 = OK r1` by metis_tac[step_inst_non_invoke] >>
   `step_inst_base inst s2 = OK r2` by metis_tac[step_inst_non_invoke] >>
-  gvs[Once step_inst_base_def, AllCaseEqs(), update_var_def,
-      lookup_var_def] >>
-  gvs[Once step_inst_base_def, AllCaseEqs(), update_var_def,
-      lookup_var_def, FLOOKUP_UPDATE]
+  metis_tac[dalloca_base_output_lookup]
 QED
 
 Theorem step_non_effect_free_preserves_all_vars[local]:
