@@ -1,22 +1,10 @@
 (*
- * Conservative syntactic FMP reclaim analysis.
+ * Conservative executable FMP reclaim analysis.
  *
- * Pinned-upstream comparison boundary: the reclaim logic in the pinned
- * Vyper Venom FMP-lowering pass (vyper/venom/passes/*; see VYPER_PIN) uses
- * Python analysis/provenance objects which are not represented by the HOL
- * instruction record.  This theory therefore exposes an intentional
- * abstraction, not an exact-parity claim, and accepts no cached external
- * liveness, DFG, or reclaim map.
- *
- * Syntactic use classification frozen for this abstraction:
- *   - a well-shaped DALLOCA with exactly one output creates a LIFO mark;
- *   - an exact base variable used only in an explicitly recognized memory
- *     address position is a direct admissible use;
- *   - PHI, ASSIGN, arithmetic/derived-pointer, or any otherwise unclassified
- *     use pins the mark;
- *   - storing the base as a value or passing it to call-like code captures it;
- *   - returning, invoking, or otherwise publishing the base escapes it.
- * Unknown or overlapping cases take the strongest conservative veto.
+ * This is an intentional syntactic abstraction of the pinned Python pass, not
+ * an exact-parity claim.  It only emits a restore at a terminal instruction
+ * boundary after a stable bounded forward analysis.  Every emitted entry is
+ * rechecked against analyses recomputed from the supplied current function.
  *)
 
 Theory fmpReclaimDefs
@@ -24,82 +12,169 @@ Ancestors
   fmpAnalysisDefs
   livenessDefs
   cfgDefs
+  dominatorDefs
   arithmetic
   finite_map
 
-Datatype:
-  fmp_point = <| fp_block : string; fp_index : num |>
-End
-
-Datatype:
-  fmp_mark = <|
-    fm_point : fmp_point;
-    fm_inst_id : num;
-    fm_base : string
-  |>
-End
+Type fmp_point = ``:string # num``
 
 Datatype:
   fmp_reclaim_state = <|
-    frs_marks : fmp_mark list;
-    frs_vetoed : string list
+    frs_stack : string list;
+    frs_captures : string list;
+    frs_can_reclaim : bool
   |>
 End
 
-Datatype:
-  fmp_reclaim_plan = <|
-    frp_function : string;
-    frp_restores : (fmp_point # string) list
+Type fmp_reclaim_plan = ``:(fmp_point,string) fmap``
+
+Definition fmp_empty_reclaim_state_def:
+  fmp_empty_reclaim_state = <|
+    frs_stack := [];
+    frs_captures := [];
+    frs_can_reclaim := T
   |>
 End
 
-Definition fmp_empty_state_def:
-  fmp_empty_state = <| frs_marks := []; frs_vetoed := [] |>
+(* Stacks are newest-first, hence their common top is their common prefix. *)
+Definition fmp_common_top_def:
+  fmp_common_top [] ys = [] /\
+  fmp_common_top xs [] = [] /\
+  fmp_common_top (x::xs) (y::ys) =
+    if x = y then x::fmp_common_top xs ys else []
 End
 
-Definition fmp_common_prefix_def:
-  fmp_common_prefix [] ys = [] /\
-  fmp_common_prefix xs [] = [] /\
-  fmp_common_prefix (x::xs) (y::ys) =
-    if x = y then x::fmp_common_prefix xs ys else []
-End
-
-Definition fmp_state_join_def:
-  fmp_state_join NONE y = y /\
-  fmp_state_join x NONE = x /\
-  fmp_state_join (SOME x) (SOME y) = SOME <|
-    frs_marks := fmp_common_prefix x.frs_marks y.frs_marks;
-    frs_vetoed := list_union x.frs_vetoed y.frs_vetoed
+Definition fmp_reclaim_join_def:
+  fmp_reclaim_join x y = <|
+    frs_stack := fmp_common_top x.frs_stack y.frs_stack;
+    frs_captures := list_union x.frs_captures y.frs_captures;
+    frs_can_reclaim := (x.frs_can_reclaim /\ y.frs_can_reclaim)
   |>
 End
 
-Definition fmp_find_inst_index_def:
-  fmp_find_inst_index id [] (n:num) = NONE /\
-  fmp_find_inst_index id (inst::rest) n =
-    if inst.inst_id = id then SOME n
-    else fmp_find_inst_index id rest (n + 1)
+Definition fmp_reclaim_option_join_def:
+  fmp_reclaim_option_join NONE y = y /\
+  fmp_reclaim_option_join x NONE = x /\
+  fmp_reclaim_option_join (SOME x) (SOME y) =
+    SOME (fmp_reclaim_join x y)
 End
 
-Definition fmp_find_inst_point_def:
-  fmp_find_inst_point id [] = NONE /\
-  fmp_find_inst_point id (bb::bbs) =
-    case fmp_find_inst_index id bb.bb_instructions 0 of
-      SOME n => SOME <| fp_block := bb.bb_label; fp_index := n |>
-    | NONE => fmp_find_inst_point id bbs
+Definition fmp_single_output_def:
+  fmp_single_output (inst:instruction) =
+    case inst.inst_outputs of [v] => SOME v | _ => NONE
 End
 
-Definition fmp_dalloca_mark_def:
-  fmp_dalloca_mark bbs inst =
+Definition fmp_getfmp_outputs_def:
+  fmp_getfmp_outputs (inst:instruction) =
+    if inst.inst_opcode = GETFMP then inst.inst_outputs else []
+End
+
+Definition fmp_transfer_def:
+  fmp_transfer (inst:instruction) NONE = NONE /\
+  fmp_transfer (inst:instruction) (SOME (st:fmp_reclaim_state)) =
+    let captures = list_union (fmp_getfmp_outputs inst) st.frs_captures in
+    let can_reclaim =
+      (st.frs_can_reclaim /\
+       inst.inst_opcode <> SETFMP /\ inst.inst_opcode <> RETFMP /\
+       inst.inst_opcode <> DRET) in
     if inst.inst_opcode = DALLOCA then
-      case inst.inst_outputs of
-        [v] =>
-          (case fmp_find_inst_point inst.inst_id bbs of
-             NONE => NONE
-           | SOME p => SOME <| fm_point := p;
-                              fm_inst_id := inst.inst_id;
-                              fm_base := v |>)
-      | _ => NONE
-    else NONE
+      if LENGTH inst.inst_outputs = 1 then
+        SOME <| frs_stack := HD inst.inst_outputs::st.frs_stack;
+                frs_captures := captures;
+                frs_can_reclaim := can_reclaim |>
+      else SOME <| frs_stack := st.frs_stack;
+                   frs_captures := captures;
+                   frs_can_reclaim := F |>
+    else SOME <| frs_stack := st.frs_stack;
+                 frs_captures := captures;
+                 frs_can_reclaim := can_reclaim |>
+End
+
+Definition fmp_edge_transfer_def:
+  fmp_edge_transfer src dst st = st
+End
+
+Definition fmp_reclaim_fuel_def:
+  fmp_reclaim_fuel fn =
+    (LENGTH fn.fn_blocks + 1) * (LENGTH (fn_insts fn) + 1)
+End
+
+Definition fmp_reclaim_analyze_fuel_def:
+  fmp_reclaim_analyze_fuel fuel fn =
+    case entry_block fn of
+      NONE => NONE
+    | SOME entry =>
+        SOME (df_analyze_fuel fuel Forward NONE fmp_reclaim_option_join
+          (K fmp_transfer) (K fmp_edge_transfer) fn.fn_blocks
+          (SOME (entry.bb_label,SOME fmp_empty_reclaim_state)) fn)
+End
+
+(* A second round with one extra unit of fuel is the executable stability
+ * check.  Cycles are therefore total and uncertainty rejects conservatively. *)
+Definition fmp_reclaim_states_def:
+  fmp_reclaim_states fn =
+    case fmp_reclaim_analyze_fuel (fmp_reclaim_fuel fn) fn of
+      NONE => NONE
+    | SOME states =>
+        (case fmp_reclaim_analyze_fuel (fmp_reclaim_fuel fn + 1) fn of
+           SOME states' => if states' = states then SOME states else NONE
+         | NONE => NONE)
+End
+
+Definition fmp_point_well_located_def:
+  fmp_point_well_located fn (p:fmp_point) <=>
+    ?bb. lookup_block (FST p) fn.fn_blocks = SOME bb /\
+         SND p <= LENGTH bb.bb_instructions
+End
+
+Definition fmp_find_dalloca_at_aux_def:
+  fmp_find_dalloca_at_aux (base:string) (lbl:string) [] (n:num) = NONE /\
+  fmp_find_dalloca_at_aux (base:string) (lbl:string)
+      ((inst:instruction)::rest) (n:num) =
+    if inst.inst_opcode = DALLOCA /\ inst.inst_outputs = [base] then
+      SOME (lbl,n,inst)
+    else fmp_find_dalloca_at_aux base lbl rest (n + 1)
+End
+
+Definition fmp_find_dalloca_def:
+  fmp_find_dalloca base [] = NONE /\
+  fmp_find_dalloca base (bb::bbs) =
+    case fmp_find_dalloca_at_aux base bb.bb_label bb.bb_instructions 0 of
+      NONE => fmp_find_dalloca base bbs
+    | SOME found => SOME found
+End
+
+Definition fmp_definition_dominates_def:
+  fmp_definition_dominates fn def_lbl def_i (p:fmp_point) <=>
+    (def_lbl = FST p /\ def_i < SND p) \/
+    (def_lbl <> FST p /\
+     dominates (dom_analyze (cfg_analyze fn) fn) def_lbl (FST p))
+End
+
+Definition fmp_transparent_opcode_def:
+  fmp_transparent_opcode op <=>
+    op = ASSIGN \/ op = ADD \/ op = SUB \/ op = PHI
+End
+
+Definition fmp_inst_uses_any_def:
+  fmp_inst_uses_any vars inst <=>
+    EXISTS (\v. MEM v (inst_uses inst)) vars
+End
+
+Definition fmp_derived_step_def:
+  fmp_derived_step [] vars = vars /\
+  fmp_derived_step (inst::rest) vars =
+    let vars' =
+      if fmp_transparent_opcode inst.inst_opcode /\
+         fmp_inst_uses_any vars inst
+      then list_union inst.inst_outputs vars
+      else vars in
+    fmp_derived_step rest vars'
+End
+
+Definition fmp_derived_vars_def:
+  fmp_derived_vars fn base =
+    FUNPOW (fmp_derived_step (fn_insts fn)) (LENGTH (fn_insts fn)) [base]
 End
 
 Definition fmp_operand_at_is_def:
@@ -107,8 +182,8 @@ Definition fmp_operand_at_is_def:
     n < LENGTH ops /\ EL n ops = Var base
 End
 
-Definition fmp_direct_base_use_def:
-  fmp_direct_base_use inst base <=>
+Definition fmp_direct_memory_use_def:
+  fmp_direct_memory_use inst base <=>
     (inst.inst_opcode = MLOAD /\
        fmp_operand_at_is base 0 inst.inst_operands) \/
     ((inst.inst_opcode = MSTORE \/ inst.inst_opcode = MSTORE8) /\
@@ -120,220 +195,112 @@ Definition fmp_direct_base_use_def:
        fmp_operand_at_is base 0 inst.inst_operands)
 End
 
-Definition fmp_call_like_opcode_def:
-  fmp_call_like_opcode op <=>
-    op = CALL \/ op = STATICCALL \/ op = DELEGATECALL \/
-    op = CREATE \/ op = CREATE2 \/ op = INVOKE
-End
-
-Definition fmp_escape_opcode_def:
-  fmp_escape_opcode op <=>
-    op = RET \/ op = RETFMP \/ op = DRET \/ op = RETURN \/
-    op = REVERT \/ op = INVOKE
-End
-
-Definition fmp_inst_captures_def:
-  fmp_inst_captures inst base <=>
-    MEM base (inst_uses inst) /\
-    (fmp_call_like_opcode inst.inst_opcode \/
-     ((inst.inst_opcode = MSTORE \/ inst.inst_opcode = MSTORE8) /\
-      fmp_operand_at_is base 1 inst.inst_operands))
-End
-
-Definition fmp_inst_escapes_def:
-  fmp_inst_escapes inst base <=>
-    MEM base (inst_uses inst) /\ fmp_escape_opcode inst.inst_opcode
-End
-
-Definition fmp_inst_pins_def:
-  fmp_inst_pins inst base <=>
-    MEM base (inst_uses inst) /\
-    ~fmp_direct_base_use inst base /\
-    ~fmp_inst_captures inst base /\
-    ~fmp_inst_escapes inst base
+Definition fmp_inst_has_unsafe_derived_use_def:
+  fmp_inst_has_unsafe_derived_use vars inst <=>
+    ?v. MEM v vars /\ MEM v (inst_uses inst) /\
+        ~fmp_direct_memory_use inst v /\
+        ~fmp_transparent_opcode inst.inst_opcode
 End
 
 Definition fmp_target_pinned_def:
   fmp_target_pinned fn base <=>
-    EXISTS (\inst. fmp_inst_pins inst base) (fn_insts fn)
+    EXISTS (fmp_inst_has_unsafe_derived_use (fmp_derived_vars fn base))
+      (fn_insts fn)
 End
 
-Definition fmp_target_captured_def:
-  fmp_target_captured fn base <=>
-    EXISTS (\inst. fmp_inst_captures inst base) (fn_insts fn)
+Definition fmp_capture_escaped_def:
+  fmp_capture_escaped fn cap <=>
+    EXISTS (\inst. MEM cap (inst_uses inst)) (fn_insts fn)
 End
 
-Definition fmp_target_escapes_def:
-  fmp_target_escapes fn base <=>
-    EXISTS (\inst. fmp_inst_escapes inst base) (fn_insts fn)
-End
-
-Definition fmp_veto_marks_def:
-  fmp_veto_marks inst [] vetoed = vetoed /\
-  fmp_veto_marks inst (m::ms) vetoed =
-    fmp_veto_marks inst ms
-      (if MEM m.fm_base (inst_uses inst) /\
-          ~fmp_direct_base_use inst m.fm_base
-       then set_insert m.fm_base vetoed else vetoed)
-End
-
-Definition fmp_mark_transfer_def:
-  fmp_mark_transfer bbs inst NONE = NONE /\
-  fmp_mark_transfer bbs inst (SOME st) =
-    let vetoed = fmp_veto_marks inst st.frs_marks st.frs_vetoed in
-    case fmp_dalloca_mark bbs inst of
-      NONE => SOME (st with frs_vetoed := vetoed)
-    | SOME mark => SOME <| frs_marks := st.frs_marks ++ [mark];
-                          frs_vetoed := vetoed |>
-End
-
-Definition fmp_mark_edge_transfer_def:
-  fmp_mark_edge_transfer bbs src dst st = st
-End
-
-Definition fmp_mark_fuel_def:
-  fmp_mark_fuel fn =
-    (LENGTH fn.fn_blocks + 1) * (LENGTH (fn_insts fn) + 1)
-End
-
-Definition fmp_mark_analyze_fuel_def:
-  fmp_mark_analyze_fuel fuel fn =
-    case entry_block fn of
-      NONE => NONE
-    | SOME entry =>
-        SOME (df_analyze_fuel fuel Forward NONE fmp_state_join
-          fmp_mark_transfer fmp_mark_edge_transfer fn.fn_blocks
-          (SOME (entry.bb_label, SOME fmp_empty_state)) fn)
-End
-
-Definition fmp_mark_analyze_def:
-  fmp_mark_analyze fn =
-    case fmp_mark_analyze_fuel (fmp_mark_fuel fn) fn of
-      NONE => NONE
-    | SOME st =>
-        (case fmp_mark_analyze_fuel (fmp_mark_fuel fn + 1) fn of
-           SOME st' => if st' = st then SOME st else NONE
-         | NONE => NONE)
-End
-
-Definition fmp_point_well_located_def:
-  fmp_point_well_located fn p <=>
-    ?bb. lookup_block p.fp_block fn.fn_blocks = SOME bb /\
-         p.fp_index <= LENGTH bb.bb_instructions
-End
-
-Definition fmp_mark_matches_base_def:
-  fmp_mark_matches_base fn mark base <=>
-    mark.fm_base = base /\
-    ?bb inst.
-      lookup_block mark.fm_point.fp_block fn.fn_blocks = SOME bb /\
-      mark.fm_point.fp_index < LENGTH bb.bb_instructions /\
-      EL mark.fm_point.fp_index bb.bb_instructions = inst /\
-      inst.inst_id = mark.fm_inst_id /\
-      inst.inst_opcode = DALLOCA /\ inst.inst_outputs = [base]
-End
-
-(* This deliberately conservative executable dominance relation accepts only
- * same-block, forward instruction order.  Cross-block candidates discovered
- * by the stack analysis are filtered out rather than justified by logical
- * path quantification. *)
-Definition fmp_mark_dominates_point_def:
-  fmp_mark_dominates_point mark p <=>
-    mark.fm_point.fp_block = p.fp_block /\
-    mark.fm_point.fp_index < p.fp_index
-End
-
-Definition fmp_find_base_mark_def:
-  fmp_find_base_mark base [] = NONE /\
-  fmp_find_base_mark base (bb::bbs) =
-    case FIND (\inst. inst.inst_opcode = DALLOCA /\
-                       inst.inst_outputs = [base]) bb.bb_instructions of
-      NONE => fmp_find_base_mark base bbs
-    | SOME inst => fmp_dalloca_mark (bb::bbs) inst
+Definition fmp_capture_veto_def:
+  fmp_capture_veto fn live (p:fmp_point) cap <=>
+    MEM cap (live_vars_at live (FST p) (SND p)) \/
+    fmp_capture_escaped fn cap
 End
 
 Definition fmp_restore_target_ok_def:
-  fmp_restore_target_ok ctx fn live p base <=>
-    lookup_function fn.fn_name ctx.ctx_functions = SOME fn /\
+  fmp_restore_target_ok infos ctx fn live captures (p:fmp_point) base <=>
+    fmp_info_valid ctx infos /\ MEM fn ctx.ctx_functions /\
     fmp_point_well_located fn p /\
-    ?mark.
-      fmp_find_base_mark base fn.fn_blocks = SOME mark /\
-      fmp_mark_matches_base fn mark base /\
-      fmp_mark_dominates_point mark p /\
-      ~MEM base (live_vars_at live p.fp_block p.fp_index) /\
+    ?def_lbl def_i dalloca.
+      fmp_find_dalloca base fn.fn_blocks = SOME (def_lbl,def_i,dalloca) /\
+      dalloca.inst_opcode = DALLOCA /\ dalloca.inst_outputs = [base] /\
+      fmp_definition_dominates fn def_lbl def_i p /\
+      EVERY (\v. ~MEM v (live_vars_at live (FST p) (SND p)))
+        (fmp_derived_vars fn base) /\
       ~fmp_target_pinned fn base /\
-      ~fmp_target_captured fn base /\
-      ~fmp_target_escapes fn base
+      EVERY (\cap. ~fmp_capture_veto fn live p cap) captures
 End
 
-Definition fmp_take_reclaimable_def:
-  fmp_take_reclaimable ctx fn live p vetoed [] = [] /\
-  fmp_take_reclaimable ctx fn live p vetoed (m::ms) =
-    if MEM m.fm_base vetoed then []
-    else if fmp_restore_target_ok ctx fn live p m.fm_base then
-      (p,m.fm_base)::fmp_take_reclaimable ctx fn live p vetoed ms
-    else []
+Definition fmp_stack_reclaimable_def:
+  fmp_stack_reclaimable infos ctx fn live captures p stack <=>
+    stack <> [] /\ EVERY (fmp_restore_target_ok infos ctx fn live captures p) stack
 End
 
-Definition fmp_exit_reclaim_allowed_def:
-  fmp_exit_reclaim_allowed cfg lbl <=>
-    case cfg_succs_of cfg lbl of
-      [] => T
-    | [succ] => cfg_preds_of cfg succ = [lbl]
-    | _ => F
+Definition fmp_oldest_def:
+  fmp_oldest (x::xs) = LAST (x::xs)
 End
 
-Definition fmp_collect_block_restores_def:
-  fmp_collect_block_restores ctx fn live marks cfg bb =
-    let p = <| fp_block := bb.bb_label;
-               fp_index := LENGTH bb.bb_instructions |> in
-    if ~fmp_exit_reclaim_allowed cfg bb.bb_label then []
+Definition fmp_block_restore_def:
+  fmp_block_restore infos ctx fn live cfg states bb =
+    let p = (bb.bb_label,LENGTH bb.bb_instructions) in
+    if cfg_succs_of cfg bb.bb_label <> [] then NONE
     else
-      case df_at NONE marks bb.bb_label (LENGTH bb.bb_instructions) of
-        NONE => []
+      case df_at NONE states bb.bb_label (LENGTH bb.bb_instructions) of
+        NONE => NONE
       | SOME st =>
-          fmp_take_reclaimable ctx fn live p st.frs_vetoed
-            (REVERSE st.frs_marks)
+          if st.frs_can_reclaim /\
+             fmp_stack_reclaimable infos ctx fn live st.frs_captures p st.frs_stack
+          then SOME (p,fmp_oldest st.frs_stack)
+          else NONE
 End
 
-Definition fmp_collect_restores_def:
-  fmp_collect_restores ctx fn live marks cfg [] = [] /\
-  fmp_collect_restores ctx fn live marks cfg (bb::bbs) =
-    fmp_collect_block_restores ctx fn live marks cfg bb ++
-    fmp_collect_restores ctx fn live marks cfg bbs
+Definition fmp_collect_candidates_def:
+  fmp_collect_candidates infos ctx fn live cfg states [] = [] /\
+  fmp_collect_candidates infos ctx fn live cfg states (bb::bbs) =
+    case fmp_block_restore infos ctx fn live cfg states bb of
+      NONE => fmp_collect_candidates infos ctx fn live cfg states bbs
+    | SOME entry => entry::fmp_collect_candidates infos ctx fn live cfg states bbs
+End
+
+Definition fmp_plan_of_list_def:
+  fmp_plan_of_list [] = FEMPTY /\
+  fmp_plan_of_list ((p,base)::rest) = fmp_plan_of_list rest |+ (p,base)
+End
+
+Definition fmp_reclaim_entry_ok_def:
+  fmp_reclaim_entry_ok infos ctx fn (p:fmp_point) base <=>
+    fmp_restore_target_ok infos ctx fn (liveness_analyze fn)
+      (FLAT (MAP fmp_getfmp_outputs (fn_insts fn))) p base
+End
+
+Definition fmp_reclaim_plan_ok_def:
+  fmp_reclaim_plan_ok infos ctx fn (plan:fmp_reclaim_plan) <=>
+    !p base. FLOOKUP plan p = SOME base ==>
+      fmp_reclaim_entry_ok infos ctx fn p base
+End
+
+Definition fmp_candidate_plan_def:
+  fmp_candidate_plan infos ctx fn states =
+    let live = liveness_analyze fn in
+    let cfg = cfg_analyze fn in
+    fmp_plan_of_list
+      (fmp_collect_candidates infos ctx fn live cfg states fn.fn_blocks)
 End
 
 Definition analyze_fmp_reclaims_def:
-  analyze_fmp_reclaims (ctx:venom_context) (name:string) :
-      fmp_reclaim_plan option =
-    case analyze_fmp_context ctx of
-      NONE => NONE
-    | SOME infos =>
-        case lookup_function name ctx.ctx_functions of
-          NONE => NONE
-        | SOME fn =>
-            if fn.fn_fmp_signature <> NONE \/
-               ~wf_function fn \/ ~fn_inst_wf fn then NONE
-            else
-              case fmp_mark_analyze fn of
-                NONE => NONE
-              | SOME marks =>
-                  let live = liveness_analyze fn in
-                  let cfg = cfg_analyze fn in
-                  let restores =
-                    fmp_collect_restores ctx fn live marks cfg fn.fn_blocks in
-                  SOME <| frp_function := fn.fn_name;
-                          frp_restores := restores |>
-End
-
-Definition fmp_reclaim_plan_valid_def:
-  fmp_reclaim_plan_valid ctx name plan <=>
-    plan.frp_function = name /\
-    ?fn live.
-      lookup_function name ctx.ctx_functions = SOME fn /\
-      live = liveness_analyze fn /\
-      !p base. MEM (p,base) plan.frp_restores ==>
-        fmp_restore_target_ok ctx fn live p base
+  analyze_fmp_reclaims (infos:fmp_info_map) (ctx:venom_context)
+      (fn:ir_function) : fmp_reclaim_plan option =
+    if ~fmp_info_valid ctx infos \/ ~MEM fn ctx.ctx_functions \/
+       ~wf_function fn \/ ~fn_inst_wf fn \/ fn.fn_fmp_signature <> NONE
+    then NONE
+    else
+      case fmp_reclaim_states fn of
+        NONE => NONE
+      | SOME states =>
+          let plan = fmp_candidate_plan infos ctx fn states in
+          if fmp_reclaim_plan_ok infos ctx fn plan then SOME plan else NONE
 End
 
 val _ = export_theory();
