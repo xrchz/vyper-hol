@@ -4,7 +4,7 @@
 
 Theory fmpLowerProps
 Ancestors
-  fmpLowerDefs
+  fmpLowerDefs fmpAnalysisProps fmpWfProps
 
 Definition fmp_test_supply_def:
   fmp_test_supply = <|
@@ -156,6 +156,60 @@ Theorem fmp_seal_bits_and_metadata_eval:
     sealed.fn_forced_alloc_positions =
       fmp_entry_probe_fn.fn_forced_alloc_positions /\
     sealed.fn_eom = fmp_entry_probe_fn.fn_eom
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_publishing_invoke_and_runner_eval:
+  fmp_lower_insts
+    (FEMPTY |+ ("callee",fmp_probe_info_tt))
+    fmp_probe_sealed_ctx "runner" fmp_test_supply
+    [mk_inst 2 INVOKE [Label "callee"; Lit 7w] ["user_out"];
+     mk_inst 3 GETFMP [] ["seen"]] =
+  SOME
+    ([mk_inst 2 INVOKE
+        [Label "callee"; Lit 7w; Var "runner"]
+        ["user_out"; "runner"];
+      mk_inst 3 ASSIGN [Var "runner"] ["seen"]],
+     fmp_test_supply)
+Proof
+  EVAL_TAC
+QED
+
+Theorem fmp_valid_sealed_identity_eval:
+  fmp_lower_function fmp_probe_sealed_ctx fmp_test_supply
+    fmp_positive_callee =
+  SOME (fmp_positive_callee,fmp_test_supply)
+Proof
+  strip_assume_tac fmp_sealed_and_caller_propagation_eval
+  >> asm_rewrite_tac[fmp_lower_function_def]
+  >> simp[fmp_lower_function_with_info_def, fmp_positive_callee_def,
+          fmp_probe_sealed_callee_matches,
+          fmp_positive_callee_basics_wf]
+QED
+
+Definition fmp_changed_ctx_def:
+  fmp_changed_ctx = fmp_probe_bad_sealed_ctx
+End
+
+Theorem fmp_public_context_freshness_eval:
+  fmp_lower_function fmp_changed_ctx fmp_test_supply
+    fmp_positive_callee = NONE
+Proof
+  simp[fmp_lower_function_def, fmp_changed_ctx_def,
+       fmp_sealed_mutation_rejected_eval]
+QED
+
+Definition fmp_sealed_raw_fn_def:
+  fmp_sealed_raw_fn =
+    fmp_positive_callee with fn_blocks :=
+      [<| bb_label := "entry";
+          bb_instructions := [mk_inst 30 GETFMP [] ["raw"]] |>]
+End
+
+Theorem fmp_sealed_raw_rejected_eval:
+  fmp_lower_function_with_info FEMPTY fmp_test_ctx fmp_test_supply
+    fmp_sealed_raw_fn = NONE
 Proof
   EVAL_TAC
 QED
