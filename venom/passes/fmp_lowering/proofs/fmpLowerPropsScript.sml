@@ -193,10 +193,23 @@ Proof
   >> `lookup_function fmp_positive_callee.fn_name
         fmp_probe_sealed_ctx.ctx_functions = SOME fmp_positive_callee` by
        EVAL_TAC
+  >> `fmp_info_valid fmp_probe_sealed_ctx infos` by
+       metis_tac[analyze_fmp_context_valid]
   >> simp[fmp_lower_function_with_info_def, fmp_positive_callee_def,
           fmp_probe_sealed_callee_matches,
           fmp_positive_callee_basics_wf]
 QED
+Theorem fmp_stale_info_sealed_rejected_eval:
+  fmp_lower_function_with_info FEMPTY fmp_probe_sealed_ctx fmp_test_supply
+    fmp_positive_callee = NONE
+Proof
+  `MEM fmp_positive_callee fmp_probe_sealed_ctx.ctx_functions` by EVAL_TAC
+  >> `~fmp_info_valid fmp_probe_sealed_ctx FEMPTY` by
+       (simp[fmpAnalysisDefsTheory.fmp_info_valid_def] >> metis_tac[])
+  >> Cases_on `fmp_positive_callee.fn_fmp_signature`
+  >> simp[fmp_lower_function_with_info_def]
+QED
+
 
 Definition fmp_changed_ctx_def:
   fmp_changed_ctx = fmp_probe_bad_sealed_ctx
