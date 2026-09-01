@@ -356,7 +356,9 @@ Proof
   rpt strip_tac >>
   fs[is_param_opcode_iff] >>
   qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
-  simp[Once step_inst_def, step_inst_base_def] >>
+  simp[step_inst_non_invoke] >>
+  Cases_on `inst` >>
+  simp[step_inst_base_def] >>
   rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[update_var_def]) >>
   rpt strip_tac >> gvs[update_var_def]
 QED
