@@ -175,11 +175,12 @@ Proof
 QED
 
 Theorem dret_desugar_function_no_dret:
-  dret_desugar_input fn /\ target CapMcopy /\
   dret_desugar_function target supply fn = SOME (fn',supply') ==>
   no_dret fn'
 Proof
-  rpt strip_tac >>
+  Cases_on `no_dret fn`
+  >- (strip_tac >> gvs[dret_desugar_function_def])
+  >> rpt strip_tac >>
   gvs[dret_desugar_function_def, AllCaseEqs()] >>
   simp[no_dret_def, venomInstTheory.fn_insts_def] >> rpt strip_tac >>
   drule dret_desugar_blocks_no_dret >> strip_tac >>
@@ -191,10 +192,68 @@ Proof
 QED
 
 Theorem dret_desugar_function_identity:
-  dret_desugar_input fn /\ no_dret fn ==>
+  no_dret fn ==>
   dret_desugar_function target supply fn = SOME (fn,supply)
 Proof
   simp[dret_desugar_function_def]
+QED
+
+Theorem map_functions_dret_no_dret:
+  map_functions_supply (dret_desugar_function target) s fns = SOME (out,s') ==>
+  EVERY no_dret out
+Proof
+  map_every qid_spec_tac [`s'`,`out`,`s`] >>
+  Induct_on `fns` >> rpt strip_tac >>
+  gvs[map_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[dret_desugar_function_no_dret]
+QED
+
+Theorem map_functions_dret_identity:
+  EVERY no_dret fns ==>
+  map_functions_supply (dret_desugar_function target) s fns = SOME (fns,s)
+Proof
+  map_every qid_spec_tac [`s`] >>
+  Induct_on `fns` >>
+  simp[map_functions_supply_def, dret_desugar_function_identity]
+QED
+
+Theorem dret_desugar_context_no_dret:
+  dret_desugar_context target s ctx = SOME (ctx',s') ==>
+  EVERY no_dret ctx'.ctx_functions
+Proof
+  strip_tac >>
+  gvs[dret_desugar_context_def, map_ctx_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[map_functions_dret_no_dret]
+QED
+
+Theorem dret_desugar_context_identity:
+  EVERY no_dret ctx.ctx_functions ==>
+  dret_desugar_context target s ctx = SOME (ctx,s)
+Proof
+  strip_tac >> Cases_on `ctx` >>
+  gvs[dret_desugar_context_def, map_ctx_functions_supply_def,
+      map_functions_dret_identity, venomInstTheory.venom_context_component_equality]
+QED
+
+Theorem dret_desugar_configured_no_dret:
+  dret_desugar_configured target unit = SOME unit' ==>
+  EVERY no_dret unit'.cu_context.ctx_functions
+Proof
+  strip_tac >>
+  gvs[dret_desugar_configured_def,
+      dret_desugar_configured_with_supply_def, AllCaseEqs()] >>
+  metis_tac[dret_desugar_context_no_dret]
+QED
+
+Theorem dret_desugar_configured_identity:
+  EVERY no_dret unit.cu_context.ctx_functions ==>
+  dret_desugar_configured target unit = SOME unit
+Proof
+  strip_tac >> Cases_on `unit` >>
+  gvs[dret_desugar_configured_def,
+      dret_desugar_configured_with_supply_def,
+      dret_desugar_context_identity,
+      venomCompilerTypesTheory.compilation_unit_component_equality]
 QED
 
 Theorem replace_dret_inst_supply:
