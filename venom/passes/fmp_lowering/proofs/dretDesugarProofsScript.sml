@@ -103,4 +103,38 @@ Proof
   drule expand_dret_pairs_no_dret >> simp[]
 QED
 
+Theorem expand_dret_pairs_supply:
+  ir_supply_inst_ok s /\
+  expand_dret_pairs s cursor pairs =
+    SOME (DretPairExpansion emitted dsts final_cursor s') ==>
+  dret_supply_extends s s' /\ ir_supply_inst_ok s'
+Proof
+  map_every qid_spec_tac
+    [`emitted`,`dsts`,`final_cursor`,`s'`,`pairs`,`cursor`,`s`] >>
+  recInduct expand_dret_pairs_ind >> rpt strip_tac >>
+  gvs[expand_dret_pairs_def, AllCaseEqs()]
+  >- simp[dret_supply_extends_refl]
+  >> `dret_supply_extends s s1` by (irule fresh_var_extends >> simp[]) >>
+  `dret_supply_extends s1 s2` by (irule fresh_var_extends >> simp[]) >>
+  `dret_supply_extends s2 s3` by (irule fresh_var_extends >> simp[]) >>
+  `ir_supply_inst_ok s3` by
+    (qpat_assum `fresh_ir_var s = (plus31_v,s1)`
+       (mp_tac o MATCH_MP fresh_ir_var_contract) >>
+     qpat_assum `fresh_ir_var s1 = (aligned_v,s2)`
+       (mp_tac o MATCH_MP fresh_ir_var_contract) >>
+     qpat_assum `fresh_ir_var s2 = (next_v,s3)`
+       (mp_tac o MATCH_MP fresh_ir_var_contract) >>
+     rpt strip_tac >> gvs[ir_supply_inst_ok_def]) >>
+  `dret_supply_extends s3 s4 /\ ir_supply_inst_ok s4` by
+    (irule fresh_id_extends >> simp[]) >>
+  `dret_supply_extends s4 s5 /\ ir_supply_inst_ok s5` by
+    (irule fresh_id_extends >> simp[]) >>
+  `dret_supply_extends s5 s6 /\ ir_supply_inst_ok s6` by
+    (irule fresh_id_extends >> simp[]) >>
+  `dret_supply_extends s6 s7 /\ ir_supply_inst_ok s7` by
+    (irule fresh_id_extends >> simp[]) >>
+  first_x_assum (drule_then strip_assume_tac) >>
+  metis_tac[dret_supply_extends_trans]
+QED
+
 val _ = export_theory();
