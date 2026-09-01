@@ -1,12 +1,12 @@
-(* Focused executable validation for conservative FMP reclaim analysis. *)
+(* Focused executable probes for the conservative FMP reclaim abstraction. *)
 
 Theory fmpReclaimProps
 Ancestors
   fmpReclaimDefs
   fmpAnalysisProps
 
-Definition fmp_test_fn_def[local]:
-  fmp_test_fn = mk_raw_function "f"
+Definition reclaim_straight_fn_def[local]:
+  reclaim_straight_fn = mk_raw_function "straight"
     [<| bb_label := "entry";
         bb_instructions :=
           [mk_inst 0 DALLOCA [Lit 32w] ["p"];
@@ -14,49 +14,14 @@ Definition fmp_test_fn_def[local]:
            mk_inst 2 STOP [] []] |>]
 End
 
-Definition fmp_nested_fn_def[local]:
-  fmp_nested_fn = mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 0 DALLOCA [Lit 32w] ["p"];
-           mk_inst 1 DALLOCA [Lit 64w] ["q"];
-           mk_inst 2 STOP [] []] |>]
-End
-
-Definition fmp_pin_fn_def[local]:
-  fmp_pin_fn = mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 0 DALLOCA [Lit 32w] ["p"];
-           mk_inst 1 ASSIGN [Var "p"] ["q"];
-           mk_inst 2 STOP [] []] |>]
-End
-
-Definition fmp_capture_fn_def[local]:
-  fmp_capture_fn = mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 0 DALLOCA [Lit 32w] ["p"];
-           mk_inst 1 MSTORE [Lit 0w; Var "p"] [];
-           mk_inst 2 STOP [] []] |>]
-End
-
-Definition fmp_escape_fn_def[local]:
-  fmp_escape_fn = mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 0 DALLOCA [Lit 32w] ["p"];
-           mk_inst 1 RET [Var "p"] []] |>]
-End
-
-Definition fmp_join_fn_def[local]:
-  fmp_join_fn = mk_raw_function "f"
+Definition reclaim_join_fn_def[local]:
+  reclaim_join_fn = mk_raw_function "join_veto"
     [<| bb_label := "entry";
         bb_instructions :=
           [mk_inst 0 JNZ [Lit 1w; Label "left"; Label "right"] []] |>;
      <| bb_label := "left";
         bb_instructions :=
-          [mk_inst 1 DALLOCA [Lit 32w] ["p"];
+          [mk_inst 1 DALLOCA [Lit 32w] ["left_mark"];
            mk_inst 2 JMP [Label "join"] []] |>;
      <| bb_label := "right";
         bb_instructions := [mk_inst 3 JMP [Label "join"] []] |>;
@@ -64,341 +29,523 @@ Definition fmp_join_fn_def[local]:
         bb_instructions := [mk_inst 4 STOP [] []] |>]
 End
 
-Definition fmp_ctx_def[local]:
-  fmp_ctx fn = mk_venom_context [fn] (SOME fn.fn_name)
+Definition reclaim_pin_fn_def[local]:
+  reclaim_pin_fn = mk_raw_function "pin_veto"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 0 DALLOCA [Lit 32w] ["p"];
+           mk_inst 1 ASSIGN [Var "p"] ["q"];
+           mk_inst 2 MSTORE [Lit 0w; Var "q"] [];
+           mk_inst 3 STOP [] []] |>]
 End
 
-Theorem fmp_take_reclaimable_member_ok[local]:
-  !ctx fn live p vetoed marks q base.
-    MEM (q,base) (fmp_take_reclaimable ctx fn live p vetoed marks) ==>
-    q = p /\ fmp_restore_target_ok ctx fn live p base
-Proof
-  Induct_on `marks` >> simp[fmp_take_reclaimable_def] >>
-  rpt gen_tac >> Cases_on `MEM h.fm_base vetoed` >> simp[] >>
-  Cases_on `fmp_restore_target_ok ctx fn live p h.fm_base` >> simp[] >>
-  metis_tac[]
-QED
+Definition reclaim_capture_fn_def[local]:
+  reclaim_capture_fn = mk_raw_function "capture_veto"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 0 GETFMP [] ["captured"];
+           mk_inst 1 MSTORE [Lit 0w; Var "captured"] [];
+           mk_inst 2 DALLOCA [Lit 32w] ["p"];
+           mk_inst 3 STOP [] []] |>]
+End
 
-Theorem fmp_collect_block_restores_member_ok[local]:
-  !ctx fn live marks cfg bb p base.
-    MEM (p,base) (fmp_collect_block_restores ctx fn live marks cfg bb) ==>
-    fmp_restore_target_ok ctx fn live p base
-Proof
-  rpt strip_tac >>
-  Cases_on `fmp_exit_reclaim_allowed cfg bb.bb_label` >>
-  gvs[fmp_collect_block_restores_def] >>
-  Cases_on `df_at NONE marks bb.bb_label (LENGTH bb.bb_instructions)` >>
-  gvs[fmp_collect_block_restores_def] >>
-  drule fmp_take_reclaimable_member_ok >> simp[]
-QED
+Definition reclaim_loop_fn_def[local]:
+  reclaim_loop_fn = mk_raw_function "loop"
+    [<| bb_label := "entry";
+        bb_instructions := [mk_inst 0 JMP [Label "entry"] []] |>]
+End
 
-Theorem fmp_collect_restores_member_ok[local]:
-  !bbs ctx fn live marks cfg p base.
-    MEM (p,base) (fmp_collect_restores ctx fn live marks cfg bbs) ==>
-    fmp_restore_target_ok ctx fn live p base
-Proof
-  Induct >> simp[fmp_collect_restores_def] >>
-  metis_tac[fmp_collect_block_restores_member_ok]
-QED
+Definition reclaim_ctx_def[local]:
+  reclaim_ctx fn = mk_venom_context [fn] (SOME fn.fn_name)
+End
 
-Theorem analyze_fmp_reclaims_valid:
-  analyze_fmp_reclaims ctx name = SOME plan ==>
-  fmp_reclaim_plan_valid ctx name plan
-Proof
-  simp[analyze_fmp_reclaims_def, fmp_reclaim_plan_valid_def, AllCaseEqs()] >>
-  rpt strip_tac >> gvs[] >>
-  metis_tac[lookup_function_name, fmp_collect_restores_member_ok]
-QED
-
-Theorem analyze_fmp_reclaims_target_checked:
-  !ctx name plan (p:fmp_point) (base:string).
-  analyze_fmp_reclaims ctx name = SOME plan /\
-  MEM (p,base) plan.frp_restores ==>
-  ?fn live mark.
-    lookup_function name ctx.ctx_functions = SOME fn /\
-    live = liveness_analyze fn /\
-    fmp_point_well_located fn p /\
-    fmp_find_base_mark base fn.fn_blocks = SOME mark /\
-    fmp_mark_matches_base fn mark base /\
-    fmp_mark_dominates_point mark p /\
-    ~MEM base (live_vars_at live p.fp_block p.fp_index) /\
-    ~fmp_target_pinned fn base /\
-    ~fmp_target_captured fn base /\
-    ~fmp_target_escapes fn base
-Proof
-  rpt strip_tac >> drule analyze_fmp_reclaims_valid >>
-  simp[fmp_reclaim_plan_valid_def, fmp_restore_target_ok_def] >>
-  metis_tac[]
-QED
-
-Theorem analyze_fmp_reclaims_current_function:
-  analyze_fmp_reclaims ctx name = SOME plan ==>
-  ?fn. lookup_function name ctx.ctx_functions = SOME fn
-Proof
-  strip_tac >> drule analyze_fmp_reclaims_valid >>
-  simp[fmp_reclaim_plan_valid_def] >> metis_tac[]
-QED
-
-Theorem analyze_fmp_reclaims_deterministic:
-  analyze_fmp_reclaims ctx name = SOME p /\
-  analyze_fmp_reclaims ctx name = SOME q ==>
-  p = q
-Proof
-  rpt strip_tac >> gvs[]
-QED
-Theorem analyze_fmp_reclaims_preconditions:
-  !ctx name infos fn.
-    analyze_fmp_context ctx = SOME infos ==>
-    lookup_function name ctx.ctx_functions = SOME fn ==>
-    fn.fn_fmp_signature = NONE ==>
-    wf_function fn ==>
-    fn_inst_wf fn ==>
-    analyze_fmp_reclaims ctx name =
-      case fmp_mark_analyze fn of
-        NONE => NONE
-      | SOME marks =>
-          let live = liveness_analyze fn in
-          let cfg = cfg_analyze fn in
-          let restores =
-            fmp_collect_restores ctx fn live marks cfg fn.fn_blocks in
-          SOME <| frp_function := fn.fn_name;
-                  frp_restores := restores |>
-Proof
-  rpt strip_tac >>
-  Cases_on `fmp_mark_analyze fn` >>
-  simp[analyze_fmp_reclaims_def]
-QED
+Definition reclaim_infos_def[local]:
+  reclaim_infos fn = THE (analyze_fmp_context (reclaim_ctx fn))
+End
+Definition reclaim_straight_states_def[local]:
+  reclaim_straight_states = THE (fmp_reclaim_states reclaim_straight_fn)
+End
 
 
-Theorem fmp_lt3_cases[local]:
+Theorem fmp_common_top_probe:
+  fmp_common_top ["young"; "old"] ["young"; "old"] =
+    ["young"; "old"] /\
+  fmp_common_top ["left"; "old"] ["right"; "old"] = []
+Proof
+  EVAL_TAC
+QED
+
+Theorem reclaim_lt3_cases[local]:
   !(k:num). k < 3 <=> k = 0 \/ k = 1 \/ k = 2
 Proof
   Induct >> simp[]
 QED
 
-Theorem fmp_test_fn_wf[local]:
-  wf_function fmp_test_fn /\ fn_inst_wf fmp_test_fn
+Theorem reclaim_straight_fn_wf[local]:
+  wf_function reclaim_straight_fn /\ fn_inst_wf reclaim_straight_fn
 Proof
   EVAL_TAC >> rw[] >>
-  gvs[fmp_lt3_cases, listTheory.REV_DEF,
-      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
+  gvs[reclaim_lt3_cases, listTheory.REV_DEF, venomInstTheory.is_terminator_def,
+      venomWfTheory.inst_wf_def]
 QED
 
-Theorem fmp_lt2_cases[local]:
+Theorem reclaim_straight_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_straight_fn)
+    (reclaim_infos reclaim_straight_fn)
+Proof
+  irule analyze_fmp_context_valid >> EVAL_TAC
+QED
+
+Theorem reclaim_straight_captures[local]:
+  FLAT (MAP fmp_getfmp_outputs (fn_insts reclaim_straight_fn)) = []
+Proof
+  EVAL_TAC
+QED
+
+Theorem reclaim_straight_states_eq[local]:
+  fmp_reclaim_states reclaim_straight_fn = SOME reclaim_straight_states
+Proof
+  EVAL_TAC
+QED
+
+Theorem reclaim_straight_state_at_exit[local]:
+  df_at NONE reclaim_straight_states "entry" 3 =
+    SOME <| frs_stack := ["p"]; frs_captures := [];
+            frs_can_reclaim := T |>
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_straight_target_ok[local]:
+  fmp_restore_target_ok (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn
+    (liveness_analyze reclaim_straight_fn) [] ("entry",3) "p"
+Proof
+  simp[fmp_restore_target_ok_def, reclaim_straight_infos_valid] >>
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_straight_plan_ok[local]:
+  fmp_reclaim_plan_ok (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn
+    (FEMPTY |+ (("entry",3),"p"))
+Proof
+  simp[fmp_reclaim_plan_ok_def, fmp_reclaim_entry_ok_def,
+       finite_mapTheory.FLOOKUP_UPDATE, reclaim_straight_captures,
+       reclaim_straight_target_ok]
+QED
+
+Theorem reclaim_straight_blocks[local]:
+  reclaim_straight_fn.fn_blocks =
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 0 DALLOCA [Lit 32w] ["p"];
+           mk_inst 1 MLOAD [Var "p"] ["x"];
+           mk_inst 2 STOP [] []] |>]
+Proof
+  EVAL_TAC
+QED
+
+Theorem reclaim_straight_block_candidate[local]:
+  fmp_block_restore (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn
+    (liveness_analyze reclaim_straight_fn) (cfg_analyze reclaim_straight_fn)
+    reclaim_straight_states
+    <| bb_label := "entry";
+       bb_instructions :=
+         [mk_inst 0 DALLOCA [Lit 32w] ["p"];
+          mk_inst 1 MLOAD [Var "p"] ["x"];
+          mk_inst 2 STOP [] []] |> = SOME (("entry",3),"p")
+Proof
+  simp[fmp_block_restore_def, reclaim_straight_state_at_exit,
+       fmp_stack_reclaimable_def, reclaim_straight_target_ok,
+       fmp_oldest_def] >> EVAL_TAC
+QED
+
+Theorem reclaim_straight_candidate[local]:
+  fmp_candidate_plan (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn
+    reclaim_straight_states = FEMPTY |+ (("entry",3),"p")
+Proof
+  simp[fmp_candidate_plan_def, reclaim_straight_blocks,
+       fmp_collect_candidates_def, reclaim_straight_block_candidate,
+       fmp_plan_of_list_def]
+QED
+Theorem fmp_reclaim_straight_line_eval:
+  analyze_fmp_reclaims (reclaim_infos reclaim_straight_fn)
+      (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn =
+    SOME (FEMPTY |+ (("entry",3),"p"))
+Proof
+  simp[analyze_fmp_reclaims_def, reclaim_straight_infos_valid,
+       reclaim_straight_fn_wf, reclaim_straight_states_eq,
+       reclaim_straight_candidate, reclaim_straight_plan_ok] >>
+  EVAL_TAC
+QED
+
+
+Theorem analyze_fmp_reclaims_ready[local]:
+  fmp_info_valid ctx infos /\ MEM fn ctx.ctx_functions /\
+  wf_function fn /\ fn_inst_wf fn /\ fn.fn_fmp_signature = NONE /\
+  fmp_reclaim_states fn = SOME states /\
+  fmp_candidate_plan infos ctx fn states = plan /\
+  fmp_reclaim_plan_ok infos ctx fn plan ==>
+  analyze_fmp_reclaims infos ctx fn = SOME plan
+Proof
+  simp[analyze_fmp_reclaims_def] >> metis_tac[]
+QED
+
+
+Theorem reclaim_lt2_cases[local]:
   !(k:num). k < 2 <=> k = 0 \/ k = 1
 Proof
   Induct >> simp[]
 QED
 
-Theorem fmp_lt4_cases[local]:
+Theorem reclaim_lt4_cases[local]:
   !(k:num). k < 4 <=> k = 0 \/ k = 1 \/ k = 2 \/ k = 3
 Proof
   Induct >> simp[]
 QED
 
-Theorem fmp_nested_fn_wf[local]:
-  wf_function fmp_nested_fn /\ fn_inst_wf fmp_nested_fn
+Theorem reclaim_join_wf[local]:
+  wf_function reclaim_join_fn /\ fn_inst_wf reclaim_join_fn
 Proof
   EVAL_TAC >> rw[] >>
-  gvs[fmp_lt3_cases, listTheory.REV_DEF,
-      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
-QED
-
-Theorem fmp_pin_fn_wf[local]:
-  wf_function fmp_pin_fn /\ fn_inst_wf fmp_pin_fn
-Proof
-  EVAL_TAC >> rw[] >>
-  gvs[fmp_lt3_cases, listTheory.REV_DEF,
-      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
-QED
-
-Theorem fmp_capture_fn_wf[local]:
-  wf_function fmp_capture_fn /\ fn_inst_wf fmp_capture_fn
-Proof
-  EVAL_TAC >> rw[] >>
-  gvs[fmp_lt3_cases, listTheory.REV_DEF,
-      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
-QED
-
-Theorem fmp_escape_fn_wf[local]:
-  wf_function fmp_escape_fn /\ fn_inst_wf fmp_escape_fn
-Proof
-  EVAL_TAC >> rw[] >>
-  gvs[fmp_lt2_cases, listTheory.REV_DEF, venomStateTheory.get_label_def,
-      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
-QED
-
-Theorem fmp_join_fn_wf[local]:
-  wf_function fmp_join_fn /\ fn_inst_wf fmp_join_fn
-Proof
-  EVAL_TAC >> rw[] >>
-  gvs[fmp_lt2_cases, fmp_lt4_cases, listTheory.REV_DEF,
+  gvs[reclaim_lt2_cases, reclaim_lt4_cases, listTheory.REV_DEF,
       venomStateTheory.get_label_def, venomInstTheory.is_terminator_def,
       venomWfTheory.inst_wf_def]
 QED
 
-Theorem fmp_test_analyze_reduction[local]:
-  analyze_fmp_reclaims (fmp_ctx fmp_test_fn) "f" =
-    case fmp_mark_analyze fmp_test_fn of
-      NONE => NONE
-    | SOME marks =>
-        let live = liveness_analyze fmp_test_fn in
-        let cfg = cfg_analyze fmp_test_fn in
-        let restores =
-          fmp_collect_restores (fmp_ctx fmp_test_fn) fmp_test_fn
-            live marks cfg fmp_test_fn.fn_blocks in
-        SOME <| frp_function := fmp_test_fn.fn_name;
-                frp_restores := restores |>
+Theorem reclaim_join_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_join_fn) (reclaim_infos reclaim_join_fn)
 Proof
-  irule analyze_fmp_reclaims_preconditions >>
-  simp[fmp_test_fn_wf] >> EVAL_TAC >> simp[]
+  irule analyze_fmp_context_valid >> EVAL_TAC
 QED
 
+Definition reclaim_join_states_def[local]:
+  reclaim_join_states = THE (fmp_reclaim_states reclaim_join_fn)
+End
 
-Theorem fmp_nested_analyze_reduction[local]:
-  analyze_fmp_reclaims (fmp_ctx fmp_nested_fn) "f" =
-    case fmp_mark_analyze fmp_nested_fn of
-      NONE => NONE
-    | SOME marks =>
-        let live = liveness_analyze fmp_nested_fn in
-        let cfg = cfg_analyze fmp_nested_fn in
-        let restores = fmp_collect_restores (fmp_ctx fmp_nested_fn)
-          fmp_nested_fn live marks cfg fmp_nested_fn.fn_blocks in
-        SOME <|frp_function := fmp_nested_fn.fn_name; frp_restores := restores|>
+Theorem reclaim_join_states_eq[local]:
+  fmp_reclaim_states reclaim_join_fn = SOME reclaim_join_states
 Proof
-  irule analyze_fmp_reclaims_preconditions >>
-  simp[fmp_nested_fn_wf] >> EVAL_TAC >> simp[]
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
 QED
 
-Theorem fmp_join_analyze_reduction[local]:
-  analyze_fmp_reclaims (fmp_ctx fmp_join_fn) "f" =
-    case fmp_mark_analyze fmp_join_fn of
-      NONE => NONE
-    | SOME marks =>
-        let live = liveness_analyze fmp_join_fn in
-        let cfg = cfg_analyze fmp_join_fn in
-        let restores = fmp_collect_restores (fmp_ctx fmp_join_fn)
-          fmp_join_fn live marks cfg fmp_join_fn.fn_blocks in
-        SOME <|frp_function := fmp_join_fn.fn_name; frp_restores := restores|>
-Proof
-  irule analyze_fmp_reclaims_preconditions >>
-  simp[fmp_join_fn_wf] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_pin_analyze_reduction[local]:
-  analyze_fmp_reclaims (fmp_ctx fmp_pin_fn) "f" =
-    case fmp_mark_analyze fmp_pin_fn of
-      NONE => NONE
-    | SOME marks =>
-        let live = liveness_analyze fmp_pin_fn in
-        let cfg = cfg_analyze fmp_pin_fn in
-        let restores = fmp_collect_restores (fmp_ctx fmp_pin_fn)
-          fmp_pin_fn live marks cfg fmp_pin_fn.fn_blocks in
-        SOME <|frp_function := fmp_pin_fn.fn_name; frp_restores := restores|>
-Proof
-  irule analyze_fmp_reclaims_preconditions >>
-  simp[fmp_pin_fn_wf] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_capture_analyze_reduction[local]:
-  analyze_fmp_reclaims (fmp_ctx fmp_capture_fn) "f" =
-    case fmp_mark_analyze fmp_capture_fn of
-      NONE => NONE
-    | SOME marks =>
-        let live = liveness_analyze fmp_capture_fn in
-        let cfg = cfg_analyze fmp_capture_fn in
-        let restores = fmp_collect_restores (fmp_ctx fmp_capture_fn)
-          fmp_capture_fn live marks cfg fmp_capture_fn.fn_blocks in
-        SOME <|frp_function := fmp_capture_fn.fn_name; frp_restores := restores|>
-Proof
-  irule analyze_fmp_reclaims_preconditions >>
-  simp[fmp_capture_fn_wf] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_escape_analyze_reduction[local]:
-  analyze_fmp_reclaims (fmp_ctx fmp_escape_fn) "f" =
-    case fmp_mark_analyze fmp_escape_fn of
-      NONE => NONE
-    | SOME marks =>
-        let live = liveness_analyze fmp_escape_fn in
-        let cfg = cfg_analyze fmp_escape_fn in
-        let restores = fmp_collect_restores (fmp_ctx fmp_escape_fn)
-          fmp_escape_fn live marks cfg fmp_escape_fn.fn_blocks in
-        SOME <|frp_function := fmp_escape_fn.fn_name; frp_restores := restores|>
-Proof
-  irule analyze_fmp_reclaims_preconditions >>
-  simp[fmp_escape_fn_wf] >> EVAL_TAC >> simp[]
-QED
-Theorem fmp_reclaim_straight_line_eval:
-  analyze_fmp_reclaims (fmp_ctx fmp_test_fn) "f" =
-    SOME <| frp_function := "f";
-            frp_restores :=
-              [(<|fp_block := "entry"; fp_index := 3|>, "p")] |>
-Proof
-  rewrite_tac[fmp_test_analyze_reduction] >> EVAL_TAC >>
-  simp[fmp_take_reclaimable_def, fmp_restore_target_ok_def] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_reclaim_nested_lifo_eval:
-  analyze_fmp_reclaims (fmp_ctx fmp_nested_fn) "f" =
-    SOME <| frp_function := "f";
-            frp_restores :=
-              [(<|fp_block := "entry"; fp_index := 3|>, "q");
-               (<|fp_block := "entry"; fp_index := 3|>, "p")] |>
-Proof
-  rewrite_tac[fmp_nested_analyze_reduction] >> EVAL_TAC >>
-  simp[fmp_take_reclaimable_def, fmp_restore_target_ok_def] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_reclaim_join_veto_eval:
-  analyze_fmp_reclaims (fmp_ctx fmp_join_fn) "f" =
-    SOME <| frp_function := "f"; frp_restores := [] |>
-Proof
-  rewrite_tac[fmp_join_analyze_reduction] >> EVAL_TAC >>
-  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE,
-       fmp_take_reclaimable_def, fmp_restore_target_ok_def] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_reclaim_pin_capture_escape_eval:
-  analyze_fmp_reclaims (fmp_ctx fmp_pin_fn) "f" =
-    SOME <|frp_function := "f"; frp_restores := []|> /\
-  analyze_fmp_reclaims (fmp_ctx fmp_capture_fn) "f" =
-    SOME <|frp_function := "f"; frp_restores := []|> /\
-  analyze_fmp_reclaims (fmp_ctx fmp_escape_fn) "f" =
-    SOME <|frp_function := "f"; frp_restores := []|> /\
-  fmp_target_pinned fmp_pin_fn "p" /\
-  fmp_target_captured fmp_capture_fn "p" /\
-  fmp_target_escapes fmp_escape_fn "p"
-Proof
-  rewrite_tac[fmp_pin_analyze_reduction, fmp_capture_analyze_reduction,
-              fmp_escape_analyze_reduction] >> EVAL_TAC >>
-  simp[fmp_take_reclaimable_def, fmp_restore_target_ok_def] >> EVAL_TAC >> simp[]
-QED
-
-Theorem fmp_reclaim_live_and_nondominating_veto_eval:
-  let live = liveness_analyze fmp_test_fn in
-  let early = <|fp_block := "entry"; fp_index := 1|> in
-  let before = <|fp_block := "entry"; fp_index := 0|> in
-  ~fmp_restore_target_ok (fmp_ctx fmp_test_fn) fmp_test_fn live early "p" /\
-  ~fmp_restore_target_ok (fmp_ctx fmp_test_fn) fmp_test_fn live before "p"
+Theorem reclaim_join_candidate_empty[local]:
+  fmp_candidate_plan (reclaim_infos reclaim_join_fn)
+    (reclaim_ctx reclaim_join_fn) reclaim_join_fn reclaim_join_states = FEMPTY
 Proof
   EVAL_TAC >>
   simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE,
-       fmp_restore_target_ok_def] >> EVAL_TAC >> simp[]
+       fmp_plan_of_list_def]
 QED
 
-Theorem fmp_reclaim_unknown_malformed_deterministic_eval:
-  analyze_fmp_reclaims (fmp_ctx fmp_test_fn) "missing" = NONE /\
-  analyze_fmp_reclaims
-    (mk_venom_context [fmp_test_fn; fmp_test_fn] (SOME "f")) "f" = NONE /\
-  analyze_fmp_reclaims (fmp_ctx fmp_test_fn) "f" =
-    analyze_fmp_reclaims (fmp_ctx fmp_test_fn) "f" /\
-  analyze_fmp_reclaims (fmp_ctx fmp_test_fn) "f" <>
-    analyze_fmp_reclaims (fmp_ctx fmp_pin_fn) "f"
+Theorem fmp_reclaim_join_veto_eval:
+  analyze_fmp_reclaims (reclaim_infos reclaim_join_fn)
+    (reclaim_ctx reclaim_join_fn) reclaim_join_fn = SOME FEMPTY
 Proof
-  rewrite_tac[fmp_test_analyze_reduction, fmp_pin_analyze_reduction] >> EVAL_TAC >>
-  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE,
-       fmp_take_reclaimable_def, fmp_restore_target_ok_def] >> EVAL_TAC >> simp[]
+  irule analyze_fmp_reclaims_ready >>
+  simp[reclaim_join_infos_valid, reclaim_join_wf, reclaim_join_states_eq,
+       reclaim_join_candidate_empty, fmp_reclaim_plan_ok_def] >>
+  EVAL_TAC
 QED
+
+Definition reclaim_pin_states_def[local]:
+  reclaim_pin_states = THE (fmp_reclaim_states reclaim_pin_fn)
+End
+
+Theorem reclaim_pin_wf[local]:
+  wf_function reclaim_pin_fn /\ fn_inst_wf reclaim_pin_fn
+Proof
+  EVAL_TAC >> rw[] >>
+  gvs[reclaim_lt4_cases, listTheory.REV_DEF,
+      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
+QED
+
+Theorem reclaim_pin_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_pin_fn) (reclaim_infos reclaim_pin_fn)
+Proof
+  irule analyze_fmp_context_valid >> EVAL_TAC
+QED
+
+Theorem reclaim_pin_states_eq[local]:
+  fmp_reclaim_states reclaim_pin_fn = SOME reclaim_pin_states
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_pin_state_at_exit[local]:
+  df_at NONE reclaim_pin_states "entry" 4 =
+    SOME <|frs_stack := ["p"]; frs_captures := []; frs_can_reclaim := T|>
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_pin_target_veto[local]:
+  ~fmp_restore_target_ok (reclaim_infos reclaim_pin_fn)
+    (reclaim_ctx reclaim_pin_fn) reclaim_pin_fn
+    (liveness_analyze reclaim_pin_fn) [] ("entry",4) "p"
+Proof
+  simp[fmp_restore_target_ok_def, reclaim_pin_infos_valid] >>
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_pin_blocks[local]:
+  reclaim_pin_fn.fn_blocks =
+    [<|bb_label := "entry";
+       bb_instructions :=
+         [mk_inst 0 DALLOCA [Lit 32w] ["p"];
+          mk_inst 1 ASSIGN [Var "p"] ["q"];
+          mk_inst 2 MSTORE [Lit 0w; Var "q"] [];
+          mk_inst 3 STOP [] []]|>]
+Proof
+  EVAL_TAC
+QED
+
+Theorem reclaim_pin_block_none[local]:
+  fmp_block_restore (reclaim_infos reclaim_pin_fn)
+    (reclaim_ctx reclaim_pin_fn) reclaim_pin_fn
+    (liveness_analyze reclaim_pin_fn) (cfg_analyze reclaim_pin_fn)
+    reclaim_pin_states
+    <|bb_label := "entry";
+      bb_instructions :=
+        [mk_inst 0 DALLOCA [Lit 32w] ["p"];
+         mk_inst 1 ASSIGN [Var "p"] ["q"];
+         mk_inst 2 MSTORE [Lit 0w; Var "q"] [];
+         mk_inst 3 STOP [] []]|> = NONE
+Proof
+  simp[reclaim_pin_blocks, fmp_block_restore_def, reclaim_pin_state_at_exit,
+       fmp_stack_reclaimable_def, reclaim_pin_target_veto] >> EVAL_TAC
+QED
+
+Theorem reclaim_pin_candidate_empty[local]:
+  fmp_candidate_plan (reclaim_infos reclaim_pin_fn)
+    (reclaim_ctx reclaim_pin_fn) reclaim_pin_fn reclaim_pin_states = FEMPTY
+Proof
+  simp[fmp_candidate_plan_def, reclaim_pin_blocks,
+       fmp_collect_candidates_def, reclaim_pin_block_none,
+       fmp_plan_of_list_def]
+QED
+
+Theorem fmp_reclaim_pin_veto_eval:
+  analyze_fmp_reclaims (reclaim_infos reclaim_pin_fn)
+    (reclaim_ctx reclaim_pin_fn) reclaim_pin_fn = SOME FEMPTY /\
+  fmp_target_pinned reclaim_pin_fn "p"
+Proof
+  conj_tac
+  >- (irule analyze_fmp_reclaims_ready >>
+      simp[reclaim_pin_infos_valid, reclaim_pin_wf, reclaim_pin_states_eq,
+           reclaim_pin_candidate_empty, fmp_reclaim_plan_ok_def] >> EVAL_TAC)
+  >> EVAL_TAC >> simp[]
+QED
+
+Definition reclaim_capture_states_def[local]:
+  reclaim_capture_states = THE (fmp_reclaim_states reclaim_capture_fn)
+End
+
+Theorem reclaim_capture_wf[local]:
+  wf_function reclaim_capture_fn /\ fn_inst_wf reclaim_capture_fn
+Proof
+  EVAL_TAC >> rw[] >>
+  gvs[reclaim_lt4_cases, listTheory.REV_DEF,
+      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
+QED
+
+Theorem reclaim_capture_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_capture_fn)
+    (reclaim_infos reclaim_capture_fn)
+Proof
+  irule analyze_fmp_context_valid >> EVAL_TAC
+QED
+
+Theorem reclaim_capture_states_eq[local]:
+  fmp_reclaim_states reclaim_capture_fn = SOME reclaim_capture_states
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_capture_state_at_exit[local]:
+  df_at NONE reclaim_capture_states "entry" 4 =
+    SOME <|frs_stack := ["p"]; frs_captures := ["captured"];
+           frs_can_reclaim := T|>
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_capture_target_veto[local]:
+  ~fmp_restore_target_ok (reclaim_infos reclaim_capture_fn)
+    (reclaim_ctx reclaim_capture_fn) reclaim_capture_fn
+    (liveness_analyze reclaim_capture_fn) ["captured"] ("entry",4) "p"
+Proof
+  simp[fmp_restore_target_ok_def, reclaim_capture_infos_valid] >>
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_capture_blocks[local]:
+  reclaim_capture_fn.fn_blocks =
+    [<|bb_label := "entry";
+       bb_instructions :=
+         [mk_inst 0 GETFMP [] ["captured"];
+          mk_inst 1 MSTORE [Lit 0w; Var "captured"] [];
+          mk_inst 2 DALLOCA [Lit 32w] ["p"];
+          mk_inst 3 STOP [] []]|>]
+Proof
+  EVAL_TAC
+QED
+
+Theorem reclaim_capture_block_none[local]:
+  fmp_block_restore (reclaim_infos reclaim_capture_fn)
+    (reclaim_ctx reclaim_capture_fn) reclaim_capture_fn
+    (liveness_analyze reclaim_capture_fn) (cfg_analyze reclaim_capture_fn)
+    reclaim_capture_states
+    <|bb_label := "entry";
+      bb_instructions :=
+        [mk_inst 0 GETFMP [] ["captured"];
+         mk_inst 1 MSTORE [Lit 0w; Var "captured"] [];
+         mk_inst 2 DALLOCA [Lit 32w] ["p"];
+         mk_inst 3 STOP [] []]|> = NONE
+Proof
+  simp[fmp_block_restore_def, reclaim_capture_state_at_exit,
+       fmp_stack_reclaimable_def, reclaim_capture_target_veto] >> EVAL_TAC
+QED
+
+Theorem reclaim_capture_candidate_empty[local]:
+  fmp_candidate_plan (reclaim_infos reclaim_capture_fn)
+    (reclaim_ctx reclaim_capture_fn) reclaim_capture_fn
+    reclaim_capture_states = FEMPTY
+Proof
+  simp[fmp_candidate_plan_def, reclaim_capture_blocks,
+       fmp_collect_candidates_def, reclaim_capture_block_none,
+       fmp_plan_of_list_def]
+QED
+
+Theorem fmp_reclaim_capture_escape_veto_eval:
+  analyze_fmp_reclaims (reclaim_infos reclaim_capture_fn)
+    (reclaim_ctx reclaim_capture_fn) reclaim_capture_fn = SOME FEMPTY /\
+  fmp_capture_escaped reclaim_capture_fn "captured"
+Proof
+  conj_tac
+  >- (irule analyze_fmp_reclaims_ready >>
+      simp[reclaim_capture_infos_valid, reclaim_capture_wf,
+           reclaim_capture_states_eq, reclaim_capture_candidate_empty,
+           fmp_reclaim_plan_ok_def] >> EVAL_TAC)
+  >> EVAL_TAC >> simp[]
+QED
+
+Theorem fmp_reclaim_live_and_nondominating_veto_eval:
+  MEM "p" (live_vars_at (liveness_analyze reclaim_straight_fn) "entry" 1) /\
+  ~fmp_restore_target_ok (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn
+    (liveness_analyze reclaim_straight_fn) [] ("entry",1) "p" /\
+  ~fmp_restore_target_ok (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_straight_fn
+    (liveness_analyze reclaim_straight_fn) [] ("entry",0) "p"
+Proof
+  simp[fmp_restore_target_ok_def, reclaim_straight_infos_valid] >>
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_reclaim_current_input_rejection_eval:
+  analyze_fmp_reclaims FEMPTY (reclaim_ctx reclaim_straight_fn)
+    reclaim_straight_fn = NONE /\
+  analyze_fmp_reclaims (reclaim_infos reclaim_straight_fn)
+    (reclaim_ctx reclaim_straight_fn) reclaim_pin_fn = NONE
+Proof
+  simp[analyze_fmp_reclaims_def, reclaim_straight_infos_valid] >>
+  EVAL_TAC >> simp[fmpAnalysisDefsTheory.fmp_info_valid_def]
+QED
+Definition reclaim_younger_live_fn_def[local]:
+  reclaim_younger_live_fn = mk_raw_function "younger_live"
+    [<|bb_label := "entry";
+       bb_instructions :=
+         [mk_inst 0 DALLOCA [Lit 32w] ["old"];
+          mk_inst 1 DALLOCA [Lit 32w] ["young"];
+          mk_inst 2 MLOAD [Var "young"] ["x"];
+          mk_inst 3 STOP [] []]|>]
+End
+
+Theorem reclaim_younger_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_younger_live_fn)
+    (reclaim_infos reclaim_younger_live_fn)
+Proof
+  irule analyze_fmp_context_valid >> EVAL_TAC
+QED
+
+Theorem reclaim_younger_target_live[local]:
+  MEM "young"
+    (live_vars_at (liveness_analyze reclaim_younger_live_fn) "entry" 2) /\
+  ~fmp_restore_target_ok (reclaim_infos reclaim_younger_live_fn)
+    (reclaim_ctx reclaim_younger_live_fn) reclaim_younger_live_fn
+    (liveness_analyze reclaim_younger_live_fn) [] ("entry",2) "young"
+Proof
+  simp[fmp_restore_target_ok_def, reclaim_younger_infos_valid] >>
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_reclaim_younger_live_mark_veto_eval:
+  ~fmp_stack_reclaimable (reclaim_infos reclaim_younger_live_fn)
+    (reclaim_ctx reclaim_younger_live_fn) reclaim_younger_live_fn
+    (liveness_analyze reclaim_younger_live_fn) [] ("entry",2)
+    ["young"; "old"]
+Proof
+  simp[fmp_stack_reclaimable_def, reclaim_younger_target_live]
+QED
+
+Definition reclaim_loop_states_def[local]:
+  reclaim_loop_states = THE (fmp_reclaim_states reclaim_loop_fn)
+End
+
+Theorem reclaim_loop_wf[local]:
+  wf_function reclaim_loop_fn /\ fn_inst_wf reclaim_loop_fn
+Proof
+  EVAL_TAC >> rw[] >>
+  gvs[reclaim_lt2_cases, listTheory.REV_DEF, venomStateTheory.get_label_def,
+      venomInstTheory.is_terminator_def, venomWfTheory.inst_wf_def]
+QED
+
+Theorem reclaim_loop_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_loop_fn) (reclaim_infos reclaim_loop_fn)
+Proof
+  irule analyze_fmp_context_valid >> EVAL_TAC
+QED
+
+Theorem reclaim_loop_states_eq[local]:
+  fmp_reclaim_states reclaim_loop_fn = SOME reclaim_loop_states
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_loop_candidate_empty[local]:
+  fmp_candidate_plan (reclaim_infos reclaim_loop_fn)
+    (reclaim_ctx reclaim_loop_fn) reclaim_loop_fn reclaim_loop_states = FEMPTY
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE,
+       fmp_plan_of_list_def]
+QED
+
+Theorem fmp_reclaim_loop_totality_eval:
+  analyze_fmp_reclaims (reclaim_infos reclaim_loop_fn)
+    (reclaim_ctx reclaim_loop_fn) reclaim_loop_fn = SOME FEMPTY
+Proof
+  irule analyze_fmp_reclaims_ready >>
+  simp[reclaim_loop_infos_valid, reclaim_loop_wf, reclaim_loop_states_eq,
+       reclaim_loop_candidate_empty, fmp_reclaim_plan_ok_def] >>
+  EVAL_TAC
+QED
+
 
 val _ = export_theory();
