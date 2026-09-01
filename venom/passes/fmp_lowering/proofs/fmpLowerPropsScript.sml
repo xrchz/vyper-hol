@@ -735,11 +735,12 @@ Theorem fmp_lower_function_preserves_nonfmp_metadata:
 Proof
   simp[fmp_lower_function_def, fmp_lower_function_with_info_def,
        AllCaseEqs()] >>
-  rpt strip_tac >> gvs[] >>
-  simp[fmp_seal_preserves_nonfmp_metadata,
-       venomInstTheory.fn_identity_metadata_eq_def,
-       venomInstTheory.fn_static_input_eq_def,
-       venomInstTheory.fn_static_layout_eq_def]
+  strip_tac >>
+  gvs[fmp_checked_seal_def, fmp_seal_def,
+      fmp_seal_preserves_nonfmp_metadata,
+      venomInstTheory.fn_identity_metadata_eq_def,
+      venomInstTheory.fn_static_input_eq_def,
+      venomInstTheory.fn_static_layout_eq_def]
 QED
 
 Theorem fmp_lower_function_seals_signature_exact:
@@ -755,7 +756,8 @@ Theorem fmp_lower_function_seals_signature_exact:
 Proof
   simp[fmp_lower_function_def, fmp_lower_function_with_info_def,
        AllCaseEqs()] >>
-  rpt strip_tac >> gvs[fmp_seal_signature]
+  rpt strip_tac >>
+  gvs[fmp_checked_seal_def, fmp_seal_def, fmp_seal_signature]
 QED
 
 Theorem fmp_lower_function_seals_signature:
@@ -767,7 +769,8 @@ Theorem fmp_lower_function_seals_signature:
 Proof
   simp[fmp_lower_function_def, fmp_lower_function_with_info_def,
        AllCaseEqs()] >>
-  rpt strip_tac >> gvs[fmp_seal_signature]
+  rpt strip_tac >>
+  gvs[fmp_checked_seal_def, fmp_seal_def, fmp_seal_signature]
 QED
 
 Theorem fmp_lookup_function_self:
@@ -937,13 +940,15 @@ Proof
        AllCaseEqs()] >>
   rpt strip_tac >> gvs[]
   >- (drule_all fmp_no_need_input_no_raw >>
-      simp[fmp_seal_def, venomInstTheory.no_raw_fmp_ops_def,
-           venomInstTheory.fn_insts_def])
+      gvs[fmp_checked_seal_def, fmp_seal_def,
+          venomInstTheory.no_raw_fmp_ops_def,
+          venomInstTheory.fn_insts_def])
   >> Cases_on `root_layout` >> gvs[] >>
   drule fmp_lower_blocks_no_raw >> strip_tac >>
   drule fmp_make_root_layout_no_raw_insertions >> strip_tac >>
   drule_all fmp_install_root_no_raw >> strip_tac >>
-  drule fmp_seal_no_raw >> simp[]
+  gvs[fmp_checked_seal_def, fmp_seal_def] >>
+  irule fmp_blocks_every_no_raw >> simp[]
 QED
 
 Theorem fmp_lowered_context_wf_sealed_raw_free:
