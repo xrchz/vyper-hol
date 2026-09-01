@@ -139,3 +139,39 @@ Proof
   >> simp[fcg_is_reachable_def]
 QED
 
+
+(* Kernel-checked computations exercising ordinary, cyclic, and unreachable
+ * call-graph shapes. *)
+Definition fcg_postorder_acyclic_test_fcg_def[local]:
+  fcg_postorder_acyclic_test_fcg =
+    fcg_empty with fcg_callees :=
+      FEMPTY |+ ("a", ["b"; "c"]) |+ ("b", ["c"])
+End
+
+Definition fcg_postorder_self_cycle_test_fcg_def[local]:
+  fcg_postorder_self_cycle_test_fcg =
+    fcg_empty with fcg_callees := FEMPTY |+ ("a", ["a"])
+End
+
+Definition fcg_postorder_mutual_cycle_test_fcg_def[local]:
+  fcg_postorder_mutual_cycle_test_fcg =
+    fcg_empty with fcg_callees :=
+      FEMPTY |+ ("a", ["b"]) |+ ("b", ["a"])
+End
+
+Definition fcg_postorder_unreachable_test_fcg_def[local]:
+  fcg_postorder_unreachable_test_fcg =
+    fcg_empty with fcg_callees :=
+      FEMPTY |+ ("a", ["b"]) |+ ("u", ["a"])
+End
+
+Theorem fcg_postorder_edge_case_evaluations:
+  fcg_postorder fcg_postorder_acyclic_test_fcg "a" = ["c"; "b"; "a"] ∧
+  fcg_postorder fcg_postorder_self_cycle_test_fcg "a" = ["a"] ∧
+  fcg_postorder fcg_postorder_mutual_cycle_test_fcg "a" = ["b"; "a"] ∧
+  ¬MEM "u" (fcg_postorder fcg_postorder_unreachable_test_fcg "a") ∧
+  ALL_DISTINCT (fcg_postorder fcg_postorder_self_cycle_test_fcg "a") ∧
+  ALL_DISTINCT (fcg_postorder fcg_postorder_mutual_cycle_test_fcg "a")
+Proof
+  EVAL_TAC
+QED
