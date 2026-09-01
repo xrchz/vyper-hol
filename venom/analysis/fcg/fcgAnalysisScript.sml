@@ -6,4 +6,4 @@
 
 Theory fcgAnalysis
 Ancestors
-  fcgDefs fcgAnalysisProps
+  fcgDefs fcgAnalysisProps fcgPostorder

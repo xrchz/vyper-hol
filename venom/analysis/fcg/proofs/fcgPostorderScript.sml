@@ -160,6 +160,20 @@ Proof
 QED
 
 
+Theorem fcg_postorder_callee_before_caller:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  reachable_fcg_acyclic ctx fcg /\
+  fn_directly_calls ctx caller callee /\
+  fcg_is_reachable fcg caller ==>
+  ?callee_i caller_i.
+    list_index callee (fcg_postorder fcg entry) = SOME callee_i /\
+    list_index caller (fcg_postorder fcg entry) = SOME caller_i /\
+    callee_i < caller_i
+Proof
+  metis_tac[reachable_fcg_acyclic_direct_edge_rank]
+QED
+
 Theorem fcg_reachable_direct_callee:
   fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
   ctx_wf ctx /\ wf_invoke_targets ctx /\
