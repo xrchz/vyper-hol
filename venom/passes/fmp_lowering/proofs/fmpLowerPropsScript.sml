@@ -231,8 +231,9 @@ Definition fmp_sealed_raw_fn_def:
 End
 
 Theorem fmp_sealed_raw_rejected_eval:
-  fmp_lower_function_with_info FEMPTY fmp_test_ctx fmp_test_supply
-    fmp_sealed_raw_fn = NONE
+  fmp_lower_function
+    (mk_venom_context [fmp_sealed_raw_fn] NONE)
+    fmp_test_supply fmp_sealed_raw_fn = NONE
 Proof
   EVAL_TAC
 QED
@@ -243,11 +244,10 @@ Theorem fmp_lower_inst_no_raw:
   EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) out
 Proof
   Cases_on `inst.inst_opcode` >>
-  simp[fmp_lower_inst_def, fmp_lower_inst_shape_def,
-       venomInstTheory.is_raw_fmp_opcode_def, AllCaseEqs()] >>
+  gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+      venomInstTheory.mk_inst_def, AllCaseEqs()] >>
   rpt strip_tac >>
-  gvs[AllCaseEqs(), venomInstTheory.mk_inst_def,
-      venomInstTheory.is_raw_fmp_opcode_def]
+  gvs[venomInstTheory.is_raw_fmp_opcode_def]
 QED
 
 Theorem fmp_lower_insts_no_raw:
