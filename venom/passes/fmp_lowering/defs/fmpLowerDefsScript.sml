@@ -44,8 +44,11 @@ Definition set_param_index_def:
   set_param_index k inst = inst with inst_operands := [Lit (n2w k)]
 End
 
-(* Resolve an INVOKE against both the current context and the freshly computed
-   information map.  The returned argument list excludes the leading label. *)
+(* Resolve a raw INVOKE against both the current context and the freshly
+   computed information map.  Raw operands and outputs contain only the user
+   layout: this boundary checks those exact arities before lowering appends a
+   hidden runner input or publishing output.  The returned argument list
+   excludes the leading label. *)
 Definition fmp_resolve_invoke_def:
   fmp_resolve_invoke infos ctx inst =
     if inst.inst_opcode <> INVOKE then NONE
@@ -55,9 +58,20 @@ Definition fmp_resolve_invoke_def:
           (case lookup_function name ctx.ctx_functions of
              NONE => NONE
            | SOME callee =>
-               case FLOOKUP infos name of
-                 NONE => NONE
-               | SOME info => SOME (callee,info,args))
+               case (FLOOKUP infos name,callee.fn_fmp_signature) of
+                 (SOME info,SOME sig) =>
+                   if info <> fmp_info_of_signature sig \/
+                      ~fmp_seal_layout_matches_fn callee sig \/
+                      LENGTH args <> LENGTH (fn_user_param_insts callee)
+                   then NONE
+                   else
+                     (case fmp_expected_user_return_arity sig callee of
+                        NONE => NONE
+                      | SOME n =>
+                          if LENGTH inst.inst_outputs = n
+                          then SOME (callee,info,args)
+                          else NONE)
+               | _ => NONE)
       | _ => NONE
 End
 
@@ -289,6 +303,18 @@ Definition fmp_seal_def:
     |>
 End
 
+(* Writing seal bits is not itself evidence that the constructed physical
+   layout is valid.  Check the candidate against the current context before it
+   can cross the lowering boundary. *)
+Definition fmp_checked_seal_def:
+  fmp_checked_seal ctx fn info blocks =
+    let sealed = fmp_seal ctx fn info blocks in
+      case sealed.fn_fmp_signature of
+        NONE => NONE
+      | SOME sig =>
+          if fmp_signature_syntax_wf sig sealed then SOME sealed else NONE
+End
+
 Definition fmp_lower_function_with_info_def:
   fmp_lower_function_with_info infos ctx s fn =
     case fn.fn_fmp_signature of
@@ -309,7 +335,9 @@ Definition fmp_lower_function_with_info_def:
                   if ~fmp_reclaim_input fn plan then NONE
                   else if ~(info.fi_needs_fmp \/ info.fi_publishes_fmp) then
                     if plan = FEMPTY then
-                      SOME (fmp_seal ctx fn info fn.fn_blocks,s)
+                      (case fmp_checked_seal ctx fn info fn.fn_blocks of
+                         NONE => NONE
+                       | SOME sealed => SOME (sealed,s))
                     else NONE
                   else
                     (case fresh_ir_var s of (runner,s1) =>
@@ -330,7 +358,9 @@ Definition fmp_lower_function_with_info_def:
                                       blocks of
                                  NONE => NONE
                                | SOME (blocks',s4) =>
-                                   SOME (fmp_seal ctx fn info blocks',s4))
+                                   (case fmp_checked_seal ctx fn info blocks' of
+                                      NONE => NONE
+                                    | SOME sealed => SOME (sealed,s4)))
 End
 
 Definition fmp_lower_function_def:
@@ -339,5 +369,40 @@ Definition fmp_lower_function_def:
       NONE => NONE
     | SOME infos => fmp_lower_function_with_info infos ctx s fn
 End
+
+Theorem fmp_resolve_invoke_some:
+  fmp_resolve_invoke infos ctx inst = SOME (callee,info,args) ==>
+  ?name sig n.
+    inst.inst_operands = Label name::args /\
+    lookup_function name ctx.ctx_functions = SOME callee /\
+    callee.fn_fmp_signature = SOME sig /\
+    FLOOKUP infos name = SOME info /\
+    info = fmp_info_of_signature sig /\
+    fmp_seal_layout_matches_fn callee sig /\
+    LENGTH args = LENGTH (fn_user_param_insts callee) /\
+    fmp_expected_user_return_arity sig callee = SOME n /\
+    LENGTH inst.inst_outputs = n
+Proof
+  simp[fmp_resolve_invoke_def]
+  >> Cases_on `inst.inst_opcode = INVOKE` >> simp[]
+  >> Cases_on `inst.inst_operands` >> simp[]
+  >> Cases_on `h` >> simp[]
+  >> Cases_on `lookup_function s ctx.ctx_functions` >> simp[]
+  >> Cases_on `FLOOKUP infos s` >> simp[]
+  >> Cases_on `x.fn_fmp_signature` >> simp[]
+  >> Cases_on `fmp_expected_user_return_arity x'' x` >> simp[]
+  >> metis_tac[]
+QED
+
+Theorem fmp_checked_seal_some:
+  fmp_checked_seal ctx fn info blocks = SOME sealed ==>
+  sealed = fmp_seal ctx fn info blocks /\
+  ?sig. sealed.fn_fmp_signature = SOME sig /\
+        fmp_signature_syntax_wf sig sealed
+Proof
+  simp[fmp_checked_seal_def]
+  >> Cases_on `(fmp_seal ctx fn info blocks).fn_fmp_signature` >> simp[]
+  >> metis_tac[]
+QED
 
 val _ = export_theory();
