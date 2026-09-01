@@ -178,3 +178,36 @@ Definition used_before_defined_def:
              ¬var_defined_at bbs (FST (EL j positions))
                                  (SND (EL j positions)) v)
 End
+
+(* FMP lowering emits hidden parameters as ordinary def/use instructions. *)
+Theorem fmp_hidden_param_defs_uses:
+  (inst_uses (mk_inst id FMP_PARAM [Lit (n2w k)] [v]) = [] /\
+   inst_defs (mk_inst id FMP_PARAM [Lit (n2w k)] [v]) = [v]) /\
+  (inst_uses (mk_inst id RETPC_PARAM [Lit (n2w k)] [v]) = [] /\
+   inst_defs (mk_inst id RETPC_PARAM [Lit (n2w k)] [v]) = [v])
+Proof
+  simp[mk_inst_def, inst_uses_def, inst_defs_def, operand_vars_def,
+       operand_var_def]
+QED
+
+Theorem fmp_hidden_param_liveness_transfer:
+  (liveness_transfer bbs
+     (mk_inst id FMP_PARAM [Lit (n2w k)] [v]) live =
+   FILTER (\x. x <> v) live) /\
+  (liveness_transfer bbs
+     (mk_inst id RETPC_PARAM [Lit (n2w k)] [v]) live =
+   FILTER (\x. x <> v) live)
+Proof
+  simp[liveness_transfer_def, live_update_def, mk_inst_def,
+       inst_uses_def, inst_defs_def, operand_vars_def, operand_var_def]
+QED
+
+Theorem fmp_lowered_generated_defs_uses:
+  (inst_uses (mk_inst id INITIAL_FMP [] [v]) = [] /\
+   inst_defs (mk_inst id INITIAL_FMP [] [v]) = [v]) /\
+  (inst_uses (mk_inst id' BUMP [Var fmp; Lit (n2w k)] [out]) = [fmp] /\
+   inst_defs (mk_inst id' BUMP [Var fmp; Lit (n2w k)] [out]) = [out])
+Proof
+  simp[mk_inst_def, inst_uses_def, inst_defs_def, operand_vars_def,
+       operand_var_def]
+QED
