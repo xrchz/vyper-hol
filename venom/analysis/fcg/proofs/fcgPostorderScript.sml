@@ -139,6 +139,26 @@ Proof
   >> simp[fcg_is_reachable_def]
 QED
 
+Theorem reachable_fcg_acyclic_direct_edge_rank:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  reachable_fcg_acyclic ctx fcg /\
+  fn_directly_calls ctx caller callee /\
+  fcg_is_reachable fcg caller ==>
+  ?callee_i caller_i.
+    list_index callee (fcg_postorder fcg entry) = SOME callee_i /\
+    list_index caller (fcg_postorder fcg entry) = SOME caller_i /\
+    callee_i < caller_i
+Proof
+  rpt strip_tac >>
+  gvs[reachable_fcg_acyclic_def, fcg_is_reachable_def, listTheory.EVERY_MEM] >>
+  `MEM callee (fcg_get_callees (fcg_analyze ctx) caller)` by
+    (irule fcg_analyze_callees_complete_proof >>
+     simp[fcg_is_reachable_def]) >>
+  res_tac >>
+  gvs[list_precedes_iff]
+QED
+
 
 (* Kernel-checked computations exercising ordinary, cyclic, and unreachable
  * call-graph shapes. *)
