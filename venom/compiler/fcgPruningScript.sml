@@ -4,7 +4,8 @@
 
 Theory fcgPruning
 Ancestors
-  fcgCorrectnessProof fcgDefs venomCompilerWf irSupply venomInst
+  fcgPostorder fcgCorrectnessProof fcgDefs venomWf venomCompilerWf irSupply venomInst
+  relation
 
 Definition prune_unit_fcg_unreachable_def:
   prune_unit_fcg_unreachable unit fcg =
@@ -154,6 +155,77 @@ Proof
   `found.fn_name = fn.fn_name` by metis_tac[lookup_function_name] >>
   `found = fn` by metis_tac[distinct_function_names_unique_local] >>
   gvs[]
+QED
+
+Theorem prune_fcg_reachable_direct_callee:
+  fcg = fcg_analyze ctx /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  fcg_is_reachable fcg caller /\
+  fn_directly_calls ctx caller callee ==>
+  fcg_is_reachable fcg callee
+Proof
+  rpt strip_tac >> gvs[] >>
+  drule_all fcg_analyze_reachable_sound_proof >> strip_tac >> gvs[] >>
+  `MEM callee (ctx_fn_names ctx)` by
+    (gvs[fn_directly_calls_def, wf_invoke_targets_def,
+         ctx_fn_names_def] >>
+     imp_res_tac lookup_function_MEM >> res_tac >> gvs[]) >>
+  irule fcg_analyze_reachable_complete_proof >> simp[] >>
+  fs[fcg_path_def] >>
+  irule (CONJUNCT2 (SPEC_ALL RTC_RULES_RIGHT1)) >>
+  qexists `caller` >> simp[]
+QED
+
+
+Theorem ctx_wf_prune_unit_fcg_unreachable:
+  fcg = fcg_analyze unit.cu_context /\
+  ctx_wf unit.cu_context ==>
+  ctx_wf (prune_unit_fcg_unreachable unit fcg).cu_context
+Proof
+  rpt strip_tac >>
+  gvs[ctx_wf_def, ctx_distinct_fn_names_def, ctx_has_entry_def,
+      ctx_fn_names_def] >>
+  conj_tac
+  >- (rewrite_tac[prune_fcg_unreachable_names] >>
+      irule listTheory.FILTER_ALL_DISTINCT >> simp[])
+  >> qexists `entry_name` >> conj_tac
+  >- simp[prune_unit_fcg_unreachable_def]
+  >> rewrite_tac[prune_fcg_unreachable_names] >>
+  simp[listTheory.MEM_FILTER] >>
+  irule fcg_analyze_reachable_complete_proof >>
+  simp[ctx_wf_def, ctx_distinct_fn_names_def, ctx_has_entry_def,
+       ctx_fn_names_def, fcg_path_def, relationTheory.RTC_REFL]
+QED
+
+Theorem wf_invoke_targets_prune_unit_fcg_unreachable:
+  fcg = fcg_analyze unit.cu_context /\
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context ==>
+  wf_invoke_targets (prune_unit_fcg_unreachable unit fcg).cu_context
+Proof
+  rpt strip_tac >>
+  rw[wf_invoke_targets_def] >> rpt strip_tac >>
+  drule (iffLR MEM_prune_unit_fcg_unreachable_functions) >> strip_tac >>
+  qpat_assum `wf_invoke_targets unit.cu_context`
+    (fn th => qspecl_then [`func`, `inst`] mp_tac
+      (REWRITE_RULE [wf_invoke_targets_def] th)) >>
+  simp[] >> strip_tac >>
+  qexistsl [`lbl`, `rest`] >> simp[] >>
+  rewrite_tac[ctx_fn_names_def, prune_fcg_unreachable_names] >>
+  simp[listTheory.MEM_FILTER] >>
+  `lookup_function func.fn_name unit.cu_context.ctx_functions = SOME func` by
+    (irule lookup_function_of_MEM_distinct_names >>
+     gvs[ctx_wf_def, ctx_distinct_fn_names_def, ctx_fn_names_def]) >>
+  `fn_directly_calls unit.cu_context func.fn_name lbl` by
+    (simp[fn_directly_calls_def] >>
+     qexistsl [`inst`, `rest`] >> simp[]) >>
+  conj_tac
+  >- (drule_all fcg_analyze_reachable_sound_proof >> strip_tac >> gvs[] >>
+      irule fcg_analyze_reachable_complete_proof >> simp[] >>
+      fs[fcg_path_def] >>
+      irule (CONJUNCT2 (SPEC_ALL RTC_RULES_RIGHT1)) >>
+      qexists `func.fn_name` >> simp[])
+  >> gvs[ctx_fn_names_def]
 QED
 Theorem prune_fcg_no_new_edges:
   fn_directly_calls
