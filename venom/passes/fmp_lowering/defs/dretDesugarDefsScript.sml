@@ -51,8 +51,14 @@ End
 
 (* Expand an exact source/size-pair list from left to right.  The result is
    (emitted instructions, destination operands, final cursor, final supply). *)
+Datatype:
+  dret_pair_expansion =
+    DretPairExpansion (instruction list) (operand list) operand ir_supply
+End
+
 Definition expand_dret_pairs_def:
-  expand_dret_pairs s cursor [] = SOME ([],[],cursor,s) /\
+  expand_dret_pairs s cursor [] =
+    SOME (DretPairExpansion [] [] cursor s) /\
   expand_dret_pairs s cursor (src::size::pairs) =
     (case fresh_ir_var s of (plus31_v,s1) =>
      case fresh_ir_var s1 of (aligned_v,s2) =>
@@ -63,16 +69,16 @@ Definition expand_dret_pairs_def:
      case fresh_inst_id s6 of (next_id,s7) =>
      case expand_dret_pairs s7 (Var next_v) pairs of
        NONE => NONE
-     | SOME (tail,dsts,final_cursor,s8) =>
-         SOME
+     | SOME (DretPairExpansion tail dsts final_cursor s8) =>
+         SOME (DretPairExpansion
            (mk_inst copy_id MCOPY [cursor;src;size] [] ::
             mk_inst plus31_id ADD [size; Lit 31w] [plus31_v] ::
             mk_inst align_id AND
               [Var plus31_v;
                Lit 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0w]
               [aligned_v] ::
-            mk_inst next_id ADD [cursor; Var aligned_v] [next_v] :: tail,
-            cursor::dsts, final_cursor, s8)) /\
+            mk_inst next_id ADD [cursor; Var aligned_v] [next_v] :: tail)
+           (cursor::dsts) final_cursor s8)) /\
   expand_dret_pairs s cursor _ = NONE
 End
 
@@ -84,7 +90,7 @@ Definition replace_dret_inst_def:
     | SOME (ordinary,pairs,return_pc) =>
         case expand_dret_pairs s entry_cursor pairs of
           NONE => NONE
-        | SOME (body,dsts,final_cursor,s1) =>
+        | SOME (DretPairExpansion body dsts final_cursor s1) =>
             (case fresh_inst_id s1 of (setfmp_id,s2) =>
              case fresh_inst_id s2 of (retfmp_id,s3) =>
                SOME
