@@ -321,31 +321,16 @@ End
 
 (* ===== Call Walk (Postorder DFS) ===== *)
 
-(* Postorder DFS over the call graph.
-   Matches Python _build_call_walk: for each function, DFS into callees
-   first, then append self. Skips already-visited functions. *)
-Definition call_walk_dfs_def:
-  (call_walk_dfs fcg fn_name visited =
-    if MEM fn_name visited then (visited, [])
-    else
-      let visited' = fn_name :: visited in
-      let callees = fcg_get_callees fcg fn_name in
-      let (visited'', callee_walk) =
-        call_walk_dfs_list fcg callees visited' in
-      (visited'', SNOC fn_name callee_walk)) ∧
-  (call_walk_dfs_list fcg [] visited = (visited, [])) ∧
-  (call_walk_dfs_list fcg (fn_name::rest) visited =
-    let (vis', walk1) = call_walk_dfs fcg fn_name visited in
-    let (vis'', walk2) = call_walk_dfs_list fcg rest vis' in
-    (vis'', walk1 ++ walk2))
-Termination
-  cheat
+(* Compatibility alias for the shared total FCG postorder traversal. *)
+Definition build_call_walk_def:
+  build_call_walk fcg entry_name = fcg_postorder fcg entry_name
 End
 
-Definition build_call_walk_def:
-  build_call_walk fcg entry_name =
-    SND (call_walk_dfs fcg entry_name [])
-End
+Theorem build_call_walk_eq_fcg_postorder:
+  ∀fcg entry. build_call_walk fcg entry = fcg_postorder fcg entry
+Proof
+  simp[build_call_walk_def]
+QED
 
 (* ===== Candidate Selection ===== *)
 

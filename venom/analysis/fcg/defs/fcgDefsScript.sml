@@ -8,6 +8,7 @@
  * TOP-LEVEL definitions:
  *   fcg_analysis           - result record type
  *   fcg_empty              - empty analysis result
+ *   fcg_postorder          - total callee-first walk from an entry
  *   fcg_get_callees        - query: callees of a function
  *   fcg_get_call_sites     - query: INVOKE instructions targeting a function
  *   fcg_is_reachable       - query: is a function reachable from entry?
@@ -28,7 +29,7 @@
 
 Theory fcgDefs
 Ancestors
-  venomInst relation
+  venomInst relation cfgDefs
 
 (* ==========================================================================
    Result type
@@ -48,6 +49,11 @@ Definition fcg_empty_def:
     fcg_call_sites := FEMPTY;
     fcg_reachable := []
   |>
+End
+
+Definition fcg_postorder_def:
+  fcg_postorder fcg entry =
+    SND (dfs_post_walk fcg.fcg_callees [] entry)
 End
 
 (* ==========================================================================
