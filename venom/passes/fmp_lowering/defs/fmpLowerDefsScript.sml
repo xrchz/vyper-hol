@@ -229,4 +229,114 @@ Definition fmp_lower_blocks_def:
               leftover s3)
 End
 
+Datatype:
+  fmp_root_layout =
+    FmpRootLayout num (instruction option) (instruction option) ir_supply
+End
+
+(* Allocate the optional incoming root before lowering the body, so generated
+   instruction IDs follow physical output order. *)
+Definition fmp_make_root_layout_def:
+  fmp_make_root_layout ctx fn info runner s =
+    case split_fmp_entry fn of
+      NONE => NONE
+    | SOME (FmpEntryLayout users retpc entry_body) =>
+        if ~info.fi_needs_fmp then
+          SOME (FmpRootLayout (LENGTH users) NONE retpc s)
+        else if fn_is_context_entry ctx fn then
+          (case fresh_inst_id s of (id,s1) =>
+             SOME (FmpRootLayout (LENGTH users)
+               (SOME (mk_inst id INITIAL_FMP [] [runner])) retpc s1))
+        else
+          case retpc of
+            NONE => NONE
+          | SOME retpc_inst =>
+              (case fresh_inst_id s of (id,s1) =>
+                 SOME (FmpRootLayout (LENGTH users)
+                   (SOME (mk_inst id FMP_PARAM
+                     [Lit (n2w (LENGTH users))] [runner]))
+                   (SOME (set_param_index (SUC (LENGTH users)) retpc_inst)) s1))
+End
+
+(* Install the allocated root into the already-lowered entry block.  Lowering
+   leaves the original physical parameter prefix one-for-one, so its user and
+   RETPC lengths remain a stable split point even when the body expands. *)
+Definition fmp_install_root_def:
+  fmp_install_root ctx fn (FmpRootLayout n root retpc s) blocks =
+    case blocks of
+      [] => NONE
+    | entry::rest =>
+        let old_prefix = n + (if retpc = NONE then 0 else 1) in
+        let users = TAKE n entry.bb_instructions in
+        let body = DROP old_prefix entry.bb_instructions in
+        let hidden = OPTION_TO_LIST root in
+        let retpcs = OPTION_TO_LIST retpc in
+        let insts =
+          if fn_is_context_entry ctx fn then
+            users ++ retpcs ++ hidden ++ body
+          else users ++ hidden ++ retpcs ++ body
+        in SOME ((entry with bb_instructions := insts)::rest,s)
+End
+
+Definition fmp_seal_def:
+  fmp_seal ctx fn info blocks =
+    fn with <|
+      fn_blocks := blocks;
+      fn_fmp_signature := SOME (<|
+        fms_has_fmp_param := (info.fi_needs_fmp /\
+                              ~fn_is_context_entry ctx fn);
+        fms_publishes := info.fi_publishes_fmp
+      |>)
+    |>
+End
+
+Definition fmp_lower_function_with_info_def:
+  fmp_lower_function_with_info infos ctx s fn =
+    case fn.fn_fmp_signature of
+      SOME sig =>
+        if fmp_signature_matches_fn ctx fn /\ no_raw_fmp_ops fn
+        then SOME (fn,s) else NONE
+    | NONE =>
+        if ~(fmp_info_valid ctx infos /\ fmp_lower_input infos ctx fn) then NONE
+        else
+          case FLOOKUP infos fn.fn_name of
+            NONE => NONE
+          | SOME info =>
+              case analyze_fmp_reclaims ctx fn.fn_name of
+                NONE => NONE
+              | SOME plan =>
+                  if ~fmp_reclaim_input fn plan then NONE
+                  else if ~(info.fi_needs_fmp \/ info.fi_publishes_fmp) then
+                    if plan.frp_restores = [] then
+                      SOME (fmp_seal ctx fn info fn.fn_blocks,s)
+                    else NONE
+                  else
+                    (case fresh_ir_var s of (runner,s1) =>
+                     case fmp_make_root_layout ctx fn info runner s1 of
+                       NONE => NONE
+                     | SOME root_layout =>
+                         case fmp_lower_blocks infos ctx runner
+                           (case root_layout of FmpRootLayout n r pc s2 => s2)
+                           plan.frp_restores fn.fn_blocks of
+                           NONE => NONE
+                         | SOME (FmpBlocksResult blocks leftover s3) =>
+                             if leftover <> [] then NONE
+                             else
+                               case fmp_install_root ctx fn
+                                      (case root_layout of
+                                         FmpRootLayout n r pc s2 =>
+                                           FmpRootLayout n r pc s3)
+                                      blocks of
+                                 NONE => NONE
+                               | SOME (blocks',s4) =>
+                                   SOME (fmp_seal ctx fn info blocks',s4))
+End
+
+Definition fmp_lower_function_def:
+  fmp_lower_function ctx s fn =
+    case analyze_fmp_context ctx of
+      NONE => NONE
+    | SOME infos => fmp_lower_function_with_info infos ctx s fn
+End
+
 val _ = export_theory();
