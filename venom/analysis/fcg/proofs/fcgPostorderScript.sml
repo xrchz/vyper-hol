@@ -160,6 +160,70 @@ Proof
 QED
 
 
+Theorem fcg_reachable_direct_callee:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  fcg_is_reachable fcg caller /\
+  fn_directly_calls ctx caller callee ==>
+  fcg_is_reachable fcg callee
+Proof
+  rpt strip_tac >> gvs[] >>
+  drule_all fcg_analyze_reachable_sound_proof >> strip_tac >> gvs[] >>
+  `MEM callee (ctx_fn_names ctx)` by
+    (gvs[fn_directly_calls_def, wf_invoke_targets_def,
+         ctx_fn_names_def] >>
+     imp_res_tac lookup_function_MEM >> res_tac >> gvs[]) >>
+  irule fcg_analyze_reachable_complete_proof >> simp[] >>
+  fs[fcg_path_def] >>
+  irule (CONJUNCT2 (SPEC_ALL RTC_RULES_RIGHT1)) >>
+  qexists `caller` >> simp[]
+QED
+
+Theorem reachable_fcg_acyclic_tc_rank:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  reachable_fcg_acyclic ctx fcg /\
+  fcg_is_reachable fcg source /\
+  TC (fn_directly_calls ctx) source target ==>
+  fcg_is_reachable fcg target /\
+  ?target_i source_i.
+    list_index target (fcg_postorder fcg entry) = SOME target_i /\
+    list_index source (fcg_postorder fcg entry) = SOME source_i /\
+    target_i < source_i
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `fcg_is_reachable fcg source` mp_tac >>
+  qpat_x_assum `TC _ source target` mp_tac >>
+  qid_spec_tac `target` >> qid_spec_tac `source` >>
+  ho_match_mp_tac TC_INDUCT >>
+  conj_tac
+  >- (rpt strip_tac >>
+      `fcg_is_reachable fcg target` by
+        (drule_all fcg_reachable_direct_callee >> simp[]) >>
+      drule_all reachable_fcg_acyclic_direct_edge_rank >> simp[])
+  >> rpt gen_tac >> strip_tac >> strip_tac >>
+  conj_tac
+  >- metis_tac[]
+  >> qpat_x_assum `fcg_is_reachable fcg source ==> _` mp_tac >>
+  simp[] >> strip_tac >>
+  qpat_x_assum `fcg_is_reachable fcg source' ==> _` mp_tac >>
+  simp[] >> strip_tac >>
+  qexists `target_i'` >>
+  gvs[]
+QED
+
+Theorem reachable_fcg_acyclic_no_reachable_cycle:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  reachable_fcg_acyclic ctx fcg /\
+  fcg_is_reachable fcg name ==>
+  ~TC (fn_directly_calls ctx) name name
+Proof
+  rpt strip_tac >>
+  drule_all reachable_fcg_acyclic_tc_rank >>
+  simp[]
+QED
+
 (* Kernel-checked computations exercising ordinary, cyclic, and unreachable
  * call-graph shapes. *)
 Definition fcg_postorder_test_ctx_def[local]:
