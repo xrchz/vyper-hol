@@ -116,6 +116,20 @@ Proof
   qexists `found` >> gvs[lookup_function_def, listTheory.FIND_thm]
 QED
 
+Theorem distinct_function_names_unique_local[local]:
+  !fns fn1 fn2 name.
+  ALL_DISTINCT (MAP (\fn. fn.fn_name) fns) /\
+  MEM fn1 fns /\ MEM fn2 fns /\
+  fn1.fn_name = name /\ fn2.fn_name = name ==>
+  fn1 = fn2
+Proof
+  Induct_on `fns`
+  >- simp[]
+  >> rpt strip_tac >>
+  Cases_on `fn1 = h` >> Cases_on `fn2 = h` >>
+  gvs[listTheory.MEM_MAP] >> metis_tac[]
+QED
+
 Theorem lookup_function_name[local]:
   !fns name fn.
   lookup_function name fns = SOME fn ==> fn.fn_name = name
