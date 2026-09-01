@@ -942,4 +942,39 @@ Proof
   >> strip_tac >> metis_tac[]
 QED
 
+Definition fmp_reaches_in_def:
+  (fmp_reaches_in ctx 0 caller source <=> caller = source) /\
+  (fmp_reaches_in ctx (SUC n) caller source <=>
+     caller = source \/
+     ?callee. fmp_unsealed_calls ctx caller callee /\
+              fmp_reaches_in ctx n callee source)
+End
+
+Theorem fmp_reaches_in_mono:
+  !n caller source.
+    fmp_reaches_in ctx n caller source ==>
+    fmp_reaches_in ctx (SUC n) caller source
+Proof
+  Induct
+  >- simp[fmp_reaches_in_def]
+  >> rpt gen_tac
+  >> pure_rewrite_tac[fmp_reaches_in_def]
+  >> strip_tac
+  >- simp[]
+  >> disj2_tac
+  >> qexists `callee`
+  >> simp[]
+  >> first_x_assum (qspecl_then [`callee`, `source`] mp_tac)
+  >> simp[fmp_reaches_in_def]
+QED
+
+Theorem fmp_reaches_in_carrier:
+  !n caller source.
+    MEM caller ctx.ctx_functions /\ fmp_reaches_in ctx n caller source ==>
+    MEM source ctx.ctx_functions
+Proof
+  Induct >> simp[fmp_reaches_in_def, fmp_unsealed_calls_def]
+  >> metis_tac[]
+QED
+
 val _ = export_theory();
