@@ -1,6 +1,7 @@
 signature vyperTestLib = sig
 
   val generate_tests : unit -> unit (* main generation function *)
+  val check_generated_tests : unit -> unit (* non-mutating exact parity check *)
 
   val test_files : unit -> (string * string) list
   val holbuild_extra_deps : string list -> unit

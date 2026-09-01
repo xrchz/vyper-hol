@@ -1,0 +1,29 @@
+#!/bin/sh
+# Regenerate or verify the functional Vyper wrapper inventory.
+# Usage (from any repository directory):
+#   sh tests/vyper-test-wrappers [--check]
+set -eu
+
+case $#:$* in
+  0:) mode=generate ;;
+  1:--check) mode=check ;;
+  *) echo "usage: sh tests/vyper-test-wrappers [--check]" >&2; exit 2 ;;
+esac
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$script_dir"
+
+if [ -n "${HOLBUILD_HOLDIR:-}" ]; then
+  hol=$HOLBUILD_HOLDIR/bin/hol
+elif [ -n "${HOLDIR:-}" ]; then
+  hol=$HOLDIR/bin/hol
+else
+  hol=$(command -v hol || true)
+fi
+
+if [ -z "${hol:-}" ] || [ ! -x "$hol" ]; then
+  echo "vyper-test-wrappers: HOL executable not found; set HOLBUILD_HOLDIR or HOLDIR" >&2
+  exit 2
+fi
+
+VYPER_TEST_WRAPPER_MODE=$mode exec "$hol" --use vyperTestWrapperMain.sml
