@@ -5194,6 +5194,17 @@ QED
 Finalise m2v_pvars_set_after_dispatch
 
 
+(* MSTORE delegates to exec_write2, which can return only OK or Error. *)
+Theorem step_inst_base_mstore_no_abort:
+  !inst s a s'.
+    step_inst_base inst s = Abort a s' /\
+    inst.inst_opcode = MSTORE ==>
+    F
+Proof
+  rpt strip_tac >>
+  gvs[step_inst_base_def, exec_write2_def, AllCaseEqs()]
+QED
+
 (* Abort simulation for non-terminal non-INVOKE instructions.
    Both sides run the same instruction (rewrite is identity for aborters),
    abort states are halt/revert of input, m2v_inv_noix preserved. *)
@@ -5213,7 +5224,9 @@ Proof
   rename1 `SOME entry` >> PairCases_on `entry` >>
   drule_all promo_find_inst_opcode >> strip_tac >>
   qpat_x_assum `step_inst_base _ _ = _` mp_tac >>
-  gvs[] >> step_base_result_tac
+  gvs[]
+  >- (strip_tac >> drule step_inst_base_mstore_no_abort >> simp[])
+  >> step_base_result_tac
 QED
 
 (* Operand agreement for non-fresh operands — extracted common pattern *)
