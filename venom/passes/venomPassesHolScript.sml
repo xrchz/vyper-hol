@@ -50,3 +50,5 @@ Ancestors
 
   (* target-checked DRET desugaring *)
   dretDesugarProps
+  (* FMP lowering structural postconditions *)
+  fmpLowerProps
