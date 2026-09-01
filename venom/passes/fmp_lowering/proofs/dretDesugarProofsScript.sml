@@ -297,4 +297,22 @@ Proof
   metis_tac[]
 QED
 
+Theorem dret_dynamic_size_label_dup_counterexample:
+  let s = <| irs_next_inst := 1; irs_next_var := 0; irs_next_label := 0;
+             irs_used_inst_ids := []; irs_used_vars := [];
+             irs_used_labels := [] |> in
+  let inst = mk_inst 0 DRET
+    [Lit 1w; Var "src"; Label "size_label"; Var "retpc"] [] in
+    parse_dret_shape inst = SOME (0,1) /\
+    inst_ir_labels inst = ["size_label"] /\
+    OPTION_MAP (\p. FLAT (MAP inst_ir_labels (FST p)))
+      (replace_dret_inst s (Var "cursor") inst) =
+      SOME ["size_label"; "size_label"]
+Proof
+  EVAL_TAC >>
+  simp[expand_dret_pairs_def, fresh_ir_var_def, seek_fresh_name_def,
+       inst_ir_labels_def, operand_ir_labels_def] >> EVAL_TAC >>
+  simp[inst_ir_labels_def, operand_ir_labels_def]
+QED
+
 val _ = export_theory();
