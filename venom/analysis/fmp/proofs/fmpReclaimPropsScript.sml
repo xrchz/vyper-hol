@@ -29,6 +29,24 @@ Definition reclaim_join_fn_def[local]:
         bb_instructions := [mk_inst 4 STOP [] []] |>]
 End
 
+Definition reclaim_divergent_join_fn_def[local]:
+  reclaim_divergent_join_fn = mk_raw_function "divergent_join_veto"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 0 DALLOCA [Lit 32w] ["old"];
+           mk_inst 1 JNZ [Lit 1w; Label "left"; Label "right"] []] |>;
+     <| bb_label := "left";
+        bb_instructions :=
+          [mk_inst 2 DALLOCA [Lit 32w] ["left"];
+           mk_inst 3 JMP [Label "join"] []] |>;
+     <| bb_label := "right";
+        bb_instructions :=
+          [mk_inst 4 DALLOCA [Lit 32w] ["right"];
+           mk_inst 5 JMP [Label "join"] []] |>;
+     <| bb_label := "join";
+        bb_instructions := [mk_inst 6 STOP [] []] |>]
+End
+
 Definition reclaim_pin_fn_def[local]:
   reclaim_pin_fn = mk_raw_function "pin_veto"
     [<| bb_label := "entry";
@@ -251,6 +269,68 @@ Proof
   irule analyze_fmp_reclaims_ready >>
   simp[reclaim_join_infos_valid, reclaim_join_wf, reclaim_join_states_eq,
        reclaim_join_candidate_empty, fmp_reclaim_plan_ok_def] >>
+  EVAL_TAC
+QED
+
+
+Theorem reclaim_divergent_join_wf[local]:
+  wf_function reclaim_divergent_join_fn /\
+  fn_inst_wf reclaim_divergent_join_fn
+Proof
+  EVAL_TAC >> rw[] >>
+  gvs[reclaim_lt2_cases, reclaim_lt4_cases, listTheory.REV_DEF,
+      venomStateTheory.get_label_def, venomInstTheory.is_terminator_def,
+      venomWfTheory.inst_wf_def]
+QED
+
+Theorem reclaim_divergent_join_infos_valid[local]:
+  fmp_info_valid (reclaim_ctx reclaim_divergent_join_fn)
+    (reclaim_infos reclaim_divergent_join_fn)
+Proof
+  irule analyze_fmp_context_valid >> EVAL_TAC
+QED
+
+Definition reclaim_divergent_join_states_def[local]:
+  reclaim_divergent_join_states =
+    THE (fmp_reclaim_states reclaim_divergent_join_fn)
+End
+
+Theorem reclaim_divergent_join_states_eq[local]:
+  fmp_reclaim_states reclaim_divergent_join_fn =
+    SOME reclaim_divergent_join_states
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_reclaim_divergent_join_state_eval:
+  df_at NONE reclaim_divergent_join_states "join" 0 =
+    SOME <| frs_stack := []; frs_captures := [];
+            frs_can_reclaim := T |>
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem reclaim_divergent_join_candidate_empty[local]:
+  fmp_candidate_plan (reclaim_infos reclaim_divergent_join_fn)
+    (reclaim_ctx reclaim_divergent_join_fn) reclaim_divergent_join_fn
+    reclaim_divergent_join_states = FEMPTY
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FLOOKUP_FUNION, finite_mapTheory.FLOOKUP_UPDATE,
+       fmp_plan_of_list_def]
+QED
+
+Theorem fmp_reclaim_divergent_join_veto_eval:
+  analyze_fmp_reclaims (reclaim_infos reclaim_divergent_join_fn)
+    (reclaim_ctx reclaim_divergent_join_fn) reclaim_divergent_join_fn =
+    SOME FEMPTY
+Proof
+  irule analyze_fmp_reclaims_ready >>
+  simp[reclaim_divergent_join_infos_valid, reclaim_divergent_join_wf,
+       reclaim_divergent_join_states_eq,
+       reclaim_divergent_join_candidate_empty, fmp_reclaim_plan_ok_def] >>
   EVAL_TAC
 QED
 
