@@ -140,6 +140,21 @@ Proof
   Cases_on `h.fn_name = name` >> gvs[lookup_function_def]
 QED
 
+
+Theorem lookup_function_of_MEM_distinct_names[local]:
+  !fns fn.
+  ALL_DISTINCT (MAP (\f. f.fn_name) fns) /\ MEM fn fns ==>
+  lookup_function fn.fn_name fns = SOME fn
+Proof
+  rpt strip_tac >>
+  `MEM fn.fn_name (MAP (\f. f.fn_name) fns)` by
+    (simp[listTheory.MEM_MAP] >> metis_tac[]) >>
+  drule lookup_function_exists_for_name_local >> strip_tac >>
+  `MEM found fns` by metis_tac[lookup_function_MEM] >>
+  `found.fn_name = fn.fn_name` by metis_tac[lookup_function_name] >>
+  `found = fn` by metis_tac[distinct_function_names_unique_local] >>
+  gvs[]
+QED
 Theorem prune_fcg_no_new_edges:
   fn_directly_calls
     (prune_unit_fcg_unreachable unit fcg).cu_context caller callee ==>
