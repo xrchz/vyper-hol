@@ -83,4 +83,24 @@ Proof
   Cases_on `x` >> simp[]
 QED
 
+Theorem expand_dret_pairs_no_dret:
+  expand_dret_pairs s cursor pairs =
+    SOME (DretPairExpansion emitted dsts final_cursor s') ==>
+  EVERY (\i. i.inst_opcode <> DRET) emitted
+Proof
+  map_every qid_spec_tac
+    [`emitted`,`dsts`,`final_cursor`,`s'`,`pairs`,`cursor`,`s`] >>
+  recInduct expand_dret_pairs_ind >> rpt strip_tac >>
+  gvs[expand_dret_pairs_def, AllCaseEqs(), venomInstTheory.mk_inst_def]
+QED
+
+Theorem replace_dret_inst_no_dret:
+  replace_dret_inst s entry_cursor inst = SOME (replacement,s') ==>
+  EVERY (\i. i.inst_opcode <> DRET) replacement
+Proof
+  gvs[replace_dret_inst_def, AllCaseEqs()] >> rpt strip_tac >>
+  gvs[venomInstTheory.mk_inst_def] >>
+  drule expand_dret_pairs_no_dret >> simp[]
+QED
+
 val _ = export_theory();
