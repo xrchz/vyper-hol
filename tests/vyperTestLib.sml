@@ -279,7 +279,10 @@ val allowed_test_patterns = [
 ]
 
 val excluded_test_patterns = [
-  "*/functional/codegen/abstract/*"  (* @override semantics not implemented *)
+  "*/functional/codegen/abstract/*", (* @override semantics not implemented *)
+  (* The clean export contains a top-level ErrorDef, for which
+     frontend/jsonASTLib.sml's json_toplevel decoder has no branch. *)
+  "vyper-test-exports/functional/codegen/features/test_custom_errors.json"
 ]
 
 (* Individual test names that bypass unsupported pattern checks *)
@@ -725,8 +728,11 @@ in
   if unchanged then ()
   else let
     val output = TextIO.openOut tmp
+                 handle e => (OS.FileSys.remove tmp handle _ => (); raise e)
     val () = (TextIO.output (output, contents); TextIO.closeOut output)
-             handle e => (TextIO.closeOut output handle _ => (); raise e)
+             handle e => (TextIO.closeOut output handle _ => ();
+                          OS.FileSys.remove tmp handle _ => ();
+                          raise e)
     val () = OS.FileSys.rename {old = tmp, new = path}
              handle e => (OS.FileSys.remove tmp handle _ => (); raise e)
   in
