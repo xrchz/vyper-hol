@@ -106,6 +106,36 @@ Proof
   EVAL_TAC
 QED
 
+Theorem fmp_generated_supply_threading_eval:
+  (case fresh_ir_var fmp_test_supply of
+     (runner,s1) =>
+       case fmp_make_root_layout
+         (mk_venom_context [fmp_entry_probe_fn] (SOME "entry"))
+         fmp_entry_probe_fn fmp_need_info runner s1 of
+         NONE => NONE
+       | SOME (FmpRootLayout n root retpc s2) =>
+           case fmp_lower_inst FEMPTY fmp_test_ctx runner s2
+             (mk_inst 7 DALLOCA [Var "size"] ["ptr"]) of
+             NONE => NONE
+           | SOME (insts,s3) =>
+               SOME (runner,root,insts,s3.irs_next_inst,s3.irs_next_var,
+                     s3.irs_used_inst_ids,s3.irs_used_vars)) =
+  SOME
+    ("formal_var_0",
+     SOME (mk_inst 100 INITIAL_FMP [] ["formal_var_0"]),
+     [mk_inst 101 ADD [Var "size"; Lit 31w] ["formal_var_1"];
+      mk_inst 102 AND
+        [Var "formal_var_1";
+         Lit 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0w]
+        ["formal_var_2"];
+      mk_inst 103 BUMP
+        [Var "formal_var_0"; Var "formal_var_2"] ["ptr";"formal_var_0"]],
+     104,3,[103;102;101;100],
+     ["formal_var_2";"formal_var_1";"formal_var_0"])
+Proof
+  EVAL_TAC
+QED
+
 Theorem fmp_callee_hidden_root_layout_eval:
   fmp_make_root_layout
     (mk_venom_context [fmp_entry_probe_fn] NONE)
