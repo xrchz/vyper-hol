@@ -442,6 +442,183 @@ Proof
     metis_tac[dret_value_operand_no_labels] >>
   gvs[venomInstTheory.mk_inst_def, inst_ir_labels_def]
 QED
+Theorem dret_desugar_insts_labels:
+  EVERY (\inst. inst.inst_opcode = DRET ==>
+          EVERY dret_value_operand inst.inst_operands) insts /\
+  dret_value_operand entry_cursor /\
+  dret_desugar_insts s entry_cursor insts = SOME (out,s') ==>
+  FLAT (MAP inst_ir_labels out) = FLAT (MAP inst_ir_labels insts)
+Proof
+  map_every qid_spec_tac [`s'`,`out`,`entry_cursor`,`s`] >>
+  Induct_on `insts` >> rpt strip_tac >>
+  gvs[dret_desugar_insts_def, AllCaseEqs()] >>
+  metis_tac[replace_dret_inst_labels]
+QED
+
+Theorem dret_desugar_blocks_labels:
+  EVERY (\bb. EVERY (\inst. inst.inst_opcode = DRET ==>
+          EVERY dret_value_operand inst.inst_operands) bb.bb_instructions) blocks /\
+  dret_value_operand entry_cursor /\
+  dret_desugar_blocks s entry_cursor blocks = SOME (out,s') ==>
+  FLAT (MAP block_ir_labels out) = FLAT (MAP block_ir_labels blocks)
+Proof
+  map_every qid_spec_tac [`s'`,`out`,`entry_cursor`,`s`] >>
+  Induct_on `blocks` >> rpt strip_tac >>
+  gvs[dret_desugar_blocks_def, AllCaseEqs(), block_ir_labels_def] >>
+  metis_tac[dret_desugar_insts_labels]
+QED
+
+Theorem mem_fn_insts_blocks:
+  MEM bb blocks /\ MEM inst bb.bb_instructions ==>
+  MEM inst (fn_insts_blocks blocks)
+Proof
+  map_every qid_spec_tac [`inst`,`bb`] >> Induct_on `blocks` >>
+  simp[venomInstTheory.fn_insts_blocks_def] >> metis_tac[]
+QED
+
+Theorem dret_desugar_input_blocks_legal:
+  dret_desugar_input fn ==>
+  EVERY (\bb. EVERY (\inst. inst.inst_opcode = DRET ==>
+          EVERY dret_value_operand inst.inst_operands) bb.bb_instructions)
+    fn.fn_blocks
+Proof
+  strip_tac >> simp[EVERY_MEM] >> rpt strip_tac >>
+  gvs[dret_desugar_input_def] >>
+  `MEM inst (fn_insts fn)` by
+    (simp[venomInstTheory.fn_insts_def] >>
+     metis_tac[mem_fn_insts_blocks]) >>
+  `EVERY dret_value_operand inst.inst_operands` by metis_tac[] >>
+  gvs[EVERY_MEM]
+QED
+
+Theorem dret_desugar_function_labels:
+  dret_desugar_function target s fn = SOME (fn',s') ==>
+  fn_ir_labels fn' = fn_ir_labels fn
+Proof
+  rpt strip_tac >>
+  gvs[dret_desugar_function_def, AllCaseEqs()] >> rpt strip_tac >>
+  `EVERY (\bb. EVERY (\inst. inst.inst_opcode = DRET ==>
+      EVERY dret_value_operand inst.inst_operands) bb.bb_instructions)
+    (first::rest)` by metis_tac[dret_desugar_input_blocks_legal] >>
+  `FLAT (MAP block_ir_labels (first'::rest')) =
+   FLAT (MAP block_ir_labels (first::rest))` by
+    metis_tac[dret_desugar_blocks_labels, dret_value_operand_simps] >>
+  gvs[fn_ir_labels_def, block_ir_labels_def, venomInstTheory.mk_inst_def,
+      inst_ir_labels_def, operand_ir_labels_def]
+QED
+
+Theorem dret_desugar_function_metadata:
+  dret_desugar_function target s fn = SOME (fn',s') ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_static_input_eq fn' fn /\
+  fn_static_layout_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn
+Proof
+  rpt strip_tac >>
+  gvs[dret_desugar_function_def, AllCaseEqs(),
+      venomInstTheory.fn_identity_metadata_eq_def,
+      venomInstTheory.fn_static_input_eq_def,
+      venomInstTheory.fn_static_layout_eq_def,
+      venomInstTheory.fn_fmp_convention_eq_def]
+QED
+
+Theorem map_functions_dret_labels:
+  map_functions_supply (dret_desugar_function target) s fns =
+    SOME (fns',s') ==>
+  FLAT (MAP fn_ir_labels fns') = FLAT (MAP fn_ir_labels fns)
+Proof
+  map_every qid_spec_tac [`s'`,`fns'`,`s`] >>
+  Induct_on `fns` >> rpt strip_tac >>
+  gvs[map_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[dret_desugar_function_labels]
+QED
+
+Theorem dret_desugar_context_labels:
+  dret_desugar_context target s ctx = SOME (ctx',s') ==>
+  FLAT (MAP fn_ir_labels ctx'.ctx_functions) =
+  FLAT (MAP fn_ir_labels ctx.ctx_functions)
+Proof
+  rpt strip_tac >>
+  gvs[dret_desugar_context_def, map_ctx_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[map_functions_dret_labels]
+QED
+
+Theorem dret_desugar_configured_with_supply_labels:
+  dret_desugar_configured_with_supply target unit = SOME (unit',s') ==>
+  unit_ir_labels unit' = unit_ir_labels unit
+Proof
+  rpt strip_tac >>
+  gvs[dret_desugar_configured_with_supply_def, dret_desugar_context_def,
+      map_ctx_functions_supply_def, AllCaseEqs(), unit_ir_labels_def] >>
+  drule map_functions_dret_labels >> simp[]
+QED
+
+Theorem dret_desugar_configured_labels:
+  dret_desugar_configured target unit = SOME unit' ==>
+  unit_ir_labels unit' = unit_ir_labels unit
+Proof
+  rpt strip_tac >> gvs[dret_desugar_configured_def, AllCaseEqs()] >>
+  Cases_on `z` >> gvs[] >>
+  metis_tac[dret_desugar_configured_with_supply_labels]
+QED
+
+Theorem map_functions_dret_metadata:
+  map_functions_supply (dret_desugar_function target) s fns =
+    SOME (fns',s') ==>
+  LIST_REL (\f' f.
+    fn_identity_metadata_eq f' f /\
+    fn_static_input_eq f' f /\
+    fn_static_layout_eq f' f /\
+    fn_fmp_convention_eq f' f) fns' fns
+Proof
+  map_every qid_spec_tac [`s'`,`fns'`,`s`] >>
+  Induct_on `fns` >> rpt strip_tac >>
+  gvs[map_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[dret_desugar_function_metadata]
+QED
+
+Theorem dret_desugar_context_metadata:
+  dret_desugar_context target s ctx = SOME (ctx',s') ==>
+  LIST_REL (\f' f.
+    fn_identity_metadata_eq f' f /\
+    fn_static_input_eq f' f /\
+    fn_static_layout_eq f' f /\
+    fn_fmp_convention_eq f' f)
+    ctx'.ctx_functions ctx.ctx_functions
+Proof
+  rpt strip_tac >>
+  gvs[dret_desugar_context_def, map_ctx_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[map_functions_dret_metadata]
+QED
+
+Theorem dret_desugar_configured_with_supply_metadata:
+  dret_desugar_configured_with_supply target unit = SOME (unit',s') ==>
+  LIST_REL (\f' f.
+    fn_identity_metadata_eq f' f /\
+    fn_static_input_eq f' f /\
+    fn_static_layout_eq f' f /\
+    fn_fmp_convention_eq f' f)
+    unit'.cu_context.ctx_functions unit.cu_context.ctx_functions
+Proof
+  rpt strip_tac >>
+  gvs[dret_desugar_configured_with_supply_def, dret_desugar_context_def,
+      map_ctx_functions_supply_def, AllCaseEqs()] >>
+  metis_tac[map_functions_dret_metadata]
+QED
+
+Theorem dret_desugar_configured_metadata:
+  dret_desugar_configured target unit = SOME unit' ==>
+  LIST_REL (\f' f.
+    fn_identity_metadata_eq f' f /\
+    fn_static_input_eq f' f /\
+    fn_static_layout_eq f' f /\
+    fn_fmp_convention_eq f' f)
+    unit'.cu_context.ctx_functions unit.cu_context.ctx_functions
+Proof
+  rpt strip_tac >> gvs[dret_desugar_configured_def, AllCaseEqs()] >>
+  Cases_on `z` >> gvs[] >>
+  metis_tac[dret_desugar_configured_with_supply_metadata]
+QED
 Theorem dret_entry_cursor_label_counterexample:
   let s = <| irs_next_inst := 1; irs_next_var := 0; irs_next_label := 0;
              irs_used_inst_ids := []; irs_used_vars := [];
