@@ -6,6 +6,7 @@ Ancestors
   fmpWfProps
   fmpWfDefs
   callLayoutDefs
+  venomWf
   venomInst
 Definition fmp_probe_info_ff_def:
   fmp_probe_info_ff = <| fi_needs_fmp := F; fi_publishes_fmp := F |>
@@ -278,6 +279,316 @@ Proof
   >> qexists `FEMPTY |+ ("b", fmp_probe_info_ff) |+
                        ("a", fmp_probe_info_ff)`
   >> simp[finite_mapTheory.FLOOKUP_UPDATE, fmp_probe_info_ff_def]
+QED
+
+
+(* ------------------------------------------------------------------------- *)
+(* Generic seed and synchronous-step boundaries. *)
+
+Theorem fmp_info_join_fields[simp]:
+  (fmp_info_join x y).fi_needs_fmp =
+    (x.fi_needs_fmp \/ y.fi_needs_fmp) /\
+  (fmp_info_join x y).fi_publishes_fmp =
+    (x.fi_publishes_fmp \/ y.fi_publishes_fmp)
+Proof
+  Cases_on `x` >> Cases_on `y` >> simp[fmp_info_join_def]
+QED
+
+Theorem fmp_join_target_info_fields_mono:
+  !targets acc out.
+    fmp_join_target_info infos targets acc = SOME out ==>
+    (acc.fi_needs_fmp ==> out.fi_needs_fmp) /\
+    (acc.fi_publishes_fmp ==> out.fi_publishes_fmp)
+Proof
+  Induct >> simp[fmp_join_target_info_def]
+  >> rpt gen_tac
+  >> Cases_on `FLOOKUP infos h` >> simp[]
+  >> strip_tac
+  >> first_x_assum
+       (qspecl_then [`fmp_info_join acc x`, `out`] mp_tac)
+  >> simp[]
+QED
+
+Theorem fmp_seed_function_own_lookup:
+  fmp_seed_function ctx fn acc = SOME acc' ==>
+  ?info. FLOOKUP acc' fn.fn_name = SOME info
+Proof
+  rw[fmp_seed_function_def]
+  >> Cases_on `fmp_function_targets ctx fn` >> gvs[]
+  >> Cases_on `fn.fn_fmp_signature` >> gvs[]
+  >> gvs[finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_seed_function_preserves_lookup:
+  fmp_seed_function ctx fn acc = SOME acc' /\
+  FLOOKUP acc name = SOME info ==>
+  FLOOKUP acc' name = SOME info
+Proof
+  rw[fmp_seed_function_def]
+  >> Cases_on `fmp_function_targets ctx fn` >> gvs[]
+  >> Cases_on `fn.fn_fmp_signature` >> gvs[]
+  >> Cases_on `fn.fn_name = name` >> gvs[finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_seed_functions_preserves_lookup:
+  !fns acc out name info.
+    fmp_seed_functions ctx fns acc = SOME out /\
+    FLOOKUP acc name = SOME info ==>
+    FLOOKUP out name = SOME info
+Proof
+  Induct >> rw[fmp_seed_functions_def]
+  >> Cases_on `fmp_seed_function ctx h acc` >> gvs[]
+  >> first_x_assum irule
+  >> metis_tac[fmp_seed_function_preserves_lookup]
+QED
+
+Theorem fmp_seed_functions_coverage:
+  !fns acc out fn.
+    fmp_seed_functions ctx fns acc = SOME out /\ MEM fn fns ==>
+    ?info. FLOOKUP out fn.fn_name = SOME info
+Proof
+  Induct >> simp[fmp_seed_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_seed_function ctx h acc` >> simp[]
+  >> metis_tac[fmp_seed_function_own_lookup,
+               fmp_seed_functions_preserves_lookup]
+QED
+
+Theorem seed_fmp_context_coverage:
+  seed_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions ==>
+  ?info. FLOOKUP infos fn.fn_name = SOME info
+Proof
+  simp[seed_fmp_context_def]
+  >> metis_tac[fmp_seed_functions_coverage]
+QED
+Theorem fmp_seed_function_targets:
+  fmp_seed_function ctx fn acc = SOME acc' ==>
+  ?targets. fmp_function_targets ctx fn = SOME targets
+Proof
+  rw[fmp_seed_function_def]
+  >> Cases_on `fmp_function_targets ctx fn` >> gvs[]
+QED
+
+Theorem fmp_seed_functions_targets:
+  !fns acc out fn.
+    fmp_seed_functions ctx fns acc = SOME out /\ MEM fn fns ==>
+    ?targets. fmp_function_targets ctx fn = SOME targets
+Proof
+  Induct >> simp[fmp_seed_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_seed_function ctx h acc` >> simp[]
+  >> metis_tac[fmp_seed_function_targets]
+QED
+
+Theorem seed_fmp_context_targets:
+  seed_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions ==>
+  ?targets. fmp_function_targets ctx fn = SOME targets
+Proof
+  simp[seed_fmp_context_def]
+  >> metis_tac[fmp_seed_functions_targets]
+QED
+
+Theorem fmp_seed_function_sealed_lookup:
+  fmp_seed_function ctx fn acc = SOME acc' /\
+  fn.fn_fmp_signature = SOME sig ==>
+  fmp_signature_matches_fn ctx fn /\
+  FLOOKUP acc' fn.fn_name = SOME (fmp_info_of_signature sig)
+Proof
+  rw[fmp_seed_function_def]
+  >> Cases_on `fmp_function_targets ctx fn` >> gvs[]
+  >> gvs[finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_seed_functions_sealed_lookup:
+  !fns acc out fn sig.
+    fmp_seed_functions ctx fns acc = SOME out /\ MEM fn fns /\
+    fn.fn_fmp_signature = SOME sig ==>
+    fmp_signature_matches_fn ctx fn /\
+    FLOOKUP out fn.fn_name = SOME (fmp_info_of_signature sig)
+Proof
+  Induct >> simp[fmp_seed_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_seed_function ctx h acc` >> simp[]
+  >> metis_tac[fmp_seed_function_sealed_lookup,
+               fmp_seed_functions_preserves_lookup]
+QED
+Theorem seed_fmp_context_sealed_lookup:
+  seed_fmp_context ctx = SOME infos /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = SOME sig ==>
+  fmp_signature_matches_fn ctx fn /\
+  FLOOKUP infos fn.fn_name = SOME (fmp_info_of_signature sig)
+Proof
+  simp[seed_fmp_context_def]
+  >> metis_tac[fmp_seed_functions_sealed_lookup]
+QED
+
+
+Theorem fmp_seed_functions_existing_name_not_mem:
+  !fns acc out name info.
+    fmp_seed_functions ctx fns acc = SOME out /\
+    FLOOKUP acc name = SOME info ==>
+    !fn. MEM fn fns ==> fn.fn_name <> name
+Proof
+  Induct >> simp[fmp_seed_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_seed_function ctx h acc` >> simp[]
+  >> strip_tac
+  >> gen_tac >> strip_tac
+  >> Cases_on `fn = h`
+  >- (strip_tac >> gvs[fmp_seed_function_def])
+  >> gvs[]
+  >> `FLOOKUP x name = SOME info` by
+       metis_tac[fmp_seed_function_preserves_lookup]
+  >> first_x_assum (qspecl_then [`x`, `out`, `name`, `info`] mp_tac)
+  >> simp[]
+QED
+Theorem fmp_seed_functions_distinct:
+  !fns acc out.
+    fmp_seed_functions ctx fns acc = SOME out ==>
+    ALL_DISTINCT (MAP (\fn. fn.fn_name) fns)
+Proof
+  Induct >> simp[fmp_seed_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_seed_function ctx h acc` >> simp[]
+  >> strip_tac
+  >> conj_tac
+  >- (drule fmp_seed_function_own_lookup
+      >> strip_tac
+      >> qspecl_then [`fns`, `x`, `out`, `h.fn_name`, `info`] mp_tac
+           fmp_seed_functions_existing_name_not_mem
+      >> simp[listTheory.MEM_MAP]
+      >> metis_tac[])
+  >> first_x_assum (qspecl_then [`x`, `out`] mp_tac) >> simp[]
+QED
+
+Theorem seed_fmp_context_distinct:
+  seed_fmp_context ctx = SOME infos ==> ctx_distinct_fn_names ctx
+Proof
+  simp[seed_fmp_context_def, ctx_distinct_fn_names_def, ctx_fn_names_def]
+  >> metis_tac[fmp_seed_functions_distinct]
+QED
+
+Theorem fmp_step_functions_preserves_other_lookup:
+  !fns fresh out name info.
+    EVERY (\fn. fn.fn_name <> name) fns /\
+    FLOOKUP fresh name = SOME info /\
+    fmp_step_functions ctx old fns fresh = SOME out ==>
+    FLOOKUP out name = SOME info
+Proof
+  Induct >> simp[fmp_step_functions_def]
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `fmp_step_function ctx old h` >> gvs[]
+  >> first_x_assum
+       (qspecl_then [`fresh |+ (h.fn_name,x)`, `out`, `name`, `info`] mp_tac)
+  >> simp[finite_mapTheory.FLOOKUP_UPDATE]
+QED
+
+Theorem fmp_step_functions_lookup:
+  !fns fresh out fn.
+    ALL_DISTINCT (MAP (\f. f.fn_name) fns) /\ MEM fn fns /\
+    fmp_step_functions ctx old fns fresh = SOME out ==>
+    ?info.
+      fmp_step_function ctx old fn = SOME info /\
+      FLOOKUP out fn.fn_name = SOME info
+Proof
+  Induct >> simp[fmp_step_functions_def]
+  >> rpt gen_tac
+  >> Cases_on `fmp_step_function ctx old h` >> simp[]
+  >> strip_tac
+  >- (qexists `x` >> simp[]
+      >> qspecl_then
+           [`fns`, `fresh |+ (h.fn_name,x)`, `out`, `h.fn_name`, `x`]
+           mp_tac fmp_step_functions_preserves_other_lookup
+      >> simp[finite_mapTheory.FLOOKUP_UPDATE, listTheory.EVERY_MEM]
+      >> disch_then irule
+      >> simp[listTheory.EVERY_MEM]
+      >> metis_tac[listTheory.MEM_MAP])
+  >> first_x_assum
+       (qspecl_then [`fresh |+ (h.fn_name,x)`, `out`, `fn`] mp_tac)
+  >> simp[]
+QED
+
+Theorem fmp_context_step_lookup:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fmp_context_step ctx old = SOME out ==>
+  ?info.
+    fmp_step_function ctx old fn = SOME info /\
+    FLOOKUP out fn.fn_name = SOME info
+Proof
+  simp[fmp_context_step_def, ctx_distinct_fn_names_def, ctx_fn_names_def]
+  >> metis_tac[fmp_step_functions_lookup]
+QED
+
+Theorem fmp_context_step_coverage:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fmp_context_step ctx old = SOME out ==>
+  ?info. FLOOKUP out fn.fn_name = SOME info
+Proof
+  metis_tac[fmp_context_step_lookup]
+QED
+
+Theorem fmp_context_step_sealed_lookup:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = SOME sig /\
+  fmp_context_step ctx old = SOME out ==>
+  FLOOKUP out fn.fn_name = FLOOKUP old fn.fn_name
+Proof
+  rpt strip_tac
+  >> drule_all fmp_context_step_lookup
+  >> strip_tac
+  >> Cases_on `FLOOKUP old fn.fn_name`
+  >> gvs[fmp_step_function_def]
+QED
+
+Theorem fmp_context_step_unsealed_lookup:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE /\
+  fmp_context_step ctx old = SOME out ==>
+  ?old_info targets info.
+    FLOOKUP old fn.fn_name = SOME old_info /\
+    fmp_function_targets ctx fn = SOME targets /\
+    fmp_join_target_info old targets
+      (fmp_info_join old_info (fmp_direct_info fn)) = SOME info /\
+    FLOOKUP out fn.fn_name = SOME info
+Proof
+  rpt strip_tac
+  >> drule_all fmp_context_step_lookup
+  >> simp[fmp_step_function_def]
+  >> Cases_on `FLOOKUP old fn.fn_name` >> simp[]
+  >> Cases_on `fmp_function_targets ctx fn` >> simp[]
+  >> metis_tac[]
+QED
+Theorem fmp_context_step_unsealed_old_fields_mono:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE /\
+  fmp_context_step ctx old = SOME out /\
+  FLOOKUP old fn.fn_name = SOME old_info /\
+  FLOOKUP out fn.fn_name = SOME info ==>
+  (old_info.fi_needs_fmp ==> info.fi_needs_fmp) /\
+  (old_info.fi_publishes_fmp ==> info.fi_publishes_fmp)
+Proof
+  rpt strip_tac
+  >> drule_all fmp_context_step_unsealed_lookup
+  >> strip_tac
+  >> gvs[]
+  >> drule fmp_join_target_info_fields_mono
+  >> simp[]
+QED
+
+Theorem fmp_context_step_unsealed_direct_fields:
+  ctx_distinct_fn_names ctx /\ MEM fn ctx.ctx_functions /\
+  fn.fn_fmp_signature = NONE /\
+  fmp_context_step ctx old = SOME out /\
+  FLOOKUP out fn.fn_name = SOME info ==>
+  ((fmp_direct_info fn).fi_needs_fmp ==> info.fi_needs_fmp) /\
+  ((fmp_direct_info fn).fi_publishes_fmp ==> info.fi_publishes_fmp)
+Proof
+  rpt strip_tac
+  >> drule_all fmp_context_step_unsealed_lookup
+  >> strip_tac
+  >> gvs[]
+  >> drule fmp_join_target_info_fields_mono
+  >> simp[]
 QED
 
 val _ = export_theory();
