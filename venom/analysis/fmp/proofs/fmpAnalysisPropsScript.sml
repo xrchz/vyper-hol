@@ -1274,4 +1274,124 @@ Proof
                fmp_reaches_in_def, fmp_unsealed_calls_def]
 QED
 
+Theorem fmp_reaches_in_NRC:
+  !n caller source.
+    fmp_reaches_in ctx n caller source <=>
+    ?k. k <= n /\ NRC (fmp_unsealed_calls ctx) k caller source
+Proof
+  Induct
+  >- simp[fmp_reaches_in_def, arithmeticTheory.NRC]
+  >> rpt gen_tac
+  >> simp[fmp_reaches_in_def, arithmeticTheory.NRC]
+  >> eq_tac >> strip_tac
+  >- (qexists `0` >> simp[])
+  >- (qexists `SUC k` >> simp[arithmeticTheory.NRC]
+      >> qexists `callee` >> simp[])
+  >> Cases_on `k` >> gvs[arithmeticTheory.NRC]
+  >> metis_tac[]
+QED
+
+Theorem LRC_suffix_from_mem[local]:
+  !ls x y e.
+    list$LRC R ls x y /\ MEM e ls ==>
+    ?qs. list$LRC R qs e y /\ LENGTH qs <= LENGTH ls /\
+         !v. MEM v qs ==> MEM v ls
+Proof
+  Induct >> simp[listTheory.LRC_def]
+  >> rpt gen_tac >> strip_tac
+  >> gvs[]
+  >- (qexists `e::ls` >> simp[listTheory.LRC_def]
+      >> qexists `z` >> simp[])
+  >> first_x_assum (qspecl_then [`z`, `y`, `e`] mp_tac)
+  >> simp[] >> strip_tac
+  >> qexists `qs` >> simp[]
+  >> metis_tac[]
+QED
+
+Theorem LRC_simple[local]:
+  !ls x y.
+    list$LRC R ls x y ==>
+    ?qs. list$LRC R qs x y /\ ALL_DISTINCT qs /\
+         LENGTH qs <= LENGTH ls /\
+         !v. MEM v qs ==> MEM v ls
+Proof
+  measureInduct_on `LENGTH ls`
+  >> rpt gen_tac >> strip_tac
+  >> Cases_on `ls`
+  >- (qexists `[]` >> gvs[listTheory.LRC_def])
+  >> gvs[listTheory.LRC_def]
+  >> Cases_on `MEM h t`
+  >- (drule_all LRC_suffix_from_mem
+      >> strip_tac
+      >> first_assum (qspec_then `qs` mp_tac)
+      >> (impl_tac >- decide_tac)
+      >> disch_then (qspecl_then [`h`, `y`] mp_tac)
+      >> (impl_tac >- simp[])
+      >> strip_tac
+      >> qexists `qs'` >> simp[]
+      >> metis_tac[])
+  >> first_assum (qspec_then `t` mp_tac)
+  >> (impl_tac >- simp[])
+  >> disch_then (qspecl_then [`z`, `y`] mp_tac)
+  >> (impl_tac >- simp[])
+  >> strip_tac
+  >> qexists `h::qs` >> simp[listTheory.LRC_def]
+  >> conj_tac
+  >- (qexists `z` >> simp[])
+  >> conj_tac >- metis_tac[]
+  >> metis_tac[]
+QED
+
+Theorem fmp_LRC_carrier[local]:
+  !ls caller source.
+    list$LRC (fmp_unsealed_calls ctx) ls caller source /\
+    MEM caller ctx.ctx_functions ==>
+    !v. MEM v ls ==> MEM v ctx.ctx_functions
+Proof
+  Induct >> simp[listTheory.LRC_def, fmp_unsealed_calls_def]
+  >> metis_tac[]
+QED
+
+Theorem ALL_DISTINCT_MEM_LENGTH_LE[local]:
+  ALL_DISTINCT xs /\ (!x. MEM x xs ==> MEM x ys) ==>
+  LENGTH xs <= LENGTH ys
+Proof
+  strip_tac
+  >> `set xs SUBSET set ys` by simp[pred_setTheory.SUBSET_DEF]
+  >> `CARD (set xs) <= CARD (set ys)` by
+       (irule pred_setTheory.CARD_SUBSET >> simp[])
+  >> `CARD (set xs) = LENGTH xs` by
+       metis_tac[listTheory.ALL_DISTINCT_CARD_LIST_TO_SET]
+  >> `CARD (set ys) <= LENGTH ys` by
+       simp[listTheory.CARD_LIST_TO_SET]
+  >> decide_tac
+QED
+
+Theorem fmp_reaches_in_saturates:
+  MEM caller ctx.ctx_functions /\
+  fmp_reaches_in ctx (SUC (LENGTH ctx.ctx_functions)) caller source ==>
+  fmp_reaches_in ctx (LENGTH ctx.ctx_functions) caller source
+Proof
+  strip_tac
+  >> qpat_x_assum
+       `fmp_reaches_in ctx (SUC (LENGTH ctx.ctx_functions)) caller source`
+       mp_tac
+  >> rewrite_tac[fmp_reaches_in_NRC]
+  >> strip_tac
+  >> qpat_x_assum `NRC _ k caller source` mp_tac
+  >> rewrite_tac[listTheory.NRC_LRC]
+  >> strip_tac
+  >> drule LRC_simple >> strip_tac
+  >> `!v. MEM v ls ==> MEM v ctx.ctx_functions` by
+       metis_tac[fmp_LRC_carrier]
+  >> `!v. MEM v qs ==> MEM v ctx.ctx_functions` by
+       metis_tac[]
+  >> `LENGTH qs <= LENGTH ctx.ctx_functions` by
+       metis_tac[ALL_DISTINCT_MEM_LENGTH_LE]
+  >> rewrite_tac[fmp_reaches_in_NRC]
+  >> qexists `LENGTH qs` >> simp[]
+  >> rewrite_tac[listTheory.NRC_LRC]
+  >> qexists `qs` >> simp[]
+QED
+
 val _ = export_theory();
