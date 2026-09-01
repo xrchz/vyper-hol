@@ -977,4 +977,301 @@ Proof
   >> metis_tac[]
 QED
 
+
+Theorem fmp_reaches_in_sealed:
+  !n fn source sig.
+    fn.fn_fmp_signature = SOME sig /\
+    fmp_reaches_in ctx n fn source ==>
+    fn = source
+Proof
+  Induct
+  >- simp[fmp_reaches_in_def]
+  >> rpt gen_tac >> strip_tac
+  >> gvs[fmp_reaches_in_def, fmp_unsealed_calls_def]
+QED
+
+Theorem fmp_reaches_in_refl:
+  !n fn. fmp_reaches_in ctx n fn fn
+Proof
+  Cases >> simp[fmp_reaches_in_def]
+QED
+
+
+Theorem fmp_callee_needs_round_exists:
+  (!callee. MEM callee ctx.ctx_functions ==>
+     ?ci. FLOOKUP old callee.fn_name = SOME ci) /\
+  (!callee ci. MEM callee ctx.ctx_functions /\
+     FLOOKUP old callee.fn_name = SOME ci ==>
+     (ci.fi_needs_fmp <=>
+       ?source. MEM source ctx.ctx_functions /\
+         fmp_reaches_in ctx n callee source /\ fmp_needs_source source)) ==>
+  ((?callee ci. fmp_unsealed_calls ctx caller callee /\
+       FLOOKUP old callee.fn_name = SOME ci /\ ci.fi_needs_fmp) <=>
+   ?callee source. fmp_unsealed_calls ctx caller callee /\
+     MEM source ctx.ctx_functions /\
+     fmp_reaches_in ctx n callee source /\ fmp_needs_source source)
+Proof
+  strip_tac
+  >> qpat_x_assum `!callee. MEM callee ctx.ctx_functions ==> _`
+       (mk_asm "coverage")
+  >> qpat_x_assum
+       `!callee ci. MEM callee ctx.ctx_functions /\
+          FLOOKUP old callee.fn_name = SOME ci ==> _`
+       (mk_asm "semantics")
+  >> eq_tac
+  >- (strip_tac
+      >> `MEM callee ctx.ctx_functions` by
+           metis_tac[fmp_unsealed_calls_def]
+      >> asm "semantics" (qspecl_then [`callee`, `ci`] mp_tac)
+      >> simp[] >> metis_tac[])
+  >> strip_tac
+  >> `MEM callee ctx.ctx_functions` by
+       metis_tac[fmp_unsealed_calls_def]
+  >> asm "coverage" (qspec_then `callee` mp_tac)
+  >> simp[] >> strip_tac
+  >> asm "semantics" (qspecl_then [`callee`, `ci`] mp_tac)
+  >> simp[] >> strip_tac
+  >> qexistsl [`callee`, `ci`]
+  >> metis_tac[]
+QED
+Theorem fmp_option_rounds_needs_iff:
+  !n seed out fn info.
+    seed_fmp_context ctx = SOME seed /\
+    FUNPOW (fmp_option_step ctx) n (SOME seed) = SOME out /\
+    MEM fn ctx.ctx_functions /\
+    FLOOKUP out fn.fn_name = SOME info ==>
+    (info.fi_needs_fmp <=>
+      ?source. MEM source ctx.ctx_functions /\
+        fmp_reaches_in ctx n fn source /\ fmp_needs_source source)
+Proof
+  Induct
+  >- (rpt gen_tac >> strip_tac
+      >> gvs[arithmeticTheory.FUNPOW, fmp_reaches_in_def]
+      >> drule_all seed_fmp_context_needs_source
+      >> metis_tac[])
+  >> rpt gen_tac >> strip_tac
+  >> `ctx_distinct_fn_names ctx` by
+       metis_tac[seed_fmp_context_distinct]
+  >> qpat_x_assum `FUNPOW _ (SUC n) _ = _` mp_tac
+  >> rewrite_tac[arithmeticTheory.FUNPOW_SUC]
+  >> Cases_on `FUNPOW (fmp_option_step ctx) n (SOME seed)`
+  >> simp[fmp_option_step_def]
+  >> strip_tac
+  >> `!f. MEM f ctx.ctx_functions ==>
+        ?i. FLOOKUP x f.fn_name = SOME i` by
+       metis_tac[seed_fmp_context_coverage,
+                 fmp_option_rounds_coverage]
+  >> qpat_assum `!f. MEM f ctx.ctx_functions ==> _`
+       (qspec_then `fn` mp_tac)
+  >> (impl_tac >- simp[])
+  >> strip_tac
+  >> `!callee ci. MEM callee ctx.ctx_functions /\
+        FLOOKUP x callee.fn_name = SOME ci ==>
+        (ci.fi_needs_fmp <=>
+          ?source. MEM source ctx.ctx_functions /\
+            fmp_reaches_in ctx n callee source /\
+            fmp_needs_source source)` by
+       (rpt strip_tac
+        >> first_assum
+             (qspecl_then [`seed`, `x`, `callee`, `ci`] mp_tac)
+        >> simp[])
+  >> Cases_on `fn.fn_fmp_signature`
+  >- (drule_all fmp_context_step_unsealed_needs_iff
+      >> strip_tac
+      >> `((?callee ci. fmp_unsealed_calls ctx fn callee /\
+               FLOOKUP x callee.fn_name = SOME ci /\ ci.fi_needs_fmp) <=>
+            ?callee source. fmp_unsealed_calls ctx fn callee /\
+              MEM source ctx.ctx_functions /\
+              fmp_reaches_in ctx n callee source /\
+              fmp_needs_source source)` by
+           (irule fmp_callee_needs_round_exists >> simp[])
+      >> pop_assum $ mk_asm "callee_bridge"
+      >> `(i.fi_needs_fmp <=>
+            ?source. MEM source ctx.ctx_functions /\
+              fmp_reaches_in ctx n fn source /\
+              fmp_needs_source source)` by
+           (first_assum
+              (qspecl_then [`seed`, `x`, `fn`, `i`] mp_tac)
+            >> simp[])
+      >> eq_tac
+      >- (strip_tac
+          >> qpat_assum `info.fi_needs_fmp <=> _`
+               (fn th => drule (iffLR th))
+          >> strip_tac
+          >- (qpat_assum `i.fi_needs_fmp <=> _`
+                (fn th => drule (iffLR th))
+              >> strip_tac
+              >> qexists `source` >> simp[]
+              >> metis_tac[fmp_reaches_in_mono])
+          >- (qexists `fn`
+              >> simp[fmp_reaches_in_refl, fmp_needs_source_def])
+          >> `?callee source. fmp_unsealed_calls ctx fn callee /\
+                MEM source ctx.ctx_functions /\
+                fmp_reaches_in ctx n callee source /\
+                fmp_needs_source source` by
+               (asm "callee_bridge" (fn th => irule (iffLR th))
+                >> qexistsl [`callee`, `callee_info`] >> simp[])
+          >> rename1 `fmp_reaches_in ctx n path_callee source`
+          >> qexists `source` >> simp[]
+          >> pure_rewrite_tac[fmp_reaches_in_def]
+          >> disj2_tac >> qexists `path_callee` >> simp[])
+      >> strip_tac
+      >> qpat_assum `info.fi_needs_fmp <=> _`
+           (fn th => irule (iffRL th))
+      >> qpat_x_assum `fmp_reaches_in ctx (SUC n) fn source` mp_tac
+      >> simp[fmp_reaches_in_def]
+      >> strip_tac
+      >- (disj2_tac >> disj1_tac
+          >> gvs[fmp_needs_source_def])
+      >> disj2_tac >> disj2_tac
+      >> asm "callee_bridge" (fn th => irule (iffRL th))
+      >> qexistsl [`callee`, `source`] >> simp[])
+  >> `FLOOKUP out fn.fn_name = FLOOKUP x fn.fn_name` by
+       metis_tac[fmp_context_step_sealed_lookup]
+  >> first_x_assum
+       (qspecl_then [`seed`, `x`, `fn`, `i`] mp_tac)
+  >> gvs[]
+  >> metis_tac[fmp_reaches_in_sealed, fmp_reaches_in_refl,
+               fmp_reaches_in_def, fmp_unsealed_calls_def]
+QED
+
+Theorem fmp_callee_publishes_round_exists:
+  (!callee. MEM callee ctx.ctx_functions ==>
+     ?ci. FLOOKUP old callee.fn_name = SOME ci) /\
+  (!callee ci. MEM callee ctx.ctx_functions /\
+     FLOOKUP old callee.fn_name = SOME ci ==>
+     (ci.fi_publishes_fmp <=>
+       ?source. MEM source ctx.ctx_functions /\
+         fmp_reaches_in ctx n callee source /\ fmp_publishes_source source)) ==>
+  ((?callee ci. fmp_unsealed_calls ctx caller callee /\
+       FLOOKUP old callee.fn_name = SOME ci /\ ci.fi_publishes_fmp) <=>
+   ?callee source. fmp_unsealed_calls ctx caller callee /\
+     MEM source ctx.ctx_functions /\
+     fmp_reaches_in ctx n callee source /\ fmp_publishes_source source)
+Proof
+  strip_tac
+  >> qpat_x_assum `!callee. MEM callee ctx.ctx_functions ==> _`
+       (mk_asm "coverage")
+  >> qpat_x_assum
+       `!callee ci. MEM callee ctx.ctx_functions /\
+          FLOOKUP old callee.fn_name = SOME ci ==> _`
+       (mk_asm "semantics")
+  >> eq_tac
+  >- (strip_tac
+      >> `MEM callee ctx.ctx_functions` by
+           metis_tac[fmp_unsealed_calls_def]
+      >> asm "semantics" (qspecl_then [`callee`, `ci`] mp_tac)
+      >> simp[] >> metis_tac[])
+  >> strip_tac
+  >> `MEM callee ctx.ctx_functions` by
+       metis_tac[fmp_unsealed_calls_def]
+  >> asm "coverage" (qspec_then `callee` mp_tac)
+  >> simp[] >> strip_tac
+  >> asm "semantics" (qspecl_then [`callee`, `ci`] mp_tac)
+  >> simp[] >> strip_tac
+  >> qexistsl [`callee`, `ci`]
+  >> metis_tac[]
+QED
+
+Theorem fmp_option_rounds_publishes_iff:
+  !n seed out fn info.
+    seed_fmp_context ctx = SOME seed /\
+    FUNPOW (fmp_option_step ctx) n (SOME seed) = SOME out /\
+    MEM fn ctx.ctx_functions /\
+    FLOOKUP out fn.fn_name = SOME info ==>
+    (info.fi_publishes_fmp <=>
+      ?source. MEM source ctx.ctx_functions /\
+        fmp_reaches_in ctx n fn source /\ fmp_publishes_source source)
+Proof
+  Induct
+  >- (rpt gen_tac >> strip_tac
+      >> gvs[arithmeticTheory.FUNPOW, fmp_reaches_in_def]
+      >> drule_all seed_fmp_context_publishes_source
+      >> metis_tac[])
+  >> rpt gen_tac >> strip_tac
+  >> `ctx_distinct_fn_names ctx` by
+       metis_tac[seed_fmp_context_distinct]
+  >> qpat_x_assum `FUNPOW _ (SUC n) _ = _` mp_tac
+  >> rewrite_tac[arithmeticTheory.FUNPOW_SUC]
+  >> Cases_on `FUNPOW (fmp_option_step ctx) n (SOME seed)`
+  >> simp[fmp_option_step_def]
+  >> strip_tac
+  >> `!f. MEM f ctx.ctx_functions ==>
+        ?i. FLOOKUP x f.fn_name = SOME i` by
+       metis_tac[seed_fmp_context_coverage,
+                 fmp_option_rounds_coverage]
+  >> qpat_assum `!f. MEM f ctx.ctx_functions ==> _`
+       (qspec_then `fn` mp_tac)
+  >> (impl_tac >- simp[])
+  >> strip_tac
+  >> `!callee ci. MEM callee ctx.ctx_functions /\
+        FLOOKUP x callee.fn_name = SOME ci ==>
+        (ci.fi_publishes_fmp <=>
+          ?source. MEM source ctx.ctx_functions /\
+            fmp_reaches_in ctx n callee source /\
+            fmp_publishes_source source)` by
+       (rpt strip_tac
+        >> first_assum
+             (qspecl_then [`seed`, `x`, `callee`, `ci`] mp_tac)
+        >> simp[])
+  >> Cases_on `fn.fn_fmp_signature`
+  >- (drule_all fmp_context_step_unsealed_publishes_iff
+      >> strip_tac
+      >> `((?callee ci. fmp_unsealed_calls ctx fn callee /\
+               FLOOKUP x callee.fn_name = SOME ci /\ ci.fi_publishes_fmp) <=>
+            ?callee source. fmp_unsealed_calls ctx fn callee /\
+              MEM source ctx.ctx_functions /\
+              fmp_reaches_in ctx n callee source /\
+              fmp_publishes_source source)` by
+           (irule fmp_callee_publishes_round_exists >> simp[])
+      >> pop_assum $ mk_asm "callee_bridge"
+      >> `(i.fi_publishes_fmp <=>
+            ?source. MEM source ctx.ctx_functions /\
+              fmp_reaches_in ctx n fn source /\
+              fmp_publishes_source source)` by
+           (first_assum
+              (qspecl_then [`seed`, `x`, `fn`, `i`] mp_tac)
+            >> simp[])
+      >> eq_tac
+      >- (strip_tac
+          >> qpat_assum `info.fi_publishes_fmp <=> _`
+               (fn th => drule (iffLR th))
+          >> strip_tac
+          >- (qpat_assum `i.fi_publishes_fmp <=> _`
+                (fn th => drule (iffLR th))
+              >> strip_tac
+              >> qexists `source` >> simp[]
+              >> metis_tac[fmp_reaches_in_mono])
+          >- (qexists `fn`
+              >> simp[fmp_reaches_in_refl, fmp_publishes_source_def])
+          >> `?callee source. fmp_unsealed_calls ctx fn callee /\
+                MEM source ctx.ctx_functions /\
+                fmp_reaches_in ctx n callee source /\
+                fmp_publishes_source source` by
+               (asm "callee_bridge" (fn th => irule (iffLR th))
+                >> qexistsl [`callee`, `callee_info`] >> simp[])
+          >> rename1 `fmp_reaches_in ctx n path_callee source`
+          >> qexists `source` >> simp[]
+          >> pure_rewrite_tac[fmp_reaches_in_def]
+          >> disj2_tac >> qexists `path_callee` >> simp[])
+      >> strip_tac
+      >> qpat_assum `info.fi_publishes_fmp <=> _`
+           (fn th => irule (iffRL th))
+      >> qpat_x_assum `fmp_reaches_in ctx (SUC n) fn source` mp_tac
+      >> simp[fmp_reaches_in_def]
+      >> strip_tac
+      >- (disj2_tac >> disj1_tac
+          >> gvs[fmp_publishes_source_def])
+      >> disj2_tac >> disj2_tac
+      >> asm "callee_bridge" (fn th => irule (iffRL th))
+      >> qexistsl [`callee`, `source`] >> simp[])
+  >> `FLOOKUP out fn.fn_name = FLOOKUP x fn.fn_name` by
+       metis_tac[fmp_context_step_sealed_lookup]
+  >> first_x_assum
+       (qspecl_then [`seed`, `x`, `fn`, `i`] mp_tac)
+  >> gvs[]
+  >> metis_tac[fmp_reaches_in_sealed, fmp_reaches_in_refl,
+               fmp_reaches_in_def, fmp_unsealed_calls_def]
+QED
+
 val _ = export_theory();
