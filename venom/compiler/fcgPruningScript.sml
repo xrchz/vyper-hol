@@ -103,6 +103,19 @@ Proof
   metis_tac[]
 QED
 
+Theorem lookup_function_exists_for_name_local[local]:
+  !name fns.
+  MEM name (MAP (\fn. fn.fn_name) fns) ==>
+  ?found. lookup_function name fns = SOME found
+Proof
+  Induct_on `fns`
+  >- simp[lookup_function_def, listTheory.FIND_thm]
+  >> rpt strip_tac >> Cases_on `h.fn_name = name`
+  >- (qexists `h` >> simp[lookup_function_def, listTheory.FIND_thm])
+  >> gvs[] >> first_x_assum drule >> strip_tac >>
+  qexists `found` >> gvs[lookup_function_def, listTheory.FIND_thm]
+QED
+
 Theorem lookup_function_name[local]:
   !fns name fn.
   lookup_function name fns = SOME fn ==> fn.fn_name = name
