@@ -4,8 +4,8 @@
 
 Theory fcgPruning
 Ancestors
-  fcgPostorder fcgCorrectnessProof fcgDefs venomWf venomCompilerWf irSupply venomInst
-  relation
+  fcgPostorder fcgVisit fcgCorrectnessProof fcgDefs venomWf venomCompilerWf
+  irSupply venomInst relation
 
 Definition prune_unit_fcg_unreachable_def:
   prune_unit_fcg_unreachable unit fcg =
@@ -245,6 +245,122 @@ Proof
   gvs[]
 QED
 
+
+Theorem fcg_dfs_lookup_sim[local]:
+  !ctx1 stack visited graph.
+  (!name. R name ==>
+     lookup_function name ctx1.ctx_functions =
+     lookup_function name ctx2.ctx_functions) /\
+  (!name callee. R name /\ fn_directly_calls ctx2 name callee ==>
+     R callee) /\
+  (!name. MEM name stack ==> R name) ==>
+  fcg_dfs ctx1 stack visited graph =
+  fcg_dfs ctx2 stack visited graph
+Proof
+  recInduct fcg_dfs_ind >> rpt strip_tac >>
+  simp[fcg_dfs_def] >>
+  Cases_on `MEM fn_name visited`
+  >- (gvs[] >> first_x_assum irule >> simp[] >> first_assum ACCEPT_TAC)
+  >> gvs[] >>
+  `R fn_name` by metis_tac[] >>
+  `lookup_function fn_name ctx.ctx_functions =
+   lookup_function fn_name ctx2.ctx_functions` by metis_tac[] >>
+  `fcg_visit ctx fn_name fcg = fcg_visit ctx2 fn_name fcg` by
+    simp[fcg_visit_def] >>
+  Cases_on `fcg_visit ctx2 fn_name fcg` >> gvs[] >>
+  first_x_assum irule >> conj_tac
+  >- first_assum ACCEPT_TAC
+  >> rpt strip_tac >> gvs[]
+  >- (`fn_directly_calls ctx2 fn_name name` by
+        (irule fcg_visit_fst_calls >> qexists `fcg` >> simp[]) >>
+      metis_tac[])
+  >> metis_tac[]
+QED
+
+Theorem fcg_analyze_prune_unit_fcg_unreachable:
+  fcg = fcg_analyze unit.cu_context /\
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context ==>
+  fcg_analyze (prune_unit_fcg_unreachable unit fcg).cu_context = fcg
+Proof
+  rpt strip_tac >> gvs[] >>
+  gvs[ctx_wf_def, ctx_has_entry_def] >>
+  simp[fcg_analyze_def, prune_unit_fcg_unreachable_def] >>
+  irule fcg_dfs_lookup_sim >>
+  qexists `(\name. fcg_is_reachable (fcg_analyze unit.cu_context) name)` >>
+  conj_tac
+  >- (rpt strip_tac >> gvs[] >>
+      `ctx_wf unit.cu_context` by
+        simp[ctx_wf_def, ctx_has_entry_def] >>
+      drule_all fcg_analyze_reachable_sound_proof >> strip_tac >> gvs[] >>
+      `MEM callee (ctx_fn_names unit.cu_context)` by
+        (gvs[fn_directly_calls_def, wf_invoke_targets_def,
+             ctx_fn_names_def] >>
+         imp_res_tac lookup_function_MEM >> res_tac >> gvs[]) >>
+      irule fcg_analyze_reachable_complete_proof >> simp[] >>
+      fs[fcg_path_def] >>
+      irule (CONJUNCT2 (SPEC_ALL RTC_RULES_RIGHT1)) >>
+      qexists `name` >> simp[])
+  >> conj_tac
+  >- (rpt strip_tac >> gvs[] >>
+      irule lookup_function_FILTER_reachable >>
+      gvs[fcg_analyze_def])
+  >> rpt strip_tac >> gvs[] >>
+  irule fcg_analyze_reachable_complete_proof >>
+  simp[ctx_wf_def, ctx_has_entry_def, fcg_path_def,
+       relationTheory.RTC_REFL]
+QED
+
+Theorem prune_fcg_analyzed_callees:
+  fcg = fcg_analyze unit.cu_context /\
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context ==>
+  fcg_get_callees
+    (fcg_analyze (prune_unit_fcg_unreachable unit fcg).cu_context) name =
+  fcg_get_callees fcg name
+Proof
+  rpt strip_tac >>
+  drule_all fcg_analyze_prune_unit_fcg_unreachable >> simp[]
+QED
+
+Theorem prune_fcg_analyzed_reachable:
+  fcg = fcg_analyze unit.cu_context /\
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context ==>
+  (fcg_analyze
+    (prune_unit_fcg_unreachable unit fcg).cu_context).fcg_reachable =
+  fcg.fcg_reachable
+Proof
+  rpt strip_tac >>
+  drule_all fcg_analyze_prune_unit_fcg_unreachable >> simp[]
+QED
+
+Theorem prune_fcg_postorder_lookup:
+  fcg = fcg_analyze unit.cu_context /\
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context /\
+  unit.cu_context.ctx_entry = SOME entry /\
+  MEM name (fcg_postorder fcg entry) ==>
+  ?fn.
+    lookup_function name unit.cu_context.ctx_functions = SOME fn /\
+    lookup_function name
+      (prune_unit_fcg_unreachable unit fcg).cu_context.ctx_functions = SOME fn
+Proof
+  rpt strip_tac >>
+  `fcg_is_reachable fcg name` by
+    (gvs[] >> irule fcg_postorder_mem_reachable >> simp[]) >>
+  `MEM name (ctx_fn_names unit.cu_context)` by
+    (gvs[] >> irule fcg_analyze_reachable_in_context_proof >> simp[]) >>
+  gvs[ctx_fn_names_def] >>
+  drule lookup_function_exists_for_name_local >> strip_tac >>
+  qexists `found` >> simp[] >>
+  `lookup_function name
+      (prune_unit_fcg_unreachable unit
+        (fcg_analyze unit.cu_context)).cu_context.ctx_functions =
+   lookup_function name unit.cu_context.ctx_functions` by
+    (irule lookup_function_prune_fcg_reachable >> simp[]) >>
+  gvs[]
+QED
 Theorem END_OF_fcgPruning:
   T
 Proof
