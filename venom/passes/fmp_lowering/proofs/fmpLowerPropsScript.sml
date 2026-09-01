@@ -71,6 +71,13 @@ Proof
   EVAL_TAC
 QED
 
+Theorem fmp_malformed_raw_rejected_eval:
+  fmp_lower_inst FEMPTY fmp_test_ctx "runner" fmp_test_supply
+    (mk_inst 12 GETFMP [Lit 0w] ["out"]) = NONE
+Proof
+  EVAL_TAC
+QED
+
 Definition fmp_entry_probe_fn_def:
   fmp_entry_probe_fn =
     mk_raw_function "entry"
@@ -183,6 +190,9 @@ Theorem fmp_valid_sealed_identity_eval:
 Proof
   strip_assume_tac fmp_sealed_and_caller_propagation_eval
   >> asm_rewrite_tac[fmp_lower_function_def]
+  >> `lookup_function fmp_positive_callee.fn_name
+        fmp_probe_sealed_ctx.ctx_functions = SOME fmp_positive_callee` by
+       EVAL_TAC
   >> simp[fmp_lower_function_with_info_def, fmp_positive_callee_def,
           fmp_probe_sealed_callee_matches,
           fmp_positive_callee_basics_wf]
@@ -353,6 +363,21 @@ Proof
   rpt strip_tac >> gvs[fmp_seal_signature]
 QED
 
+Theorem fmp_lookup_function_self:
+  ALL_DISTINCT (MAP (\f. f.fn_name) fns) /\ MEM fn fns ==>
+  lookup_function fn.fn_name fns = SOME fn
+Proof
+  Induct_on `fns`
+  >- simp[venomInstTheory.lookup_function_def]
+  >> rpt gen_tac
+  >> simp[venomInstTheory.lookup_function_def, listTheory.FIND_thm]
+  >> rpt strip_tac
+  >> gvs[]
+  >> `h.fn_name <> fn.fn_name` by
+       metis_tac[listTheory.MEM_MAP]
+  >> gvs[venomInstTheory.lookup_function_def]
+QED
+
 Theorem fmp_lower_function_idempotent:
   analyze_fmp_context ctx = SOME infos /\
   MEM fn ctx.ctx_functions /\
@@ -361,6 +386,14 @@ Theorem fmp_lower_function_idempotent:
   no_raw_fmp_ops fn ==>
   fmp_lower_function ctx supply fn = SOME (fn,supply)
 Proof
+  rpt strip_tac >>
+  `fmp_info_valid ctx infos` by
+    metis_tac[analyze_fmp_context_valid] >>
+  `lookup_function fn.fn_name ctx.ctx_functions = SOME fn` by
+    (irule fmp_lookup_function_self >>
+     gvs[fmpAnalysisDefsTheory.fmp_info_valid_def,
+         venomWfTheory.ctx_distinct_fn_names_def,
+         venomInstTheory.ctx_fn_names_def]) >>
   simp[fmp_lower_function_def, fmp_lower_function_with_info_def]
 QED
 
