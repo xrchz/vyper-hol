@@ -214,4 +214,99 @@ Proof
   EVAL_TAC
 QED
 
+
+Theorem fmp_lower_inst_no_raw:
+  fmp_lower_inst infos ctx runner s inst = SOME (out,s') ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) out
+Proof
+  Cases_on `inst.inst_opcode` >>
+  simp[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+       venomInstTheory.is_raw_fmp_opcode_def, AllCaseEqs()] >>
+  rpt strip_tac >>
+  gvs[AllCaseEqs(), venomInstTheory.mk_inst_def,
+      venomInstTheory.is_raw_fmp_opcode_def]
+QED
+
+Theorem fmp_lower_insts_no_raw:
+  fmp_lower_insts infos ctx runner s insts = SOME (out,s') ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) out
+Proof
+  map_every qid_spec_tac [`s'`,`out`,`s`] >> Induct_on `insts`
+  >- simp[fmp_lower_insts_def]
+  >> simp[fmp_lower_insts_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[listTheory.EVERY_APPEND] >>
+  metis_tac[fmp_lower_inst_no_raw]
+QED
+
+Theorem fmp_emit_restores_no_raw:
+  fmp_emit_restores runner s bases = (out,s') ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) out
+Proof
+  map_every qid_spec_tac [`s'`,`out`,`s`] >> Induct_on `bases`
+  >- simp[fmp_emit_restores_def]
+  >> simp[fmp_emit_restores_def, AllCaseEqs(),
+          venomInstTheory.mk_inst_def,
+          venomInstTheory.is_raw_fmp_opcode_def] >>
+  rpt strip_tac >>
+  gvs[venomInstTheory.is_raw_fmp_opcode_def] >>
+  metis_tac[]
+QED
+
+Theorem fmp_lower_blocks_no_raw:
+  fmp_lower_blocks infos ctx runner s restores bbs =
+    SOME (FmpBlocksResult out leftover s') ==>
+  EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                     bb.bb_instructions) out
+Proof
+  map_every qid_spec_tac [`s'`,`leftover`,`out`,`restores`,`s`] >>
+  Induct_on `bbs`
+  >- simp[fmp_lower_blocks_def]
+  >> rpt gen_tac >>
+  Cases_on `fmp_select_point_restores
+    <| fp_block := h.bb_label; fp_index := LENGTH h.bb_instructions |>
+    restores` >>
+  simp[fmp_lower_blocks_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[listTheory.EVERY_APPEND] >>
+  metis_tac[fmp_lower_insts_no_raw, fmp_emit_restores_no_raw]
+QED
+
+Theorem fmp_install_root_no_raw:
+  EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                     bb.bb_instructions) blocks /\
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) (OPTION_TO_LIST root) /\
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) (OPTION_TO_LIST retpc) /\
+  fmp_install_root ctx fn (FmpRootLayout n root retpc s) blocks =
+    SOME (out,s') ==>
+  EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                     bb.bb_instructions) out
+Proof
+  Cases_on `blocks` >>
+  simp[fmp_install_root_def, listTheory.EVERY_APPEND] >>
+  rpt strip_tac >>
+  gvs[listTheory.EVERY_APPEND] >>
+  Cases_on `fn_is_context_entry ctx fn` >>
+  simp[listTheory.EVERY_APPEND] >>
+  metis_tac[rich_listTheory.EVERY_TAKE, rich_listTheory.EVERY_DROP]
+QED
+
+Theorem fmp_seal_signature:
+  (fmp_seal ctx fn info blocks).fn_fmp_signature =
+    SOME <| fms_has_fmp_param := (info.fi_needs_fmp /\
+                                   ~fn_is_context_entry ctx fn);
+            fms_publishes := info.fi_publishes_fmp |>
+Proof
+  simp[fmp_seal_def]
+QED
+
+Theorem fmp_seal_preserves_nonfmp_metadata:
+  fn_identity_metadata_eq (fmp_seal ctx fn info blocks) fn /\
+  fn_static_input_eq (fmp_seal ctx fn info blocks) fn /\
+  fn_static_layout_eq (fmp_seal ctx fn info blocks) fn
+Proof
+  simp[fmp_seal_def,
+       venomInstTheory.fn_identity_metadata_eq_def,
+       venomInstTheory.fn_static_input_eq_def,
+       venomInstTheory.fn_static_layout_eq_def]
+QED
+
 val _ = export_theory();
