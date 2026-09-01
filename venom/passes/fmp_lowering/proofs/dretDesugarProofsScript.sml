@@ -324,4 +324,142 @@ Proof
        dret_value_operand_simps]
 QED
 
+Theorem dret_value_operand_no_labels:
+  dret_value_operand op ==> operand_ir_labels [op] = []
+Proof
+  Cases_on `op` >> simp[dret_value_operand_def, operand_ir_labels_def]
+QED
+
+Theorem dret_value_operands_no_labels:
+  EVERY dret_value_operand ops ==> operand_ir_labels ops = []
+Proof
+  Induct_on `ops` >> simp[operand_ir_labels_def] >>
+  Cases_on `h` >> simp[dret_value_operand_def, operand_ir_labels_def]
+QED
+
+Theorem expand_dret_pairs_labels:
+  EVERY dret_value_operand pairs /\
+  dret_value_operand cursor /\
+  expand_dret_pairs s cursor pairs =
+    SOME (DretPairExpansion emitted dsts final_cursor s') ==>
+  FLAT (MAP inst_ir_labels emitted) = []
+Proof
+  map_every qid_spec_tac
+    [`emitted`,`dsts`,`final_cursor`,`s'`,`pairs`,`cursor`,`s`] >>
+  recInduct expand_dret_pairs_ind >> rpt strip_tac >>
+  gvs[expand_dret_pairs_def, AllCaseEqs(), venomInstTheory.mk_inst_def,
+      inst_ir_labels_def, dret_value_operands_no_labels]
+QED
+
+Theorem expand_dret_pairs_dsts_legal:
+  EVERY dret_value_operand pairs /\
+  dret_value_operand cursor /\
+  expand_dret_pairs s cursor pairs =
+    SOME (DretPairExpansion emitted dsts final_cursor s') ==>
+  EVERY dret_value_operand dsts
+Proof
+  map_every qid_spec_tac
+    [`emitted`,`dsts`,`final_cursor`,`s'`,`pairs`,`cursor`,`s`] >>
+  recInduct expand_dret_pairs_ind >> rpt strip_tac >>
+  gvs[expand_dret_pairs_def, AllCaseEqs()]
+QED
+
+Theorem expand_dret_pairs_final_cursor_legal:
+  EVERY dret_value_operand pairs /\
+  dret_value_operand cursor /\
+  expand_dret_pairs s cursor pairs =
+    SOME (DretPairExpansion emitted dsts final_cursor s') ==>
+  dret_value_operand final_cursor
+Proof
+  map_every qid_spec_tac
+    [`emitted`,`dsts`,`final_cursor`,`s'`,`pairs`,`cursor`,`s`] >>
+  recInduct expand_dret_pairs_ind >> rpt strip_tac >>
+  gvs[expand_dret_pairs_def, AllCaseEqs()]
+QED
+
+Theorem every_take:
+  EVERY p xs ==> EVERY p (TAKE n xs)
+Proof
+  map_every qid_spec_tac [`n`,`xs`] >> Induct_on `xs` >>
+  Cases_on `n` >> simp[]
+QED
+
+Theorem every_tl:
+  EVERY p xs ==> EVERY p (TL xs)
+Proof
+  Cases_on `xs` >> simp[]
+QED
+
+Theorem every_drop:
+  EVERY p xs ==> EVERY p (DROP n xs)
+Proof
+  map_every qid_spec_tac [`n`,`xs`] >> Induct_on `xs` >>
+  Cases_on `n` >> simp[]
+QED
+
+Theorem split_dret_operands_legal:
+  EVERY dret_value_operand inst.inst_operands /\
+  split_dret_operands inst = SOME (ordinary,pairs,return_pc) ==>
+  EVERY dret_value_operand ordinary /\
+  EVERY dret_value_operand pairs /\
+  dret_value_operand return_pc
+Proof
+  strip_tac >> gvs[split_dret_operands_def, AllCaseEqs()] >>
+  drule dretShapeDefsTheory.parse_dret_shape_length >> strip_tac >>
+  conj_tac >- metis_tac[every_tl, every_take] >>
+  conj_tac >- metis_tac[every_tl, every_take, every_drop] >>
+  `EVERY dret_value_operand (TL inst.inst_operands)` by
+    metis_tac[every_tl] >>
+  gvs[listTheory.EVERY_EL] >> first_x_assum irule >> decide_tac
+QED
+
+
+Theorem replace_dret_inst_labels:
+  EVERY dret_value_operand inst.inst_operands /\
+  dret_value_operand entry_cursor /\
+  replace_dret_inst s entry_cursor inst = SOME (out,s') ==>
+  FLAT (MAP inst_ir_labels out) = inst_ir_labels inst
+Proof
+  strip_tac >>
+  `inst_ir_labels inst = []` by
+    (simp[inst_ir_labels_def] >>
+     irule dret_value_operands_no_labels >> simp[]) >>
+  gvs[replace_dret_inst_def, AllCaseEqs()] >> rpt strip_tac >>
+  `EVERY dret_value_operand ordinary /\
+   EVERY dret_value_operand pairs /\
+   dret_value_operand return_pc` by
+    metis_tac[split_dret_operands_legal] >>
+  `FLAT (MAP inst_ir_labels body) = []` by
+    metis_tac[expand_dret_pairs_labels] >>
+  `EVERY dret_value_operand dsts` by
+    metis_tac[expand_dret_pairs_dsts_legal] >>
+  `dret_value_operand final_cursor` by
+    metis_tac[expand_dret_pairs_final_cursor_legal] >>
+  `EVERY dret_value_operand (ordinary ++ dsts ++ [return_pc])` by simp[] >>
+  `operand_ir_labels (ordinary ++ dsts ++ [return_pc]) = []` by
+    metis_tac[dret_value_operands_no_labels] >>
+  `operand_ir_labels [final_cursor] = []` by
+    metis_tac[dret_value_operand_no_labels] >>
+  gvs[venomInstTheory.mk_inst_def, inst_ir_labels_def]
+QED
+Theorem dret_entry_cursor_label_counterexample:
+  let s = <| irs_next_inst := 1; irs_next_var := 0; irs_next_label := 0;
+             irs_used_inst_ids := []; irs_used_vars := [];
+             irs_used_labels := [] |> in
+  let inst = mk_inst 0 DRET
+    [Lit 1w; Var "src"; Var "size"; Var "retpc"] [] in
+    EVERY dret_value_operand inst.inst_operands /\
+    inst_ir_labels inst = [] /\
+    OPTION_MAP (\p. FLAT (MAP inst_ir_labels (FST p)))
+      (replace_dret_inst s (Label "cursor_label") inst) =
+      SOME ["cursor_label"; "cursor_label"; "cursor_label"]
+Proof
+  simp[dret_value_operand_simps, venomInstTheory.mk_inst_def,
+       inst_ir_labels_def, operand_ir_labels_def] >>
+  EVAL_TAC >>
+  simp[expand_dret_pairs_def, fresh_ir_var_def, seek_fresh_name_def,
+       inst_ir_labels_def, operand_ir_labels_def] >> EVAL_TAC >>
+  simp[inst_ir_labels_def, operand_ir_labels_def]
+QED
+
 val _ = export_theory();
