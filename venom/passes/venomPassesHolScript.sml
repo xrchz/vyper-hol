@@ -1,6 +1,7 @@
 (* Roll-up theory for all venom compiler passes *)
 Theory venomPassesHol
 Ancestors
+  venomPassSchedule
   (* shared pass infrastructure *)
   passSharedDefs passSharedProps passSharedFrame
   (* phi elimination *)
