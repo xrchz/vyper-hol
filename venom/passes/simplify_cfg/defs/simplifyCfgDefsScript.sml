@@ -91,16 +91,25 @@ End
 (* ===== Block Merging (chain collapse) ===== *)
 
 (* Can A and B be chain-merged?
-   A has single successor B, B has single predecessor A, B has no PHIs. *)
+   A has single successor B, B has single predecessor A, B has no PHIs, and
+   they are distinct blocks.  The label guard excludes self-loop "merges",
+   which neither decrease the block count nor yield valid replacement maps. *)
 (* Python checks: len(cfg_out(bb)) == 1 and len(cfg_in(next_bb)) == 1.
    No JMP opcode check — any terminator with single successor triggers merge.
    no_phis: defensive (fix_all_phis should have eliminated PHIs already). *)
 Definition can_merge_blocks_def:
   can_merge_blocks func a b ⇔
+    a.bb_label ≠ b.bb_label ∧
     bb_succs a = [b.bb_label] ∧
     num_preds func b.bb_label = 1 ∧
     no_phis b
 End
+
+Theorem can_merge_blocks_distinct:
+  can_merge_blocks func a b ==> a.bb_label <> b.bb_label
+Proof
+  simp[can_merge_blocks_def]
+QED
 
 (* Merge B into A: drop A's terminator, append B's instructions. *)
 Definition merge_blocks_def:
