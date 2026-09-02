@@ -263,3 +263,227 @@ Proof
   drule do_merge_jump_fn_result_events >>
   simp[]
 QED
+
+Theorem try_bypass_events_at[local]:
+  try_bypass func incoming bb succs = (func',outgoing,success) ==>
+  ALL_DISTINCT (fn_labels func) ==>
+  lookup_block bb.bb_label func.fn_blocks = SOME bb ==>
+  fn_result_events (fn_labels func) incoming func' outgoing
+Proof
+  metis_tac[try_bypass_events]
+QED
+
+Theorem label_event_trace_all_distinct[local]:
+  !initial events final.
+    ALL_DISTINCT initial /\ label_event_trace initial events final ==>
+    ALL_DISTINCT final
+Proof
+  Induct_on `events` >> simp[label_event_trace_def] >>
+  Cases_on `h` >> simp[label_event_trace_def] >>
+  metis_tac[FILTER_ALL_DISTINCT]
+QED
+
+Theorem fn_result_events_all_distinct[local]:
+  ALL_DISTINCT initial /\ fn_result_events initial incoming func' outgoing ==>
+  ALL_DISTINCT (fn_labels func')
+Proof
+  simp[fn_result_events_def] >>
+  metis_tac[label_event_trace_all_distinct]
+QED
+
+Theorem collapse_result_events_compose[local]:
+  fn_result_events initial incoming middle middle_map /\
+  collapse_result_events (fn_labels middle) middle_map result ==>
+  collapse_result_events initial incoming result
+Proof
+  Cases_on `result` >> PairCases_on `r` >>
+  simp[collapse_result_events_def] >>
+  metis_tac[fn_result_events_compose]
+QED
+Theorem collapse_dfs_result_events_compose[local]:
+  fn_result_events initial incoming middle middle_map ==>
+  collapse_dfs_result
+    (collapse_result_events (fn_labels middle) middle_map)
+    middle middle_map visited lbl ==>
+  collapse_result_events initial incoming
+    (collapse_dfs middle middle_map visited lbl)
+Proof
+  simp[collapse_dfs_result_def] >>
+  metis_tac[collapse_result_events_compose]
+QED
+
+Theorem collapse_dfs_succs_result_events_compose[local]:
+  fn_result_events initial incoming middle middle_map ==>
+  collapse_dfs_succs_result
+    (collapse_result_events (fn_labels middle) middle_map)
+    middle middle_map visited succs ==>
+  collapse_result_events initial incoming
+    (collapse_dfs_succs middle middle_map visited succs)
+Proof
+  simp[collapse_dfs_succs_result_def] >>
+  metis_tac[collapse_result_events_compose]
+QED
+
+
+Theorem chain_merge_fn_result_events[local]:
+  lookup_block lbl func.fn_blocks = SOME bb ==>
+  bb.bb_label = lbl ==>
+  lookup_block next_lbl func.fn_blocks = SOME next_bb ==>
+  next_bb.bb_label = next_lbl ==>
+  can_merge_blocks func bb next_bb ==>
+  ALL_DISTINCT (fn_labels func) ==>
+  let merged = merge_blocks bb next_bb in
+  let bbs' = replace_block lbl merged
+               (remove_block next_lbl func.fn_blocks) in
+  let bbs'' = update_succ_phi_labels next_lbl lbl bbs'
+                (bb_succs merged) in
+  let func' = func with fn_blocks := bbs'' in
+    fn_result_events (fn_labels func) incoming func'
+      ((next_lbl,lbl)::incoming)
+Proof
+  rpt strip_tac >> gvs[] >>
+  drule can_merge_blocks_distinct >> strip_tac >>
+  simp[fn_result_events_def] >>
+  qexists `[(next_bb.bb_label,bb.bb_label)]` >>
+  simp[label_event_trace_def, venomInstTheory.fn_labels_def,
+       fn_labels_update_succ_phi_labels, merge_blocks_def,
+       fn_labels_replace_block, fn_labels_remove_block, MEM_FILTER] >>
+  imp_res_tac venomExecPropsTheory.lookup_block_MEM >>
+  simp[MEM_MAP] >> metis_tac[]
+QED
+
+Theorem collapse_result_events_pair[local]:
+  collapse_result_events initial incoming (func',outgoing,visited') <=>
+  fn_result_events initial incoming func' outgoing
+Proof
+  simp[collapse_result_events_def]
+QED
+
+Theorem collapse_events_joint[local]:
+  (!func incoming visited lbl.
+     ALL_DISTINCT (fn_labels func) ==>
+     collapse_dfs_result
+       (collapse_result_events (fn_labels func) incoming)
+       func incoming visited lbl) /\
+  (!func incoming visited succs.
+     ALL_DISTINCT (fn_labels func) ==>
+     collapse_dfs_succs_result
+       (collapse_result_events (fn_labels func) incoming)
+       func incoming visited succs)
+Proof
+  ho_match_mp_tac collapse_dfs_ind >>
+  rpt conj_tac
+  >- suspend "dfs"
+  >- suspend "nil"
+  >> suspend "succs"
+QED
+
+Resume collapse_events_joint[dfs]:
+  rpt strip_tac >>
+  simp[NoAsms, collapse_dfs_result_def, Once collapse_dfs_def] >>
+  Cases_on `lookup_block lbl func.fn_blocks`
+  >- simp[collapse_result_events_pair, fn_result_events_refl] >>
+  rename1 `lookup_block lbl func.fn_blocks = SOME bb` >>
+  Cases_on `bb_succs bb`
+  >- (Cases_on `MEM lbl visited`
+      >- simp[try_bypass_def, collapse_result_events_pair,
+              fn_result_events_refl]
+      >> gvs[try_bypass_def, collapse_dfs_succs_result_def]) >>
+  Cases_on `t`
+  >- (Cases_on `lookup_block h func.fn_blocks`
+      >- (Cases_on `MEM lbl visited` >>
+          simp[collapse_result_events_pair, fn_result_events_refl])
+      >> rename1 `lookup_block h func.fn_blocks = SOME next_bb`
+      >> Cases_on `can_merge_blocks func bb next_bb`
+      >- (gvs[] >>
+          `bb.bb_label = lbl` by
+            metis_tac[venomExecPropsTheory.lookup_block_label] >>
+          `next_bb.bb_label = h` by
+            metis_tac[venomExecPropsTheory.lookup_block_label] >>
+          qmatch_goalsub_abbrev_tac
+            `collapse_dfs merged_func merged_incoming visited lbl` >>
+          irule collapse_result_events_compose >>
+          qexistsl [`merged_func`,`merged_incoming`] >>
+          reverse conj_asm2_tac
+          >- (simp[Abbr `merged_func`, Abbr `merged_incoming`] >>
+              drule_all chain_merge_fn_result_events >> simp[]) >>
+          imp_res_tac fn_result_events_all_distinct >>
+          first_x_assum drule >>
+          simp[collapse_dfs_result_def])
+      >> Cases_on `MEM lbl visited`
+      >- simp[collapse_result_events_pair, fn_result_events_refl]
+      >> gvs[collapse_dfs_result_def])
+  >> Cases_on `try_bypass func incoming bb (h::h'::t')`
+  >> PairCases_on `r`
+  >> Cases_on `r1`
+  >- (gvs[] >>
+      `bb.bb_label = lbl` by
+        metis_tac[venomExecPropsTheory.lookup_block_label] >>
+      `lookup_block bb.bb_label func.fn_blocks = SOME bb` by gvs[] >>
+      `fn_result_events (fn_labels func) incoming q r0` by
+        (drule_all try_bypass_events_at >> simp[]) >>
+      `ALL_DISTINCT (fn_labels q)` by
+        metis_tac[fn_result_events_all_distinct] >>
+      metis_tac[collapse_dfs_result_events_compose])
+  >> gvs[] >>
+  `bb.bb_label = lbl` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  `lookup_block bb.bb_label func.fn_blocks = SOME bb` by gvs[] >>
+  `fn_result_events (fn_labels func) incoming q r0` by
+    (drule_all try_bypass_events_at >> simp[]) >>
+  `ALL_DISTINCT (fn_labels q)` by
+    metis_tac[fn_result_events_all_distinct] >>
+  Cases_on `MEM lbl visited`
+  >- simp[collapse_result_events_pair] >>
+  metis_tac[collapse_dfs_succs_result_events_compose]
+QED
+
+Resume collapse_events_joint[nil]:
+  simp[collapse_dfs_succs_result_def, collapse_dfs_def,
+       collapse_result_events_pair, fn_result_events_refl]
+QED
+
+Resume collapse_events_joint[succs]:
+  rpt strip_tac >>
+  simp[collapse_dfs_succs_result_def, Once collapse_dfs_def] >>
+  Cases_on `collapse_dfs func incoming visited lbl` >>
+  PairCases_on `r` >> gvs[collapse_dfs_result_def] >>
+  `fn_result_events (fn_labels func) incoming q r0` by
+    gvs[collapse_result_events_pair] >>
+  `ALL_DISTINCT (fn_labels q)` by
+    metis_tac[fn_result_events_all_distinct] >>
+  metis_tac[collapse_dfs_succs_result_events_compose]
+QED
+
+Finalise collapse_events_joint
+
+Theorem simplify_cfg_round_with_labels_event_trace[local]:
+  ALL_DISTINCT
+    (fn_labels (fix_all_phis (remove_unreachable_blocks func))) ==>
+  case fn_entry_label func of
+    NONE => SND (simplify_cfg_round_with_labels func) = []
+  | SOME entry =>
+      ?collapsed visited.
+        collapse_dfs (fix_all_phis (remove_unreachable_blocks func)) [] [] entry =
+          (collapsed,
+           REVERSE (SND (simplify_cfg_round_with_labels func)),
+           visited) /\
+        label_event_trace
+          (fn_labels (fix_all_phis (remove_unreachable_blocks func)))
+          (SND (simplify_cfg_round_with_labels func))
+          (fn_labels collapsed)
+Proof
+  strip_tac >> Cases_on `fn_entry_label func`
+  >- simp[simplify_cfg_round_with_labels_def] >>
+  rename1 `fn_entry_label func = SOME entry` >>
+  Cases_on
+    `collapse_dfs (fix_all_phis (remove_unreachable_blocks func)) [] [] entry` >>
+  PairCases_on `r` >>
+  simp[simplify_cfg_round_with_labels_def] >>
+  `collapse_result_events
+     (fn_labels (fix_all_phis (remove_unreachable_blocks func))) []
+     (q,r0,r1)` by
+    (metis_tac[collapse_dfs_result_def,
+               CONJUNCT1 collapse_events_joint]) >>
+  gvs[collapse_result_events_pair, fn_result_events_def]
+QED
