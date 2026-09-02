@@ -233,4 +233,26 @@ Proof
   drule apply_unit_label_map_global_reserved >> simp[]
 QED
 
+Theorem list_subset_trans:
+  list_subset xs ys /\ list_subset ys zs ==> list_subset xs zs
+Proof
+  simp[list_subset_def, listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem run_fn_schedule_call_graph_subgraph:
+  run_fn_schedule rpolicy passes name unit = SOME (unit',s') ==>
+  list_subset (unit_invoke_targets unit') (unit_invoke_targets unit)
+Proof
+  simp[run_fn_schedule_def, run_configured_fn_passes_def] >>
+  strip_tac >> gvs[AllCaseEqs()]
+QED
+
+Theorem run_fn_schedule_global_inst_ids_distinct:
+  run_fn_schedule rpolicy passes name unit = SOME (unit',s') ==>
+  unit_global_inst_ids_distinct unit'
+Proof
+  simp[run_fn_schedule_def, run_configured_fn_passes_def] >>
+  strip_tac >> gvs[AllCaseEqs()]
+QED
+
 val _ = export_theory ();
