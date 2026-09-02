@@ -104,7 +104,7 @@ Definition process_frontiers_supply_def:
                                    (f::rest) (f::has_phi) fs
 End
 
-Triviality process_frontiers_supply_labels:
+Theorem process_frontiers_supply_labels:
   !fs s var pm li bbs rest hp bbs' rest' hp' s'.
     process_frontiers_supply s var pm li bbs rest hp fs =
       (bbs',rest',hp',s') ==>
