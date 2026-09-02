@@ -250,4 +250,27 @@ Proof
   EVAL_TAC
 QED
 
+Theorem build_fn_pass_pipeline_valid:
+  build_fn_pass_pipeline requested = SOME passes ==>
+  passes = requested /\
+  valid_pass_order (MAP fn_pass_tag passes)
+Proof
+  simp [build_fn_pass_pipeline_def] >>
+  strip_tac >>
+  gvs []
+QED
+
+Theorem o1_fn_pass_order_valid:
+  valid_pass_order (MAP fn_pass_tag o1_fn_passes)
+Proof
+  EVAL_TAC
+QED
+
+Theorem o1_build_fn_pass_pipeline:
+  build_fn_pass_pipeline o1_fn_passes = SOME o1_fn_passes
+Proof
+  simp [build_fn_pass_pipeline_def, o1_fn_pass_order_valid,
+        o1_fn_passes_def, configured_fn_pass_wf_def]
+QED
+
 val _ = export_theory ();
