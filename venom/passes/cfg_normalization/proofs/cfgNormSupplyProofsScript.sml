@@ -2539,6 +2539,46 @@ Proof
 QED
 
 
+
+Theorem MEM_FLAT_MAP_replace_block_subset:
+  !bbs lbl new_bb C x.
+    MEM x (FLAT (MAP C (replace_block lbl new_bb bbs))) ==>
+    MEM x (C new_bb) \/ MEM x (FLAT (MAP C bbs))
+Proof
+  Induct_on `bbs`
+  >> simp[replace_block_def, listTheory.MEM_APPEND]
+  >> rpt strip_tac
+  >> Cases_on `h.bb_label = lbl`
+  >> gvs[replace_block_def, listTheory.MEM_APPEND]
+  >> metis_tac[]
+QED
+
+Theorem insert_split_supply_invoke_labels_subset:
+  MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+        (MAP FST (fcg_scan_function fn'))
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  qabbrev_tac `pred' = subst_label_terminator
+    target_bb.bb_label split_bb.bb_label pred_bb` >>
+  qabbrev_tac `target' = update_phis_for_split
+    pred_bb.bb_label split_bb.bb_label repls target_bb` >>
+  `cfg_block_invoke_labels pred' = cfg_block_invoke_labels pred_bb` by
+    simp[Abbr `pred'`,subst_label_terminator_invoke_labels] >>
+  `cfg_block_invoke_labels target' = cfg_block_invoke_labels target_bb` by
+    simp[Abbr `target'`,update_phis_for_split_invoke_labels] >>
+  `cfg_block_invoke_labels split_bb = []` by
+    metis_tac[build_split_block_supply_no_invoke] >>
+  simp[cfg_fcg_scan_function_invoke_labels,listTheory.EVERY_MEM,
+       listTheory.MEM_APPEND] >>
+  metis_tac[MEM_FLAT_MAP_replace_block_subset,MEM_FLAT_MAP_component]
+QED
 Theorem insert_split_supply_invoke_labels:
   ALL_DISTINCT (fn_labels fn) /\
   MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
@@ -2601,6 +2641,26 @@ Proof
 QED
 
 
+Theorem find_and_split_supply_invoke_labels_subset:
+  !bbs fn s fn' changed s'.
+    EVERY (\bb. MEM bb fn.fn_blocks) bbs /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+          (MAP FST (fcg_scan_function fn'))
+Proof
+  Induct_on `bbs` >> rpt gen_tac >> strip_tac
+  >- gvs[find_and_split_supply_def,listTheory.EVERY_MEM]
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     `MEM x (block_preds fn h.bb_label)` by metis_tac[FIND_SOME_MEM] >>
+     `MEM x fn.fn_blocks` by gvs[block_preds_def,listTheory.MEM_FILTER] >>
+     metis_tac[insert_split_supply_invoke_labels_subset]
+QED
+
 Theorem find_and_split_supply_invoke_labels:
   !bbs fn s fn' changed s'.
     EVERY (\bb. MEM bb fn.fn_blocks) bbs /\
@@ -2619,6 +2679,18 @@ Proof
      `MEM x (block_preds fn h.bb_label)` by metis_tac[FIND_SOME_MEM] >>
      `MEM x fn.fn_blocks` by gvs[block_preds_def,listTheory.MEM_FILTER] >>
      metis_tac[insert_split_supply_invoke_labels]
+QED
+
+
+Theorem cfg_norm_round_supply_invoke_labels_subset:
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+        (MAP FST (fcg_scan_function fn'))
+Proof
+  rpt strip_tac >>
+  irule find_and_split_supply_invoke_labels_subset >>
+  qexistsl [`fn.fn_blocks`,`changed`,`s`,`s'`] >>
+  gvs[cfg_norm_round_supply_def,listTheory.EVERY_MEM]
 QED
 
 Theorem cfg_norm_round_supply_invoke_labels:
@@ -2687,6 +2759,29 @@ Proof
 QED
 
 
+
+Theorem cfg_norm_iter_supply_invoke_labels_subset:
+  !n s fn fn' s'.
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+          (MAP FST (fcg_scan_function fn'))
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_iter_supply_def,listTheory.EVERY_MEM]
+  >> Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+     rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+     Cases_on `changed`
+  >- (gvs[cfg_norm_iter_supply_def] >>
+      `EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+             (MAP FST (fcg_scan_function fn1))` by
+        metis_tac[cfg_norm_round_supply_invoke_labels_subset] >>
+      `EVERY (\t. MEM t (MAP FST (fcg_scan_function fn1)))
+             (MAP FST (fcg_scan_function fn'))` by metis_tac[] >>
+      gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >> gvs[cfg_norm_iter_supply_def] >>
+     metis_tac[cfg_norm_round_supply_invoke_labels_subset]
+QED
+
 Theorem cfg_norm_iter_supply_invoke_labels:
   !n s fn fn' s'.
     ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
@@ -2716,6 +2811,16 @@ Proof
       metis_tac[])
   >> gvs[cfg_norm_iter_supply_def] >>
      metis_tac[cfg_norm_round_supply_invoke_labels]
+QED
+
+
+Theorem cfg_norm_function_supply_invoke_labels_subset:
+  cfg_norm_function_supply s fn = (fn',s') ==>
+  EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+        (MAP FST (fcg_scan_function fn'))
+Proof
+  simp[cfg_norm_function_supply_def] >>
+  metis_tac[cfg_norm_iter_supply_invoke_labels_subset]
 QED
 
 Theorem cfg_norm_function_supply_invoke_labels:
@@ -2826,4 +2931,27 @@ Proof
   simp[init_ir_supply_inst_ok] >>
   metis_tac[init_ir_supply_cfg_supply_covers_unit,
             cfg_supply_covers_unit_functions]
+QED
+
+Theorem cfg_norm_function_supply_duplicate_label_invoke_subset_probe:
+  let s = <| irs_next_inst := 4; irs_next_var := 0; irs_next_label := 0;
+             irs_used_inst_ids := [0;1;2;3]; irs_used_vars := ["c"];
+             irs_used_labels := ["P";"C";"B"] |> in
+  let pred = <| bb_label := "P";
+                bb_instructions :=
+                  [mk_inst 0 JNZ [Var "c"; Label "B"; Label "C"] []] |> in
+  let side = <| bb_label := "C";
+                bb_instructions := [mk_inst 1 JMP [Label "B"] []] |> in
+  let target0 = <| bb_label := "B";
+                   bb_instructions := [mk_inst 2 STOP [] []] |> in
+  let target1 = <| bb_label := "B";
+                   bb_instructions :=
+                     [mk_inst 3 INVOKE [Label "callee"] []] |> in
+  let fn = mk_raw_function "f" [pred;side;target0;target1] in
+  let result = cfg_norm_function_supply s fn in
+    FST result <> fn /\
+    EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+      (MAP FST (fcg_scan_function (FST result)))
+Proof
+  EVAL_TAC
 QED
