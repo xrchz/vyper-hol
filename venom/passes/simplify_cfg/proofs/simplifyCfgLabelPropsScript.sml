@@ -1,6 +1,6 @@
 Theory simplifyCfgLabelProps
 Ancestors
-  simplifyCfgDefs cfgTransformProps unitLabelMap
+  simplifyCfgDefs cfgTransformProps unitLabelMap fcgBridge
 Libs
   listTheory
 
@@ -1040,4 +1040,653 @@ Proof
     metis_tac[simplify_cfg_fn_with_labels_resolves] >>
   qexists `apply_resolved_unit_label_map resolved unit` >>
   simp[apply_unit_label_map_def]
+QED
+
+
+(* Extensional function-call edge view used by SimplifyCFG consumers. *)
+Definition simplify_cfg_fn_invoke_labels_def:
+  simplify_cfg_fn_invoke_labels func = MAP FST (fcg_scan_function func)
+End
+
+Definition simplify_cfg_block_invoke_labels_def:
+  simplify_cfg_block_invoke_labels bb =
+    MAP FST (get_invoke_targets bb.bb_instructions)
+End
+
+Theorem simplify_cfg_invoke_labels_append[local]:
+  !first second.
+    MAP FST (get_invoke_targets (first ++ second)) =
+    MAP FST (get_invoke_targets first) ++
+    MAP FST (get_invoke_targets second)
+Proof
+  Induct_on `first` >>
+  simp[fcgDefsTheory.get_invoke_targets_def] >>
+  rpt gen_tac >> rpt CASE_TAC >> gvs[]
+QED
+
+Theorem fn_insts_blocks_mem[local]:
+  !blocks inst.
+    MEM inst (fn_insts_blocks blocks) <=>
+    ?bb. MEM bb blocks /\ MEM inst bb.bb_instructions
+Proof
+  Induct_on `blocks` >>
+  simp[venomInstTheory.fn_insts_blocks_def] >> metis_tac[]
+QED
+
+Theorem simplify_cfg_fn_invoke_labels_mem:
+  MEM callee (simplify_cfg_fn_invoke_labels func) <=>
+  ?bb inst operands.
+    MEM bb func.fn_blocks /\
+    MEM inst bb.bb_instructions /\
+    inst.inst_opcode = INVOKE /\
+    inst.inst_operands = Label callee :: operands
+Proof
+  simp[simplify_cfg_fn_invoke_labels_def, fcgDefsTheory.fcg_scan_function_def,
+       venomInstTheory.fn_insts_def, fcgBridgeTheory.mem_get_invoke_targets,
+       fn_insts_blocks_mem] >>
+  metis_tac[]
+QED
+Theorem fn_blocks_update_metadata[local]:
+  fn_identity_metadata_eq (func with fn_blocks := blocks) func /\
+  fn_static_input_eq (func with fn_blocks := blocks) func /\
+  fn_static_layout_eq (func with fn_blocks := blocks) func /\
+  fn_fmp_convention_eq (func with fn_blocks := blocks) func
+Proof
+  simp[venomInstTheory.fn_identity_metadata_eq_def,
+       venomInstTheory.fn_static_input_eq_def,
+       venomInstTheory.fn_static_layout_eq_def,
+       venomInstTheory.fn_fmp_convention_eq_def]
+QED
+
+
+Theorem fix_phi_inst_invoke_shape[local]:
+  (fix_phi_inst preds inst).inst_opcode = INVOKE /\
+  (fix_phi_inst preds inst).inst_operands = Label callee :: operands <=>
+  inst.inst_opcode = INVOKE /\
+  inst.inst_operands = Label callee :: operands
+Proof
+  simp[fix_phi_inst_def] >>
+  Cases_on `inst.inst_opcode = PHI`
+  >- (gvs[] >> Cases_on `filter_phi_ops preds inst.inst_operands` >> gvs[] >>
+      Cases_on `t` >> gvs[] >> Cases_on `t'` >> gvs[]) >>
+  gvs[]
+QED
+
+Theorem subst_block_labels_inst_invoke_shape[local]:
+  (subst_block_labels_inst label_map inst).inst_opcode = INVOKE /\
+  (subst_block_labels_inst label_map inst).inst_operands =
+    Label callee :: operands <=>
+  inst.inst_opcode = INVOKE /\
+  inst.inst_operands = Label callee :: operands
+Proof
+  Cases_on `inst.inst_opcode` >>
+  simp[cfgTransformTheory.subst_block_labels_inst_def,
+       cfgTransformTheory.subst_label_map_inst_def,
+       venomInstTheory.is_block_label_opcode_def,
+       venomInstTheory.is_terminator_def]
+QED
+
+Theorem invoke_labels_map_fix_phi[local]:
+  MEM callee
+    (MAP FST (get_invoke_targets (MAP (fix_phi_inst preds) insts))) <=>
+  MEM callee (MAP FST (get_invoke_targets insts))
+Proof
+  simp[fcgBridgeTheory.mem_get_invoke_targets, MEM_MAP] >>
+  metis_tac[fix_phi_inst_invoke_shape]
+QED
+
+Theorem invoke_labels_map_subst_block_labels[local]:
+  MEM callee
+    (MAP FST (get_invoke_targets
+      (MAP (subst_block_labels_inst label_map) insts))) <=>
+  MEM callee (MAP FST (get_invoke_targets insts))
+Proof
+  simp[fcgBridgeTheory.mem_get_invoke_targets, MEM_MAP] >>
+  metis_tac[subst_block_labels_inst_invoke_shape]
+QED
+
+
+Theorem partition_mem_pair[local]:
+  !xs yes no.
+    PARTITION pred xs = (yes,no) ==>
+    (MEM item yes \/ MEM item no <=> MEM item xs)
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `PARTITION pred xs = (yes,no)` (assume_tac o GSYM) >>
+  fs[sortingTheory.PARTITION_DEF] >>
+  drule sortingTheory.PART_MEM >>
+  simp[]
+QED
+
+Theorem fix_phis_in_block_invoke_labels[local]:
+  MEM callee
+    (simplify_cfg_block_invoke_labels (fix_phis_in_block preds bb)) <=>
+  MEM callee (simplify_cfg_block_invoke_labels bb)
+Proof
+  simp[simplify_cfg_block_invoke_labels_def, fix_phis_in_block_def,
+       fcgBridgeTheory.mem_get_invoke_targets] >>
+  pairarg_tac >>
+  `!item. MEM item phis \/ MEM item non_phis <=>
+          MEM item (MAP (fix_phi_inst preds) bb.bb_instructions)` by
+    (gen_tac >> drule partition_mem_pair >> simp[]) >>
+  qpat_assum `PARTITION _ _ = _` (fn th => rewrite_tac[th]) >>
+  qpat_x_assum `PARTITION _ _ = _` kall_tac >>
+  gvs[MEM_APPEND, MEM_MAP] >>
+  metis_tac[fix_phi_inst_invoke_shape]
+QED
+
+Theorem subst_block_labels_block_invoke_labels[local]:
+  MEM callee
+    (simplify_cfg_block_invoke_labels
+      (subst_block_labels_block label_map bb)) <=>
+  MEM callee (simplify_cfg_block_invoke_labels bb)
+Proof
+  simp[simplify_cfg_block_invoke_labels_def,
+       cfgTransformTheory.subst_block_labels_block_def,
+       fcgBridgeTheory.mem_get_invoke_targets, MEM_MAP] >>
+  metis_tac[subst_block_labels_inst_invoke_shape]
+QED
+
+Theorem fix_all_phis_invoke_labels:
+  MEM callee (simplify_cfg_fn_invoke_labels (fix_all_phis func)) <=>
+  MEM callee (simplify_cfg_fn_invoke_labels func)
+Proof
+  simp[simplify_cfg_fn_invoke_labels_mem, fix_all_phis_def, MEM_MAP] >>
+  metis_tac[fix_phis_in_block_invoke_labels,
+            simplify_cfg_block_invoke_labels_def,
+            fcgBridgeTheory.mem_get_invoke_targets]
+QED
+
+Theorem subst_block_labels_fn_invoke_labels:
+  MEM callee
+    (simplify_cfg_fn_invoke_labels (subst_block_labels_fn label_map func)) <=>
+  MEM callee (simplify_cfg_fn_invoke_labels func)
+Proof
+  simp[simplify_cfg_fn_invoke_labels_mem,
+       cfgTransformTheory.subst_block_labels_fn_def, MEM_MAP] >>
+  metis_tac[subst_block_labels_block_invoke_labels,
+            simplify_cfg_block_invoke_labels_def,
+            fcgBridgeTheory.mem_get_invoke_targets]
+QED
+
+
+Theorem fn_remove_block_invoke_labels[local]:
+  MEM callee
+    (simplify_cfg_fn_invoke_labels
+      (func with fn_blocks := remove_block lbl func.fn_blocks)) <=>
+  ?bb. MEM bb func.fn_blocks /\ bb.bb_label <> lbl /\
+       MEM callee (simplify_cfg_block_invoke_labels bb)
+Proof
+  simp[simplify_cfg_fn_invoke_labels_mem,
+       simplify_cfg_block_invoke_labels_def,
+       fcgBridgeTheory.mem_get_invoke_targets,
+       cfgTransformTheory.remove_block_def, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem fn_replace_block_invoke_labels[local]:
+  MEM callee
+    (simplify_cfg_fn_invoke_labels
+      (func with fn_blocks := replace_block lbl replacement func.fn_blocks)) <=>
+  ?bb. MEM bb func.fn_blocks /\
+       MEM callee
+         (simplify_cfg_block_invoke_labels
+           (if bb.bb_label = lbl then replacement else bb))
+Proof
+  simp[simplify_cfg_fn_invoke_labels_mem,
+       simplify_cfg_block_invoke_labels_def,
+       fcgBridgeTheory.mem_get_invoke_targets,
+       cfgTransformTheory.replace_block_def, MEM_MAP] >>
+  metis_tac[]
+QED
+
+Theorem remove_unreachable_blocks_invoke_labels_subset:
+  MEM callee
+    (simplify_cfg_fn_invoke_labels (remove_unreachable_blocks func)) ==>
+  MEM callee (simplify_cfg_fn_invoke_labels func)
+Proof
+  Cases_on `fn_entry_label func` >>
+  simp[remove_unreachable_blocks_def,
+       simplify_cfg_fn_invoke_labels_mem, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem remove_unreachable_blocks_invoke_labels_mem:
+  fn_entry_label func = SOME entry ==>
+  (MEM callee
+     (simplify_cfg_fn_invoke_labels (remove_unreachable_blocks func)) <=>
+   ?bb. MEM bb func.fn_blocks /\ reachable func bb.bb_label /\
+        MEM callee (simplify_cfg_block_invoke_labels bb))
+Proof
+  rpt strip_tac >>
+  simp[remove_unreachable_blocks_def,
+       simplify_cfg_fn_invoke_labels_mem,
+       simplify_cfg_block_invoke_labels_def,
+       fcgBridgeTheory.mem_get_invoke_targets, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+
+Theorem mem_front_last[local]:
+  !xs item. xs <> [] ==>
+    (MEM item xs <=> MEM item (FRONT xs) \/ item = LAST xs)
+Proof
+  Induct_on `xs`
+  >- simp[] >>
+  Cases_on `xs` >> simp[] >> metis_tac[]
+QED
+
+Theorem invoke_labels_front[local]:
+  insts <> [] /\ (LAST insts).inst_opcode <> INVOKE ==>
+  (MEM callee (MAP FST (get_invoke_targets (FRONT insts))) <=>
+   MEM callee (MAP FST (get_invoke_targets insts)))
+Proof
+  rpt strip_tac >>
+  simp[fcgBridgeTheory.mem_get_invoke_targets] >>
+  eq_tac >> rpt strip_tac
+  >- (qexistsl [`inst`,`rest`] >> simp[] >>
+      metis_tac[mem_front_last]) >>
+  drule mem_front_last >> strip_tac >>
+  qexistsl [`inst`,`rest`] >> gvs[]
+QED
+
+Theorem can_merge_blocks_front_no_invoke[local]:
+  can_merge_blocks func a b ==>
+  a.bb_instructions <> [] /\
+  (LAST a.bb_instructions).inst_opcode <> INVOKE
+Proof
+  simp[can_merge_blocks_def] >> rpt strip_tac >>
+  Cases_on `a.bb_instructions`
+  >- gvs[venomInstTheory.bb_succs_def] >>
+  gvs[venomInstTheory.bb_succs_def,
+      venomInstTheory.get_successors_def,
+      venomInstTheory.is_terminator_def]
+QED
+
+Theorem merge_blocks_invoke_labels[local]:
+  can_merge_blocks func a b ==>
+  (MEM callee (simplify_cfg_block_invoke_labels (merge_blocks a b)) <=>
+   MEM callee (simplify_cfg_block_invoke_labels a) \/
+   MEM callee (simplify_cfg_block_invoke_labels b))
+Proof
+  strip_tac >>
+  drule can_merge_blocks_front_no_invoke >> strip_tac >>
+  simp[merge_blocks_def, simplify_cfg_block_invoke_labels_def,
+       simplify_cfg_invoke_labels_append] >>
+  metis_tac[invoke_labels_front]
+QED
+
+
+Theorem can_bypass_jump_no_invoke[local]:
+  can_bypass_jump func a b ==>
+  !inst. MEM inst b.bb_instructions ==> inst.inst_opcode <> INVOKE
+Proof
+  simp[can_bypass_jump_def] >> rpt strip_tac >>
+  Cases_on `b.bb_instructions` >> gvs[] >>
+  gvs[cfgTransformTheory.num_succs_def,
+      venomInstTheory.bb_succs_def,
+      venomInstTheory.get_successors_def,
+      venomInstTheory.is_terminator_def]
+QED
+
+Theorem update_phi_bypass_invoke_shape[local]:
+  (update_phi_bypass a_label b_label inst).inst_opcode = INVOKE /\
+  (update_phi_bypass a_label b_label inst).inst_operands =
+    Label callee :: operands <=>
+  inst.inst_opcode = INVOKE /\
+  inst.inst_operands = Label callee :: operands
+Proof
+  Cases_on `inst.inst_opcode` >>
+  Cases_on `MEM (Label a_label) inst.inst_operands` >>
+  simp[update_phi_bypass_def]
+QED
+
+Theorem bypass_source_inst_invoke_shape[local]:
+  ((if ~is_terminator inst.inst_opcode then inst
+     else subst_label_inst old_lbl new_lbl inst).inst_opcode = INVOKE /\
+   (if ~is_terminator inst.inst_opcode then inst
+    else subst_label_inst old_lbl new_lbl inst).inst_operands =
+      Label callee :: operands) <=>
+  inst.inst_opcode = INVOKE /\
+  inst.inst_operands = Label callee :: operands
+Proof
+  Cases_on `inst.inst_opcode` >>
+  simp[venomInstTheory.is_terminator_def,
+       cfgTransformTheory.subst_label_inst_def]
+QED
+
+Theorem update_phi_bypass_invoke_labels[local]:
+  MEM callee
+    (MAP FST (get_invoke_targets
+      (MAP (update_phi_bypass a_label b_label) insts))) <=>
+  MEM callee (MAP FST (get_invoke_targets insts))
+Proof
+  simp[fcgBridgeTheory.mem_get_invoke_targets, MEM_MAP] >>
+  metis_tac[update_phi_bypass_invoke_shape]
+QED
+
+Theorem bypass_source_invoke_labels[local]:
+  MEM callee
+    (MAP FST (get_invoke_targets
+      (MAP (\inst. if ~is_terminator inst.inst_opcode then inst
+                    else subst_label_inst old_lbl new_lbl inst) insts))) <=>
+  MEM callee (MAP FST (get_invoke_targets insts))
+Proof
+  simp[fcgBridgeTheory.mem_get_invoke_targets, MEM_MAP] >>
+  metis_tac[bypass_source_inst_invoke_shape]
+QED
+
+
+Theorem map_replace_label_absent[local]:
+  !bbs lbl replacement.
+    ~MEM lbl (MAP (\bb. bb.bb_label) bbs) ==>
+    MAP (\bb. if bb.bb_label = lbl then replacement else bb) bbs = bbs
+Proof
+  Induct_on `bbs` >> simp[]
+QED
+
+Theorem fn_replace_block_invoke_labels_preserve[local]:
+  ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs) /\
+  lookup_block lbl bbs = SOME old /\
+  (MEM callee (simplify_cfg_block_invoke_labels replacement) <=>
+   MEM callee (simplify_cfg_block_invoke_labels old)) ==>
+  (MEM callee
+     (simplify_cfg_fn_invoke_labels
+       (func with fn_blocks := replace_block lbl replacement bbs)) <=>
+   MEM callee
+     (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs)))
+Proof
+  qid_spec_tac `bbs` >> Induct_on `bbs`
+  >- simp[venomInstTheory.lookup_block_def, FIND_thm] >>
+  rpt strip_tac >>
+  fs[venomInstTheory.lookup_block_def, FIND_thm] >>
+  Cases_on `h.bb_label = lbl`
+  >- (`MAP (\bb. if bb.bb_label = h.bb_label then replacement else bb) bbs =
+       bbs` by metis_tac[map_replace_label_absent] >>
+      gvs[cfgTransformTheory.replace_block_def,
+          simplify_cfg_fn_invoke_labels_mem,
+          simplify_cfg_block_invoke_labels_def,
+          fcgBridgeTheory.mem_get_invoke_targets] >>
+      metis_tac[]) >>
+  gvs[cfgTransformTheory.replace_block_def,
+      simplify_cfg_fn_invoke_labels_mem] >>
+  metis_tac[]
+QED
+
+
+Theorem succ_phi_update_invoke_shape[local]:
+  ((if inst.inst_opcode <> PHI then inst
+     else subst_label_inst old_lbl new_lbl inst).inst_opcode = INVOKE /\
+   (if inst.inst_opcode <> PHI then inst
+    else subst_label_inst old_lbl new_lbl inst).inst_operands =
+      Label callee :: operands) <=>
+  inst.inst_opcode = INVOKE /\
+  inst.inst_operands = Label callee :: operands
+Proof
+  Cases_on `inst.inst_opcode` >>
+  simp[cfgTransformTheory.subst_label_inst_def]
+QED
+
+Theorem succ_phi_update_invoke_labels[local]:
+  MEM callee
+    (MAP FST (get_invoke_targets
+      (MAP (\inst. if inst.inst_opcode <> PHI then inst
+                    else subst_label_inst old_lbl new_lbl inst) insts))) <=>
+  MEM callee (MAP FST (get_invoke_targets insts))
+Proof
+  simp[fcgBridgeTheory.mem_get_invoke_targets, MEM_MAP] >>
+  metis_tac[succ_phi_update_invoke_shape]
+QED
+
+Theorem update_succ_phi_labels_invoke_labels[local]:
+  !succs bbs.
+    ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs) ==>
+    (MEM callee
+       (simplify_cfg_fn_invoke_labels
+         (func with fn_blocks :=
+           update_succ_phi_labels old_lbl new_lbl bbs succs)) <=>
+     MEM callee
+       (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs)))
+Proof
+  Induct_on `succs`
+  >- simp[update_succ_phi_labels_def] >>
+  rpt gen_tac >> strip_tac >>
+  simp[update_succ_phi_labels_def] >>
+  Cases_on `lookup_block h bbs` >> simp[]
+  >- (first_x_assum drule >> simp[update_succ_phi_labels_def]) >>
+  rename1 `lookup_block h bbs = SOME target` >>
+  `target.bb_label = h` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  `MEM callee
+      (simplify_cfg_block_invoke_labels
+        (target with bb_instructions :=
+          MAP (\inst. if inst.inst_opcode <> PHI then inst
+                       else subst_label_inst old_lbl new_lbl inst)
+              target.bb_instructions)) <=>
+   MEM callee (simplify_cfg_block_invoke_labels target)` by
+    simp[simplify_cfg_block_invoke_labels_def,
+         succ_phi_update_invoke_labels] >>
+  `ALL_DISTINCT
+      (MAP (\bb. bb.bb_label)
+        (replace_block h
+          (target with bb_instructions :=
+            MAP (\inst. if inst.inst_opcode <> PHI then inst
+                         else subst_label_inst old_lbl new_lbl inst)
+                target.bb_instructions) bbs))` by
+    simp[fn_labels_replace_block] >>
+  first_x_assum drule >> strip_tac >>
+  gvs[update_succ_phi_labels_def] >>
+  metis_tac[fn_replace_block_invoke_labels_preserve]
+QED
+
+
+Theorem fn_remove_block_invoke_labels_preserve[local]:
+  ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs) /\
+  lookup_block lbl bbs = SOME removed /\
+  ~MEM callee (simplify_cfg_block_invoke_labels removed) ==>
+  (MEM callee
+     (simplify_cfg_fn_invoke_labels
+       (func with fn_blocks := remove_block lbl bbs)) <=>
+   MEM callee
+     (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs)))
+Proof
+  rpt strip_tac >>
+  gvs[simplify_cfg_fn_invoke_labels_mem,
+      simplify_cfg_block_invoke_labels_def,
+      fcgBridgeTheory.mem_get_invoke_targets,
+      cfgTransformTheory.remove_block_def, MEM_FILTER] >>
+  eq_tac >> rpt strip_tac
+  >- metis_tac[] >>
+  Cases_on `bb.bb_label = lbl`
+  >- (`lookup_block lbl bbs = SOME bb` by
+        (irule venomExecPropsTheory.MEM_lookup_block >> simp[]) >>
+      gvs[]) >>
+  metis_tac[]
+QED
+
+
+Theorem do_merge_jump_metadata[local]:
+  do_merge_jump func a b label_map = SOME (func',label_map') ==>
+  fn_identity_metadata_eq func' func /\
+  fn_static_input_eq func' func /\
+  fn_static_layout_eq func' func /\
+  fn_fmp_convention_eq func' func
+Proof
+  simp[do_merge_jump_def] >>
+  rpt CASE_TAC >> gvs[] >> rpt strip_tac >>
+  gvs[venomInstTheory.fn_identity_metadata_eq_def,
+      venomInstTheory.fn_static_input_eq_def,
+      venomInstTheory.fn_static_layout_eq_def,
+      venomInstTheory.fn_fmp_convention_eq_def]
+QED
+
+Theorem fix_all_phis_metadata[local]:
+  fn_identity_metadata_eq (fix_all_phis func) func /\
+  fn_static_input_eq (fix_all_phis func) func /\
+  fn_static_layout_eq (fix_all_phis func) func /\
+  fn_fmp_convention_eq (fix_all_phis func) func
+Proof
+  simp[fix_all_phis_def, fn_blocks_update_metadata]
+QED
+
+Theorem subst_block_labels_fn_metadata[local]:
+  fn_identity_metadata_eq (subst_block_labels_fn label_map func) func /\
+  fn_static_input_eq (subst_block_labels_fn label_map func) func /\
+  fn_static_layout_eq (subst_block_labels_fn label_map func) func /\
+  fn_fmp_convention_eq (subst_block_labels_fn label_map func) func
+Proof
+  simp[cfgTransformTheory.subst_block_labels_fn_def,
+       fn_blocks_update_metadata]
+QED
+
+Theorem remove_unreachable_blocks_metadata[local]:
+  fn_identity_metadata_eq (remove_unreachable_blocks func) func /\
+  fn_static_input_eq (remove_unreachable_blocks func) func /\
+  fn_static_layout_eq (remove_unreachable_blocks func) func /\
+  fn_fmp_convention_eq (remove_unreachable_blocks func) func
+Proof
+  Cases_on `fn_entry_label func` >>
+  simp[remove_unreachable_blocks_def, fn_blocks_update_metadata,
+       venomInstTheory.fn_identity_metadata_eq_def,
+       venomInstTheory.fn_static_input_eq_def,
+       venomInstTheory.fn_static_layout_eq_def,
+       venomInstTheory.fn_fmp_convention_eq_def]
+QED
+
+
+Theorem do_merge_jump_invoke_labels[local]:
+  ALL_DISTINCT (fn_labels func) /\
+  lookup_block a.bb_label func.fn_blocks = SOME a /\
+  lookup_block b.bb_label func.fn_blocks = SOME b /\
+  can_bypass_jump func a b /\
+  do_merge_jump func a b label_map = SOME (func',label_map') ==>
+  (MEM callee (simplify_cfg_fn_invoke_labels func') <=>
+   MEM callee (simplify_cfg_fn_invoke_labels func))
+Proof
+  rpt strip_tac >>
+  fs[do_merge_jump_def] >>
+  Cases_on `bb_succs b` >> gvs[] >>
+  Cases_on `t` >> gvs[] >>
+  rename1 `bb_succs b = [target_lbl]` >>
+  Cases_on `lookup_block target_lbl func.fn_blocks` >> gvs[] >>
+  rename1 `lookup_block target_lbl func.fn_blocks = SOME target` >>
+  `target.bb_label = target_lbl` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  `b.bb_label <> target_lbl` by
+    metis_tac[can_bypass_jump_target_distinct] >>
+  `a.bb_label <> b.bb_label` by
+    (strip_tac >>
+     `a = b` by gvs[] >>
+     gvs[can_bypass_jump_def]) >>
+  `~MEM callee (simplify_cfg_block_invoke_labels b)` by
+    (simp[simplify_cfg_block_invoke_labels_def,
+          fcgBridgeTheory.mem_get_invoke_targets] >>
+     metis_tac[can_bypass_jump_no_invoke]) >>
+  qabbrev_tac `bbs0 = remove_block b.bb_label func.fn_blocks` >>
+  qabbrev_tac `target' = target with bb_instructions :=
+    MAP (update_phi_bypass a.bb_label b.bb_label) target.bb_instructions` >>
+  qabbrev_tac `bbs1 = replace_block target_lbl target' bbs0` >>
+  qabbrev_tac `a' = a with bb_instructions :=
+    MAP (\inst. if ~is_terminator inst.inst_opcode then inst
+                  else subst_label_inst b.bb_label target_lbl inst)
+        a.bb_instructions` >>
+  `MEM callee (simplify_cfg_block_invoke_labels target') <=>
+   MEM callee (simplify_cfg_block_invoke_labels target)` by
+    simp[Abbr `target'`, simplify_cfg_block_invoke_labels_def,
+         update_phi_bypass_invoke_labels] >>
+  `MEM callee (simplify_cfg_block_invoke_labels a') <=>
+   MEM callee (simplify_cfg_block_invoke_labels a)` by
+    simp[Abbr `a'`, simplify_cfg_block_invoke_labels_def,
+         bypass_source_invoke_labels] >>
+  `ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs0)` by
+    simp[Abbr `bbs0`, cfgTransformPropsTheory.ALL_DISTINCT_remove_block,
+         GSYM venomInstTheory.fn_labels_def] >>
+  `lookup_block target_lbl bbs0 = SOME target` by
+    simp[Abbr `bbs0`, cfgTransformPropsTheory.lookup_block_remove_neq] >>
+  `lookup_block a.bb_label bbs0 = SOME a` by
+    simp[Abbr `bbs0`, cfgTransformPropsTheory.lookup_block_remove_neq] >>
+  `target'.bb_label = target_lbl` by simp[Abbr `target'`] >>
+  `ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs1)` by
+    simp[Abbr `bbs1`, fn_labels_replace_block] >>
+  `lookup_block a.bb_label bbs1 =
+   (if a.bb_label = target_lbl then SOME target' else SOME a)` by
+    (Cases_on `a.bb_label = target_lbl`
+     >- simp[Abbr `bbs1`, cfgTransformPropsTheory.lookup_block_replace_eq] >>
+     simp[Abbr `bbs1`, cfgTransformPropsTheory.lookup_block_replace_neq]) >>
+  `MEM callee
+      (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs0)) <=>
+   MEM callee
+      (simplify_cfg_fn_invoke_labels
+        (func with fn_blocks := func.fn_blocks))` by
+    (simp[Abbr `bbs0`] >>
+     irule fn_remove_block_invoke_labels_preserve >>
+     simp[GSYM venomInstTheory.fn_labels_def]) >>
+  `MEM callee
+      (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1)) <=>
+   MEM callee
+      (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs0))` by
+    metis_tac[fn_replace_block_invoke_labels_preserve] >>
+  Cases_on `a.bb_label = target_lbl`
+  >- (`a = target` by gvs[] >>
+      `MEM callee (simplify_cfg_block_invoke_labels a') <=>
+       MEM callee (simplify_cfg_block_invoke_labels target')` by
+        metis_tac[] >>
+      `MEM callee
+          (simplify_cfg_fn_invoke_labels
+            (func with fn_blocks := replace_block a.bb_label a' bbs1)) <=>
+       MEM callee
+          (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1))` by
+        (irule fn_replace_block_invoke_labels_preserve >> simp[]) >>
+      gvs[simplify_cfg_fn_invoke_labels_def,
+          fcgDefsTheory.fcg_scan_function_def,
+          venomInstTheory.fn_insts_def]) >>
+  `MEM callee
+      (simplify_cfg_fn_invoke_labels
+        (func with fn_blocks := replace_block a.bb_label a' bbs1)) <=>
+   MEM callee
+      (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1))` by
+    (irule fn_replace_block_invoke_labels_preserve >> simp[]) >>
+  gvs[Abbr `bbs1`, simplify_cfg_fn_invoke_labels_def,
+      fcgDefsTheory.fcg_scan_function_def,
+      venomInstTheory.fn_insts_def]
+QED
+
+
+Theorem try_bypass_invoke_labels[local]:
+  !succs func incoming bb func' outgoing success.
+    ALL_DISTINCT (fn_labels func) /\
+    lookup_block bb.bb_label func.fn_blocks = SOME bb /\
+    try_bypass func incoming bb succs = (func',outgoing,success) ==>
+    (MEM callee (simplify_cfg_fn_invoke_labels func') <=>
+     MEM callee (simplify_cfg_fn_invoke_labels func))
+Proof
+  Induct_on `succs`
+  >- simp[try_bypass_def] >>
+  rpt strip_tac >>
+  gvs[Once try_bypass_def, AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[]) >>
+  `next_bb.bb_label = h` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  metis_tac[do_merge_jump_invoke_labels]
+QED
+
+
+Theorem try_bypass_metadata[local]:
+  !succs func incoming bb func' outgoing success.
+    try_bypass func incoming bb succs = (func',outgoing,success) ==>
+    fn_identity_metadata_eq func' func /\
+    fn_static_input_eq func' func /\
+    fn_static_layout_eq func' func /\
+    fn_fmp_convention_eq func' func
+Proof
+  Induct_on `succs`
+  >- simp[try_bypass_def,
+          venomInstTheory.fn_identity_metadata_eq_def,
+          venomInstTheory.fn_static_input_eq_def,
+          venomInstTheory.fn_static_layout_eq_def,
+          venomInstTheory.fn_fmp_convention_eq_def] >>
+  rpt strip_tac >>
+  gvs[Once try_bypass_def, AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[]) >>
+  metis_tac[do_merge_jump_metadata]
 QED
