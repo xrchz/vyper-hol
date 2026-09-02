@@ -1492,6 +1492,64 @@ Proof
   metis_tac[succ_phi_update_invoke_shape]
 QED
 
+Theorem update_succ_phi_labels_invoke_subset[local]:
+  !succs bbs callee.
+    MEM callee
+      (simplify_cfg_fn_invoke_labels
+        (func with fn_blocks :=
+          update_succ_phi_labels old_lbl new_lbl bbs succs)) ==>
+    MEM callee
+      (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs))
+Proof
+  Induct_on `succs`
+  >- simp[update_succ_phi_labels_def] >>
+  rpt gen_tac >>
+  simp[update_succ_phi_labels_def] >>
+  Cases_on `lookup_block h bbs` >> simp[]
+  >- (qpat_x_assum `!bbs callee. _`
+        (qspecl_then [`bbs`,`callee`] mp_tac) >>
+      simp[update_succ_phi_labels_def]) >>
+  rename1 `lookup_block h bbs = SOME target` >>
+  qabbrev_tac
+    `bbs' = replace_block h
+      (target with bb_instructions :=
+        MAP (\inst. if inst.inst_opcode <> PHI then inst
+                     else subst_label_inst old_lbl new_lbl inst)
+            target.bb_instructions) bbs` >>
+  `MEM target bbs` by
+    metis_tac[venomExecPropsTheory.lookup_block_MEM] >>
+  `MEM callee
+      (simplify_cfg_block_invoke_labels
+        (target with bb_instructions :=
+          MAP (\inst. if inst.inst_opcode <> PHI then inst
+                       else subst_label_inst old_lbl new_lbl inst)
+              target.bb_instructions)) <=>
+   MEM callee (simplify_cfg_block_invoke_labels target)` by
+    simp[simplify_cfg_block_invoke_labels_def,
+         succ_phi_update_invoke_labels] >>
+  qpat_x_assum `!bbs callee. _`
+    (qspecl_then [`bbs'`,`callee`] mp_tac) >>
+  simp[update_succ_phi_labels_def] >>
+  simp[Abbr `bbs'`, fn_replace_block_invoke_labels] >>
+  rpt strip_tac >>
+  first_x_assum drule >> strip_tac >>
+  fs[simplify_cfg_fn_invoke_labels_mem,
+     simplify_cfg_block_invoke_labels_def,
+     fcgBridgeTheory.mem_get_invoke_targets,
+     cfgTransformTheory.replace_block_def, MEM_MAP] >>
+  qpat_x_assum `MEM bb (FOLDL _ _ _)` kall_tac >>
+  qpat_x_assum `MEM inst bb.bb_instructions` kall_tac >>
+  qpat_x_assum `inst.inst_opcode = INVOKE` kall_tac >>
+  qpat_x_assum `inst.inst_operands = _` kall_tac >>
+  Cases_on `bb''.bb_label = h` >> gvs[]
+  >- (qexists `target` >> simp[] >>
+      qpat_x_assum `(_ <=> _)` (fn th => irule (iffLR th)) >>
+      qexistsl [`inst'`,`operands'`] >> simp[] >>
+      qpat_x_assum `MEM inst' (MAP _ _)` mp_tac >>
+      simp[MEM_MAP]) >>
+  qexistsl [`bb'`,`inst'`,`operands'`] >> simp[]
+QED
+
 Theorem update_succ_phi_labels_invoke_labels[local]:
   !succs bbs.
     ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs) ==>
