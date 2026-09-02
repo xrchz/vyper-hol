@@ -2397,873 +2397,490 @@ Proof
   simp[simplify_cfg_fn_def]
 QED
 
-Definition simplify_cfg_duplicate_label_func_def:
-  simplify_cfg_duplicate_label_func = mk_raw_function "f"
-    [<| bb_label := "e";
-        bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>;
-     <| bb_label := "x";
-        bb_instructions := [mk_inst 1 STOP [] []] |>;
-     <| bb_label := "x";
-        bb_instructions := [mk_inst 2 INVOKE [Label "callee"] []] |>]
-End
-
-Theorem simplify_cfg_duplicate_label_edge[local]:
-  fn_cfg_edge simplify_cfg_duplicate_label_func "e" "x"
-Proof
-  simp[venomWfTheory.fn_cfg_edge_def] >>
-  qexists `<| bb_label := "e";
-              bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>` >>
-  simp[simplify_cfg_duplicate_label_func_def,
-       venomInstTheory.mk_raw_function_def, venomInstTheory.mk_inst_def,
-       venomInstTheory.bb_succs_def, venomInstTheory.get_successors_def,
-       venomInstTheory.is_terminator_def, venomStateTheory.get_label_def,
-       listTheory.nub_def]
-QED
-
-Theorem simplify_cfg_duplicate_label_entry[local]:
-  fn_entry_label simplify_cfg_duplicate_label_func = SOME "e"
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_duplicate_label_reachable_labels[local]:
-  fn_reachable simplify_cfg_duplicate_label_func "e" /\
-  fn_reachable simplify_cfg_duplicate_label_func "x"
-Proof
-  conj_tac
-  >- simp[venomWfTheory.fn_reachable_def,
-          simplify_cfg_duplicate_label_entry, relationTheory.RTC_REFL] >>
-  simp[venomWfTheory.fn_reachable_def,
-       simplify_cfg_duplicate_label_entry] >>
-  irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
-  qexists `"x"` >>
-  simp[simplify_cfg_duplicate_label_edge, relationTheory.RTC_REFL]
-QED
-
-Theorem simplify_cfg_duplicate_label_member_label[local]:
-  MEM bb simplify_cfg_duplicate_label_func.fn_blocks ==>
-  bb.bb_label = "e" \/ bb.bb_label = "x"
-Proof
-  simp[simplify_cfg_duplicate_label_func_def,
-       venomInstTheory.mk_raw_function_def] >>
-  strip_tac >> gvs[]
-QED
-
-Theorem simplify_cfg_duplicate_label_all_reachable[local]:
-  all_reachable simplify_cfg_duplicate_label_func
-Proof
-  rw[cfgWfTheory.all_reachable_def] >>
-  drule simplify_cfg_duplicate_label_member_label >>
-  strip_tac >> gvs[simplify_cfg_duplicate_label_reachable_labels]
-QED
-
-Theorem simplify_cfg_duplicate_label_has_call[local]:
-  MEM "callee"
-    (simplify_cfg_fn_invoke_labels simplify_cfg_duplicate_label_func)
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_duplicate_label_fn_succ[local]:
-  fn_succ simplify_cfg_duplicate_label_func "e" "x"
-Proof
-  simp[cfgTransformTheory.fn_succ_def] >>
-  qexists `<| bb_label := "e";
-              bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>` >>
-  simp[simplify_cfg_duplicate_label_func_def,
-       venomInstTheory.mk_raw_function_def, venomInstTheory.mk_inst_def,
-       venomInstTheory.lookup_block_def,
-       venomInstTheory.bb_succs_def, venomInstTheory.get_successors_def,
-       venomInstTheory.is_terminator_def, venomStateTheory.get_label_def,
-       listTheory.nub_def] >> EVAL_TAC
-QED
-
-Theorem simplify_cfg_duplicate_label_reachable[local]:
-  reachable simplify_cfg_duplicate_label_func "e" /\
-  reachable simplify_cfg_duplicate_label_func "x"
-Proof
-  conj_tac
-  >- simp[cfgTransformTheory.reachable_def,
-          simplify_cfg_duplicate_label_entry, relationTheory.RTC_REFL] >>
-  simp[cfgTransformTheory.reachable_def,
-       simplify_cfg_duplicate_label_entry] >>
-  irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
-  qexists `"x"` >>
-  simp[simplify_cfg_duplicate_label_fn_succ, relationTheory.RTC_REFL]
-QED
-
-Theorem simplify_cfg_duplicate_label_remove_unreachable[local]:
-  remove_unreachable_blocks simplify_cfg_duplicate_label_func =
-  simplify_cfg_duplicate_label_func
-Proof
-  mp_tac simplify_cfg_duplicate_label_reachable >> strip_tac >>
-  gvs[remove_unreachable_blocks_def, simplify_cfg_duplicate_label_entry,
-      simplify_cfg_duplicate_label_func_def,
-      venomInstTheory.mk_raw_function_def]
-QED
-
-Theorem simplify_cfg_duplicate_label_fix_all_phis[local]:
-  fix_all_phis simplify_cfg_duplicate_label_func =
-  simplify_cfg_duplicate_label_func
-Proof
-  EVAL_TAC
-QED
-
-
-Definition simplify_cfg_duplicate_label_result_def:
-  simplify_cfg_duplicate_label_result = mk_raw_function "f"
-    [<| bb_label := "e";
+(* Executable acceptance fixtures.  The function pass changes code only and
+   returns replacement evidence; the unit operation consumes that evidence to
+   rewrite data references atomically with any remaining code references. *)
+Definition simplify_cfg_direct_fixture_def:
+  simplify_cfg_direct_fixture = mk_raw_function "f"
+    [<| bb_label := "old";
+        bb_instructions := [mk_inst 0 JMP [Label "new"] []] |>;
+     <| bb_label := "new";
         bb_instructions := [mk_inst 1 STOP [] []] |>]
 End
 
-Theorem simplify_cfg_duplicate_label_result_lookup[local]:
-  lookup_block "e" simplify_cfg_duplicate_label_result.fn_blocks =
-  SOME <| bb_label := "e";
-          bb_instructions := [mk_inst 1 STOP [] []] |>
-Proof
-  EVAL_TAC
-QED
+Definition simplify_cfg_direct_result_def:
+  simplify_cfg_direct_result = mk_raw_function "f"
+    [<| bb_label := "old";
+        bb_instructions := [mk_inst 1 STOP [] []] |>]
+End
 
-Theorem simplify_cfg_duplicate_label_result_succs[local]:
-  bb_succs <| bb_label := "e";
-              bb_instructions := [mk_inst 1 STOP [] []] |> = []
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_duplicate_label_result_succs_empty[local]:
-  collapse_dfs_succs simplify_cfg_duplicate_label_result
-    [("x","e")] ["e"] [] =
-  (simplify_cfg_duplicate_label_result, [("x","e")], ["e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
-QED
-
-Theorem simplify_cfg_duplicate_label_result_collapse[local]:
-  collapse_dfs simplify_cfg_duplicate_label_result
-    [("x","e")] [] "e" =
-  (simplify_cfg_duplicate_label_result, [("x","e")], ["e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_duplicate_label_result_lookup,
-       simplify_cfg_duplicate_label_result_succs,
-       try_bypass_def,
-       simplify_cfg_duplicate_label_result_succs_empty]
-QED
-
-Theorem simplify_cfg_duplicate_label_initial_facts[local]:
-  lookup_block "e" simplify_cfg_duplicate_label_func.fn_blocks =
-    SOME <| bb_label := "e";
-            bb_instructions := [mk_inst 0 JMP [Label "x"] []] |> /\
-  bb_succs <| bb_label := "e";
-              bb_instructions := [mk_inst 0 JMP [Label "x"] []] |> = ["x"] /\
-  lookup_block "x" simplify_cfg_duplicate_label_func.fn_blocks =
-    SOME <| bb_label := "x";
+Theorem simplify_cfg_direct_basic_facts[local]:
+  fn_entry_label simplify_cfg_direct_fixture = SOME "old" /\
+  fix_all_phis simplify_cfg_direct_fixture = simplify_cfg_direct_fixture /\
+  lookup_block "old" simplify_cfg_direct_fixture.fn_blocks =
+    SOME <| bb_label := "old";
+            bb_instructions := [mk_inst 0 JMP [Label "new"] []] |> /\
+  lookup_block "new" simplify_cfg_direct_fixture.fn_blocks =
+    SOME <| bb_label := "new";
             bb_instructions := [mk_inst 1 STOP [] []] |> /\
-  can_merge_blocks simplify_cfg_duplicate_label_func
-    <| bb_label := "e";
-       bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>
-    <| bb_label := "x";
+  bb_succs <| bb_label := "old";
+              bb_instructions := [mk_inst 0 JMP [Label "new"] []] |> =
+    ["new"] /\
+  can_merge_blocks simplify_cfg_direct_fixture
+    <| bb_label := "old";
+       bb_instructions := [mk_inst 0 JMP [Label "new"] []] |>
+    <| bb_label := "new";
        bb_instructions := [mk_inst 1 STOP [] []] |>
 Proof
   EVAL_TAC
 QED
 
-Theorem simplify_cfg_duplicate_label_merge_step[local]:
-  (simplify_cfg_duplicate_label_func with fn_blocks :=
-    update_succ_phi_labels "x" "e"
-      (replace_block "e"
+Theorem simplify_cfg_direct_edge[local]:
+  fn_succ simplify_cfg_direct_fixture "old" "new"
+Proof
+  simp[cfgTransformTheory.fn_succ_def] >>
+  qexists `<| bb_label := "old";
+              bb_instructions := [mk_inst 0 JMP [Label "new"] []] |>` >>
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_direct_reachable[local]:
+  reachable simplify_cfg_direct_fixture "old" /\
+  reachable simplify_cfg_direct_fixture "new"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       simplify_cfg_direct_basic_facts, relationTheory.RTC_REFL] >>
+  irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
+  qexists `"new"` >>
+  simp[simplify_cfg_direct_edge, relationTheory.RTC_REFL]
+QED
+
+Theorem simplify_cfg_direct_remove_unreachable[local]:
+  remove_unreachable_blocks simplify_cfg_direct_fixture =
+  simplify_cfg_direct_fixture
+Proof
+  mp_tac simplify_cfg_direct_reachable >> strip_tac >>
+  gvs[remove_unreachable_blocks_def, simplify_cfg_direct_basic_facts,
+      simplify_cfg_direct_fixture_def, venomInstTheory.mk_raw_function_def]
+QED
+
+Theorem simplify_cfg_direct_merge_step[local]:
+  (simplify_cfg_direct_fixture with fn_blocks :=
+    update_succ_phi_labels "new" "old"
+      (replace_block "old"
         (merge_blocks
-          <| bb_label := "e";
-             bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>
-          <| bb_label := "x";
+          <| bb_label := "old";
+             bb_instructions := [mk_inst 0 JMP [Label "new"] []] |>
+          <| bb_label := "new";
              bb_instructions := [mk_inst 1 STOP [] []] |>)
-        (remove_block "x" simplify_cfg_duplicate_label_func.fn_blocks))
+        (remove_block "new" simplify_cfg_direct_fixture.fn_blocks))
       (bb_succs
         (merge_blocks
-          <| bb_label := "e";
-             bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>
-          <| bb_label := "x";
+          <| bb_label := "old";
+             bb_instructions := [mk_inst 0 JMP [Label "new"] []] |>
+          <| bb_label := "new";
              bb_instructions := [mk_inst 1 STOP [] []] |>))) =
-  simplify_cfg_duplicate_label_result
+  simplify_cfg_direct_result
 Proof
   EVAL_TAC
 QED
 
-Theorem simplify_cfg_duplicate_label_collapse[local]:
-  collapse_dfs simplify_cfg_duplicate_label_func [] [] "e" =
-  (simplify_cfg_duplicate_label_result, [("x","e")], ["e"])
+Theorem simplify_cfg_direct_result_facts[local]:
+  fn_entry_label simplify_cfg_direct_result = SOME "old" /\
+  lookup_block "old" simplify_cfg_direct_result.fn_blocks =
+    SOME <| bb_label := "old";
+            bb_instructions := [mk_inst 1 STOP [] []] |> /\
+  bb_succs <| bb_label := "old";
+              bb_instructions := [mk_inst 1 STOP [] []] |> = [] /\
+  subst_block_labels_fn [("new","old")] simplify_cfg_direct_result =
+    simplify_cfg_direct_result /\
+  fix_all_phis simplify_cfg_direct_result = simplify_cfg_direct_result
 Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_duplicate_label_initial_facts] >>
-  pure_once_rewrite_tac[simplify_cfg_duplicate_label_merge_step] >>
-  simp[simplify_cfg_duplicate_label_result_collapse]
+  EVAL_TAC
 QED
 
-
-Theorem simplify_cfg_duplicate_label_result_reachable[local]:
-  reachable simplify_cfg_duplicate_label_result "e"
+Theorem simplify_cfg_direct_result_reachable[local]:
+  reachable simplify_cfg_direct_result "old"
 Proof
   simp[cfgTransformTheory.reachable_def,
-       simplify_cfg_duplicate_label_result_def,
-       venomInstTheory.mk_raw_function_def,
-       venomInstTheory.fn_entry_label_def, venomInstTheory.entry_block_def,
-       relationTheory.RTC_REFL]
+       simplify_cfg_direct_result_facts, relationTheory.RTC_REFL]
 QED
 
-Theorem simplify_cfg_duplicate_label_result_stages[local]:
-  subst_block_labels_fn [("x","e")] simplify_cfg_duplicate_label_result =
-    simplify_cfg_duplicate_label_result /\
-  remove_unreachable_blocks simplify_cfg_duplicate_label_result =
-    simplify_cfg_duplicate_label_result /\
-  fix_all_phis simplify_cfg_duplicate_label_result =
-    simplify_cfg_duplicate_label_result
+Theorem simplify_cfg_direct_result_remove_unreachable[local]:
+  remove_unreachable_blocks simplify_cfg_direct_result =
+  simplify_cfg_direct_result
 Proof
-  conj_tac >- EVAL_TAC >>
-  conj_tac
-  >- (mp_tac simplify_cfg_duplicate_label_result_reachable >> strip_tac >>
-      gvs[remove_unreachable_blocks_def,
-          simplify_cfg_duplicate_label_result_def,
-          venomInstTheory.mk_raw_function_def,
-          venomInstTheory.fn_entry_label_def,
-          venomInstTheory.entry_block_def]) >>
-  EVAL_TAC
+  mp_tac simplify_cfg_direct_result_reachable >>
+  gvs[remove_unreachable_blocks_def, simplify_cfg_direct_result_facts,
+      simplify_cfg_direct_result_def, venomInstTheory.mk_raw_function_def]
 QED
 
-Theorem simplify_cfg_duplicate_label_round[local]:
-  simplify_cfg_round_with_labels simplify_cfg_duplicate_label_func =
-  (simplify_cfg_duplicate_label_result, [("x","e")])
+Theorem simplify_cfg_direct_collapse[local]:
+  collapse_dfs simplify_cfg_direct_fixture [] [] "old" =
+    (simplify_cfg_direct_result,[("new","old")],["old"])
 Proof
-  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
-  simp[simplify_cfg_duplicate_label_entry,
-       simplify_cfg_duplicate_label_remove_unreachable,
-       simplify_cfg_duplicate_label_fix_all_phis,
-       simplify_cfg_duplicate_label_collapse,
-       simplify_cfg_duplicate_label_result_stages]
-QED
-
-
-Theorem simplify_cfg_duplicate_label_result_succs_empty_nil[local]:
-  collapse_dfs_succs simplify_cfg_duplicate_label_result [] ["e"] [] =
-  (simplify_cfg_duplicate_label_result, [], ["e"])
-Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_direct_basic_facts] >>
+  pure_once_rewrite_tac[simplify_cfg_direct_merge_step] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_direct_result_facts, try_bypass_def] >>
   pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
 QED
 
-Theorem simplify_cfg_duplicate_label_result_collapse_nil[local]:
-  collapse_dfs simplify_cfg_duplicate_label_result [] [] "e" =
-  (simplify_cfg_duplicate_label_result, [], ["e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_duplicate_label_result_lookup,
-       simplify_cfg_duplicate_label_result_succs,
-       try_bypass_def,
-       simplify_cfg_duplicate_label_result_succs_empty_nil]
-QED
-
-Theorem simplify_cfg_duplicate_label_result_entry[local]:
-  fn_entry_label simplify_cfg_duplicate_label_result = SOME "e"
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_duplicate_label_result_round[local]:
-  simplify_cfg_round_with_labels simplify_cfg_duplicate_label_result =
-  (simplify_cfg_duplicate_label_result, [])
+Theorem simplify_cfg_direct_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_direct_fixture =
+    (simplify_cfg_direct_result,[("new","old")])
 Proof
   pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
-  simp[simplify_cfg_duplicate_label_result_entry,
-       simplify_cfg_duplicate_label_result_stages,
-       simplify_cfg_duplicate_label_result_collapse_nil]
+  simp[simplify_cfg_direct_basic_facts,
+       simplify_cfg_direct_remove_unreachable,
+       simplify_cfg_direct_collapse,
+       simplify_cfg_direct_result_facts,
+       simplify_cfg_direct_result_remove_unreachable]
 QED
 
-Theorem simplify_cfg_duplicate_label_result_iter_suc[local]:
-  !n. simplify_cfg_iter_with_labels (SUC n)
-    simplify_cfg_duplicate_label_result =
-  (simplify_cfg_duplicate_label_result, [])
+Theorem simplify_cfg_direct_result_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_direct_result =
+    (simplify_cfg_direct_result,[])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  simp[simplify_cfg_direct_result_facts,
+       simplify_cfg_direct_result_remove_unreachable] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_direct_result_facts, try_bypass_def] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >> simp[] >>
+  simp[simplify_cfg_direct_result_remove_unreachable,
+       simplify_cfg_direct_result_facts]
+QED
+
+Theorem simplify_cfg_direct_length[local]:
+  LENGTH simplify_cfg_direct_fixture.fn_blocks = 2
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_direct_blocks_changed[local]:
+  simplify_cfg_direct_result.fn_blocks <>
+  simplify_cfg_direct_fixture.fn_blocks
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_direct_result_iter_suc[local]:
+  !n. simplify_cfg_iter_with_labels (SUC n) simplify_cfg_direct_result =
+    (simplify_cfg_direct_result,[])
 Proof
   gen_tac >> pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
-  simp[simplify_cfg_duplicate_label_result_round]
+  simp[simplify_cfg_direct_result_round]
 QED
 
-Theorem simplify_cfg_duplicate_label_result_iter_two[local]:
-  simplify_cfg_iter_with_labels 2 simplify_cfg_duplicate_label_result =
-  (simplify_cfg_duplicate_label_result, [])
+Theorem simplify_cfg_direct_iter_eval[local]:
+  simplify_cfg_iter_with_labels (SUC 1) simplify_cfg_direct_fixture =
+    (simplify_cfg_direct_result,[("new","old")])
 Proof
-  qspec_then `1` mp_tac simplify_cfg_duplicate_label_result_iter_suc >>
-  simp[]
-QED
-
-Theorem simplify_cfg_duplicate_label_blocks_changed[local]:
-  simplify_cfg_duplicate_label_result.fn_blocks <>
-  simplify_cfg_duplicate_label_func.fn_blocks
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_duplicate_label_iter_suc_two[local]:
-  simplify_cfg_iter_with_labels (SUC 2)
-    simplify_cfg_duplicate_label_func =
-  (simplify_cfg_duplicate_label_result, [("x","e")])
-Proof
+  `simplify_cfg_iter_with_labels 1 simplify_cfg_direct_result =
+   (simplify_cfg_direct_result,[])` by
+    (qspec_then `0` mp_tac simplify_cfg_direct_result_iter_suc >> simp[]) >>
   pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
-  simp[simplify_cfg_duplicate_label_round,
-       simplify_cfg_duplicate_label_blocks_changed,
-       simplify_cfg_duplicate_label_result_iter_two]
+  simp[simplify_cfg_direct_round, simplify_cfg_direct_blocks_changed]
 QED
 
-Theorem simplify_cfg_duplicate_label_length[local]:
-  LENGTH simplify_cfg_duplicate_label_func.fn_blocks = 3
+Theorem simplify_cfg_direct_iter_two[local]:
+  simplify_cfg_iter_with_labels 2 simplify_cfg_direct_fixture =
+    (simplify_cfg_direct_result,[("new","old")])
+Proof
+  mp_tac simplify_cfg_direct_iter_eval >> simp[]
+QED
+
+Theorem simplify_cfg_direct_collapse_eval:
+  simplify_cfg_fn_with_labels simplify_cfg_direct_fixture =
+    (simplify_cfg_direct_result, [("new","old")]) /\
+  simplify_cfg_fn simplify_cfg_direct_fixture = simplify_cfg_direct_result
+Proof
+  simp[simplify_cfg_fn_with_labels_def, simplify_cfg_fn_def,
+       simplify_cfg_direct_length, simplify_cfg_direct_iter_two]
+QED
+
+Definition simplify_cfg_chain_fixture_def:
+  simplify_cfg_chain_fixture = mk_raw_function "f"
+    [<| bb_label := "old";
+        bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |>;
+     <| bb_label := "mid";
+        bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>;
+     <| bb_label := "new";
+        bb_instructions := [mk_inst 2 STOP [] []] |>]
+End
+
+Definition simplify_cfg_chain_result_def:
+  simplify_cfg_chain_result = mk_raw_function "f"
+    [<| bb_label := "old";
+        bb_instructions := [mk_inst 2 STOP [] []] |>]
+End
+
+Definition simplify_cfg_chain_intermediate_def:
+  simplify_cfg_chain_intermediate = mk_raw_function "f"
+    [<| bb_label := "old";
+        bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>;
+     <| bb_label := "new";
+        bb_instructions := [mk_inst 2 STOP [] []] |>]
+End
+
+Theorem simplify_cfg_chain_basic_facts[local]:
+  fn_entry_label simplify_cfg_chain_fixture = SOME "old" /\
+  fix_all_phis simplify_cfg_chain_fixture = simplify_cfg_chain_fixture /\
+  lookup_block "old" simplify_cfg_chain_fixture.fn_blocks =
+    SOME <| bb_label := "old";
+            bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |> /\
+  lookup_block "mid" simplify_cfg_chain_fixture.fn_blocks =
+    SOME <| bb_label := "mid";
+            bb_instructions := [mk_inst 1 JMP [Label "new"] []] |> /\
+  bb_succs <| bb_label := "old";
+              bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |> = ["mid"] /\
+  can_merge_blocks simplify_cfg_chain_fixture
+    <| bb_label := "old";
+       bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |>
+    <| bb_label := "mid";
+       bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>
 Proof
   EVAL_TAC
 QED
 
-Theorem simplify_cfg_duplicate_label_fn_result[local]:
-  simplify_cfg_fn_with_labels simplify_cfg_duplicate_label_func =
-  (simplify_cfg_duplicate_label_result, [("x","e")])
+Theorem simplify_cfg_chain_edges[local]:
+  fn_succ simplify_cfg_chain_fixture "old" "mid" /\
+  fn_succ simplify_cfg_chain_fixture "mid" "new"
 Proof
-  simp[simplify_cfg_fn_with_labels_def,
-       simplify_cfg_duplicate_label_length] >>
-  mp_tac simplify_cfg_duplicate_label_iter_suc_two >> simp[]
-QED
-
-Theorem simplify_cfg_duplicate_label_result_has_no_call[local]:
-  ~MEM "callee"
-    (simplify_cfg_fn_invoke_labels simplify_cfg_duplicate_label_result)
-Proof
+  conj_tac
+  >- (simp[cfgTransformTheory.fn_succ_def] >>
+      qexists `<| bb_label := "old";
+                  bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |>` >>
+      EVAL_TAC) >>
+  simp[cfgTransformTheory.fn_succ_def] >>
+  qexists `<| bb_label := "mid";
+              bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>` >>
   EVAL_TAC
 QED
 
-Theorem simplify_cfg_all_reachable_duplicate_label_counterexample:
-  all_reachable simplify_cfg_duplicate_label_func /\
-  MEM "callee" (simplify_cfg_fn_invoke_labels simplify_cfg_duplicate_label_func) /\
-  ~MEM "callee"
-    (simplify_cfg_fn_invoke_labels
-      (FST (simplify_cfg_fn_with_labels simplify_cfg_duplicate_label_func)))
-Proof
-  simp[simplify_cfg_duplicate_label_all_reachable,
-       simplify_cfg_duplicate_label_has_call,
-       simplify_cfg_duplicate_label_fn_result,
-       simplify_cfg_duplicate_label_result_has_no_call]
-QED
-
-
-(* Unique-label entry-cycle probe: collapsing c -> e removes the original
-   entry block, so the final unreachable-block pass may lose the merged call.
-   The duplicate terminators make the no-PHI instruction lists palindromic;
-   fix_all_phis' accumulator-based PARTITION therefore leaves them unchanged. *)
-Definition simplify_cfg_entry_cycle_e_def:
-  simplify_cfg_entry_cycle_e =
-    <| bb_label := "e";
-       bb_instructions :=
-         [mk_inst 1 JNZ [Label "d"; Label "c"] [];
-          mk_inst 0 INVOKE [Label "callee"] [];
-          mk_inst 1 JNZ [Label "d"; Label "c"] []] |>
-End
-
-Definition simplify_cfg_entry_cycle_d_def:
-  simplify_cfg_entry_cycle_d =
-    <| bb_label := "d";
-       bb_instructions := [mk_inst 2 STOP [] []] |>
-End
-
-Definition simplify_cfg_entry_cycle_c_def:
-  simplify_cfg_entry_cycle_c =
-    <| bb_label := "c";
-       bb_instructions :=
-         [mk_inst 4 JMP [Label "e"] [];
-          mk_inst 4 JMP [Label "e"] []] |>
-End
-
-Definition simplify_cfg_entry_cycle_func_def:
-  simplify_cfg_entry_cycle_func = mk_raw_function "f"
-    [simplify_cfg_entry_cycle_e;
-     simplify_cfg_entry_cycle_d;
-     simplify_cfg_entry_cycle_c]
-End
-
-Theorem simplify_cfg_entry_cycle_basic_facts[local]:
-  ALL_DISTINCT (fn_labels simplify_cfg_entry_cycle_func) /\
-  fn_entry_label simplify_cfg_entry_cycle_func = SOME "e" /\
-  MEM "callee"
-    (simplify_cfg_fn_invoke_labels simplify_cfg_entry_cycle_func) /\
-  bb_succs simplify_cfg_entry_cycle_e = ["c";"d"] /\
-  bb_succs simplify_cfg_entry_cycle_c = ["e"]
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_entry_cycle_edges[local]:
-  fn_cfg_edge simplify_cfg_entry_cycle_func "e" "c" /\
-  fn_cfg_edge simplify_cfg_entry_cycle_func "e" "d" /\
-  fn_cfg_edge simplify_cfg_entry_cycle_func "c" "e"
-Proof
-  simp[venomWfTheory.fn_cfg_edge_def] >> rpt conj_tac
-  >- (qexists `simplify_cfg_entry_cycle_e` >>
-      simp[simplify_cfg_entry_cycle_func_def,
-           simplify_cfg_entry_cycle_e_def,
-           simplify_cfg_entry_cycle_d_def,
-           simplify_cfg_entry_cycle_c_def,
-           venomInstTheory.mk_raw_function_def,
-           venomInstTheory.mk_inst_def, venomInstTheory.bb_succs_def,
-           venomInstTheory.get_successors_def,
-           venomInstTheory.is_terminator_def,
-           venomStateTheory.get_label_def, listTheory.nub_def])
-  >- (qexists `simplify_cfg_entry_cycle_e` >>
-      simp[simplify_cfg_entry_cycle_func_def,
-           simplify_cfg_entry_cycle_e_def,
-           simplify_cfg_entry_cycle_d_def,
-           simplify_cfg_entry_cycle_c_def,
-           venomInstTheory.mk_raw_function_def,
-           venomInstTheory.mk_inst_def, venomInstTheory.bb_succs_def,
-           venomInstTheory.get_successors_def,
-           venomInstTheory.is_terminator_def,
-           venomStateTheory.get_label_def, listTheory.nub_def]) >>
-  qexists `simplify_cfg_entry_cycle_c` >>
-  simp[simplify_cfg_entry_cycle_func_def,
-       simplify_cfg_entry_cycle_e_def,
-       simplify_cfg_entry_cycle_d_def,
-       simplify_cfg_entry_cycle_c_def,
-       venomInstTheory.mk_raw_function_def,
-       venomInstTheory.mk_inst_def, venomInstTheory.bb_succs_def,
-       venomInstTheory.get_successors_def,
-       venomInstTheory.is_terminator_def,
-       venomStateTheory.get_label_def, listTheory.nub_def]
-QED
-
-Theorem simplify_cfg_entry_cycle_reachable_labels[local]:
-  fn_reachable simplify_cfg_entry_cycle_func "e" /\
-  fn_reachable simplify_cfg_entry_cycle_func "c" /\
-  fn_reachable simplify_cfg_entry_cycle_func "d"
+Theorem simplify_cfg_chain_reachable[local]:
+  reachable simplify_cfg_chain_fixture "old" /\
+  reachable simplify_cfg_chain_fixture "mid" /\
+  reachable simplify_cfg_chain_fixture "new"
 Proof
   rpt conj_tac
-  >- simp[venomWfTheory.fn_reachable_def,
-          simplify_cfg_entry_cycle_basic_facts, relationTheory.RTC_REFL]
-  >- (simp[venomWfTheory.fn_reachable_def,
-           simplify_cfg_entry_cycle_basic_facts] >>
+  >- simp[cfgTransformTheory.reachable_def,
+          simplify_cfg_chain_basic_facts, relationTheory.RTC_REFL]
+  >- (simp[cfgTransformTheory.reachable_def,
+           simplify_cfg_chain_basic_facts] >>
       irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
-      qexists `"c"` >>
-      simp[simplify_cfg_entry_cycle_edges, relationTheory.RTC_REFL]) >>
-  simp[venomWfTheory.fn_reachable_def,
-       simplify_cfg_entry_cycle_basic_facts] >>
+      qexists `"mid"` >>
+      simp[simplify_cfg_chain_edges, relationTheory.RTC_REFL]) >>
+  simp[cfgTransformTheory.reachable_def,
+       simplify_cfg_chain_basic_facts] >>
   irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
-  qexists `"d"` >>
-  simp[simplify_cfg_entry_cycle_edges, relationTheory.RTC_REFL]
+  qexists `"mid"` >> simp[simplify_cfg_chain_edges] >>
+  irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
+  qexists `"new"` >> simp[simplify_cfg_chain_edges, relationTheory.RTC_REFL]
 QED
 
-Theorem simplify_cfg_entry_cycle_member_label[local]:
-  MEM bb simplify_cfg_entry_cycle_func.fn_blocks ==>
-  bb.bb_label = "e" \/ bb.bb_label = "d" \/ bb.bb_label = "c"
+Theorem simplify_cfg_chain_remove_unreachable[local]:
+  remove_unreachable_blocks simplify_cfg_chain_fixture =
+  simplify_cfg_chain_fixture
 Proof
-  simp[simplify_cfg_entry_cycle_func_def,
-       simplify_cfg_entry_cycle_e_def,
-       simplify_cfg_entry_cycle_d_def,
-       simplify_cfg_entry_cycle_c_def,
-       venomInstTheory.mk_raw_function_def] >>
-  strip_tac >> gvs[]
+  mp_tac simplify_cfg_chain_reachable >> strip_tac >>
+  gvs[remove_unreachable_blocks_def, simplify_cfg_chain_basic_facts,
+      simplify_cfg_chain_fixture_def, venomInstTheory.mk_raw_function_def]
 QED
 
-Theorem simplify_cfg_entry_cycle_all_reachable[local]:
-  all_reachable simplify_cfg_entry_cycle_func
-Proof
-  rw[cfgWfTheory.all_reachable_def] >>
-  drule simplify_cfg_entry_cycle_member_label >>
-  strip_tac >> gvs[simplify_cfg_entry_cycle_reachable_labels]
-QED
-
-Theorem simplify_cfg_entry_cycle_reachable[local]:
-  reachable simplify_cfg_entry_cycle_func "e" /\
-  reachable simplify_cfg_entry_cycle_func "c" /\
-  reachable simplify_cfg_entry_cycle_func "d"
-Proof
-  mp_tac simplify_cfg_entry_cycle_reachable_labels >>
-  simp[GSYM fn_reachable_iff_reachable,
-       simplify_cfg_entry_cycle_basic_facts]
-QED
-
-Theorem simplify_cfg_entry_cycle_preprocess[local]:
-  remove_unreachable_blocks simplify_cfg_entry_cycle_func =
-    simplify_cfg_entry_cycle_func /\
-  fix_all_phis simplify_cfg_entry_cycle_func = simplify_cfg_entry_cycle_func
-Proof
-  conj_tac
-  >- (mp_tac simplify_cfg_entry_cycle_reachable >> strip_tac >>
-      gvs[remove_unreachable_blocks_def,
-          simplify_cfg_entry_cycle_basic_facts,
-          simplify_cfg_entry_cycle_func_def,
-          simplify_cfg_entry_cycle_e_def,
-          simplify_cfg_entry_cycle_d_def,
-          simplify_cfg_entry_cycle_c_def,
-          venomInstTheory.mk_raw_function_def]) >>
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_entry_cycle_collapse_facts[local]:
-  lookup_block "e" simplify_cfg_entry_cycle_func.fn_blocks =
-    SOME simplify_cfg_entry_cycle_e /\
-  lookup_block "c" simplify_cfg_entry_cycle_func.fn_blocks =
-    SOME simplify_cfg_entry_cycle_c /\
-  simplify_cfg_entry_cycle_e.bb_label = "e" /\
-  bb_succs
-    (merge_blocks simplify_cfg_entry_cycle_c simplify_cfg_entry_cycle_e) =
-    ["c";"d"] /\
-  can_merge_blocks simplify_cfg_entry_cycle_func
-    simplify_cfg_entry_cycle_c simplify_cfg_entry_cycle_e /\
-  try_bypass simplify_cfg_entry_cycle_func []
-    simplify_cfg_entry_cycle_e ["c";"d"] =
-    (simplify_cfg_entry_cycle_func,[],F)
+Theorem simplify_cfg_chain_first_merge[local]:
+  (simplify_cfg_chain_fixture with fn_blocks :=
+    update_succ_phi_labels "mid" "old"
+      (replace_block "old"
+        (merge_blocks
+          <| bb_label := "old";
+             bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |>
+          <| bb_label := "mid";
+             bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>)
+        (remove_block "mid" simplify_cfg_chain_fixture.fn_blocks))
+      (bb_succs
+        (merge_blocks
+          <| bb_label := "old";
+             bb_instructions := [mk_inst 0 JMP [Label "mid"] []] |>
+          <| bb_label := "mid";
+             bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>))) =
+  simplify_cfg_chain_intermediate
 Proof
   EVAL_TAC
 QED
 
-Definition simplify_cfg_entry_cycle_merged_c_def:
-  simplify_cfg_entry_cycle_merged_c =
-    <| bb_label := "c";
-       bb_instructions :=
-         [mk_inst 4 JMP [Label "e"] [];
-          mk_inst 1 JNZ [Label "d"; Label "c"] [];
-          mk_inst 0 INVOKE [Label "callee"] [];
-          mk_inst 1 JNZ [Label "d"; Label "c"] []] |>
-End
-
-Definition simplify_cfg_entry_cycle_merged_def:
-  simplify_cfg_entry_cycle_merged = mk_raw_function "f"
-    [simplify_cfg_entry_cycle_d;
-     simplify_cfg_entry_cycle_merged_c]
-End
-
-Theorem simplify_cfg_entry_cycle_merge_step[local]:
-  (simplify_cfg_entry_cycle_func with fn_blocks :=
-    update_succ_phi_labels "e" "c"
-      (replace_block "c"
-        (merge_blocks simplify_cfg_entry_cycle_c
-                      simplify_cfg_entry_cycle_e)
-        (remove_block "e" simplify_cfg_entry_cycle_func.fn_blocks))
-      ["c";"d"]) = simplify_cfg_entry_cycle_merged
+Theorem simplify_cfg_chain_intermediate_facts[local]:
+  lookup_block "old" simplify_cfg_chain_intermediate.fn_blocks =
+    SOME <| bb_label := "old";
+            bb_instructions := [mk_inst 1 JMP [Label "new"] []] |> /\
+  lookup_block "new" simplify_cfg_chain_intermediate.fn_blocks =
+    SOME <| bb_label := "new";
+            bb_instructions := [mk_inst 2 STOP [] []] |> /\
+  bb_succs <| bb_label := "old";
+              bb_instructions := [mk_inst 1 JMP [Label "new"] []] |> = ["new"] /\
+  can_merge_blocks simplify_cfg_chain_intermediate
+    <| bb_label := "old";
+       bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>
+    <| bb_label := "new";
+       bb_instructions := [mk_inst 2 STOP [] []] |>
 Proof
   EVAL_TAC
 QED
 
-
-Theorem simplify_cfg_entry_cycle_merged_facts[local]:
-  fn_entry_label simplify_cfg_entry_cycle_merged = SOME "d" /\
-  lookup_block "c" simplify_cfg_entry_cycle_merged.fn_blocks =
-    SOME simplify_cfg_entry_cycle_merged_c /\
-  lookup_block "d" simplify_cfg_entry_cycle_merged.fn_blocks =
-    SOME simplify_cfg_entry_cycle_d /\
-  bb_succs simplify_cfg_entry_cycle_merged_c = ["c";"d"] /\
-  bb_succs simplify_cfg_entry_cycle_d = [] /\
-  try_bypass simplify_cfg_entry_cycle_merged [("e","c")]
-    simplify_cfg_entry_cycle_merged_c ["c";"d"] =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],F)
+Theorem simplify_cfg_chain_second_merge[local]:
+  (simplify_cfg_chain_intermediate with fn_blocks :=
+    update_succ_phi_labels "new" "old"
+      (replace_block "old"
+        (merge_blocks
+          <| bb_label := "old";
+             bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>
+          <| bb_label := "new";
+             bb_instructions := [mk_inst 2 STOP [] []] |>)
+        (remove_block "new" simplify_cfg_chain_intermediate.fn_blocks))
+      (bb_succs
+        (merge_blocks
+          <| bb_label := "old";
+             bb_instructions := [mk_inst 1 JMP [Label "new"] []] |>
+          <| bb_label := "new";
+             bb_instructions := [mk_inst 2 STOP [] []] |>))) =
+  simplify_cfg_chain_result
 Proof
   EVAL_TAC
 QED
 
-Theorem simplify_cfg_entry_cycle_merged_c_seen[local]:
-  collapse_dfs simplify_cfg_entry_cycle_merged [("e","c")]
-    ["c";"e"] "c" =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_facts]
-QED
-
-Theorem simplify_cfg_entry_cycle_merged_d_new[local]:
-  collapse_dfs simplify_cfg_entry_cycle_merged [("e","c")]
-    ["c";"e"] "d" =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_facts, try_bypass_def] >>
-  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
-QED
-
-Theorem simplify_cfg_entry_cycle_merged_d_seen[local]:
-  collapse_dfs simplify_cfg_entry_cycle_merged [("e","c")]
-    ["d";"c";"e"] "d" =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_facts, try_bypass_def] >>
-  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
-QED
-
-
-Theorem simplify_cfg_entry_cycle_merged_succs[local]:
-  collapse_dfs_succs simplify_cfg_entry_cycle_merged [("e","c")]
-    ["c";"e"] ["c";"d"] =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_c_seen] >>
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_d_new] >>
-  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
-QED
-
-Theorem simplify_cfg_entry_cycle_merged_c_new[local]:
-  collapse_dfs simplify_cfg_entry_cycle_merged [("e","c")]
-    ["e"] "c" =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_facts,
-       simplify_cfg_entry_cycle_merged_succs]
-QED
-
-
-Theorem simplify_cfg_entry_cycle_c_merge[local]:
-  collapse_dfs simplify_cfg_entry_cycle_func [] ["e"] "c" =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_basic_facts,
-       simplify_cfg_entry_cycle_collapse_facts] >>
-  pure_once_rewrite_tac[simplify_cfg_entry_cycle_merge_step] >>
-  simp[simplify_cfg_entry_cycle_merged_c_new]
-QED
-
-Theorem simplify_cfg_entry_cycle_initial_succs[local]:
-  collapse_dfs_succs simplify_cfg_entry_cycle_func []
-    ["e"] ["c";"d"] =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_c_merge] >>
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_merged_d_seen] >>
-  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
-QED
-
-Theorem simplify_cfg_entry_cycle_collapse[local]:
-  collapse_dfs simplify_cfg_entry_cycle_func [] [] "e" =
-    (simplify_cfg_entry_cycle_merged,[("e","c")],["d";"c";"e"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_basic_facts,
-       simplify_cfg_entry_cycle_collapse_facts,
-       simplify_cfg_entry_cycle_initial_succs]
-QED
-
-
-Theorem simplify_cfg_entry_cycle_collapse_output[local]:
-  fn_entry_label simplify_cfg_entry_cycle_merged = SOME "d" /\
-  ~MEM "e" (fn_labels simplify_cfg_entry_cycle_merged) /\
-  MEM "callee"
-    (simplify_cfg_fn_invoke_labels simplify_cfg_entry_cycle_merged)
+Theorem simplify_cfg_chain_result_facts[local]:
+  fn_entry_label simplify_cfg_chain_result = SOME "old" /\
+  lookup_block "old" simplify_cfg_chain_result.fn_blocks =
+    SOME <| bb_label := "old";
+            bb_instructions := [mk_inst 2 STOP [] []] |> /\
+  bb_succs <| bb_label := "old";
+              bb_instructions := [mk_inst 2 STOP [] []] |> = [] /\
+  subst_block_labels_fn [("new","old");("mid","old")]
+    simplify_cfg_chain_result = simplify_cfg_chain_result /\
+  fix_all_phis simplify_cfg_chain_result = simplify_cfg_chain_result
 Proof
   EVAL_TAC
 QED
 
-
-Definition simplify_cfg_entry_cycle_substituted_def:
-  simplify_cfg_entry_cycle_substituted = mk_raw_function "f"
-    [simplify_cfg_entry_cycle_d;
-     <| bb_label := "c";
-        bb_instructions :=
-          [mk_inst 4 JMP [Label "c"] [];
-           mk_inst 1 JNZ [Label "d"; Label "c"] [];
-           mk_inst 0 INVOKE [Label "callee"] [];
-           mk_inst 1 JNZ [Label "d"; Label "c"] []] |>]
-End
-
-Definition simplify_cfg_entry_cycle_result_def:
-  simplify_cfg_entry_cycle_result = mk_raw_function "f"
-    [simplify_cfg_entry_cycle_d]
-End
-
-Theorem simplify_cfg_entry_cycle_substitution[local]:
-  subst_block_labels_fn [("e","c")] simplify_cfg_entry_cycle_merged =
-    simplify_cfg_entry_cycle_substituted
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_entry_cycle_substituted_entry[local]:
-  fn_entry_label simplify_cfg_entry_cycle_substituted = SOME "d"
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_entry_cycle_substituted_no_d_succ[local]:
-  !lbl. ~fn_succ simplify_cfg_entry_cycle_substituted "d" lbl
-Proof
-  gen_tac >>
-  simp[cfgTransformTheory.fn_succ_def,
-       simplify_cfg_entry_cycle_substituted_def,
-       simplify_cfg_entry_cycle_d_def,
-       venomInstTheory.mk_raw_function_def,
-       venomInstTheory.lookup_block_def, FIND_thm,
-       venomInstTheory.bb_succs_def, venomInstTheory.get_successors_def,
-       venomInstTheory.mk_inst_def, venomInstTheory.is_terminator_def]
-QED
-
-Theorem simplify_cfg_entry_cycle_substituted_reachable[local]:
-  reachable simplify_cfg_entry_cycle_substituted "d" /\
-  ~reachable simplify_cfg_entry_cycle_substituted "c"
+Theorem simplify_cfg_chain_result_reachable[local]:
+  reachable simplify_cfg_chain_result "old"
 Proof
   simp[cfgTransformTheory.reachable_def,
-       simplify_cfg_entry_cycle_substituted_entry,
-       relationTheory.RTC_REFL] >>
-  strip_tac >>
-  dxrule (iffLR (SPEC_ALL relationTheory.RTC_CASES1)) >>
-  strip_tac >- gvs[] >>
-  gvs[simplify_cfg_entry_cycle_substituted_no_d_succ]
+       simplify_cfg_chain_result_facts, relationTheory.RTC_REFL]
 QED
 
-Theorem simplify_cfg_entry_cycle_final_stages[local]:
-  remove_unreachable_blocks simplify_cfg_entry_cycle_substituted =
-    simplify_cfg_entry_cycle_result /\
-  fix_all_phis simplify_cfg_entry_cycle_result =
-    simplify_cfg_entry_cycle_result
+Theorem simplify_cfg_chain_result_remove_unreachable[local]:
+  remove_unreachable_blocks simplify_cfg_chain_result = simplify_cfg_chain_result
 Proof
-  conj_tac
-  >- (mp_tac simplify_cfg_entry_cycle_substituted_reachable >> strip_tac >>
-      gvs[remove_unreachable_blocks_def,
-          simplify_cfg_entry_cycle_substituted_entry,
-          simplify_cfg_entry_cycle_substituted_def,
-          simplify_cfg_entry_cycle_result_def,
-          simplify_cfg_entry_cycle_d_def,
-          venomInstTheory.mk_raw_function_def]) >>
-  EVAL_TAC
+  mp_tac simplify_cfg_chain_result_reachable >>
+  gvs[remove_unreachable_blocks_def, simplify_cfg_chain_result_facts,
+      simplify_cfg_chain_result_def, venomInstTheory.mk_raw_function_def]
 QED
 
-
-Theorem simplify_cfg_entry_cycle_round[local]:
-  simplify_cfg_round_with_labels simplify_cfg_entry_cycle_func =
-    (simplify_cfg_entry_cycle_result,[("e","c")])
+Theorem simplify_cfg_chain_collapse[local]:
+  collapse_dfs simplify_cfg_chain_fixture [] [] "old" =
+    (simplify_cfg_chain_result,
+     [("new","old");("mid","old")],["old"])
 Proof
-  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
-  simp[simplify_cfg_entry_cycle_basic_facts,
-       simplify_cfg_entry_cycle_preprocess,
-       simplify_cfg_entry_cycle_collapse,
-       simplify_cfg_entry_cycle_substitution,
-       simplify_cfg_entry_cycle_final_stages]
-QED
-
-
-Theorem simplify_cfg_entry_cycle_result_facts[local]:
-  fn_entry_label simplify_cfg_entry_cycle_result = SOME "d" /\
-  lookup_block "d" simplify_cfg_entry_cycle_result.fn_blocks =
-    SOME simplify_cfg_entry_cycle_d /\
-  bb_succs simplify_cfg_entry_cycle_d = []
-Proof
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_entry_cycle_result_reachable[local]:
-  reachable simplify_cfg_entry_cycle_result "d"
-Proof
-  simp[cfgTransformTheory.reachable_def,
-       simplify_cfg_entry_cycle_result_facts,
-       relationTheory.RTC_REFL]
-QED
-
-Theorem simplify_cfg_entry_cycle_result_stages[local]:
-  remove_unreachable_blocks simplify_cfg_entry_cycle_result =
-    simplify_cfg_entry_cycle_result /\
-  fix_all_phis simplify_cfg_entry_cycle_result =
-    simplify_cfg_entry_cycle_result
-Proof
-  conj_tac
-  >- (mp_tac simplify_cfg_entry_cycle_result_reachable >>
-      gvs[remove_unreachable_blocks_def,
-          simplify_cfg_entry_cycle_result_facts,
-          simplify_cfg_entry_cycle_result_def,
-          simplify_cfg_entry_cycle_d_def,
-          venomInstTheory.mk_raw_function_def]) >>
-  EVAL_TAC
-QED
-
-Theorem simplify_cfg_entry_cycle_result_succs[local]:
-  collapse_dfs_succs simplify_cfg_entry_cycle_result [] ["d"] [] =
-    (simplify_cfg_entry_cycle_result,[],["d"])
-Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_chain_basic_facts] >>
+  pure_once_rewrite_tac[simplify_cfg_chain_first_merge] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_chain_intermediate_facts] >>
+  pure_once_rewrite_tac[simplify_cfg_chain_second_merge] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_chain_result_facts, try_bypass_def] >>
   pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
 QED
 
-Theorem simplify_cfg_entry_cycle_result_collapse[local]:
-  collapse_dfs simplify_cfg_entry_cycle_result [] [] "d" =
-    (simplify_cfg_entry_cycle_result,[],["d"])
-Proof
-  pure_once_rewrite_tac[collapse_dfs_def] >>
-  simp[simplify_cfg_entry_cycle_result_facts, try_bypass_def,
-       simplify_cfg_entry_cycle_result_succs]
-QED
-
-Theorem simplify_cfg_entry_cycle_result_round[local]:
-  simplify_cfg_round_with_labels simplify_cfg_entry_cycle_result =
-    (simplify_cfg_entry_cycle_result,[])
+Theorem simplify_cfg_chain_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_chain_fixture =
+    (simplify_cfg_chain_result,[("mid","old");("new","old")])
 Proof
   pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
-  simp[simplify_cfg_entry_cycle_result_facts,
-       simplify_cfg_entry_cycle_result_stages,
-       simplify_cfg_entry_cycle_result_collapse]
+  simp[simplify_cfg_chain_basic_facts, simplify_cfg_chain_remove_unreachable,
+       simplify_cfg_chain_collapse, simplify_cfg_chain_result_facts,
+       simplify_cfg_chain_result_remove_unreachable]
 QED
 
+Theorem simplify_cfg_chain_result_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_chain_result =
+    (simplify_cfg_chain_result,[])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  simp[simplify_cfg_chain_result_facts,
+       simplify_cfg_chain_result_remove_unreachable] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_chain_result_facts, try_bypass_def] >>
+  pure_once_rewrite_tac[collapse_dfs_def] >> simp[] >>
+  simp[simplify_cfg_chain_result_remove_unreachable,
+       simplify_cfg_chain_result_facts]
+QED
 
-Theorem simplify_cfg_entry_cycle_iteration_facts[local]:
-  LENGTH simplify_cfg_entry_cycle_func.fn_blocks = 3 /\
-  simplify_cfg_entry_cycle_result.fn_blocks <>
-    simplify_cfg_entry_cycle_func.fn_blocks
+Theorem simplify_cfg_chain_length[local]:
+  LENGTH simplify_cfg_chain_fixture.fn_blocks = 3
 Proof
   EVAL_TAC
 QED
 
-Theorem simplify_cfg_entry_cycle_result_iter_suc[local]:
-  !n. simplify_cfg_iter_with_labels (SUC n)
-    simplify_cfg_entry_cycle_result =
-    (simplify_cfg_entry_cycle_result,[])
+Theorem simplify_cfg_chain_blocks_changed[local]:
+  simplify_cfg_chain_result.fn_blocks <> simplify_cfg_chain_fixture.fn_blocks
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_chain_result_iter_suc[local]:
+  !n. simplify_cfg_iter_with_labels (SUC n) simplify_cfg_chain_result =
+    (simplify_cfg_chain_result,[])
 Proof
   gen_tac >> pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
-  simp[simplify_cfg_entry_cycle_result_round]
+  simp[simplify_cfg_chain_result_round]
 QED
 
-Theorem simplify_cfg_entry_cycle_result_iter[local]:
-  simplify_cfg_iter_with_labels 2 simplify_cfg_entry_cycle_result =
-    (simplify_cfg_entry_cycle_result,[])
+Theorem simplify_cfg_chain_iter_suc_two[local]:
+  simplify_cfg_iter_with_labels (SUC 2) simplify_cfg_chain_fixture =
+    (simplify_cfg_chain_result,[("mid","old");("new","old")])
 Proof
-  qspec_then `1` mp_tac simplify_cfg_entry_cycle_result_iter_suc >> simp[]
-QED
-
-Theorem simplify_cfg_entry_cycle_iter_suc_two[local]:
-  simplify_cfg_iter_with_labels (SUC 2)
-    simplify_cfg_entry_cycle_func =
-    (simplify_cfg_entry_cycle_result,[("e","c")])
-Proof
+  `simplify_cfg_iter_with_labels 2 simplify_cfg_chain_result =
+   (simplify_cfg_chain_result,[])` by
+    (qspec_then `1` mp_tac simplify_cfg_chain_result_iter_suc >> simp[]) >>
   pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
-  simp[simplify_cfg_entry_cycle_round,
-       simplify_cfg_entry_cycle_iteration_facts,
-       simplify_cfg_entry_cycle_result_iter]
+  simp[simplify_cfg_chain_round, simplify_cfg_chain_blocks_changed]
 QED
 
-Theorem simplify_cfg_entry_cycle_fn_result[local]:
-  simplify_cfg_fn_with_labels simplify_cfg_entry_cycle_func =
-    (simplify_cfg_entry_cycle_result,[("e","c")])
+Theorem simplify_cfg_chain_iter_three[local]:
+  simplify_cfg_iter_with_labels 3 simplify_cfg_chain_fixture =
+    (simplify_cfg_chain_result,[("mid","old");("new","old")])
 Proof
-  simp[simplify_cfg_fn_with_labels_def,
-       simplify_cfg_entry_cycle_iteration_facts] >>
-  mp_tac simplify_cfg_entry_cycle_iter_suc_two >> simp[]
+  mp_tac simplify_cfg_chain_iter_suc_two >> simp[]
 QED
 
-Theorem simplify_cfg_entry_cycle_counterexample:
-  ALL_DISTINCT (fn_labels simplify_cfg_entry_cycle_func) /\
-  all_reachable simplify_cfg_entry_cycle_func /\
-  MEM "callee"
-    (simplify_cfg_fn_invoke_labels simplify_cfg_entry_cycle_func) /\
-  ~MEM "callee"
-    (simplify_cfg_fn_invoke_labels
-      (FST (simplify_cfg_fn_with_labels simplify_cfg_entry_cycle_func)))
+Theorem simplify_cfg_chain_collapse_eval:
+  simplify_cfg_fn_with_labels simplify_cfg_chain_fixture =
+    (simplify_cfg_chain_result, [("mid","old");("new","old")]) /\
+  simplify_cfg_fn simplify_cfg_chain_fixture = simplify_cfg_chain_result
 Proof
-  simp[simplify_cfg_entry_cycle_basic_facts,
-       simplify_cfg_entry_cycle_all_reachable,
-       simplify_cfg_entry_cycle_fn_result,
-       simplify_cfg_entry_cycle_result_def,
-       simplify_cfg_entry_cycle_d_def,
-       simplify_cfg_fn_invoke_labels_mem,
-       simplify_cfg_block_invoke_labels_def,
-       fcgBridgeTheory.mem_get_invoke_targets,
-       venomInstTheory.mk_raw_function_def,
-       venomInstTheory.mk_inst_def]
+  simp[simplify_cfg_fn_with_labels_def, simplify_cfg_fn_def,
+       simplify_cfg_chain_length, simplify_cfg_chain_iter_three]
+QED
+
+Definition simplify_cfg_chain_unit_def:
+  simplify_cfg_chain_unit reference = <|
+    cu_context := mk_venom_context [simplify_cfg_chain_result] (SOME "f");
+    cu_data_segment :=
+      [<| ds_label := "table";
+          ds_items := [DataLabel reference; DataBytes [1w; 2w]] |>]
+  |>
+End
+
+Theorem simplify_cfg_chain_unit_application_eval:
+  apply_unit_label_map
+    (SND (simplify_cfg_fn_with_labels simplify_cfg_chain_fixture))
+    (simplify_cfg_chain_unit "new") =
+  SOME (simplify_cfg_chain_unit "old")
+Proof
+  rewrite_tac[CONJUNCT1 simplify_cfg_chain_collapse_eval] >>
+  EVAL_TAC
 QED
