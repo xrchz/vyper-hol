@@ -2545,4 +2545,215 @@ Theorem fmp_lowered_current_fn_second_call_eval:
 Proof
   EVAL_TAC >> simp[]
 QED
+
+Definition ssa_blocks_no_raw_def[local]:
+  ssa_blocks_no_raw bbs <=>
+    EVERY (\bb. EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+                       bb.bb_instructions) bbs
+End
+
+Theorem ssa_blocks_no_raw_fn_insts[local]:
+  ssa_blocks_no_raw bbs <=>
+  !inst. MEM inst (fn_insts_blocks bbs) ==>
+         ~is_raw_fmp_opcode inst.inst_opcode
+Proof
+  rewrite_tac[ssa_blocks_no_raw_def] >>
+  Induct_on `bbs` >>
+  simp[venomInstTheory.fn_insts_blocks_def, listTheory.EVERY_MEM,
+       listTheory.MEM_APPEND, DISJ_IMP_THM, FORALL_AND_THM]
+QED
+
+Theorem ssa_blocks_no_raw_lookup[local]:
+  ssa_blocks_no_raw bbs /\ lookup_block lbl bbs = SOME bb ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) bb.bb_instructions
+Proof
+  simp[ssa_blocks_no_raw_def, listTheory.EVERY_MEM] >>
+  metis_tac[lookup_block_MEM_subset]
+QED
+
+Theorem ssa_blocks_no_raw_replace[local]:
+  ssa_blocks_no_raw bbs /\
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) new_bb.bb_instructions ==>
+  ssa_blocks_no_raw (replace_block lbl new_bb bbs)
+Proof
+  simp[ssa_blocks_no_raw_def, cfgTransformTheory.replace_block_def,
+       listTheory.EVERY_MAP, listTheory.EVERY_MEM] >>
+  rpt strip_tac >>
+  qpat_x_assum `MEM _ (MAP _ _)` mp_tac >>
+  simp[listTheory.MEM_MAP] >> strip_tac >>
+  rename1 `MEM source bbs` >>
+  Cases_on `source.bb_label = lbl` >> gvs[] >> metis_tac[]
+QED
+Theorem ssa_blocks_no_raw_insert_phi[local]:
+  ~is_raw_fmp_opcode phi.inst_opcode /\ ssa_blocks_no_raw bbs ==>
+  ssa_blocks_no_raw
+    (MAP (\bb. if bb.bb_label = lbl then insert_phi_at_block phi bb else bb)
+         bbs)
+Proof
+  simp[ssa_blocks_no_raw_def, listTheory.EVERY_MAP,
+       makeSsaDefsTheory.insert_phi_at_block_def, listTheory.EVERY_MEM] >>
+  rpt strip_tac >> Cases_on `bb.bb_label = lbl` >> gvs[] >> metis_tac[]
+QED
+
+
+Theorem process_frontiers_supply_no_raw[local]:
+  !fs s var pm li bbs rest hp bbs' rest' hp' s'.
+    process_frontiers_supply s var pm li bbs rest hp fs =
+      (bbs',rest',hp',s') /\ ssa_blocks_no_raw bbs ==>
+    ssa_blocks_no_raw bbs'
+Proof
+  Induct >- simp[process_frontiers_supply_def] >>
+  pop_assum $ mk_asm "ih" >>
+  simp[process_frontiers_supply_def] >> rpt gen_tac >>
+  IF_CASES_TAC >> gvs[]
+  >- (strip_tac >> asm "ih" drule >> simp[]) >>
+  IF_CASES_TAC >> gvs[]
+  >- (strip_tac >> asm "ih" drule >> simp[]) >>
+  rpt CASE_TAC >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  asm "ih" drule >>
+  (impl_tac >-
+    (irule ssa_blocks_no_raw_insert_phi >>
+     simp[build_phi_inst_supply_def,
+          venomInstTheory.is_raw_fmp_opcode_def])) >>
+  simp[]
+QED
+
+Theorem insert_phis_for_var_supply_no_raw[local]:
+  !s var df pm li bbs wl hp bbs' s'.
+    insert_phis_for_var_supply s var df pm li bbs wl hp = (bbs',s') /\
+    ssa_blocks_no_raw bbs ==>
+    ssa_blocks_no_raw bbs'
+Proof
+  recInduct insert_phis_for_var_supply_ind >>
+  rw[insert_phis_for_var_supply_def] >> gvs[] >>
+  rpt CASE_TAC >> gvs[] >> pairarg_tac >> gvs[] >>
+  drule_all process_frontiers_supply_no_raw >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem add_phi_nodes_supply_no_raw[local]:
+  !defs s df pm li bbs bbs' s'.
+    add_phi_nodes_supply s df pm li bbs defs = (bbs',s') ==>
+    ssa_blocks_no_raw bbs ==>
+    ssa_blocks_no_raw bbs'
+Proof
+  Induct >- simp[add_phi_nodes_supply_def] >>
+  rpt gen_tac >> PairCases_on `h` >> simp[add_phi_nodes_supply_def] >>
+  pairarg_tac >> gvs[] >> rpt strip_tac >>
+  drule_all insert_phis_for_var_supply_no_raw >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem rename_current_inst_no_raw[local]:
+  rename_current_inst s rs inst = (rs',s',inst') ==>
+  inst'.inst_opcode = inst.inst_opcode
+Proof
+  simp[rename_current_inst_def] >> rpt CASE_TAC >> gvs[] >>
+  rpt (pairarg_tac >> gvs[]) >> rpt strip_tac >> gvs[]
+QED
+
+Theorem rename_current_block_insts_no_raw[local]:
+  !s rs insts rs' s' insts'.
+    rename_current_block_insts s rs insts = (rs',s',insts') ==>
+    EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) insts ==>
+    EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) insts'
+Proof
+  Induct_on `insts` >- simp[rename_current_block_insts_def] >>
+  rpt gen_tac >> simp[rename_current_block_insts_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  drule rename_current_inst_no_raw >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >> gvs[]
+QED
+
+Theorem FOLDL_ssa_blocks_no_raw[local]:
+  !xs step acc.
+    (!a x. ssa_blocks_no_raw a ==> ssa_blocks_no_raw (step a x)) /\
+    ssa_blocks_no_raw acc ==>
+    ssa_blocks_no_raw (FOLDL step acc xs)
+Proof
+  Induct >> simp[] >> metis_tac[]
+QED
+
+Theorem update_current_succ_phis_no_raw[local]:
+  !succs rs cur bbs.
+    ssa_blocks_no_raw bbs ==>
+    ssa_blocks_no_raw (update_current_succ_phis rs cur bbs succs)
+Proof
+  rpt gen_tac >> strip_tac >> simp[update_current_succ_phis_def] >>
+  irule FOLDL_ssa_blocks_no_raw >> simp[] >> rpt strip_tac >>
+  Cases_on `lookup_block x a` >- simp[] >> gvs[] >>
+  irule ssa_blocks_no_raw_replace >> simp[] >>
+  drule_all ssa_blocks_no_raw_lookup >> strip_tac >>
+  simp[listTheory.EVERY_MAP, listTheory.EVERY_MEM] >>
+  rpt strip_tac >>
+  `~is_raw_fmp_opcode inst.inst_opcode` by
+    (qpat_x_assum `EVERY _ x'.bb_instructions` mp_tac >>
+     simp[listTheory.EVERY_MEM] >> metis_tac[]) >>
+  Cases_on `inst.inst_opcode = PHI` >>
+  gvs[venomInstTheory.is_raw_fmp_opcode_def]
+QED
+
+Theorem rename_current_blocks_no_raw[local]:
+  (!s rs bbs sm t ctrs s' bbs'.
+     rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+     ssa_blocks_no_raw bbs ==> ssa_blocks_no_raw bbs') /\
+  (!s ctrs stacks bbs sm ts ctrs' s' bbs'.
+     rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+     ssa_blocks_no_raw bbs ==> ssa_blocks_no_raw bbs')
+Proof
+  qsuff_tac
+    `(!t s rs bbs sm ctrs s' bbs'.
+        rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+        ssa_blocks_no_raw bbs ==> ssa_blocks_no_raw bbs') /\
+     (!ts s ctrs stacks bbs sm ctrs' s' bbs'.
+        rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+        ssa_blocks_no_raw bbs ==> ssa_blocks_no_raw bbs')`
+  >- metis_tac[] >>
+  ho_match_mp_tac current_dom_tree_induction >> rpt conj_tac
+  >- (rpt strip_tac >> gvs[rename_current_blocks_def, AllCaseEqs()] >>
+      pairarg_tac >> gvs[] >>
+      rename [`lookup_block lbl bbs = SOME bb`,
+              `rename_current_block_insts s rs bb.bb_instructions =
+                 (rs1,s1,insts')`] >>
+      `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+             insts'` by
+        (drule rename_current_block_insts_no_raw >>
+         disch_then irule >>
+         drule_all ssa_blocks_no_raw_lookup >> simp[]) >>
+      `ssa_blocks_no_raw (replace_block lbl
+         (bb with bb_instructions := insts') bbs)` by
+        (irule ssa_blocks_no_raw_replace >> simp[]) >>
+      `ssa_blocks_no_raw
+         (update_current_succ_phis rs1 lbl
+           (replace_block lbl (bb with bb_instructions := insts') bbs)
+           (case ALOOKUP sm lbl of NONE => [] | SOME ss => ss))` by
+        (irule update_current_succ_phis_no_raw >> simp[]) >>
+      first_x_assum drule_all >> simp[])
+  >- simp[rename_current_blocks_def] >>
+  rpt strip_tac >> gvs[rename_current_blocks_def] >>
+  pairarg_tac >> gvs[] >>
+  first_x_assum drule_all >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem make_ssa_current_fn_no_raw_fmp_ops:
+  no_raw_fmp_ops fn ==>
+  no_raw_fmp_ops (FST (make_ssa_current_fn s fn))
+Proof
+  simp[make_ssa_current_fn_def] >> rpt CASE_TAC >> gvs[] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  `ssa_blocks_no_raw fn.fn_blocks` by
+    gvs[ssa_blocks_no_raw_fn_insts,
+        venomInstTheory.no_raw_fmp_ops_def,
+        venomInstTheory.fn_insts_def] >>
+  `ssa_blocks_no_raw bbs1` by
+    (drule add_phi_nodes_supply_no_raw >> disch_then drule >> simp[]) >>
+  `ssa_blocks_no_raw bbs2` by
+    (drule (CONJUNCT1 rename_current_blocks_no_raw) >>
+     disch_then drule >> simp[]) >>
+  gvs[ssa_blocks_no_raw_fn_insts,
+      venomInstTheory.no_raw_fmp_ops_def,
+      venomInstTheory.fn_insts_def]
+QED
+
 val _ = export_theory();
