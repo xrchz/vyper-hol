@@ -218,4 +218,81 @@ Proof
   EVAL_TAC
 QED
 
+(* Closed end-to-end validation fixtures for the checked driver. *)
+Definition task041_raw_function_def:
+  task041_raw_function name id =
+    mk_raw_function name
+      [<|bb_label := "entry";
+          bb_instructions := [mk_inst id STOP [] []]|>]
+End
+
+Definition task041_raw_unit_def:
+  task041_raw_unit = <|
+    cu_context := mk_venom_context [task041_raw_function "main" 1]
+      (SOME "main");
+    cu_data_segment := []
+  |>
+End
+
+Definition task041_pruning_unit_def:
+  task041_pruning_unit = <|
+    cu_context := mk_venom_context
+      [task041_raw_function "main" 1;
+       task041_raw_function "unreachable" 2] (SOME "main");
+    cu_data_segment := []
+  |>
+End
+
+Definition task041_cycle_unit_def:
+  task041_cycle_unit = <|
+    cu_context := mk_venom_context
+      [(mk_raw_function "loop"
+        [<|bb_label := "entry";
+            bb_instructions :=
+              [mk_inst 1 INVOKE [Label "loop"] [];
+               mk_inst 2 STOP [] []]|>])] (SOME "loop");
+    cu_data_segment := []
+  |>
+End
+
+Definition task041_bad_schedule_def:
+  task041_bad_schedule =
+    o1_pipeline_spec with
+      ps_fn_passes := [CFP_Simple VP_DFT; CFP_Simple VP_MakeSSA]
+End
+
+Theorem task041_schedule_evaluations:
+  pipeline_spec_wf task039_policy o1_pipeline_spec /\
+  run_venom_pipeline (K T) (K T) (K T) task039_policy
+    task041_bad_schedule task041_raw_unit = NONE
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_unsupported_target_eval:
+  o1_pipeline (K T) (K T) (K T) (\cap. cap = CapPush0)
+    task041_raw_unit = NONE
+Proof
+  EVAL_TAC
+QED
+
+Definition task041_cycle_spec_def:
+  task041_cycle_spec = <|
+    ps_pre_walk_stages := [];
+    ps_fn_passes := [];
+    ps_prune_unreachable := F;
+    ps_require_acyclic_calls := T;
+    ps_post_walk_stages := [];
+    ps_final_assembly := FAP_Optimize
+  |>
+End
+
+Theorem task041_cycle_rejection_eval:
+  run_venom_pipeline (K T) (K T) (K T) task039_policy
+    task041_cycle_spec task041_cycle_unit = NONE
+Proof
+  EVAL_TAC
+QED
+
+
 val _ = export_theory ();
