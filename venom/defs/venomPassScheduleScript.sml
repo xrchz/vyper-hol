@@ -92,22 +92,23 @@ Definition pass_constraints_for_def:
 End
 
 Definition valid_pass_at_def:
-  valid_pass_at passes i <=>
-    i < LENGTH passes /\
+  valid_pass_at tags i <=>
+    i < LENGTH tags /\
     pass_constraints_hold
-      (pass_constraints_for (fn_pass_tag (EL i passes)))
-      (MAP fn_pass_tag (TAKE i passes))
-      (MAP fn_pass_tag (DROP (SUC i) passes))
+      (pass_constraints_for (EL i tags))
+      (TAKE i tags)
+      (DROP (SUC i) tags)
 End
 
 Definition valid_pass_order_def:
-  valid_pass_order passes <=>
-    EVERY (valid_pass_at passes) (GENLIST I (LENGTH passes))
+  valid_pass_order tags <=>
+    EVERY (valid_pass_at tags) (GENLIST I (LENGTH tags))
 End
 
 Definition build_fn_pass_pipeline_def:
   build_fn_pass_pipeline passes =
-    if EVERY configured_fn_pass_wf passes /\ valid_pass_order passes
+    if EVERY configured_fn_pass_wf passes /\
+       valid_pass_order (MAP fn_pass_tag passes)
     then SOME passes
     else NONE
 End
