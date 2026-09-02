@@ -1690,3 +1690,354 @@ Proof
   TRY (first_x_assum drule_all >> simp[]) >>
   metis_tac[do_merge_jump_metadata]
 QED
+
+
+Definition simplify_cfg_invoke_subset_def:
+  simplify_cfg_invoke_subset result original <=>
+    !callee. MEM callee (simplify_cfg_fn_invoke_labels result) ==>
+             MEM callee (simplify_cfg_fn_invoke_labels original)
+End
+
+Theorem simplify_cfg_invoke_subset_refl[local]:
+  simplify_cfg_invoke_subset func func
+Proof
+  simp[simplify_cfg_invoke_subset_def]
+QED
+
+Theorem simplify_cfg_invoke_subset_trans[local]:
+  simplify_cfg_invoke_subset final middle /\
+  simplify_cfg_invoke_subset middle initial ==>
+  simplify_cfg_invoke_subset final initial
+Proof
+  simp[simplify_cfg_invoke_subset_def] >> metis_tac[]
+QED
+
+Theorem chain_merge_invoke_subset[local]:
+  ALL_DISTINCT (fn_labels func) /\
+  lookup_block bb.bb_label func.fn_blocks = SOME bb /\
+  lookup_block next_bb.bb_label func.fn_blocks = SOME next_bb /\
+  can_merge_blocks func bb next_bb ==>
+  let merged = merge_blocks bb next_bb in
+  let bbs0 = remove_block next_bb.bb_label func.fn_blocks in
+  let bbs1 = replace_block bb.bb_label merged bbs0 in
+  let bbs2 = update_succ_phi_labels next_bb.bb_label bb.bb_label bbs1 (bb_succs merged) in
+  simplify_cfg_invoke_subset (func with fn_blocks := bbs2) func
+Proof
+  rpt strip_tac >> gvs[] >>
+  drule can_merge_blocks_distinct >> strip_tac >>
+  qabbrev_tac `merged = merge_blocks bb next_bb` >>
+  qabbrev_tac `bbs0 = remove_block next_bb.bb_label func.fn_blocks` >>
+  qabbrev_tac `bbs1 = replace_block bb.bb_label merged bbs0` >>
+  `merged.bb_label = bb.bb_label` by simp[Abbr `merged`, merge_blocks_def] >>
+  `ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs0)` by
+    simp[Abbr `bbs0`, cfgTransformPropsTheory.ALL_DISTINCT_remove_block,
+         GSYM venomInstTheory.fn_labels_def] >>
+  `ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs1)` by
+    simp[Abbr `bbs1`, fn_labels_replace_block] >>
+  simp[simplify_cfg_invoke_subset_def] >> rpt strip_tac >>
+  `MEM callee
+      (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1))` by
+    metis_tac[update_succ_phi_labels_invoke_labels] >>
+  qpat_x_assum
+    `MEM callee (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1))`
+    mp_tac >>
+  simp[Abbr `bbs1`, fn_replace_block_invoke_labels,
+       Abbr `bbs0`, cfgTransformTheory.remove_block_def, MEM_FILTER] >>
+  strip_tac >>
+  gvs[simplify_cfg_fn_invoke_labels_mem,
+      cfgTransformTheory.replace_block_def, MEM_MAP] >>
+  rename [`MEM old (FILTER _ func.fn_blocks)`,
+          `MEM callinst
+             (if old.bb_label = bb.bb_label then merged else old).bb_instructions`,
+          `callinst.inst_operands = Label callee :: callops`] >>
+  Cases_on `old.bb_label = bb.bb_label`
+  >- (`MEM callee (simplify_cfg_block_invoke_labels merged)` by
+        (simp[simplify_cfg_block_invoke_labels_def,
+              fcgBridgeTheory.mem_get_invoke_targets] >>
+         metis_tac[]) >>
+      `MEM callee (simplify_cfg_block_invoke_labels bb) \/
+       MEM callee (simplify_cfg_block_invoke_labels next_bb)` by
+        metis_tac[merge_blocks_invoke_labels] >>
+      gvs[simplify_cfg_fn_invoke_labels_mem,
+          simplify_cfg_block_invoke_labels_def,
+          fcgBridgeTheory.mem_get_invoke_targets] >>
+      metis_tac[venomExecPropsTheory.lookup_block_MEM]) >>
+  gvs[simplify_cfg_fn_invoke_labels_mem,
+      simplify_cfg_block_invoke_labels_def,
+      fcgBridgeTheory.mem_get_invoke_targets] >>
+  qexistsl [`old`,`callinst`,`callops`] >>
+  gvs[MEM_FILTER]
+QED
+
+Theorem collapse_dfs_result_invoke_subset_compose[local]:
+  simplify_cfg_invoke_subset middle initial ==>
+  collapse_dfs_result
+    (\result. simplify_cfg_invoke_subset (FST result) middle)
+    middle label_map visited lbl ==>
+  simplify_cfg_invoke_subset
+    (FST (collapse_dfs middle label_map visited lbl)) initial
+Proof
+  simp[collapse_dfs_result_def] >>
+  metis_tac[simplify_cfg_invoke_subset_trans]
+QED
+
+Theorem collapse_dfs_succs_result_invoke_subset_compose[local]:
+  simplify_cfg_invoke_subset middle initial ==>
+  collapse_dfs_succs_result
+    (\result. simplify_cfg_invoke_subset (FST result) middle)
+    middle label_map visited succs ==>
+  simplify_cfg_invoke_subset
+    (FST (collapse_dfs_succs middle label_map visited succs)) initial
+Proof
+  simp[collapse_dfs_succs_result_def] >>
+  metis_tac[simplify_cfg_invoke_subset_trans]
+QED
+
+
+Theorem collapse_invoke_subset_joint[local]:
+  (!func label_map visited lbl.
+     ALL_DISTINCT (fn_labels func) ==>
+     collapse_dfs_result
+       (\result. simplify_cfg_invoke_subset (FST result) func)
+       func label_map visited lbl) /\
+  (!func label_map visited succs.
+     ALL_DISTINCT (fn_labels func) ==>
+     collapse_dfs_succs_result
+       (\result. simplify_cfg_invoke_subset (FST result) func)
+       func label_map visited succs)
+Proof
+  ho_match_mp_tac collapse_dfs_ind >>
+  rpt conj_tac
+  >- suspend "dfs"
+  >- suspend "nil"
+  >> suspend "succs"
+QED
+
+Resume collapse_invoke_subset_joint[dfs]:
+  rpt strip_tac >>
+  simp[NoAsms, collapse_dfs_result_def, Once collapse_dfs_def] >>
+  Cases_on `lookup_block lbl func.fn_blocks`
+  >- simp[simplify_cfg_invoke_subset_refl] >>
+  rename1 `lookup_block lbl func.fn_blocks = SOME bb` >>
+  Cases_on `bb_succs bb`
+  >- (Cases_on `MEM lbl visited`
+      >- simp[try_bypass_def, simplify_cfg_invoke_subset_refl]
+      >> gvs[try_bypass_def, collapse_dfs_succs_result_def]) >>
+  Cases_on `t`
+  >- (Cases_on `lookup_block h func.fn_blocks`
+      >- (Cases_on `MEM lbl visited` >>
+          simp[simplify_cfg_invoke_subset_refl])
+      >> rename1 `lookup_block h func.fn_blocks = SOME next_bb`
+      >> Cases_on `can_merge_blocks func bb next_bb`
+      >- (gvs[] >>
+          `bb.bb_label = lbl` by
+            metis_tac[venomExecPropsTheory.lookup_block_label] >>
+          `next_bb.bb_label = h` by
+            metis_tac[venomExecPropsTheory.lookup_block_label] >>
+          qmatch_goalsub_abbrev_tac
+            `collapse_dfs merged_func merged_map visited lbl` >>
+          irule collapse_dfs_result_invoke_subset_compose >>
+          conj_tac
+          >- (gvs[Abbr `merged_func`, Abbr `merged_map`] >>
+              drule_all chain_merge_invoke_subset >> simp[]) >>
+          `fn_result_events (fn_labels func) label_map merged_func merged_map` by
+            (simp[Abbr `merged_func`, Abbr `merged_map`] >>
+             drule_all chain_merge_fn_result_events >> simp[]) >>
+          `ALL_DISTINCT (fn_labels merged_func)` by
+            metis_tac[fn_result_events_all_distinct] >>
+          first_x_assum drule >>
+          simp[collapse_dfs_result_def])
+      >> Cases_on `MEM lbl visited`
+      >- simp[simplify_cfg_invoke_subset_refl]
+      >> gvs[collapse_dfs_result_def])
+  >> Cases_on `try_bypass func label_map bb (h::h'::t')`
+  >> PairCases_on `r`
+  >> Cases_on `r1`
+  >- (gvs[] >>
+      `bb.bb_label = lbl` by
+        metis_tac[venomExecPropsTheory.lookup_block_label] >>
+      `lookup_block bb.bb_label func.fn_blocks = SOME bb` by gvs[] >>
+      `simplify_cfg_invoke_subset q func` by
+        (simp[simplify_cfg_invoke_subset_def] >>
+         metis_tac[try_bypass_invoke_labels]) >>
+      `fn_result_events (fn_labels func) label_map q r0` by
+        (drule_all try_bypass_events_at >> simp[]) >>
+      `ALL_DISTINCT (fn_labels q)` by
+        metis_tac[fn_result_events_all_distinct] >>
+      metis_tac[collapse_dfs_result_invoke_subset_compose])
+  >> gvs[] >>
+  `bb.bb_label = lbl` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  `lookup_block bb.bb_label func.fn_blocks = SOME bb` by gvs[] >>
+  `simplify_cfg_invoke_subset q func` by
+    (simp[simplify_cfg_invoke_subset_def] >>
+     metis_tac[try_bypass_invoke_labels]) >>
+  `fn_result_events (fn_labels func) label_map q r0` by
+    (drule_all try_bypass_events_at >> simp[]) >>
+  `ALL_DISTINCT (fn_labels q)` by
+    metis_tac[fn_result_events_all_distinct] >>
+  Cases_on `MEM lbl visited`
+  >- simp[] >>
+  metis_tac[collapse_dfs_succs_result_invoke_subset_compose]
+QED
+
+Resume collapse_invoke_subset_joint[nil]:
+  simp[collapse_dfs_succs_result_def, collapse_dfs_def,
+       simplify_cfg_invoke_subset_refl]
+QED
+
+Resume collapse_invoke_subset_joint[succs]:
+  rpt strip_tac >>
+  simp[collapse_dfs_succs_result_def, Once collapse_dfs_def] >>
+  Cases_on `collapse_dfs func label_map visited lbl` >>
+  PairCases_on `r` >> gvs[collapse_dfs_result_def] >>
+  `simplify_cfg_invoke_subset q func` by gvs[] >>
+  `fn_result_events (fn_labels func) label_map q r0` by
+    (metis_tac[collapse_dfs_result_def,
+               collapse_result_events_pair,
+               CONJUNCT1 collapse_events_joint]) >>
+  `ALL_DISTINCT (fn_labels q)` by
+    metis_tac[fn_result_events_all_distinct] >>
+  metis_tac[collapse_dfs_succs_result_invoke_subset_compose]
+QED
+
+Finalise collapse_invoke_subset_joint
+
+
+Theorem collapse_dfs_invoke_subset[local]:
+  ALL_DISTINCT (fn_labels func) ==>
+  simplify_cfg_invoke_subset
+    (FST (collapse_dfs func label_map visited lbl)) func
+Proof
+  strip_tac >>
+  drule (CONJUNCT1 collapse_invoke_subset_joint) >>
+  simp[collapse_dfs_result_def]
+QED
+
+Theorem fix_all_phis_invoke_subset[local]:
+  simplify_cfg_invoke_subset (fix_all_phis func) func
+Proof
+  simp[simplify_cfg_invoke_subset_def, fix_all_phis_invoke_labels]
+QED
+
+Theorem subst_block_labels_fn_invoke_subset[local]:
+  simplify_cfg_invoke_subset (subst_block_labels_fn label_map func) func
+Proof
+  simp[simplify_cfg_invoke_subset_def,
+       subst_block_labels_fn_invoke_labels]
+QED
+
+Theorem remove_unreachable_blocks_invoke_subset[local]:
+  simplify_cfg_invoke_subset (remove_unreachable_blocks func) func
+Proof
+  simp[simplify_cfg_invoke_subset_def] >>
+  metis_tac[remove_unreachable_blocks_invoke_labels_subset]
+QED
+
+Theorem simplify_cfg_round_with_labels_invoke_subset:
+  ALL_DISTINCT (fn_labels func) ==>
+  simplify_cfg_invoke_subset
+    (FST (simplify_cfg_round_with_labels func)) func
+Proof
+  strip_tac >>
+  Cases_on `fn_entry_label func`
+  >- simp[simplify_cfg_round_with_labels_def,
+          simplify_cfg_invoke_subset_refl] >>
+  rename1 `fn_entry_label func = SOME entry` >>
+  qabbrev_tac `func1 = remove_unreachable_blocks func` >>
+  qabbrev_tac `func1a = fix_all_phis func1` >>
+  Cases_on `collapse_dfs func1a [] [] entry` >>
+  PairCases_on `r` >>
+  rename1 `collapse_dfs func1a [] [] entry = (func2,label_map,visited)` >>
+  `ALL_DISTINCT (fn_labels func1a)` by
+    simp[Abbr `func1a`, Abbr `func1`, fn_labels_fix_all_phis,
+         fn_labels_remove_unreachable_all_distinct] >>
+  `simplify_cfg_invoke_subset
+     (FST (collapse_dfs func1a [] [] entry)) func1a` by
+    metis_tac[collapse_dfs_invoke_subset] >>
+  `simplify_cfg_invoke_subset func2 func1a` by gvs[] >>
+  qabbrev_tac `func3 = if label_map = [] then func2
+                       else subst_block_labels_fn label_map func2` >>
+  `simplify_cfg_invoke_subset func3 func2` by
+    (simp[Abbr `func3`] >>
+     metis_tac[subst_block_labels_fn_invoke_subset,
+               simplify_cfg_invoke_subset_refl]) >>
+  `simplify_cfg_invoke_subset
+     (fix_all_phis (remove_unreachable_blocks func3)) func3` by
+    metis_tac[fix_all_phis_invoke_subset,
+              remove_unreachable_blocks_invoke_subset,
+              simplify_cfg_invoke_subset_trans] >>
+  `simplify_cfg_invoke_subset func1a func` by
+    (simp[Abbr `func1a`, Abbr `func1`, simplify_cfg_invoke_subset_def,
+          fix_all_phis_invoke_labels] >>
+     metis_tac[remove_unreachable_blocks_invoke_labels_subset]) >>
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  qpat_assum `fn_entry_label func = SOME entry`
+    (fn th => rewrite_tac[th]) >>
+  simp[Abbr `func1`, Abbr `func1a`] >>
+  qpat_assum `collapse_dfs _ _ _ _ = _`
+    (fn th => rewrite_tac[th]) >>
+  simp[Abbr `func3`] >>
+  metis_tac[simplify_cfg_invoke_subset_trans]
+QED
+
+
+Theorem simplify_cfg_iter_with_labels_invoke_subset:
+  !n func. ALL_DISTINCT (fn_labels func) ==>
+    simplify_cfg_invoke_subset
+      (FST (simplify_cfg_iter_with_labels n func)) func
+Proof
+  Induct_on `n`
+  >- simp[simplify_cfg_iter_with_labels_def,
+          simplify_cfg_invoke_subset_refl] >>
+  rpt strip_tac >>
+  Cases_on `simplify_cfg_round_with_labels func` >>
+  rename1 `simplify_cfg_round_with_labels func = (func',round_map)` >>
+  `simplify_cfg_invoke_subset
+     (FST (simplify_cfg_round_with_labels func)) func` by
+    metis_tac[simplify_cfg_round_with_labels_invoke_subset] >>
+  `simplify_cfg_invoke_subset func' func` by gvs[] >>
+  `label_map_transition (fn_labels func)
+     (SND (simplify_cfg_round_with_labels func))
+     (fn_labels (FST (simplify_cfg_round_with_labels func)))` by
+    metis_tac[simplify_cfg_round_with_labels_transition] >>
+  `ALL_DISTINCT (fn_labels func')` by
+    (qpat_x_assum `label_map_transition _ _ _` mp_tac >>
+     qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
+       (fn th => rewrite_tac[th]) >>
+     simp[label_map_transition_def]) >>
+  pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
+    (fn th => rewrite_tac[th]) >>
+  simp[] >>
+  IF_CASES_TAC
+  >- simp[simplify_cfg_invoke_subset_refl] >>
+  `simplify_cfg_invoke_subset
+     (FST (simplify_cfg_iter_with_labels n func')) func'` by
+    metis_tac[] >>
+  Cases_on `simplify_cfg_iter_with_labels n func'` >>
+  gvs[] >>
+  metis_tac[simplify_cfg_invoke_subset_trans]
+QED
+
+Theorem simplify_cfg_fn_with_labels_invoke_subset:
+  ALL_DISTINCT (fn_labels func) ==>
+  simplify_cfg_invoke_subset
+    (FST (simplify_cfg_fn_with_labels func)) func
+Proof
+  simp[simplify_cfg_fn_with_labels_def,
+       simplify_cfg_iter_with_labels_invoke_subset]
+QED
+
+Theorem simplify_cfg_fn_with_labels_no_new_call_edges:
+  ALL_DISTINCT (fn_labels func) ==>
+  !callee.
+    MEM callee
+      (simplify_cfg_fn_invoke_labels
+        (FST (simplify_cfg_fn_with_labels func))) ==>
+    MEM callee (simplify_cfg_fn_invoke_labels func)
+Proof
+  strip_tac >>
+  drule simplify_cfg_fn_with_labels_invoke_subset >>
+  simp[simplify_cfg_invoke_subset_def]
+QED
