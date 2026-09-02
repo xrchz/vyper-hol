@@ -708,6 +708,41 @@ Proof
   >> gvs[]
 QED
 
+Theorem collapse_postprocess_transition[local]:
+  ALL_DISTINCT initial /\
+  EVERY (\label. MEM label outer) initial /\
+  label_event_trace initial events (fn_labels collapsed) ==>
+  label_map_transition outer events
+    (fn_labels (fix_all_phis (remove_unreachable_blocks
+      (if raw_map = [] then collapsed
+       else subst_block_labels_fn raw_map collapsed))))
+Proof
+  rpt strip_tac >>
+  `label_map_transition initial events (fn_labels collapsed)` by
+    metis_tac[label_event_trace_transition] >>
+  `fn_labels (if raw_map = [] then collapsed
+              else subst_block_labels_fn raw_map collapsed) =
+   fn_labels collapsed` by
+    (Cases_on `raw_map = []` >> simp[fn_labels_subst_block_labels_fn]) >>
+  `ALL_DISTINCT (fn_labels collapsed)` by
+    metis_tac[label_event_trace_all_distinct] >>
+  `ALL_DISTINCT (fn_labels (remove_unreachable_blocks
+      (if raw_map = [] then collapsed
+       else subst_block_labels_fn raw_map collapsed)))` by
+    metis_tac[fn_labels_remove_unreachable_all_distinct] >>
+  simp[fn_labels_fix_all_phis] >>
+  irule label_map_transition_widen_restrict >>
+  conj_tac >- gvs[] >>
+  qexists `initial` >>
+  qexists `fn_labels collapsed` >>
+  qpat_assum
+    `fn_labels (if raw_map = [] then collapsed
+                else subst_block_labels_fn raw_map collapsed) =
+     fn_labels collapsed`
+    (fn th => rewrite_tac[GSYM th]) >>
+  simp[fn_labels_remove_unreachable_subset]
+QED
+
 
 Theorem resolve_label_fuel_cons_irrelevant[local]:
   !fuel rest source target visited label.
