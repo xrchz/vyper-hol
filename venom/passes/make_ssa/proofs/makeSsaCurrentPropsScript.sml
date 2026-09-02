@@ -68,6 +68,39 @@ Proof
      metis_tac[]
 QED
 
+Theorem ssa_ids_supply_ok_append:
+  ALL_DISTINCT (old1 ++ old2) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (old1 ++ old2) /\
+  ssa_ids_supply_ok s old1 new1 s1 /\
+  ssa_ids_supply_ok s1 old2 new2 s2 ==>
+  ssa_ids_supply_ok s (old1 ++ old2) (new1 ++ new2) s2
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `ssa_ids_supply_ok s old1 new1 s1` mp_tac >>
+  simp[ssa_ids_supply_ok_def] >> strip_tac >>
+  qpat_x_assum `ssa_ids_supply_ok s1 old2 new2 s2` mp_tac >>
+  simp[ssa_ids_supply_ok_def] >> strip_tac >>
+  `!id. MEM id new1 ==> ~MEM id new2` by
+    (rpt strip_tac >>
+     `MEM id s1.irs_used_inst_ids` by
+       (qpat_assum `EVERY (\x. MEM x s1.irs_used_inst_ids) new1` mp_tac >>
+        pure_rewrite_tac[listTheory.EVERY_MEM] >>
+        disch_then (qspec_then `id` mp_tac) >> simp[]) >>
+     `MEM id old2` by metis_tac[] >>
+     `MEM id s.irs_used_inst_ids` by
+       (qpat_assum
+          `EVERY (\x. MEM x s.irs_used_inst_ids) (old1 ++ old2)` mp_tac >>
+        pure_rewrite_tac[listTheory.EVERY_MEM] >>
+        disch_then (qspec_then `id` mp_tac) >> simp[]) >>
+     `MEM id old1` by metis_tac[] >>
+     gvs[listTheory.ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  `EVERY (\id. MEM id s2.irs_used_inst_ids) new1` by
+    (gvs[listTheory.EVERY_MEM, ssa_supply_extends_def] >> metis_tac[]) >>
+  gvs[ssa_ids_supply_ok_def, ssa_supply_extends_def,
+      listTheory.ALL_DISTINCT_APPEND, listTheory.EVERY_MEM] >>
+  metis_tac[ssa_supply_extends_trans]
+QED
+
 Theorem fresh_inst_id_extends:
   fresh_inst_id s = (id,s') ==> ssa_supply_extends s s'
 Proof
@@ -1829,6 +1862,91 @@ Proof
   gvs[fn_ir_vars_def]
 QED
 
+
+Theorem make_ssa_functions_supply_ok:
+  !fns s fns' s'.
+    EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks)) fns /\
+    ir_supply_inst_ok s /\
+    ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids fns)) /\
+    EVERY (\id. MEM id s.irs_used_inst_ids)
+      (FLAT (MAP fn_ir_inst_ids fns)) /\
+    ssa_vars_covered s (FLAT (MAP fn_ir_vars fns)) /\
+    make_ssa_functions_supply s fns = (fns',s') ==>
+    ssa_ids_supply_ok s (FLAT (MAP fn_ir_inst_ids fns))
+      (FLAT (MAP fn_ir_inst_ids fns')) s' /\
+    ssa_vars_covered s' (FLAT (MAP fn_ir_vars fns'))
+Proof
+  qid_spec_tac `s'` >> qid_spec_tac `fns'` >> qid_spec_tac `s` >>
+  Induct_on `fns`
+  >- simp[make_ssa_functions_supply_def, ssa_ids_supply_ok_refl,
+          ssa_vars_covered_def] >>
+  pop_assum $ mk_asm "ih" >>
+  rpt gen_tac >> simp[make_ssa_functions_supply_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  `ssa_ids_supply_ok s (fn_ir_inst_ids h) (fn_ir_inst_ids fn') s'' /\
+   ssa_vars_covered s'' (fn_ir_vars fn')` by
+    (irule make_ssa_current_fn_supply_ok >>
+     gvs[listTheory.ALL_DISTINCT_APPEND, ssa_vars_covered_def]) >>
+  `ssa_supply_extends s s''` by
+    metis_tac[ssa_ids_supply_ok_extends] >>
+  `ir_supply_inst_ok s''` by
+    metis_tac[ssa_ids_supply_ok_output] >>
+  `EVERY (\id. MEM id s''.irs_used_inst_ids)
+     (FLAT (MAP fn_ir_inst_ids fns))` by
+    (gvs[listTheory.EVERY_MEM, ssa_supply_extends_def] >> metis_tac[]) >>
+  `ssa_vars_covered s'' (FLAT (MAP fn_ir_vars fns))` by
+    (irule ssa_vars_covered_mono >> qexists `s` >>
+     gvs[ssa_vars_covered_def]) >>
+  `ssa_ids_supply_ok s'' (FLAT (MAP fn_ir_inst_ids fns))
+       (FLAT (MAP fn_ir_inst_ids fns'')) s' /\
+   ssa_vars_covered s' (FLAT (MAP fn_ir_vars fns''))` by
+    (asm "ih" irule >>
+     gvs[listTheory.ALL_DISTINCT_APPEND]) >>
+  `ssa_ids_supply_ok s
+       (fn_ir_inst_ids h ++ FLAT (MAP fn_ir_inst_ids fns))
+       (fn_ir_inst_ids fn' ++ FLAT (MAP fn_ir_inst_ids fns'')) s'` by
+    (irule ssa_ids_supply_ok_append >> simp[] >>
+     qexists `s''` >> simp[]) >>
+  `ssa_vars_covered s' (fn_ir_vars fn')` by
+    (irule ssa_vars_covered_mono >> qexists `s''` >>
+     simp[] >> metis_tac[ssa_ids_supply_ok_extends]) >>
+  gvs[ssa_vars_covered_def]
+QED
+
+Theorem make_ssa_ctx_supply_ok:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    ctx.ctx_functions /\
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids)
+    (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) /\
+  ssa_vars_covered s (FLAT (MAP fn_ir_vars ctx.ctx_functions)) /\
+  make_ssa_ctx_supply s ctx = (ctx',s') ==>
+  ssa_ids_supply_ok s (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions))
+    (FLAT (MAP fn_ir_inst_ids ctx'.ctx_functions)) s' /\
+  ssa_vars_covered s' (FLAT (MAP fn_ir_vars ctx'.ctx_functions))
+Proof
+  simp[make_ssa_ctx_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule_all make_ssa_functions_supply_ok >> gvs[]
+QED
+
+Theorem make_ssa_unit_supply_ok:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (unit_ir_inst_ids unit) /\
+  ssa_vars_covered s (unit_ir_vars unit) /\
+  make_ssa_unit_supply s unit = (unit',s') ==>
+  ssa_ids_supply_ok s (unit_ir_inst_ids unit)
+    (unit_ir_inst_ids unit') s' /\
+  ssa_vars_covered s' (unit_ir_vars unit')
+Proof
+  simp[make_ssa_unit_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  gvs[unit_ir_inst_ids_def, unit_ir_vars_def] >>
+  drule_all make_ssa_ctx_supply_ok >>
+  gvs[unit_ir_inst_ids_def, unit_ir_vars_def]
+QED
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
