@@ -1,6 +1,6 @@
 Theory cfgNormSupplyProofs
 Ancestors
-  cfgNormDefs irSupply
+  cfgNormDefs irSupply cfgTransform
 
 Definition cfg_supply_extends_def:
   cfg_supply_extends s s' <=>
@@ -226,4 +226,1131 @@ Proof
       cfg_forwarding_supply_contract_def,
       cfg_insts_id_declared_def,cfg_insts_var_declared_def] >>
   metis_tac[cfg_supply_extends_trans]
+QED
+
+
+Theorem cfg_insts_id_declared_subst_label_terminator[simp]:
+  cfg_insts_id_declared
+    (subst_label_terminator old new bb).bb_instructions id <=>
+  cfg_insts_id_declared bb.bb_instructions id
+Proof
+  simp[cfg_insts_id_declared_def,subst_label_terminator_def,
+       subst_label_inst_def,listTheory.EXISTS_MAP,COND_RAND] >> metis_tac[]
+QED
+
+Theorem cfg_insts_var_declared_subst_label_terminator[simp]:
+  cfg_insts_var_declared
+    (subst_label_terminator old new bb).bb_instructions v <=>
+  cfg_insts_var_declared bb.bb_instructions v
+Proof
+  simp[cfg_insts_var_declared_def,subst_label_terminator_def,
+       subst_label_inst_def,listTheory.EXISTS_MAP,COND_RAND] >> metis_tac[]
+QED
+
+Theorem cfg_insts_id_declared_update_phis_for_split[simp]:
+  cfg_insts_id_declared
+    (update_phis_for_split old new repls bb).bb_instructions id <=>
+  cfg_insts_id_declared bb.bb_instructions id
+Proof
+  simp[cfg_insts_id_declared_def,update_phis_for_split_def,
+       listTheory.EXISTS_MAP,COND_RAND] >> metis_tac[]
+QED
+
+Theorem cfg_insts_var_declared_update_phis_for_split[simp]:
+  cfg_insts_var_declared
+    (update_phis_for_split old new repls bb).bb_instructions v <=>
+  cfg_insts_var_declared bb.bb_instructions v
+Proof
+  simp[cfg_insts_var_declared_def,update_phis_for_split_def,
+       listTheory.EXISTS_MAP,COND_RAND] >> metis_tac[]
+QED
+
+
+Definition cfg_fn_id_declared_def:
+  cfg_fn_id_declared fn id <=>
+    EXISTS (\bb. cfg_insts_id_declared bb.bb_instructions id) fn.fn_blocks
+End
+
+Definition cfg_fn_var_declared_def:
+  cfg_fn_var_declared fn v <=>
+    EXISTS (\bb. cfg_insts_var_declared bb.bb_instructions v) fn.fn_blocks
+End
+
+Definition cfg_fn_label_declared_def:
+  cfg_fn_label_declared fn l <=>
+    EXISTS (\bb. bb.bb_label = l) fn.fn_blocks
+End
+
+Definition cfg_fn_supply_contract_def:
+  cfg_fn_supply_contract s fn s' <=>
+    cfg_supply_extends s s' /\
+    (!id. MEM id s'.irs_used_inst_ids /\
+          ~MEM id s.irs_used_inst_ids ==> cfg_fn_id_declared fn id) /\
+    (!v. MEM v s'.irs_used_vars /\
+         ~MEM v s.irs_used_vars ==> cfg_fn_var_declared fn v) /\
+    (!l. MEM l s'.irs_used_labels /\
+         ~MEM l s.irs_used_labels ==> cfg_fn_label_declared fn l)
+End
+
+Theorem insert_split_supply_contract:
+  ir_supply_inst_ok s /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  cfg_fn_supply_contract s fn' s'
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  drule_all build_split_block_supply_contract >>
+  strip_tac >>
+  gvs[cfg_fn_supply_contract_def,cfg_block_supply_contract_def,
+      cfg_fn_id_declared_def,cfg_fn_var_declared_def,
+      cfg_fn_label_declared_def] >>
+  metis_tac[]
+QED
+
+
+Theorem find_and_split_supply_contract:
+  !bbs fn s fn' changed s'.
+    ir_supply_inst_ok s /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    cfg_fn_supply_contract s fn' s'
+Proof
+  Induct_on `bbs` >> rpt strip_tac
+  >- gvs[find_and_split_supply_def,cfg_fn_supply_contract_def,
+          cfg_supply_extends_refl]
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     metis_tac[insert_split_supply_contract]
+QED
+
+Theorem cfg_norm_round_supply_contract:
+  ir_supply_inst_ok s /\
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  cfg_fn_supply_contract s fn' s'
+Proof
+  simp[cfg_norm_round_supply_def] >>
+  metis_tac[find_and_split_supply_contract]
+QED
+
+
+Theorem build_forwarding_assigns_supply_repls_covered:
+  !vars s repls insts s'.
+    ir_supply_inst_ok s /\
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    EVERY (\p. MEM (SND p) s'.irs_used_vars) repls
+Proof
+  Induct_on `vars` >> rpt strip_tac
+  >- gvs[build_forwarding_assigns_supply_def]
+  >> Cases_on `fresh_ir_var s` >>
+     rename1 `fresh_ir_var s = (new_var,s1)` >>
+     Cases_on `fresh_inst_id s1` >>
+     rename1 `fresh_inst_id s1 = (id,s2)` >>
+     Cases_on `build_forwarding_assigns_supply s2 vars` >>
+     PairCases_on `r` >>
+     rename1 `build_forwarding_assigns_supply s2 vars =
+              (rest_repls,rest_insts,s3)` >>
+     gvs[build_forwarding_assigns_supply_def] >>
+     `cfg_supply_extends s s1` by
+       metis_tac[fresh_ir_var_cfg_supply_extends] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_extends s1 s2` by
+       metis_tac[fresh_inst_id_cfg_supply_extends] >>
+     `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+     `cfg_forwarding_supply_contract s2 rest_insts s'` by
+       metis_tac[build_forwarding_assigns_supply_contract] >>
+     `cfg_supply_extends s2 s'` by
+       gvs[cfg_forwarding_supply_contract_def] >>
+     `EVERY (\p. MEM (SND p) s'.irs_used_vars) rest_repls` by
+       metis_tac[] >>
+     drule fresh_ir_var_contract >> strip_tac >>
+     `MEM new_var s1.irs_used_vars` by simp[] >>
+     `MEM new_var s2.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     `MEM new_var s'.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     gvs[]
+QED
+
+
+Definition cfg_supply_covers_fn_def:
+  cfg_supply_covers_fn s fn <=>
+    EVERY (\id. MEM id s.irs_used_inst_ids) (fn_ir_inst_ids fn) /\
+    EVERY (\v. MEM v s.irs_used_vars) (fn_ir_vars fn) /\
+    EVERY (\l. MEM l s.irs_used_labels) (fn_ir_labels fn)
+End
+
+Theorem ALOOKUP_SND_covered:
+  !repls k v P.
+    EVERY (\p. P (SND p)) repls /\ ALOOKUP repls k = SOME v ==> P v
+Proof
+  Induct_on `repls` >> rpt strip_tac
+  >- gvs[]
+  >> PairCases_on `h` >> gvs[] >>
+     Cases_on `h0 = k` >> gvs[] >> metis_tac[]
+QED
+
+Theorem operand_vars_update_phi_ops_covered:
+  !old new repls ops s.
+    EVERY (\v. MEM v s.irs_used_vars) (operand_vars ops) /\
+    EVERY (\p. MEM (SND p) s.irs_used_vars) repls ==>
+    EVERY (\v. MEM v s.irs_used_vars)
+      (operand_vars (update_phi_ops old new repls ops))
+Proof
+  recInduct update_phi_ops_ind >>
+  rpt strip_tac >>
+  TRY (Cases_on `l = old_label`) >>
+  TRY (Cases_on `val_op`) >>
+  TRY (Cases_on `y`) >>
+  TRY (Cases_on `ALOOKUP var_repls s'`) >>
+  gvs[update_phi_ops_def,venomInstTheory.operand_vars_def,
+      venomInstTheory.operand_var_def,AllCaseEqs()] >>
+  imp_res_tac ALOOKUP_SND_covered >>
+  gvs[]
+QED
+
+
+Theorem operand_ir_labels_update_phi_ops_covered:
+  !old new repls ops s.
+    EVERY (\l. MEM l s.irs_used_labels) (operand_ir_labels ops) /\
+    MEM new s.irs_used_labels ==>
+    EVERY (\l. MEM l s.irs_used_labels)
+      (operand_ir_labels (update_phi_ops old new repls ops))
+Proof
+  recInduct update_phi_ops_ind >>
+  rpt strip_tac >>
+  TRY (Cases_on `l = old_label`) >>
+  TRY (Cases_on `val_op`) >>
+  TRY (Cases_on `y`) >>
+  TRY (Cases_on `ALOOKUP var_repls s'`) >>
+  gvs[update_phi_ops_def,operand_ir_labels_def]
+QED
+
+Theorem operand_ir_labels_subst_label_ops_covered:
+  !ops old new s.
+    EVERY (\l. MEM l s.irs_used_labels) (operand_ir_labels ops) /\
+    MEM new s.irs_used_labels ==>
+    EVERY (\l. MEM l s.irs_used_labels)
+      (operand_ir_labels (MAP (subst_label_op old new) ops))
+Proof
+  Induct_on `ops` >> rpt strip_tac
+  >- gvs[operand_ir_labels_def]
+  >> Cases_on `h` >>
+     gvs[operand_ir_labels_def,subst_label_op_def] >>
+     Cases_on `s' = old` >> gvs[operand_ir_labels_def]
+QED
+
+Definition cfg_supply_covers_block_def:
+  cfg_supply_covers_block s bb <=>
+    EVERY (\id. MEM id s.irs_used_inst_ids) (block_ir_inst_ids bb) /\
+    EVERY (\v. MEM v s.irs_used_vars) (block_ir_vars bb) /\
+    EVERY (\l. MEM l s.irs_used_labels) (block_ir_labels bb)
+End
+
+
+Theorem operand_vars_subst_label_ops[simp]:
+  !ops old new.
+    operand_vars (MAP (subst_label_op old new) ops) = operand_vars ops
+Proof
+  Induct_on `ops` >> rpt gen_tac
+  >- simp[venomInstTheory.operand_vars_def]
+  >> Cases_on `h` >>
+     TRY (Cases_on `s = old`) >>
+     simp[venomInstTheory.operand_vars_def,venomInstTheory.operand_var_def,
+          subst_label_op_def]
+QED
+
+Theorem inst_ir_vars_subst_label_inst[simp]:
+  inst_ir_vars (subst_label_inst old new inst) = inst_ir_vars inst
+Proof
+  simp[inst_ir_vars_def,venomInstTheory.inst_uses_def,subst_label_inst_def]
+QED
+
+Theorem inst_ir_labels_subst_label_inst_covered:
+  EVERY (\l. MEM l s.irs_used_labels) (inst_ir_labels inst) /\
+  MEM new s.irs_used_labels ==>
+  EVERY (\l. MEM l s.irs_used_labels)
+    (inst_ir_labels (subst_label_inst old new inst))
+Proof
+  simp[inst_ir_labels_def,subst_label_inst_def] >>
+  metis_tac[operand_ir_labels_subst_label_ops_covered]
+QED
+
+Theorem inst_ir_vars_update_phi_ops_covered:
+  EVERY (\v. MEM v s.irs_used_vars) (inst_ir_vars inst) /\
+  EVERY (\p. MEM (SND p) s.irs_used_vars) repls ==>
+  EVERY (\v. MEM v s.irs_used_vars)
+    (inst_ir_vars (inst with inst_operands :=
+      update_phi_ops old new repls inst.inst_operands))
+Proof
+  simp[inst_ir_vars_def,venomInstTheory.inst_uses_def] >>
+  metis_tac[operand_vars_update_phi_ops_covered]
+QED
+
+Theorem inst_ir_labels_update_phi_ops_covered:
+  EVERY (\l. MEM l s.irs_used_labels) (inst_ir_labels inst) /\
+  MEM new s.irs_used_labels ==>
+  EVERY (\l. MEM l s.irs_used_labels)
+    (inst_ir_labels (inst with inst_operands :=
+      update_phi_ops old new repls inst.inst_operands))
+Proof
+  simp[inst_ir_labels_def] >>
+  metis_tac[operand_ir_labels_update_phi_ops_covered]
+QED
+
+
+Theorem block_ir_inst_ids_subst_label_terminator[simp]:
+  block_ir_inst_ids (subst_label_terminator old new bb) =
+  block_ir_inst_ids bb
+Proof
+  simp[block_ir_inst_ids_def,subst_label_terminator_def,
+       listTheory.MAP_MAP_o,combinTheory.o_DEF,subst_label_inst_def,COND_RAND]
+QED
+
+Theorem block_ir_vars_subst_label_terminator[simp]:
+  block_ir_vars (subst_label_terminator old new bb) = block_ir_vars bb
+Proof
+  simp[block_ir_vars_def,subst_label_terminator_def,
+       listTheory.MAP_MAP_o,combinTheory.o_DEF,COND_RAND] >>
+  AP_TERM_TAC >> simp[listTheory.MAP_EQ_f]
+QED
+
+Theorem EVERY_inst_ir_labels_subst_terminator_covered:
+  EVERY (\inst. EVERY (\l. MEM l s.irs_used_labels)
+                    (inst_ir_labels inst)) insts /\
+  MEM new s.irs_used_labels ==>
+  EVERY (\inst. EVERY (\l. MEM l s.irs_used_labels)
+                    (inst_ir_labels
+                      (if is_terminator inst.inst_opcode then
+                         subst_label_inst old new inst else inst))) insts
+Proof
+  rpt strip_tac >>
+  gvs[listTheory.EVERY_MEM] >>
+  Cases_on `is_terminator inst.inst_opcode`
+  >- (gvs[] >> rpt strip_tac >>
+      `EVERY (\l. MEM l s.irs_used_labels)
+         (inst_ir_labels (subst_label_inst old new inst))` by
+        (irule inst_ir_labels_subst_label_inst_covered >>
+         simp[listTheory.EVERY_MEM] >> metis_tac[]) >>
+      gvs[listTheory.EVERY_MEM])
+  >> gvs[] >> metis_tac[]
+QED
+
+Theorem cfg_supply_covers_block_subst_label_terminator:
+  cfg_supply_covers_block s bb /\ MEM new s.irs_used_labels ==>
+  cfg_supply_covers_block s (subst_label_terminator old new bb)
+Proof
+  rpt strip_tac >>
+  gvs[cfg_supply_covers_block_def] >>
+  gvs[block_ir_labels_def,subst_label_terminator_def,
+      listTheory.MAP_MAP_o,combinTheory.o_DEF,listTheory.EVERY_FLAT,
+      listTheory.EVERY_MAP] >>
+  irule EVERY_inst_ir_labels_subst_terminator_covered >>
+  simp[]
+QED
+
+Theorem block_ir_inst_ids_update_phis_for_split[simp]:
+  block_ir_inst_ids (update_phis_for_split old new repls bb) =
+  block_ir_inst_ids bb
+Proof
+  simp[block_ir_inst_ids_def,update_phis_for_split_def,
+       listTheory.MAP_MAP_o,combinTheory.o_DEF,COND_RAND]
+QED
+
+Theorem EVERY_inst_ir_vars_update_phis_covered:
+  EVERY (\inst. EVERY (\v. MEM v s.irs_used_vars) (inst_ir_vars inst)) insts /\
+  EVERY (\p. MEM (SND p) s.irs_used_vars) repls ==>
+  EVERY (\inst. EVERY (\v. MEM v s.irs_used_vars)
+             (inst_ir_vars
+               (if inst.inst_opcode <> PHI then inst else
+                  inst with inst_operands :=
+                    update_phi_ops old new repls inst.inst_operands))) insts
+Proof
+  rpt strip_tac >> gvs[listTheory.EVERY_MEM] >> rpt strip_tac >>
+  Cases_on `inst.inst_opcode <> PHI`
+  >- (gvs[] >> metis_tac[])
+  >> gvs[] >>
+     `EVERY (\v. MEM v s.irs_used_vars)
+       (inst_ir_vars (inst with inst_operands :=
+          update_phi_ops old new repls inst.inst_operands))` by
+       (irule inst_ir_vars_update_phi_ops_covered >>
+        simp[listTheory.EVERY_MEM] >> metis_tac[]) >>
+     gvs[listTheory.EVERY_MEM]
+QED
+
+Theorem EVERY_inst_ir_labels_update_phis_covered:
+  EVERY (\inst. EVERY (\l. MEM l s.irs_used_labels) (inst_ir_labels inst)) insts /\
+  MEM new s.irs_used_labels ==>
+  EVERY (\inst. EVERY (\l. MEM l s.irs_used_labels)
+             (inst_ir_labels
+               (if inst.inst_opcode <> PHI then inst else
+                  inst with inst_operands :=
+                    update_phi_ops old new repls inst.inst_operands))) insts
+Proof
+  rpt strip_tac >> gvs[listTheory.EVERY_MEM] >> rpt strip_tac >>
+  Cases_on `inst.inst_opcode <> PHI`
+  >- (gvs[] >> metis_tac[])
+  >> gvs[] >>
+     `EVERY (\l. MEM l s.irs_used_labels)
+       (inst_ir_labels (inst with inst_operands :=
+          update_phi_ops old new repls inst.inst_operands))` by
+       (irule inst_ir_labels_update_phi_ops_covered >>
+        simp[listTheory.EVERY_MEM] >> metis_tac[]) >>
+     gvs[listTheory.EVERY_MEM]
+QED
+
+Theorem cfg_supply_covers_block_update_phis_for_split:
+  cfg_supply_covers_block s bb /\
+  EVERY (\p. MEM (SND p) s.irs_used_vars) repls /\
+  MEM new s.irs_used_labels ==>
+  cfg_supply_covers_block s (update_phis_for_split old new repls bb)
+Proof
+  rpt strip_tac >>
+  gvs[cfg_supply_covers_block_def] >>
+  conj_tac
+  >- (gvs[block_ir_vars_def,update_phis_for_split_def,
+          listTheory.MAP_MAP_o,combinTheory.o_DEF,listTheory.EVERY_FLAT,
+          listTheory.EVERY_MAP] >>
+      irule EVERY_inst_ir_vars_update_phis_covered >> simp[])
+  >> gvs[block_ir_labels_def,update_phis_for_split_def,
+         listTheory.MAP_MAP_o,combinTheory.o_DEF,listTheory.EVERY_FLAT,
+         listTheory.EVERY_MAP] >>
+     irule EVERY_inst_ir_labels_update_phis_covered >> simp[]
+QED
+
+
+Theorem cfg_supply_covers_fn_blocks:
+  cfg_supply_covers_fn s fn <=>
+  MEM fn.fn_name s.irs_used_labels /\
+  EVERY (cfg_supply_covers_block s) fn.fn_blocks
+Proof
+  simp[cfg_supply_covers_fn_def,cfg_supply_covers_block_def,
+       fn_ir_inst_ids_def,fn_ir_vars_def,fn_ir_labels_def,
+       listTheory.EVERY_FLAT,listTheory.EVERY_MAP,listTheory.EVERY_MEM,
+       listTheory.MEM_FLAT,listTheory.MEM_MAP] >>
+  metis_tac[]
+QED
+
+Theorem cfg_supply_covers_fn_mono:
+  cfg_supply_covers_fn s fn /\ cfg_supply_extends s s' ==>
+  cfg_supply_covers_fn s' fn
+Proof
+  simp[cfg_supply_covers_fn_def,listTheory.EVERY_MEM] >>
+  metis_tac[cfg_supply_extends_members]
+QED
+
+Theorem EVERY_replace_block_covered:
+  EVERY P bbs /\ P bb' ==>
+  EVERY P (replace_block lbl bb' bbs)
+Proof
+  Induct_on `bbs` >> simp[replace_block_def] >>
+  rpt strip_tac >> Cases_on `h.bb_label = lbl` >>
+  gvs[replace_block_def]
+QED
+
+
+Theorem MEM_phi_pairs_SND_operand_vars:
+  !ops l v. MEM (l,v) (phi_pairs ops) ==> MEM v (operand_vars ops)
+Proof
+  recInduct venomInstTheory.phi_pairs_ind >>
+  rpt strip_tac >>
+  gvs[venomInstTheory.phi_pairs_def,venomInstTheory.operand_vars_def,
+      venomInstTheory.operand_var_def] >>
+  TRY (Cases_on `v1`) >>
+  gvs[venomInstTheory.operand_var_def] >>
+  first_x_assum drule >> simp[venomInstTheory.operand_var_def]
+QED
+Theorem MEM_phi_pairs_SND_operand_vars_pair:
+  MEM p (phi_pairs ops) ==> MEM (SND p) (operand_vars ops)
+Proof
+  PairCases_on `p` >> simp[] >> rpt strip_tac >>
+  irule MEM_phi_pairs_SND_operand_vars >> qexists `p0` >> simp[]
+QED
+
+
+Theorem MEM_phi_vars_needing_forward_block_vars:
+  !insts pred_label pred_bb v.
+    MEM v (phi_vars_needing_forward pred_label pred_bb insts) ==>
+    MEM v (FLAT (MAP inst_ir_vars insts))
+Proof
+  Induct_on `insts` >> rpt strip_tac
+  >- gvs[phi_vars_needing_forward_def]
+  >> Cases_on `h.inst_opcode <> PHI`
+  >- (gvs[phi_vars_needing_forward_def] >> metis_tac[])
+  >> gvs[phi_vars_needing_forward_def,listTheory.MEM_MAP,
+         listTheory.MEM_FILTER] >>
+     imp_res_tac MEM_phi_pairs_SND_operand_vars_pair >>
+     simp[inst_ir_vars_def,venomInstTheory.inst_uses_def] >> metis_tac[]
+QED
+
+Theorem EVERY_phi_vars_needing_forward_covered:
+  EVERY (\v. MEM v s.irs_used_vars) (block_ir_vars target_bb) ==>
+  EVERY (\v. MEM v s.irs_used_vars)
+    (nub (phi_vars_needing_forward pred_label pred_bb
+            target_bb.bb_instructions))
+Proof
+  simp[block_ir_vars_def,listTheory.EVERY_MEM] >>
+  metis_tac[MEM_phi_vars_needing_forward_block_vars]
+QED
+
+
+Definition cfg_supply_covers_insts_def:
+  cfg_supply_covers_insts s insts <=>
+    EVERY (\id. MEM id s.irs_used_inst_ids) (MAP (\i. i.inst_id) insts) /\
+    EVERY (\v. MEM v s.irs_used_vars) (FLAT (MAP inst_ir_vars insts)) /\
+    EVERY (\l. MEM l s.irs_used_labels) (FLAT (MAP inst_ir_labels insts))
+End
+
+Theorem build_forwarding_assigns_supply_covered:
+  !vars s repls insts s'.
+    ir_supply_inst_ok s /\
+    EVERY (\v. MEM v s.irs_used_vars) vars /\
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    cfg_supply_covers_insts s' insts
+Proof
+  Induct_on `vars` >> rpt strip_tac
+  >- gvs[build_forwarding_assigns_supply_def,cfg_supply_covers_insts_def]
+  >> Cases_on `fresh_ir_var s` >>
+     rename1 `fresh_ir_var s = (new_var,s1)` >>
+     Cases_on `fresh_inst_id s1` >>
+     rename1 `fresh_inst_id s1 = (id,s2)` >>
+     Cases_on `build_forwarding_assigns_supply s2 vars` >>
+     PairCases_on `r` >>
+     rename1 `build_forwarding_assigns_supply s2 vars =
+              (rest_repls,rest_insts,s3)` >>
+     gvs[build_forwarding_assigns_supply_def] >>
+     `cfg_supply_extends s s1` by
+       metis_tac[fresh_ir_var_cfg_supply_extends] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_extends s1 s2` by
+       metis_tac[fresh_inst_id_cfg_supply_extends] >>
+     `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+     `cfg_forwarding_supply_contract s2 rest_insts s'` by
+       metis_tac[build_forwarding_assigns_supply_contract] >>
+     `cfg_supply_extends s2 s'` by
+       gvs[cfg_forwarding_supply_contract_def] >>
+     `EVERY (\v. MEM v s2.irs_used_vars) vars` by
+       (gvs[listTheory.EVERY_MEM] >>
+        metis_tac[cfg_supply_extends_members]) >>
+     `cfg_supply_covers_insts s' rest_insts` by metis_tac[] >>
+     drule fresh_ir_var_contract >> strip_tac >>
+     drule_all fresh_inst_id_contract >> strip_tac >>
+     `MEM new_var s1.irs_used_vars` by simp[] >>
+     `MEM new_var s2.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     `MEM new_var s'.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     `MEM id s2.irs_used_inst_ids` by simp[] >>
+     `MEM id s'.irs_used_inst_ids` by
+       metis_tac[cfg_supply_extends_members] >>
+     `MEM h s1.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     `MEM h s2.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     `MEM h s'.irs_used_vars` by
+       metis_tac[cfg_supply_extends_members] >>
+     gvs[cfg_supply_covers_insts_def,inst_ir_vars_def,
+         venomInstTheory.inst_uses_def,venomInstTheory.operand_vars_def,
+         venomInstTheory.operand_var_def,inst_ir_labels_def,
+         operand_ir_labels_def]
+QED
+
+
+Theorem cfg_supply_covers_block_insts:
+  cfg_supply_covers_block s bb <=>
+  MEM bb.bb_label s.irs_used_labels /\
+  cfg_supply_covers_insts s bb.bb_instructions
+Proof
+  simp[cfg_supply_covers_block_def,cfg_supply_covers_insts_def,
+       block_ir_inst_ids_def,block_ir_vars_def,block_ir_labels_def] >>
+  metis_tac[]
+QED
+
+Theorem cfg_supply_covers_insts_mono:
+  cfg_supply_covers_insts s insts /\ cfg_supply_extends s s' ==>
+  cfg_supply_covers_insts s' insts
+Proof
+  simp[cfg_supply_covers_insts_def,listTheory.EVERY_MEM] >>
+  metis_tac[cfg_supply_extends_members]
+QED
+
+Theorem build_split_block_supply_covered:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_block s target_bb /\
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  cfg_supply_covers_block s' split_bb
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+              (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+                      target_bb.bb_instructions))` >>
+  PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s1 _ =
+           (var_repls,fwd_insts,s2)` >>
+  Cases_on `fresh_inst_id s2` >>
+  rename1 `fresh_inst_id s2 = (jmp_id,s3)` >>
+  gvs[build_split_block_supply_def] >>
+  `cfg_supply_extends s s1` by
+    metis_tac[fresh_ir_label_cfg_supply_extends] >>
+  `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+  `EVERY (\v. MEM v s.irs_used_vars)
+     (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+             target_bb.bb_instructions))` by
+    (irule EVERY_phi_vars_needing_forward_covered >>
+     gvs[cfg_supply_covers_block_def]) >>
+  `EVERY (\v. MEM v s1.irs_used_vars)
+     (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+             target_bb.bb_instructions))` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[cfg_supply_extends_members]) >>
+  `cfg_supply_covers_insts s2 fwd_insts` by
+    metis_tac[build_forwarding_assigns_supply_covered] >>
+  `cfg_forwarding_supply_contract s1 fwd_insts s2` by
+    metis_tac[build_forwarding_assigns_supply_contract] >>
+  `cfg_supply_extends s1 s2` by
+    gvs[cfg_forwarding_supply_contract_def] >>
+  `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+  `cfg_supply_extends s2 s'` by
+    metis_tac[fresh_inst_id_cfg_supply_extends] >>
+  `cfg_supply_covers_insts s' fwd_insts` by
+    metis_tac[cfg_supply_covers_insts_mono] >>
+  drule fresh_ir_label_contract >> strip_tac >>
+  drule_all fresh_inst_id_contract >> strip_tac >>
+  `MEM split_label s1.irs_used_labels` by simp[] >>
+  `MEM split_label s2.irs_used_labels` by
+    metis_tac[cfg_supply_extends_members] >>
+  `MEM split_label s'.irs_used_labels` by
+    metis_tac[cfg_supply_extends_members] >>
+  `MEM target_bb.bb_label s.irs_used_labels` by
+    gvs[cfg_supply_covers_block_insts] >>
+  `MEM target_bb.bb_label s1.irs_used_labels` by
+    metis_tac[cfg_supply_extends_members] >>
+  `MEM target_bb.bb_label s2.irs_used_labels` by
+    metis_tac[cfg_supply_extends_members] >>
+  `MEM target_bb.bb_label s'.irs_used_labels` by
+    metis_tac[cfg_supply_extends_members] >>
+  `MEM jmp_id s'.irs_used_inst_ids` by simp[] >>
+  gvs[cfg_supply_covers_block_insts,cfg_supply_covers_insts_def,
+      inst_ir_vars_def,venomInstTheory.inst_uses_def,
+      venomInstTheory.operand_vars_def,venomInstTheory.operand_var_def,
+      inst_ir_labels_def,operand_ir_labels_def]
+QED
+
+
+Theorem build_split_block_supply_repls_covered:
+  ir_supply_inst_ok s /\
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  EVERY (\p. MEM (SND p) s'.irs_used_vars) repls
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+              (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+                      target_bb.bb_instructions))` >>
+  PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s1 _ =
+           (var_repls,fwd_insts,s2)` >>
+  Cases_on `fresh_inst_id s2` >>
+  rename1 `fresh_inst_id s2 = (jmp_id,s3)` >>
+  gvs[build_split_block_supply_def] >>
+  `cfg_supply_extends s s1` by
+    metis_tac[fresh_ir_label_cfg_supply_extends] >>
+  `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+  `EVERY (\p. MEM (SND p) s2.irs_used_vars) repls` by
+    (irule build_forwarding_assigns_supply_repls_covered >> simp[] >>
+     metis_tac[]) >>
+  `cfg_forwarding_supply_contract s1 fwd_insts s2` by
+    metis_tac[build_forwarding_assigns_supply_contract] >>
+  `ir_supply_inst_ok s2` by
+    gvs[cfg_forwarding_supply_contract_def,cfg_supply_extends_def] >>
+  `cfg_supply_extends s2 s'` by
+    metis_tac[fresh_inst_id_cfg_supply_extends] >>
+  gvs[listTheory.EVERY_MEM] >>
+  metis_tac[cfg_supply_extends_members]
+QED
+
+Theorem cfg_supply_covers_block_mono:
+  cfg_supply_covers_block s bb /\ cfg_supply_extends s s' ==>
+  cfg_supply_covers_block s' bb
+Proof
+  simp[cfg_supply_covers_block_def,listTheory.EVERY_MEM] >>
+  metis_tac[cfg_supply_extends_members]
+QED
+
+Theorem insert_split_supply_covered:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_fn s fn /\
+  cfg_supply_covers_block s pred_bb /\
+  cfg_supply_covers_block s target_bb /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  cfg_supply_covers_fn s' fn'
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  `cfg_block_supply_contract s split_bb s'` by
+    metis_tac[build_split_block_supply_contract] >>
+  `cfg_supply_extends s s'` by
+    gvs[cfg_block_supply_contract_def] >>
+  `cfg_supply_covers_fn s' fn` by
+    metis_tac[cfg_supply_covers_fn_mono] >>
+  `cfg_supply_covers_block s' pred_bb` by
+    metis_tac[cfg_supply_covers_block_mono] >>
+  `cfg_supply_covers_block s' target_bb` by
+    metis_tac[cfg_supply_covers_block_mono] >>
+  `cfg_supply_covers_block s' split_bb` by
+    metis_tac[build_split_block_supply_covered] >>
+  `EVERY (\p. MEM (SND p) s'.irs_used_vars) repls` by
+    metis_tac[build_split_block_supply_repls_covered] >>
+  `cfg_supply_covers_block s'
+     (subst_label_terminator target_bb.bb_label split_bb.bb_label pred_bb)` by
+    (irule cfg_supply_covers_block_subst_label_terminator >>
+     gvs[cfg_supply_covers_block_insts]) >>
+  `cfg_supply_covers_block s'
+     (update_phis_for_split pred_bb.bb_label split_bb.bb_label repls target_bb)` by
+    (irule cfg_supply_covers_block_update_phis_for_split >>
+     gvs[cfg_supply_covers_block_insts]) >>
+  gvs[cfg_supply_covers_fn_blocks] >>
+  irule EVERY_replace_block_covered >> simp[] >>
+  irule EVERY_replace_block_covered >> simp[]
+QED
+
+
+Theorem FIND_SOME_MEM:
+  !P xs x. FIND P xs = SOME x ==> MEM x xs
+Proof
+  Induct_on `xs` >> simp[listTheory.FIND_thm] >> rpt strip_tac >>
+  Cases_on `P h` >> gvs[listTheory.FIND_thm] >> metis_tac[]
+QED
+
+Theorem find_and_split_supply_covered:
+  !bbs fn s fn' changed s'.
+    ir_supply_inst_ok s /\
+    cfg_supply_covers_fn s fn /\
+    EVERY (cfg_supply_covers_block s) bbs /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    cfg_supply_covers_fn s' fn'
+Proof
+  Induct_on `bbs` >> rpt strip_tac
+  >- gvs[find_and_split_supply_def]
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     `MEM x (block_preds fn h.bb_label)` by
+       metis_tac[FIND_SOME_MEM] >>
+     `MEM x fn.fn_blocks` by
+       gvs[block_preds_def,listTheory.MEM_FILTER] >>
+     `cfg_supply_covers_block s x` by
+       (gvs[cfg_supply_covers_fn_blocks,listTheory.EVERY_MEM] >>
+        metis_tac[]) >>
+     irule insert_split_supply_covered >>
+     qexistsl [`fn`,`x`,`s`,`h`] >> simp[]
+QED
+
+Theorem cfg_norm_round_supply_covered:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_fn s fn /\
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  cfg_supply_covers_fn s' fn'
+Proof
+  rpt strip_tac >>
+  irule find_and_split_supply_covered >>
+  qexistsl [`fn.fn_blocks`,`changed`,`fn`,`s`] >>
+  gvs[cfg_norm_round_supply_def,cfg_supply_covers_fn_blocks]
+QED
+
+
+Theorem EVERY_not_MEM:
+  EVERY (\x. ~MEM x ys) xs /\ MEM y ys ==> ~MEM y xs
+Proof
+  simp[listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem build_forwarding_assigns_supply_ids_fresh:
+  !vars s repls insts s'.
+    ir_supply_inst_ok s /\
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    ALL_DISTINCT (MAP (\i. i.inst_id) insts) /\
+    EVERY (\id. ~MEM id s.irs_used_inst_ids)
+      (MAP (\i. i.inst_id) insts)
+Proof
+  Induct_on `vars` >> rpt strip_tac
+  >- gvs[build_forwarding_assigns_supply_def]
+  >> Cases_on `fresh_ir_var s` >>
+     rename1 `fresh_ir_var s = (new_var,s1)` >>
+     Cases_on `fresh_inst_id s1` >>
+     rename1 `fresh_inst_id s1 = (id,s2)` >>
+     Cases_on `build_forwarding_assigns_supply s2 vars` >>
+     PairCases_on `r` >>
+     rename1 `build_forwarding_assigns_supply s2 vars =
+              (rest_repls,rest_insts,s3)` >>
+     gvs[build_forwarding_assigns_supply_def] >>
+     `cfg_supply_extends s s1` by
+       metis_tac[fresh_ir_var_cfg_supply_extends] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_extends s1 s2` by
+       metis_tac[fresh_inst_id_cfg_supply_extends] >>
+     `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+     `ALL_DISTINCT (MAP (\i. i.inst_id) rest_insts) /\
+      EVERY (\rid. ~MEM rid s2.irs_used_inst_ids)
+        (MAP (\i. i.inst_id) rest_insts)` by metis_tac[] >>
+     drule_all fresh_inst_id_contract >> strip_tac >>
+     `MEM id s2.irs_used_inst_ids` by simp[] >>
+     `~MEM id (MAP (\i. i.inst_id) rest_insts)` by
+       metis_tac[EVERY_not_MEM] >>
+     `cfg_supply_extends s s2` by
+       metis_tac[cfg_supply_extends_trans] >>
+     `EVERY (\rid. ~MEM rid s.irs_used_inst_ids)
+        (MAP (\i. i.inst_id) rest_insts)` by
+       (gvs[listTheory.EVERY_MEM] >> rpt strip_tac >>
+        `MEM rid s2.irs_used_inst_ids` by
+          metis_tac[cfg_supply_extends_members] >>
+        metis_tac[]) >>
+     gvs[] >>
+     metis_tac[cfg_supply_extends_members]
+QED
+
+
+Theorem build_forwarding_assigns_supply_ids_covered:
+  !vars s repls insts s'.
+    ir_supply_inst_ok s /\
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    EVERY (\id. MEM id s'.irs_used_inst_ids) (MAP (\i. i.inst_id) insts)
+Proof
+  Induct_on `vars` >> rpt strip_tac
+  >- gvs[build_forwarding_assigns_supply_def]
+  >> Cases_on `fresh_ir_var s` >>
+     rename1 `fresh_ir_var s = (new_var,s1)` >>
+     Cases_on `fresh_inst_id s1` >>
+     rename1 `fresh_inst_id s1 = (id,s2)` >>
+     Cases_on `build_forwarding_assigns_supply s2 vars` >>
+     PairCases_on `r` >>
+     rename1 `build_forwarding_assigns_supply s2 vars =
+              (rest_repls,rest_insts,s3)` >>
+     gvs[build_forwarding_assigns_supply_def] >>
+     `cfg_supply_extends s s1` by
+       metis_tac[fresh_ir_var_cfg_supply_extends] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_extends s1 s2` by
+       metis_tac[fresh_inst_id_cfg_supply_extends] >>
+     `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+     `cfg_forwarding_supply_contract s2 rest_insts s'` by
+       metis_tac[build_forwarding_assigns_supply_contract] >>
+     `cfg_supply_extends s2 s'` by
+       gvs[cfg_forwarding_supply_contract_def] >>
+     `EVERY (\rid. MEM rid s'.irs_used_inst_ids)
+        (MAP (\i. i.inst_id) rest_insts)` by metis_tac[] >>
+     drule_all fresh_inst_id_contract >> strip_tac >>
+     `MEM id s2.irs_used_inst_ids` by simp[] >>
+     `MEM id s'.irs_used_inst_ids` by
+       metis_tac[cfg_supply_extends_members] >>
+     gvs[]
+QED
+
+Theorem EVERY_MEM_not:
+  EVERY (\x. MEM x ys) xs /\ ~MEM y ys ==> ~MEM y xs
+Proof
+  simp[listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem build_split_block_supply_ids_fresh:
+  ir_supply_inst_ok s /\
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  ALL_DISTINCT (block_ir_inst_ids split_bb) /\
+  EVERY (\id. ~MEM id s.irs_used_inst_ids) (block_ir_inst_ids split_bb)
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+              (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+                      target_bb.bb_instructions))` >>
+  PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s1 _ =
+           (var_repls,fwd_insts,s2)` >>
+  Cases_on `fresh_inst_id s2` >>
+  rename1 `fresh_inst_id s2 = (jmp_id,s3)` >>
+  gvs[build_split_block_supply_def] >>
+  `cfg_supply_extends s s1` by
+    metis_tac[fresh_ir_label_cfg_supply_extends] >>
+  `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+  `ALL_DISTINCT (MAP (\i. i.inst_id) fwd_insts) /\
+   EVERY (\id. ~MEM id s1.irs_used_inst_ids)
+     (MAP (\i. i.inst_id) fwd_insts)` by
+    metis_tac[build_forwarding_assigns_supply_ids_fresh] >>
+  `cfg_forwarding_supply_contract s1 fwd_insts s2` by
+    metis_tac[build_forwarding_assigns_supply_contract] >>
+  `cfg_supply_extends s1 s2` by
+    gvs[cfg_forwarding_supply_contract_def] >>
+  `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+  `EVERY (\id. MEM id s2.irs_used_inst_ids)
+     (MAP (\i. i.inst_id) fwd_insts)` by
+    metis_tac[build_forwarding_assigns_supply_ids_covered] >>
+  drule_all fresh_inst_id_contract >> strip_tac >>
+  `~MEM jmp_id (MAP (\i. i.inst_id) fwd_insts)` by
+    metis_tac[EVERY_MEM_not] >>
+  `EVERY (\id. ~MEM id s.irs_used_inst_ids)
+     (MAP (\i. i.inst_id) fwd_insts)` by
+    (gvs[listTheory.EVERY_MEM,cfg_supply_extends_def] >> metis_tac[]) >>
+  `~MEM jmp_id s.irs_used_inst_ids` by
+    (gvs[cfg_supply_extends_def] >> metis_tac[]) >>
+  gvs[block_ir_inst_ids_def,listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_MEM] >>
+  metis_tac[]
+QED
+
+
+Theorem all_distinct_map_mem_inj_cfg:
+  !f xs a b.
+    ALL_DISTINCT (MAP f xs) /\ MEM a xs /\ MEM b xs /\ f a = f b ==>
+    a = b
+Proof
+  rpt strip_tac >> gvs[listTheory.MEM_EL] >>
+  metis_tac[listTheory.ALL_DISTINCT_EL_IMP,listTheory.LENGTH_MAP,
+            listTheory.EL_MAP]
+QED
+
+Theorem FLAT_MAP_replace_block_preserved:
+  !bbs lbl new_bb C.
+    EVERY (\b. b.bb_label = lbl ==> C b = C new_bb) bbs ==>
+    FLAT (MAP C (replace_block lbl new_bb bbs)) = FLAT (MAP C bbs)
+Proof
+  Induct_on `bbs` >> simp[replace_block_def] >> rpt strip_tac >>
+  Cases_on `h.bb_label = lbl` >> gvs[replace_block_def]
+QED
+
+Theorem FLAT_MAP_replace_block_unique:
+  ALL_DISTINCT (MAP (\b. b.bb_label) bbs) /\
+  MEM old_bb bbs /\ old_bb.bb_label = lbl /\ C new_bb = C old_bb ==>
+  FLAT (MAP C (replace_block lbl new_bb bbs)) = FLAT (MAP C bbs)
+Proof
+  rpt strip_tac >>
+  `EVERY (\b. b.bb_label = lbl ==> C b = C new_bb) bbs` by
+    (simp[listTheory.EVERY_MEM] >> rpt strip_tac >>
+     `b = old_bb` by metis_tac[all_distinct_map_mem_inj_cfg] >>
+     gvs[]) >>
+  irule FLAT_MAP_replace_block_preserved >> simp[]
+QED
+
+Theorem MAP_labels_replace_block[simp]:
+  new_bb.bb_label = lbl ==>
+  MAP (\b. b.bb_label) (replace_block lbl new_bb bbs) =
+  MAP (\b. b.bb_label) bbs
+Proof
+  Induct_on `bbs` >> simp[replace_block_def] >> rpt strip_tac >>
+  Cases_on `h.bb_label = lbl` >> gvs[replace_block_def]
+QED
+
+Theorem build_split_block_supply_label_fresh:
+  ir_supply_inst_ok s /\
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  ~MEM split_bb.bb_label s.irs_used_labels
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+              (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+                      target_bb.bb_instructions))` >>
+  PairCases_on `r` >>
+  Cases_on `fresh_inst_id r1` >>
+  gvs[build_split_block_supply_def] >>
+  drule fresh_ir_label_contract >> simp[]
+QED
+
+
+Theorem MEM_replace_block_new:
+  !bbs old_bb lbl new_bb.
+    MEM old_bb bbs /\ old_bb.bb_label = lbl ==>
+    MEM new_bb (replace_block lbl new_bb bbs)
+Proof
+  Induct_on `bbs` >> simp[replace_block_def] >> rpt strip_tac >>
+  Cases_on `h.bb_label = lbl` >> gvs[replace_block_def] >> metis_tac[]
+QED
+
+Theorem MEM_replace_block_other:
+  !bbs bb lbl new_bb.
+    MEM bb bbs /\ bb.bb_label <> lbl ==>
+    MEM bb (replace_block lbl new_bb bbs)
+Proof
+  Induct_on `bbs` >> simp[replace_block_def] >> rpt strip_tac >>
+  Cases_on `h.bb_label = lbl` >> gvs[replace_block_def] >> metis_tac[]
+QED
+
+Theorem insert_split_supply_inst_ids:
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (fn_labels fn) /\
+  MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  ?split_bb repls.
+    build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') /\
+    fn_ir_inst_ids fn' = fn_ir_inst_ids fn ++ block_ir_inst_ids split_bb
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  qabbrev_tac `pred' = subst_label_terminator
+    target_bb.bb_label split_bb.bb_label pred_bb` >>
+  qabbrev_tac `target' = update_phis_for_split
+    pred_bb.bb_label split_bb.bb_label repls target_bb` >>
+  `block_ir_inst_ids pred' = block_ir_inst_ids pred_bb` by
+    simp[Abbr `pred'`] >>
+  `block_ir_inst_ids target' = block_ir_inst_ids target_bb` by
+    simp[Abbr `target'`] >>
+  `pred'.bb_label = pred_bb.bb_label` by
+    simp[Abbr `pred'`,subst_label_terminator_def] >>
+  `target'.bb_label = target_bb.bb_label` by
+    simp[Abbr `target'`,update_phis_for_split_def] >>
+  `FLAT (MAP block_ir_inst_ids
+      (replace_block pred_bb.bb_label pred' fn.fn_blocks)) =
+   FLAT (MAP block_ir_inst_ids fn.fn_blocks)` by
+    (irule FLAT_MAP_replace_block_unique >>
+     conj_tac >- gvs[venomInstTheory.fn_labels_def] >>
+     qexists `pred_bb` >> simp[]) >>
+  `ALL_DISTINCT (MAP (\b. b.bb_label)
+      (replace_block pred_bb.bb_label pred' fn.fn_blocks))` by
+    gvs[venomInstTheory.fn_labels_def] >>
+  Cases_on `pred_bb.bb_label = target_bb.bb_label`
+  >- (`pred_bb = target_bb` by
+        metis_tac[all_distinct_map_mem_inj_cfg,
+                  venomInstTheory.fn_labels_def] >>
+      `MEM pred'
+         (replace_block pred_bb.bb_label pred' fn.fn_blocks)` by
+        metis_tac[MEM_replace_block_new] >>
+      `FLAT (MAP block_ir_inst_ids
+          (replace_block target_bb.bb_label target'
+            (replace_block pred_bb.bb_label pred' fn.fn_blocks))) =
+       FLAT (MAP block_ir_inst_ids
+          (replace_block pred_bb.bb_label pred' fn.fn_blocks))` by
+        (irule FLAT_MAP_replace_block_unique >> simp[] >> metis_tac[]) >>
+      gvs[fn_ir_inst_ids_def,Abbr `pred'`,Abbr `target'`])
+  >> `MEM target_bb
+        (replace_block pred_bb.bb_label pred' fn.fn_blocks)` by
+       metis_tac[MEM_replace_block_other] >>
+     `FLAT (MAP block_ir_inst_ids
+        (replace_block target_bb.bb_label target'
+          (replace_block pred_bb.bb_label pred' fn.fn_blocks))) =
+      FLAT (MAP block_ir_inst_ids
+        (replace_block pred_bb.bb_label pred' fn.fn_blocks))` by
+       (irule FLAT_MAP_replace_block_unique >> simp[] >> metis_tac[]) >>
+     gvs[fn_ir_inst_ids_def,Abbr `pred'`,Abbr `target'`]
+QED
+
+
+Theorem insert_split_supply_labels:
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  ?split_bb repls.
+    build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') /\
+    fn_labels fn' = fn_labels fn ++ [split_bb.bb_label]
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  gvs[insert_split_supply_def,venomInstTheory.fn_labels_def,
+      subst_label_terminator_def,update_phis_for_split_def]
+QED
+
+Theorem MEM_fn_labels_fn_ir_labels:
+  MEM l (fn_labels fn) ==> MEM l (fn_ir_labels fn)
+Proof
+  simp[venomInstTheory.fn_labels_def,fn_ir_labels_def,
+       block_ir_labels_def,listTheory.MEM_FLAT,listTheory.MEM_MAP] >>
+  rpt strip_tac >> disj2_tac >>
+  qexists `bb.bb_label :: FLAT (MAP inst_ir_labels bb.bb_instructions)` >>
+  simp[] >> qexists `bb` >> simp[]
+QED
+
+Theorem insert_split_supply_distinct:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  ALL_DISTINCT (fn_labels fn') /\ ALL_DISTINCT (fn_ir_inst_ids fn')
+Proof
+  strip_tac >>
+  drule insert_split_supply_labels >> strip_tac >>
+  `~MEM split_bb.bb_label s.irs_used_labels` by
+    metis_tac[build_split_block_supply_label_fresh] >>
+  `~MEM split_bb.bb_label (fn_labels fn)` by
+    (CCONTR_TAC >> gvs[] >>
+     `MEM split_bb.bb_label (fn_ir_labels fn)` by
+       metis_tac[MEM_fn_labels_fn_ir_labels] >>
+     gvs[cfg_supply_covers_fn_def,listTheory.EVERY_MEM]) >>
+  conj_tac >- gvs[listTheory.ALL_DISTINCT_APPEND] >>
+  drule_all insert_split_supply_inst_ids >> strip_tac >>
+  `split_bb' = split_bb /\ repls' = repls` by
+    (qpat_x_assum `build_split_block_supply s pred_bb target_bb =
+                    (split_bb',repls',s')` mp_tac >>
+     simp[]) >>
+  gvs[] >>
+  `ALL_DISTINCT (block_ir_inst_ids split_bb) /\
+   EVERY (\id. ~MEM id s.irs_used_inst_ids)
+     (block_ir_inst_ids split_bb)` by
+    metis_tac[build_split_block_supply_ids_fresh] >>
+  gvs[listTheory.ALL_DISTINCT_APPEND,listTheory.EVERY_MEM,
+      cfg_supply_covers_fn_def] >>
+  metis_tac[]
+QED
+
+
+Theorem find_and_split_supply_distinct:
+  !bbs fn s fn' changed s'.
+    ir_supply_inst_ok s /\
+    cfg_supply_covers_fn s fn /\
+    EVERY (cfg_supply_covers_block s) bbs /\
+    EVERY (\bb. MEM bb fn.fn_blocks) bbs /\
+    ALL_DISTINCT (fn_labels fn) /\
+    ALL_DISTINCT (fn_ir_inst_ids fn) /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    ALL_DISTINCT (fn_labels fn') /\ ALL_DISTINCT (fn_ir_inst_ids fn')
+Proof
+  Induct_on `bbs` >> rpt gen_tac >> strip_tac
+  >- gvs[find_and_split_supply_def]
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     `MEM x (block_preds fn h.bb_label)` by
+       metis_tac[FIND_SOME_MEM] >>
+     `MEM x fn.fn_blocks` by
+       gvs[block_preds_def,listTheory.MEM_FILTER] >>
+     irule insert_split_supply_distinct >>
+     qexistsl [`fn`,`x`,`s`,`r`,`h`] >> simp[]
+QED
+
+Theorem cfg_norm_round_supply_distinct:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  ALL_DISTINCT (fn_labels fn') /\ ALL_DISTINCT (fn_ir_inst_ids fn')
+Proof
+  strip_tac >>
+  irule find_and_split_supply_distinct >>
+  qexistsl [`fn.fn_blocks`,`changed`,`fn`,`s`] >>
+  gvs[cfg_norm_round_supply_def,cfg_supply_covers_fn_blocks,
+      listTheory.EVERY_MEM]
 QED
