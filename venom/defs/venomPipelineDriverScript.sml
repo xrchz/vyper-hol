@@ -1,0 +1,146 @@
+(*
+ * Generic checked Venom pipeline interfaces and driver.
+ *
+ * The definitions in this theory are deliberately optimization-level neutral:
+ * an optimization level contributes only a resolved policy and pipeline data.
+ *)
+
+Theory venomPipelineDriver
+Ancestors
+  venomPassSchedule
+  venomCompilerTypes
+  venomPolicyTypes
+
+Definition pipeline_stage_tags_def:
+  (pipeline_stage_tags [] = []) /\
+  (pipeline_stage_tags (PS_MapFunctions pass::stages) =
+     fn_pass_tag pass::pipeline_stage_tags stages) /\
+  (pipeline_stage_tags (PS_DiscardAnalyses::stages) =
+     pipeline_stage_tags stages)
+End
+
+Definition pipeline_spec_tags_def:
+  pipeline_spec_tags spec =
+    pipeline_stage_tags spec.ps_pre_walk_stages ++
+    MAP fn_pass_tag spec.ps_fn_passes ++
+    pipeline_stage_tags spec.ps_post_walk_stages
+End
+
+(* Every FMP lowering is guarded by an earlier DRET desugaring, even when the
+ * two passes occur in different pipeline scopes.  The Boolean accumulator
+ * records whether DRET has already occurred in the strict prefix. *)
+Definition dret_before_fmp_aux_def:
+  (dret_before_fmp_aux seen [] = T) /\
+  (dret_before_fmp_aux seen (tag::tags) =
+     if tag = VP_DretDesugar then dret_before_fmp_aux T tags
+     else if tag = VP_FmpLowering then
+       seen /\ dret_before_fmp_aux seen tags
+     else dret_before_fmp_aux seen tags)
+End
+
+Definition dret_before_fmp_def:
+  dret_before_fmp tags = dret_before_fmp_aux F tags
+End
+
+Definition pass_target_supported_def:
+  pass_target_supported caps tag <=>
+    case tag of
+      VP_DretDesugar => caps CapMcopy
+    | _ => T
+End
+
+Definition opcode_target_supported_def:
+  opcode_target_supported caps op <=>
+    (op = MCOPY ==> caps CapMcopy) /\
+    (MEM op [TLOAD; TSTORE] ==> caps CapTransientStorage) /\
+    (MEM op [BLOBHASH; BLOBBASEFEE] ==> caps CapBlobOps)
+End
+
+Definition instruction_target_safe_def:
+  instruction_target_safe caps inst <=>
+    opcode_target_supported caps inst.inst_opcode
+End
+
+Definition basic_block_target_safe_def:
+  basic_block_target_safe caps bb <=>
+    EVERY (instruction_target_safe caps) bb.bb_instructions
+End
+
+Definition function_target_safe_def:
+  function_target_safe caps fn <=>
+    EVERY (basic_block_target_safe caps) fn.fn_blocks
+End
+
+Definition context_target_safe_def:
+  context_target_safe caps ctx <=>
+    EVERY (function_target_safe caps) ctx.ctx_functions
+End
+
+Definition pipeline_stage_wf_def:
+  pipeline_stage_wf stage <=>
+    case stage of
+      PS_MapFunctions pass => configured_fn_pass_wf pass
+    | PS_DiscardAnalyses => T
+End
+
+Definition pipeline_spec_wf_def:
+  pipeline_spec_wf rpolicy spec <=>
+    target_capabilities_wf rpolicy.rpol_target /\
+    rpolicy.rpol_final_assembly = spec.ps_final_assembly /\
+    EVERY pipeline_stage_wf spec.ps_pre_walk_stages /\
+    EVERY configured_fn_pass_wf spec.ps_fn_passes /\
+    EVERY pipeline_stage_wf spec.ps_post_walk_stages /\
+    valid_pass_order (MAP fn_pass_tag spec.ps_fn_passes) /\
+    dret_before_fmp (pipeline_spec_tags spec) /\
+    EVERY (pass_target_supported rpolicy.rpol_target)
+          (pipeline_spec_tags spec)
+End
+
+Theorem o1_pipeline_spec_wf_resolved:
+  resolve_o1_policy policy = SOME rpolicy ==>
+  pipeline_spec_wf rpolicy o1_pipeline_spec
+Proof
+  simp [resolve_o1_policy_def, pipeline_spec_wf_def,
+        pipeline_stage_wf_def, pipeline_spec_tags_def,
+        pipeline_stage_tags_def, o1_pipeline_spec_def,
+        o1_fn_passes_def, fn_pass_tag_def, configured_fn_pass_wf_def,
+        o1_fn_pass_order_valid, dret_before_fmp_def,
+        dret_before_fmp_aux_def,
+        pass_target_supported_def, target_capabilities_wf_def] >>
+  strip_tac >>
+  gvs [] >>
+  EVAL_TAC
+QED
+
+Theorem pipeline_spec_wf_prague_probe:
+  pipeline_spec_wf
+    <|rpol_target := prague_capabilities;
+      rpol_frontend_dispatch := Linear;
+      rpol_final_assembly := FAP_Optimize|>
+    o1_pipeline_spec
+Proof
+  EVAL_TAC
+QED
+
+Theorem pipeline_spec_wf_bad_order_probe:
+  ~pipeline_spec_wf
+    <|rpol_target := prague_capabilities;
+      rpol_frontend_dispatch := Linear;
+      rpol_final_assembly := FAP_Optimize|>
+    (o1_pipeline_spec with
+       ps_fn_passes := [CFP_Simple VP_DFT; CFP_Simple VP_MakeSSA])
+Proof
+  EVAL_TAC
+QED
+
+Theorem pipeline_spec_wf_unsupported_target_probe:
+  ~pipeline_spec_wf
+    <|rpol_target := (\cap. cap = CapPush0);
+      rpol_frontend_dispatch := Linear;
+      rpol_final_assembly := FAP_Optimize|>
+    o1_pipeline_spec
+Proof
+  EVAL_TAC
+QED
+
+val _ = export_theory ();
