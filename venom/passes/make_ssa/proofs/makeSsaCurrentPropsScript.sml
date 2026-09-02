@@ -641,6 +641,21 @@ Proof
   metis_tac[ssa_supply_extends_trans]
 QED
 
+Theorem rename_current_outputs_inst_ok:
+  !vs s rs rs' s' outs.
+    ir_supply_inst_ok s /\
+    rename_current_outputs s rs vs = (rs',s',outs) ==>
+    ir_supply_inst_ok s'
+Proof
+  Induct >- simp[rename_current_outputs_def] >>
+  pop_assum $ mk_asm "ih" >>
+  rpt gen_tac >> simp[rename_current_outputs_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  drule_all push_current_name_inst_ok >> strip_tac >>
+  asm "ih" drule_all >> simp[]
+QED
+
+
 Theorem rename_current_outputs_covered:
   !vs s rs rs' s' outs.
     ssa_vars_covered s vs /\
@@ -686,6 +701,17 @@ Proof
   pairarg_tac >> gvs[] >> strip_tac >>
   drule rename_current_outputs_extends >> simp[]
 QED
+
+Theorem rename_current_inst_inst_ok:
+  ir_supply_inst_ok s /\
+  rename_current_inst s rs inst = (rs',s',inst') ==>
+  ir_supply_inst_ok s'
+Proof
+  simp[rename_current_inst_def] >> rpt CASE_TAC >> gvs[] >>
+  pairarg_tac >> gvs[] >> rpt strip_tac >>
+  drule_all rename_current_outputs_inst_ok >> simp[]
+QED
+
 
 
 Theorem rename_current_inst_covered:
@@ -741,6 +767,21 @@ Proof
   asm "ih" drule >> strip_tac >>
   metis_tac[ssa_supply_extends_trans]
 QED
+
+Theorem rename_current_block_insts_inst_ok:
+  !insts s rs rs' s' insts'.
+    ir_supply_inst_ok s /\
+    rename_current_block_insts s rs insts = (rs',s',insts') ==>
+    ir_supply_inst_ok s'
+Proof
+  Induct >- simp[rename_current_block_insts_def] >>
+  pop_assum $ mk_asm "ih" >>
+  rpt gen_tac >> simp[rename_current_block_insts_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  drule_all rename_current_inst_inst_ok >> strip_tac >>
+  asm "ih" drule_all >> simp[]
+QED
+
 
 Theorem rename_current_block_insts_covered:
   !insts s rs rs' s' insts'.
