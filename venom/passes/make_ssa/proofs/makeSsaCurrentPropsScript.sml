@@ -482,6 +482,167 @@ Proof
 QED
 
 
+Theorem update_current_phi_insts_invoke_labels:
+  !insts rs cur.
+    MAP FST (get_invoke_targets
+      (MAP (\inst. if inst.inst_opcode <> PHI then inst
+                    else inst with inst_operands :=
+                      update_current_phi_for_pred rs cur inst.inst_operands)
+           insts)) =
+    MAP FST (get_invoke_targets insts)
+Proof
+  Induct >- simp[get_invoke_targets_def] >> rpt gen_tac >>
+  pure_once_rewrite_tac[MAP] >>
+  once_rewrite_tac[invoke_target_labels_cons] >> simp[] >>
+  Cases_on `h.inst_opcode = PHI` >> gvs[get_invoke_targets_def]
+QED
+
+
+Theorem FOLDL_two_maps_invariant_distinct:
+  !xs step acc f g.
+    (!a x. ALL_DISTINCT (MAP g a) ==>
+       MAP f (step a x) = MAP f a /\
+       MAP g (step a x) = MAP g a) ==>
+    ALL_DISTINCT (MAP g acc) ==>
+    MAP f (FOLDL step acc xs) = MAP f acc /\
+    MAP g (FOLDL step acc xs) = MAP g acc
+Proof
+  Induct >- simp[] >> rpt strip_tac >> simp[] >>
+  qpat_assum `!a x. ALL_DISTINCT (MAP g a) ==> _`
+    (qspecl_then [`acc`,`h`] mp_tac) >>
+  (impl_tac >- simp[]) >> strip_tac >>
+  qpat_assum `!step acc f g. _`
+    (qspecl_then [`step'`,`step' acc h`,`f`,`g`] mp_tac) >>
+  (impl_tac >- simp[]) >> (impl_tac >- simp[]) >> simp[]
+QED
+
+Theorem replace_block_labels_selector:
+  new_bb.bb_label = lbl ==>
+  MAP basic_block_bb_label (replace_block lbl new_bb bbs) =
+  MAP basic_block_bb_label bbs
+Proof
+  strip_tac >> simp[cfgTransformTheory.replace_block_def, MAP_MAP_o] >>
+  irule MAP_CONG >> rw[] >>
+  Cases_on `e.bb_label = lbl` >> simp[]
+QED
+
+Theorem update_current_succ_phis_invoke_labels:
+  !succs rs cur bbs.
+    ALL_DISTINCT (MAP basic_block_bb_label bbs) ==>
+    MAP block_invoke_labels
+      (update_current_succ_phis rs cur bbs succs) =
+    MAP block_invoke_labels bbs
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[update_current_succ_phis_def] >>
+  qsuff_tac
+    `MAP block_invoke_labels
+       (FOLDL (\bs lbl.
+          case lookup_block lbl bs of
+            NONE => bs
+          | SOME bb =>
+              replace_block lbl
+                (bb with bb_instructions :=
+                  MAP (\inst. if inst.inst_opcode <> PHI then inst
+                               else inst with inst_operands :=
+                                 update_current_phi_for_pred rs cur
+                                   inst.inst_operands)
+                      bb.bb_instructions) bs) bbs succs) =
+       MAP block_invoke_labels bbs /\
+     MAP basic_block_bb_label
+       (FOLDL (\bs lbl.
+          case lookup_block lbl bs of
+            NONE => bs
+          | SOME bb =>
+              replace_block lbl
+                (bb with bb_instructions :=
+                  MAP (\inst. if inst.inst_opcode <> PHI then inst
+                               else inst with inst_operands :=
+                                 update_current_phi_for_pred rs cur
+                                   inst.inst_operands)
+                      bb.bb_instructions) bs) bbs succs) =
+       MAP basic_block_bb_label bbs`
+  >- simp[] >>
+  irule FOLDL_two_maps_invariant_distinct >> rpt strip_tac >>
+  Cases_on `lookup_block x a` >> gvs[] >>
+  drule lookup_block_label >> strip_tac
+  >- (irule replace_block_invoke_labels_distinct >>
+      simp[block_invoke_labels_def, update_current_phi_insts_invoke_labels])
+  >> irule replace_block_labels_selector >> simp[]
+QED
+Theorem update_current_succ_phis_labels_selector:
+  MAP basic_block_bb_label
+    (update_current_succ_phis rs cur bbs succs) =
+  MAP basic_block_bb_label bbs
+Proof
+  simp[update_current_succ_phis_def] >>
+  irule FOLDL_map_invariant >> rpt strip_tac >>
+  Cases_on `lookup_block x a` >> gvs[] >>
+  drule lookup_block_label >> strip_tac >>
+  irule replace_block_labels_selector >> simp[]
+QED
+
+Theorem rename_current_blocks_invoke_labels:
+  (!s rs bbs sm t ctrs s' bbs'.
+     ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+     rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+     MAP block_invoke_labels bbs' = MAP block_invoke_labels bbs) /\
+  (!s ctrs stacks bbs sm ts ctrs' s' bbs'.
+     ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+     rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+     MAP block_invoke_labels bbs' = MAP block_invoke_labels bbs)
+Proof
+  qsuff_tac
+    `(!t s rs bbs sm ctrs s' bbs'.
+        ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+        rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+        MAP block_invoke_labels bbs' = MAP block_invoke_labels bbs) /\
+     (!ts s ctrs stacks bbs sm ctrs' s' bbs'.
+        ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+        rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+        MAP block_invoke_labels bbs' = MAP block_invoke_labels bbs)`
+  >- metis_tac[]
+  >> ho_match_mp_tac current_dom_tree_induction >> rpt conj_tac
+  >- (rpt strip_tac >>
+      gvs[rename_current_blocks_def, AllCaseEqs()]
+      >> pairarg_tac >> gvs[] >>
+         drule lookup_block_label >> strip_tac >>
+         drule rename_current_block_insts_invoke_targets >> strip_tac >>
+         `MAP block_invoke_labels
+            (replace_block lbl
+              (bb with bb_instructions := insts') bbs) =
+          MAP block_invoke_labels bbs` by
+           (irule replace_block_invoke_labels_distinct >>
+            simp[block_invoke_labels_def]) >>
+         `MAP basic_block_bb_label
+            (replace_block lbl
+              (bb with bb_instructions := insts') bbs) =
+          MAP basic_block_bb_label bbs` by
+           (irule replace_block_labels_selector >> simp[]) >>
+         `ALL_DISTINCT (MAP basic_block_bb_label
+            (update_current_succ_phis rs1 lbl
+              (replace_block lbl
+                (bb with bb_instructions := insts') bbs)
+              (case ALOOKUP sm lbl of NONE => [] | SOME ss => ss)))` by
+           simp[update_current_succ_phis_labels_selector] >>
+         first_x_assum drule >> strip_tac >>
+         qpat_assum `!s0 c0 st0 sm0 c1 s2 out. _ ==> _` drule >>
+         strip_tac >>
+         simp[update_current_succ_phis_invoke_labels])
+  >- simp[rename_current_blocks_def]
+  >> rpt strip_tac >> gvs[rename_current_blocks_def] >>
+     pairarg_tac >> gvs[] >>
+     qpat_assum `!s0 rs0 b0 sm0 c0 s1 b1. _`
+       (drule_all_then assume_tac) >>
+     `ALL_DISTINCT (MAP basic_block_bb_label bbs'')` by
+       (drule (CONJUNCT1 rename_current_blocks_labels) >> simp[bb_label_eta]) >>
+     qpat_assum `!s0 c0 st0 b0 sm0 c1 s1 b1. _`
+       (drule_all_then assume_tac) >>
+     metis_tac[]
+QED
+
+
+
 Theorem make_ssa_functions_supply_extends:
   !fns s fns' s'.
     make_ssa_functions_supply s fns = (fns',s') ==>
