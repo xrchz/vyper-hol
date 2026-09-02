@@ -1,6 +1,6 @@
 Theory simplifyCfgLabelProps
 Ancestors
-  simplifyCfgDefs cfgTransformProps unitLabelMap fcgBridge
+  simplifyCfgDefs cfgTransformProps unitLabelMap fcgBridge cfgWf
 Libs
   listTheory
 
@@ -2341,4 +2341,116 @@ Proof
   Cases_on `simplify_cfg_fn_with_labels func` >>
   drule simplify_cfg_fn_with_labels_metadata >>
   simp[simplify_cfg_fn_def]
+QED
+
+Definition simplify_cfg_duplicate_label_func_def:
+  simplify_cfg_duplicate_label_func = mk_raw_function "f"
+    [<| bb_label := "e";
+        bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>;
+     <| bb_label := "x";
+        bb_instructions := [mk_inst 1 STOP [] []] |>;
+     <| bb_label := "x";
+        bb_instructions := [mk_inst 2 INVOKE [Label "callee"] []] |>]
+End
+
+Theorem simplify_cfg_duplicate_label_edge[local]:
+  fn_cfg_edge simplify_cfg_duplicate_label_func "e" "x"
+Proof
+  simp[venomWfTheory.fn_cfg_edge_def] >>
+  qexists `<| bb_label := "e";
+              bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>` >>
+  simp[simplify_cfg_duplicate_label_func_def,
+       venomInstTheory.mk_raw_function_def, venomInstTheory.mk_inst_def,
+       venomInstTheory.bb_succs_def, venomInstTheory.get_successors_def,
+       venomInstTheory.is_terminator_def, venomStateTheory.get_label_def,
+       listTheory.nub_def]
+QED
+
+Theorem simplify_cfg_duplicate_label_entry[local]:
+  fn_entry_label simplify_cfg_duplicate_label_func = SOME "e"
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_reachable_labels[local]:
+  fn_reachable simplify_cfg_duplicate_label_func "e" /\
+  fn_reachable simplify_cfg_duplicate_label_func "x"
+Proof
+  conj_tac
+  >- simp[venomWfTheory.fn_reachable_def,
+          simplify_cfg_duplicate_label_entry, relationTheory.RTC_REFL] >>
+  simp[venomWfTheory.fn_reachable_def,
+       simplify_cfg_duplicate_label_entry] >>
+  irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
+  qexists `"x"` >>
+  simp[simplify_cfg_duplicate_label_edge, relationTheory.RTC_REFL]
+QED
+
+Theorem simplify_cfg_duplicate_label_member_label[local]:
+  MEM bb simplify_cfg_duplicate_label_func.fn_blocks ==>
+  bb.bb_label = "e" \/ bb.bb_label = "x"
+Proof
+  simp[simplify_cfg_duplicate_label_func_def,
+       venomInstTheory.mk_raw_function_def] >>
+  strip_tac >> gvs[]
+QED
+
+Theorem simplify_cfg_duplicate_label_all_reachable[local]:
+  all_reachable simplify_cfg_duplicate_label_func
+Proof
+  rw[cfgWfTheory.all_reachable_def] >>
+  drule simplify_cfg_duplicate_label_member_label >>
+  strip_tac >> gvs[simplify_cfg_duplicate_label_reachable_labels]
+QED
+
+Theorem simplify_cfg_duplicate_label_has_call[local]:
+  MEM "callee"
+    (simplify_cfg_fn_invoke_labels simplify_cfg_duplicate_label_func)
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_fn_succ[local]:
+  fn_succ simplify_cfg_duplicate_label_func "e" "x"
+Proof
+  simp[cfgTransformTheory.fn_succ_def] >>
+  qexists `<| bb_label := "e";
+              bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>` >>
+  simp[simplify_cfg_duplicate_label_func_def,
+       venomInstTheory.mk_raw_function_def, venomInstTheory.mk_inst_def,
+       venomInstTheory.lookup_block_def,
+       venomInstTheory.bb_succs_def, venomInstTheory.get_successors_def,
+       venomInstTheory.is_terminator_def, venomStateTheory.get_label_def,
+       listTheory.nub_def] >> EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_reachable[local]:
+  reachable simplify_cfg_duplicate_label_func "e" /\
+  reachable simplify_cfg_duplicate_label_func "x"
+Proof
+  conj_tac
+  >- simp[cfgTransformTheory.reachable_def,
+          simplify_cfg_duplicate_label_entry, relationTheory.RTC_REFL] >>
+  simp[cfgTransformTheory.reachable_def,
+       simplify_cfg_duplicate_label_entry] >>
+  irule (CONJUNCT2 (SPEC_ALL relationTheory.RTC_RULES)) >>
+  qexists `"x"` >>
+  simp[simplify_cfg_duplicate_label_fn_succ, relationTheory.RTC_REFL]
+QED
+
+Theorem simplify_cfg_duplicate_label_remove_unreachable[local]:
+  remove_unreachable_blocks simplify_cfg_duplicate_label_func =
+  simplify_cfg_duplicate_label_func
+Proof
+  mp_tac simplify_cfg_duplicate_label_reachable >> strip_tac >>
+  gvs[remove_unreachable_blocks_def, simplify_cfg_duplicate_label_entry,
+      simplify_cfg_duplicate_label_func_def,
+      venomInstTheory.mk_raw_function_def]
+QED
+
+Theorem simplify_cfg_duplicate_label_fix_all_phis[local]:
+  fix_all_phis simplify_cfg_duplicate_label_func =
+  simplify_cfg_duplicate_label_func
+Proof
+  EVAL_TAC
 QED
