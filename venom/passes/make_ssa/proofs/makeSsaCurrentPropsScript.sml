@@ -2372,4 +2372,16 @@ Theorem fmp_lowered_current_fn_eval:
 Proof
   EVAL_TAC >> simp[]
 QED
+
+Theorem fmp_lowered_current_fn_second_call_eval:
+  let s0 = init_ir_supply fmp_current_probe_unit in
+  let (fn1,s1) = make_ssa_current_fn s0 fmp_lowered_ssa_probe_fn in
+  let (fn2,s2) = make_ssa_current_fn s1 fn1 in
+    MAP (\inst. inst.inst_outputs) (HD fn2.fn_blocks).bb_instructions =
+      MAP (\inst. inst.inst_outputs) (HD fn1.fn_blocks).bb_instructions /\
+    s2.irs_next_var = s1.irs_next_var /\
+    s2.irs_used_vars = s1.irs_used_vars
+Proof
+  EVAL_TAC >> simp[]
+QED
 val _ = export_theory();
