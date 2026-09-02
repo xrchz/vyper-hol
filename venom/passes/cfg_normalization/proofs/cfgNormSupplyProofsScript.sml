@@ -2206,3 +2206,65 @@ Theorem cfg_norm_unit_supply_inst_ids_all_distinct:
 Proof
   metis_tac[cfg_norm_unit_supply_inst_ids_delta]
 QED
+
+
+Theorem init_ir_supply_cfg_supply_covers_unit:
+  cfg_supply_covers_unit (init_ir_supply unit) unit
+Proof
+  simp[cfg_supply_covers_unit_def,init_ir_supply_fields,
+       listTheory.EVERY_MEM]
+QED
+
+Theorem cfg_norm_configured_with_supply_contract:
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+    unit.cu_context.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn))
+    unit.cu_context.ctx_functions /\
+  cfg_norm_configured_with_supply unit = (unit',s') ==>
+  ?new_ids new_vars new_labels.
+    s'.irs_used_inst_ids = new_ids ++ unit_ir_inst_ids unit /\
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. ~MEM id (unit_ir_inst_ids unit)) new_ids /\
+    s'.irs_used_vars = new_vars ++ unit_ir_vars unit /\
+    ALL_DISTINCT new_vars /\
+    EVERY (\v. ~MEM v (unit_ir_vars unit)) new_vars /\
+    s'.irs_used_labels = new_labels ++ unit_ir_labels unit /\
+    ALL_DISTINCT new_labels /\
+    EVERY (\l. ~MEM l (unit_ir_labels unit)) new_labels /\
+    EVERY (\id. MEM id s'.irs_used_inst_ids) (unit_ir_inst_ids unit') /\
+    EVERY (\v. MEM v s'.irs_used_vars) (unit_ir_vars unit') /\
+    EVERY (\l. MEM l s'.irs_used_labels) (unit_ir_labels unit') /\
+    EVERY (cfg_id_declared unit') new_ids /\
+    EVERY (cfg_var_declared unit') new_vars /\
+    EVERY (cfg_block_label_declared unit') new_labels
+Proof
+  rpt strip_tac >>
+  `cfg_unit_supply_contract (init_ir_supply unit) unit' s' /\
+   EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+     unit'.cu_context.ctx_functions /\
+   EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn))
+     unit'.cu_context.ctx_functions` by
+    (`cfg_norm_unit_supply (init_ir_supply unit) unit = (unit',s')` by
+       gvs[cfg_norm_configured_with_supply_def] >>
+     metis_tac[cfg_norm_unit_supply_contract,init_ir_supply_inst_ok,
+               init_ir_supply_cfg_supply_covers_unit]) >>
+  gvs[cfg_unit_supply_contract_def,cfg_supply_extends_def,
+      cfg_supply_covers_unit_def,init_ir_supply_fields,
+      listTheory.EVERY_MEM] >>
+  metis_tac[]
+QED
+
+
+Theorem cfg_norm_configured_inst_ids_all_distinct:
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  cfg_norm_configured_with_supply unit = (unit',s') ==>
+  ALL_DISTINCT (unit_ir_inst_ids unit')
+Proof
+  rpt strip_tac >>
+  `cfg_norm_unit_supply (init_ir_supply unit) unit = (unit',s')` by
+    gvs[cfg_norm_configured_with_supply_def] >>
+  metis_tac[cfg_norm_unit_supply_inst_ids_all_distinct,
+            init_ir_supply_inst_ok,init_ir_supply_cfg_supply_covers_unit]
+QED
