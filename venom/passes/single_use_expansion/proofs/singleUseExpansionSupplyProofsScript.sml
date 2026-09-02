@@ -582,3 +582,214 @@ Proof
   gvs[sue_unit_supply_def, unit_ir_vars_def, unit_ir_inst_ids_def] >>
   metis_tac[sue_expand_context_supply_covered]
 QED
+
+
+Theorem sue_configured_with_supply_contract:
+  sue_configured_with_supply unit = (unit',s') ==>
+  ?new_vars new_ids.
+    s'.irs_used_vars = new_vars ++ unit_ir_vars unit /\
+    ALL_DISTINCT new_vars /\
+    EVERY (\v. ~MEM v (unit_ir_vars unit)) new_vars /\
+    s'.irs_used_inst_ids = new_ids ++ unit_ir_inst_ids unit /\
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. ~MEM id (unit_ir_inst_ids unit)) new_ids /\
+    EVERY (\v. MEM v s'.irs_used_vars) (unit_ir_vars unit') /\
+    EVERY (\id. MEM id s'.irs_used_inst_ids) (unit_ir_inst_ids unit')
+Proof
+  strip_tac >>
+  `sue_unit_supply (init_ir_supply unit) unit = (unit',s')` by
+    gvs[sue_configured_with_supply_def] >>
+  `sue_supply_extends (init_ir_supply unit) s'` by
+    metis_tac[sue_unit_supply_extends, init_ir_supply_inst_ok] >>
+  `EVERY (\v. MEM v (init_ir_supply unit).irs_used_vars)
+      (unit_ir_vars unit)` by
+    simp[init_ir_supply_fields, listTheory.EVERY_MEM] >>
+  `EVERY (\id. MEM id (init_ir_supply unit).irs_used_inst_ids)
+      (unit_ir_inst_ids unit)` by
+    simp[init_ir_supply_fields, listTheory.EVERY_MEM] >>
+  `EVERY (\v. MEM v s'.irs_used_vars) (unit_ir_vars unit') /\
+   EVERY (\id. MEM id s'.irs_used_inst_ids) (unit_ir_inst_ids unit')` by
+    metis_tac[sue_unit_supply_covered, init_ir_supply_inst_ok] >>
+  gvs[sue_supply_extends_def, init_ir_supply_fields] >>
+  metis_tac[]
+QED
+
+Theorem sue_configured_used_vars_all_distinct:
+  ALL_DISTINCT (unit_ir_vars unit) /\
+  sue_configured_with_supply unit = (unit',s') ==>
+  ALL_DISTINCT s'.irs_used_vars
+Proof
+  rpt strip_tac >>
+  `sue_unit_supply (init_ir_supply unit) unit = (unit',s')` by
+    gvs[sue_configured_with_supply_def] >>
+  `sue_supply_extends (init_ir_supply unit) s'` by
+    metis_tac[sue_unit_supply_extends, init_ir_supply_inst_ok] >>
+  gvs[sue_supply_extends_def, init_ir_supply_fields,
+      listTheory.ALL_DISTINCT_APPEND, listTheory.EVERY_MEM]
+QED
+
+Theorem sue_configured_used_inst_ids_all_distinct:
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  sue_configured_with_supply unit = (unit',s') ==>
+  ALL_DISTINCT s'.irs_used_inst_ids
+Proof
+  rpt strip_tac >>
+  `sue_unit_supply (init_ir_supply unit) unit = (unit',s')` by
+    gvs[sue_configured_with_supply_def] >>
+  `sue_supply_extends (init_ir_supply unit) s'` by
+    metis_tac[sue_unit_supply_extends, init_ir_supply_inst_ok] >>
+  gvs[sue_supply_extends_def, init_ir_supply_fields,
+      listTheory.ALL_DISTINCT_APPEND, listTheory.EVERY_MEM]
+QED
+
+
+Definition sue_ids_supply_ok_def:
+  sue_ids_supply_ok s old_ids new_ids s' <=>
+    sue_supply_extends s s' /\
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. MEM id s'.irs_used_inst_ids) new_ids /\
+    (!id. MEM id new_ids /\ MEM id s.irs_used_inst_ids ==>
+          MEM id old_ids)
+End
+
+Theorem sue_ids_supply_ok_append:
+  ALL_DISTINCT s.irs_used_inst_ids /\
+  ALL_DISTINCT (old1 ++ old2) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (old1 ++ old2) /\
+  sue_ids_supply_ok s old1 new1 s1 /\
+  sue_ids_supply_ok s1 old2 new2 s2 ==>
+  sue_ids_supply_ok s (old1 ++ old2) (new1 ++ new2) s2
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `sue_ids_supply_ok s old1 new1 s1` mp_tac >>
+  simp[sue_ids_supply_ok_def] >> strip_tac >>
+  qpat_x_assum `sue_ids_supply_ok s1 old2 new2 s2` mp_tac >>
+  simp[sue_ids_supply_ok_def] >> strip_tac >>
+  `!id. MEM id new1 ==> ~MEM id new2` by
+    (rpt strip_tac >>
+     `MEM id s1.irs_used_inst_ids` by
+       (qpat_assum `EVERY (\x. MEM x s1.irs_used_inst_ids) new1` mp_tac >>
+        pure_rewrite_tac[listTheory.EVERY_MEM] >>
+        disch_then (qspec_then `id` mp_tac) >> simp[]) >>
+     `MEM id old2` by metis_tac[] >>
+     `MEM id s.irs_used_inst_ids` by
+       (qpat_assum
+          `EVERY (\x. MEM x s.irs_used_inst_ids) (old1 ++ old2)` mp_tac >>
+        pure_rewrite_tac[listTheory.EVERY_MEM] >>
+        disch_then (qspec_then `id` mp_tac) >> simp[]) >>
+     gvs[listTheory.ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  `EVERY (\id. MEM id s2.irs_used_inst_ids) new1` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[sue_supply_extends_members]) >>
+  gvs[sue_ids_supply_ok_def, listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_MEM] >>
+  metis_tac[sue_supply_extends_trans, sue_supply_extends_members]
+QED
+
+
+Theorem sue_ids_supply_ok_nil_append:
+  sue_ids_supply_ok s [] new1 s1 /\
+  sue_ids_supply_ok s1 [] new2 s2 ==>
+  sue_ids_supply_ok s [] (new1 ++ new2) s2
+Proof
+  rpt strip_tac >>
+  gvs[sue_ids_supply_ok_def] >>
+  `!id. MEM id new1 ==> ~MEM id new2` by
+    (gvs[listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `EVERY (\id. MEM id s2.irs_used_inst_ids) new1` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[sue_supply_extends_members]) >>
+  gvs[sue_ids_supply_ok_def, listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_MEM] >>
+  metis_tac[sue_supply_extends_trans, sue_supply_extends_members]
+QED
+
+Theorem sue_alloc_assign_supply_ids_ok:
+  ir_supply_inst_ok s /\
+  sue_alloc_assign_supply s op = (a,newop,s') ==>
+  sue_ids_supply_ok s [] [a.inst_id] s'
+Proof
+  rpt strip_tac >>
+  drule_all sue_alloc_assign_supply_contract >> strip_tac >>
+  `sue_supply_extends s s'` by
+    metis_tac[sue_alloc_assign_supply_extends] >>
+  gvs[sue_ids_supply_ok_def]
+QED
+
+
+Theorem sue_ids_supply_ok_nil_rev_append:
+  sue_ids_supply_ok s [] new1 s1 /\
+  sue_ids_supply_ok s1 [] new2 s2 ==>
+  sue_ids_supply_ok s [] (new2 ++ new1) s2
+Proof
+  rpt strip_tac >>
+  gvs[sue_ids_supply_ok_def] >>
+  `!id. MEM id new1 ==> ~MEM id new2` by
+    (gvs[listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `EVERY (\id. MEM id s2.irs_used_inst_ids) new1` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[sue_supply_extends_members]) >>
+  gvs[sue_ids_supply_ok_def, listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_MEM] >>
+  metis_tac[sue_supply_extends_trans, sue_supply_extends_members]
+QED
+
+Theorem sue_expand_ops_supply_ids_ok:
+  !dfg inst s ops op_idx assigns new_ops s'.
+    ir_supply_inst_ok s /\
+    sue_expand_ops_supply dfg inst s ops op_idx = (assigns,new_ops,s') ==>
+    sue_ids_supply_ok s [] (MAP (\i. i.inst_id) assigns) s'
+Proof
+  Induct_on `ops` >> rpt strip_tac
+  >- gvs[sue_expand_ops_supply_def, sue_ids_supply_ok_def,
+          sue_supply_extends_refl] >>
+  Cases_on `sue_expand_ops_supply dfg inst s ops (op_idx + 1)` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s ops (op_idx + 1) =
+           (more_assigns,more_ops,s1)` >>
+  `sue_ids_supply_ok s [] (MAP (\i. i.inst_id) more_assigns) s1` by
+    metis_tac[] >>
+  `ir_supply_inst_ok s1` by
+    gvs[sue_ids_supply_ok_def, sue_supply_extends_def] >>
+  Cases_on `~sue_needs_assign dfg inst op_idx`
+  >- gvs[sue_expand_ops_supply_def] >>
+  Cases_on `h`
+  >- (Cases_on `sue_alloc_assign_supply s1 (Lit c)` >>
+      PairCases_on `r` >>
+      gvs[sue_expand_ops_supply_def] >>
+      `sue_ids_supply_ok s1 [] [q.inst_id] r1` by
+        metis_tac[sue_alloc_assign_supply_ids_ok] >>
+      drule_all sue_ids_supply_ok_nil_rev_append >> simp[])
+  >- (Cases_on `LENGTH (dfg_get_uses dfg s'') = 1 /\
+                 sue_count_remaining (Var s'') ops = 0`
+      >- gvs[sue_expand_ops_supply_def]
+      >> Cases_on `sue_alloc_assign_supply s1 (Var s'')` >>
+         PairCases_on `r` >>
+         gvs[sue_expand_ops_supply_def] >>
+         `sue_ids_supply_ok s1 [] [q.inst_id] r1` by
+           metis_tac[sue_alloc_assign_supply_ids_ok] >>
+         drule_all sue_ids_supply_ok_nil_rev_append >> simp[])
+  >> gvs[sue_expand_ops_supply_def]
+QED
+
+
+Theorem sue_expand_inst_supply_ids_ok:
+  ir_supply_inst_ok s /\
+  MEM inst.inst_id s.irs_used_inst_ids /\
+  sue_expand_inst_supply dfg s inst = (out,s') ==>
+  sue_ids_supply_ok s [inst.inst_id] (MAP (\i. i.inst_id) out) s'
+Proof
+  rpt strip_tac >> Cases_on `sue_should_skip inst.inst_opcode`
+  >- gvs[sue_expand_inst_supply_def, sue_ids_supply_ok_def,
+          sue_supply_extends_refl] >>
+  Cases_on `sue_expand_ops_supply dfg inst s inst.inst_operands 0` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s inst.inst_operands 0 =
+           (assigns,new_ops,s1)` >>
+  gvs[sue_expand_inst_supply_def] >>
+  `sue_ids_supply_ok s [] (MAP (\i. i.inst_id) assigns) s'` by
+    metis_tac[sue_expand_ops_supply_ids_ok] >>
+  gvs[sue_ids_supply_ok_def, listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_MEM] >>
+  metis_tac[sue_supply_extends_members]
+QED
