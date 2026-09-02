@@ -205,4 +205,32 @@ Proof
   strip_tac >> gvs[unitLabelMapTheory.apply_resolved_unit_label_map_def]
 QED
 
+Theorem run_fn_schedule_name_order:
+  run_fn_schedule rpolicy passes name unit = SOME (unit',s') ==>
+  ctx_fn_names unit'.cu_context = ctx_fn_names unit.cu_context
+Proof
+  simp[run_fn_schedule_def, run_configured_fn_passes_def] >>
+  strip_tac >> gvs[AllCaseEqs()] >>
+  drule replace_unique_function_name_order >> strip_tac >>
+  drule apply_unit_label_map_function_names >> strip_tac >>
+  gvs[venomInstTheory.ctx_fn_names_def]
+QED
+
+Theorem run_fn_schedule_unit_labels_wf:
+  run_fn_schedule rpolicy passes name unit = SOME (unit',s') ==>
+  unit_labels_wf unit'
+Proof
+  simp[run_fn_schedule_def, run_configured_fn_passes_def] >>
+  strip_tac >> gvs[AllCaseEqs()]
+QED
+
+Theorem run_fn_schedule_global_reserved:
+  run_fn_schedule rpolicy passes name unit = SOME (unit',s') ==>
+  unit'.cu_context.ctx_global_reserved = unit.cu_context.ctx_global_reserved
+Proof
+  simp[run_fn_schedule_def, run_configured_fn_passes_def] >>
+  strip_tac >> gvs[AllCaseEqs()] >>
+  drule apply_unit_label_map_global_reserved >> simp[]
+QED
+
 val _ = export_theory ();
