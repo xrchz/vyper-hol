@@ -2041,3 +2041,168 @@ Proof
   drule simplify_cfg_fn_with_labels_invoke_subset >>
   simp[simplify_cfg_invoke_subset_def]
 QED
+
+
+Definition simplify_cfg_metadata_eq_def:
+  simplify_cfg_metadata_eq result original <=>
+    fn_identity_metadata_eq result original /\
+    fn_static_input_eq result original /\
+    fn_static_layout_eq result original /\
+    fn_fmp_convention_eq result original
+End
+
+Theorem simplify_cfg_metadata_eq_refl[local]:
+  simplify_cfg_metadata_eq func func
+Proof
+  simp[simplify_cfg_metadata_eq_def,
+       venomInstTheory.fn_identity_metadata_eq_def,
+       venomInstTheory.fn_static_input_eq_def,
+       venomInstTheory.fn_static_layout_eq_def,
+       venomInstTheory.fn_fmp_convention_eq_def]
+QED
+
+Theorem simplify_cfg_metadata_eq_trans[local]:
+  simplify_cfg_metadata_eq final middle /\
+  simplify_cfg_metadata_eq middle initial ==>
+  simplify_cfg_metadata_eq final initial
+Proof
+  simp[simplify_cfg_metadata_eq_def,
+       venomInstTheory.fn_identity_metadata_eq_def,
+       venomInstTheory.fn_static_input_eq_def,
+       venomInstTheory.fn_static_layout_eq_def,
+       venomInstTheory.fn_fmp_convention_eq_def] >>
+  metis_tac[]
+QED
+
+Theorem collapse_dfs_result_metadata_compose[local]:
+  simplify_cfg_metadata_eq middle initial ==>
+  collapse_dfs_result
+    (\result. simplify_cfg_metadata_eq (FST result) middle)
+    middle label_map visited lbl ==>
+  simplify_cfg_metadata_eq
+    (FST (collapse_dfs middle label_map visited lbl)) initial
+Proof
+  simp[collapse_dfs_result_def] >>
+  metis_tac[simplify_cfg_metadata_eq_trans]
+QED
+
+Theorem collapse_dfs_succs_result_metadata_compose[local]:
+  simplify_cfg_metadata_eq middle initial ==>
+  collapse_dfs_succs_result
+    (\result. simplify_cfg_metadata_eq (FST result) middle)
+    middle label_map visited succs ==>
+  simplify_cfg_metadata_eq
+    (FST (collapse_dfs_succs middle label_map visited succs)) initial
+Proof
+  simp[collapse_dfs_succs_result_def] >>
+  metis_tac[simplify_cfg_metadata_eq_trans]
+QED
+
+Theorem collapse_metadata_joint[local]:
+  (!func label_map visited lbl.
+     collapse_dfs_result
+       (\result. simplify_cfg_metadata_eq (FST result) func)
+       func label_map visited lbl) /\
+  (!func label_map visited succs.
+     collapse_dfs_succs_result
+       (\result. simplify_cfg_metadata_eq (FST result) func)
+       func label_map visited succs)
+Proof
+  ho_match_mp_tac collapse_dfs_ind >>
+  rpt conj_tac
+  >- suspend "dfs"
+  >- suspend "nil"
+  >> suspend "succs"
+QED
+
+Resume collapse_metadata_joint[dfs]:
+  rpt strip_tac >>
+  simp[NoAsms, collapse_dfs_result_def, Once collapse_dfs_def] >>
+  Cases_on `lookup_block lbl func.fn_blocks`
+  >- simp[simplify_cfg_metadata_eq_refl] >>
+  rename1 `lookup_block lbl func.fn_blocks = SOME bb` >>
+  Cases_on `bb_succs bb`
+  >- (Cases_on `MEM lbl visited`
+      >- simp[try_bypass_def, simplify_cfg_metadata_eq_refl]
+      >> gvs[try_bypass_def, collapse_dfs_succs_result_def]) >>
+  Cases_on `t`
+  >- (Cases_on `lookup_block h func.fn_blocks`
+      >- (Cases_on `MEM lbl visited` >>
+          simp[simplify_cfg_metadata_eq_refl])
+      >> rename1 `lookup_block h func.fn_blocks = SOME next_bb`
+      >> Cases_on `can_merge_blocks func bb next_bb`
+      >- (gvs[] >>
+          qmatch_goalsub_abbrev_tac
+            `collapse_dfs merged_func merged_map visited lbl` >>
+          irule collapse_dfs_result_metadata_compose >>
+          conj_tac
+          >- simp[Abbr `merged_func`, simplify_cfg_metadata_eq_def,
+                  fn_blocks_update_metadata] >>
+          first_x_assum irule)
+      >> Cases_on `MEM lbl visited`
+      >- simp[simplify_cfg_metadata_eq_refl]
+      >> gvs[collapse_dfs_result_def])
+  >> Cases_on `try_bypass func label_map bb (h::h'::t')`
+  >> PairCases_on `r`
+  >> Cases_on `r1`
+  >- (gvs[] >>
+      `simplify_cfg_metadata_eq q func` by
+        (simp[simplify_cfg_metadata_eq_def] >>
+         metis_tac[try_bypass_metadata]) >>
+      metis_tac[collapse_dfs_result_metadata_compose])
+  >> gvs[] >>
+  `simplify_cfg_metadata_eq q func` by
+    (simp[simplify_cfg_metadata_eq_def] >>
+     metis_tac[try_bypass_metadata]) >>
+  Cases_on `MEM lbl visited`
+  >- simp[] >>
+  metis_tac[collapse_dfs_succs_result_metadata_compose]
+QED
+
+Resume collapse_metadata_joint[nil]:
+  simp[collapse_dfs_succs_result_def, collapse_dfs_def,
+       simplify_cfg_metadata_eq_refl]
+QED
+
+Resume collapse_metadata_joint[succs]:
+  rpt strip_tac >>
+  simp[collapse_dfs_succs_result_def, Once collapse_dfs_def] >>
+  Cases_on `collapse_dfs func label_map visited lbl` >>
+  PairCases_on `r` >> gvs[collapse_dfs_result_def] >>
+  `simplify_cfg_metadata_eq q func` by gvs[] >>
+  metis_tac[collapse_dfs_succs_result_metadata_compose]
+QED
+
+Finalise collapse_metadata_joint
+
+
+Theorem collapse_dfs_metadata:
+  collapse_dfs func label_map visited lbl = (func',label_map',visited') ==>
+  fn_identity_metadata_eq func' func /\
+  fn_static_input_eq func' func /\
+  fn_static_layout_eq func' func /\
+  fn_fmp_convention_eq func' func
+Proof
+  strip_tac >>
+  `collapse_dfs_result
+     (\result. simplify_cfg_metadata_eq (FST result) func)
+     func label_map visited lbl` by
+    metis_tac[CONJUNCT1 collapse_metadata_joint] >>
+  gvs[collapse_dfs_result_def, simplify_cfg_metadata_eq_def]
+QED
+
+Theorem collapse_dfs_succs_metadata:
+  collapse_dfs_succs func label_map visited succs =
+    (func',label_map',visited') ==>
+  fn_identity_metadata_eq func' func /\
+  fn_static_input_eq func' func /\
+  fn_static_layout_eq func' func /\
+  fn_fmp_convention_eq func' func
+Proof
+  strip_tac >>
+  `collapse_dfs_succs_result
+     (\result. simplify_cfg_metadata_eq (FST result) func)
+     func label_map visited succs` by
+    metis_tac[CONJUNCT2 collapse_metadata_joint] >>
+  gvs[collapse_dfs_succs_result_def, simplify_cfg_metadata_eq_def]
+QED
