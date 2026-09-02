@@ -538,6 +538,59 @@ Proof
   Cases_on `h` >> simp[chronological_label_map_def]
 QED
 
+Definition label_map_transition_def:
+  label_map_transition initial label_map final <=>
+    chronological_label_map label_map /\
+    EVERY (\entry.
+      MEM (FST entry) initial /\ MEM (SND entry) initial) label_map /\
+    EVERY (\entry. ~MEM (FST entry) final) label_map /\
+    EVERY (\label. MEM label initial) final /\
+    ALL_DISTINCT final
+End
+
+Theorem label_map_transition_refl:
+  ALL_DISTINCT labels ==>
+  label_map_transition labels [] labels
+Proof
+  simp[label_map_transition_def, chronological_label_map_def,
+       listTheory.EVERY_MEM]
+QED
+
+Theorem chronological_label_map_append[local]:
+  !first middle second.
+    chronological_label_map first /\
+    EVERY (\entry. ~MEM (FST entry) middle) first /\
+    EVERY (\entry.
+      MEM (FST entry) middle /\ MEM (SND entry) middle) second /\
+    chronological_label_map second ==>
+    chronological_label_map (first ++ second)
+Proof
+  Induct_on `first`
+  >- simp[] >>
+  Cases_on `h` >>
+  simp[chronological_label_map_def] >>
+  rpt strip_tac >>
+  gvs[listTheory.EVERY_MEM, MEM_MAP] >>
+  metis_tac[]
+QED
+
+Theorem label_map_transition_append:
+  !initial first middle second final.
+    label_map_transition initial first middle /\
+    label_map_transition middle second final ==>
+    label_map_transition initial (first ++ second) final
+Proof
+  rpt strip_tac >>
+  fs[label_map_transition_def] >>
+  simp[label_map_transition_def, listTheory.EVERY_APPEND] >>
+  rpt conj_tac
+  >- metis_tac[chronological_label_map_append]
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >> gvs[]
+QED
+
 
 Theorem resolve_label_fuel_cons_irrelevant[local]:
   !fuel rest source target visited label.
