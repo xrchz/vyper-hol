@@ -400,6 +400,27 @@ Proof
   metis_tac[ssa_supply_extends_trans]
 QED
 
+
+Theorem ssa_stacks_covered_mono:
+  ssa_stacks_covered s stacks /\ ssa_supply_extends s s' ==>
+  ssa_stacks_covered s' stacks
+Proof
+  simp[ssa_stacks_covered_def, ssa_vars_covered_def,
+       ssa_supply_extends_def, listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem latest_current_name_covered:
+  ssa_stacks_covered s stacks /\ MEM var s.irs_used_vars ==>
+  MEM (latest_current_name (ctrs,stacks) var) s.irs_used_vars
+Proof
+  simp[latest_current_name_def] >> rpt CASE_TAC >> gvs[] >>
+  imp_res_tac alistTheory.ALOOKUP_MEM >>
+  gvs[ssa_stacks_covered_def, ssa_vars_covered_def,
+      listTheory.EVERY_MEM] >> strip_tac >>
+  qpat_x_assum `!entry. _`
+    (qspec_then `(var,h::t)` mp_tac) >> simp[]
+QED
+
 Theorem push_current_name_extends:
   push_current_name s rs v = (rs',s',name) ==> ssa_supply_extends s s'
 Proof
@@ -409,6 +430,183 @@ Proof
   pairarg_tac >> gvs[] >>
   metis_tac[fresh_ir_var_extends]
 QED
+Theorem push_current_name_covered:
+  ssa_stacks_covered s (SND rs) /\
+  MEM v s.irs_used_vars /\
+  push_current_name s rs v = (rs',s',name) ==>
+  ssa_stacks_covered s' (SND rs') /\
+  MEM name s'.irs_used_vars /\
+  ssa_supply_extends s s'
+Proof
+  PairCases_on `rs` >>
+  simp[push_current_name_def] >> rpt CASE_TAC >> gvs[] >>
+  TRY (pairarg_tac >> gvs[]) >>
+  simp[ssa_stacks_covered_def, ssa_vars_covered_def,
+       listTheory.EVERY_MEM, ssa_supply_extends_refl] >>
+  rpt strip_tac >> gvs[MEM_FILTER] >>
+  imp_res_tac alistTheory.ALOOKUP_MEM >>
+  TRY (qpat_x_assum `!entry'. _`
+         (qspec_then `entry` mp_tac) >> simp[] >> NO_TAC) >>
+  TRY (qpat_x_assum `!entry'. _` drule >> simp[] >> NO_TAC) >>
+  imp_res_tac fresh_ir_var_contract >>
+  imp_res_tac fresh_ir_var_extends >>
+  gvs[ssa_supply_extends_def] >>
+  TRY (qpat_x_assum `!entry'. _`
+         (qspec_then `entry` mp_tac) >> simp[] >> NO_TAC) >>
+  TRY (qpat_x_assum `!entry'. _` drule >> simp[] >> NO_TAC) >>
+  metis_tac[]
+QED
+
+
+
+Theorem rename_current_operands_covered:
+  !ops s ctrs stacks.
+    ssa_vars_covered s (operand_vars ops) /\
+    ssa_stacks_covered s stacks ==>
+    ssa_vars_covered s
+      (operand_vars (rename_current_operands (ctrs,stacks) ops))
+Proof
+  Induct >- simp[rename_current_operands_def, venomInstTheory.operand_vars_def,
+                  ssa_vars_covered_def] >>
+  rpt gen_tac >> Cases_on `h` >>
+  simp[rename_current_operands_def, venomInstTheory.operand_vars_def,
+       venomInstTheory.operand_var_def, ssa_vars_covered_def] >>
+  rpt strip_tac >>
+  first_x_assum (qspecl_then [`s`,`ctrs`,`stacks`] mp_tac) >>
+  simp[ssa_vars_covered_def] >>
+  metis_tac[latest_current_name_covered]
+QED
+
+
+Theorem update_current_phi_for_pred_covered:
+  !ops rs cur s.
+    ssa_vars_covered s (operand_vars ops) /\
+    ssa_stacks_covered s (SND rs) ==>
+    ssa_vars_covered s
+      (operand_vars (update_current_phi_for_pred rs cur ops))
+Proof
+  measureInduct_on `LENGTH ops` >> rpt gen_tac >> strip_tac >>
+  Cases_on `ops`
+  >- simp[update_current_phi_for_pred_def,
+           venomInstTheory.operand_vars_def, ssa_vars_covered_def] >>
+  rename1 `op::rest` >> Cases_on `rest`
+  >- (Cases_on `op` >>
+      gvs[update_current_phi_for_pred_def,
+          venomInstTheory.operand_vars_def,
+          venomInstTheory.operand_var_def,
+          ssa_vars_covered_def]) >>
+  rename1 `op1::op2::rest` >>
+  Cases_on `op1` >> Cases_on `op2` >>
+  simp[update_current_phi_for_pred_def,
+       venomInstTheory.operand_vars_def, venomInstTheory.operand_var_def,
+       ssa_vars_covered_def] >>
+  first_x_assum (qspec_then `rest` mp_tac) >>
+  (impl_tac >- simp[]) >>
+  disch_then (qspecl_then [`rs`,`cur`,`s`] mp_tac) >>
+  simp[ssa_vars_covered_def] >>
+  (impl_tac >-
+    gvs[ssa_vars_covered_def, venomInstTheory.operand_vars_def,
+        venomInstTheory.operand_var_def]) >>
+  rpt strip_tac >>
+  gvs[ssa_vars_covered_def, venomInstTheory.operand_vars_def,
+      venomInstTheory.operand_var_def] >>
+  IF_CASES_TAC >>
+  gvs[venomInstTheory.operand_vars_def, venomInstTheory.operand_var_def] >>
+  PairCases_on `rs` >> irule latest_current_name_covered >> gvs[]
+QED
+
+
+Theorem update_current_phi_insts_vars_covered:
+  !insts rs cur s.
+    ssa_vars_covered s (FLAT (MAP inst_ir_vars insts)) /\
+    ssa_stacks_covered s (SND rs) ==>
+    ssa_vars_covered s
+      (FLAT (MAP inst_ir_vars
+        (MAP (\inst. if inst.inst_opcode <> PHI then inst
+                      else inst with inst_operands :=
+                        update_current_phi_for_pred rs cur inst.inst_operands)
+             insts)))
+Proof
+  Induct
+  >- simp[ssa_vars_covered_def] >>
+  rpt gen_tac >> simp[] >> rpt strip_tac >>
+  `ssa_vars_covered s (inst_ir_vars h)` by
+    gvs[ssa_vars_covered_def, listTheory.EVERY_APPEND] >>
+  `ssa_vars_covered s (FLAT (MAP inst_ir_vars insts))` by
+    gvs[ssa_vars_covered_def, listTheory.EVERY_APPEND] >>
+  first_x_assum drule_all >> strip_tac >>
+  Cases_on `h.inst_opcode = PHI` >>
+  gvs[inst_ir_vars_def, venomInstTheory.inst_uses_def,
+      ssa_vars_covered_def, listTheory.EVERY_APPEND] >>
+  rewrite_tac[GSYM ssa_vars_covered_def] >>
+  PairCases_on `rs` >>
+  irule update_current_phi_for_pred_covered >>
+  gvs[ssa_vars_covered_def]
+QED
+
+
+Theorem replace_block_vars_covered:
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) /\
+  ssa_vars_covered s (block_ir_vars new_bb) ==>
+  ssa_vars_covered s
+    (FLAT (MAP block_ir_vars (replace_block lbl new_bb bbs)))
+Proof
+  simp[ssa_vars_covered_def, listTheory.EVERY_MEM,
+       cfgTransformTheory.replace_block_def, listTheory.MEM_FLAT,
+       listTheory.MEM_MAP] >> metis_tac[]
+QED
+
+Theorem FOLDL_preserves:
+  !xs step acc P.
+    (!a x. P a ==> P (step a x)) /\ P acc ==>
+    P (FOLDL step acc xs)
+Proof
+  Induct >> simp[] >> metis_tac[]
+QED
+
+Theorem update_current_succ_phis_vars_covered:
+  !succs rs cur bbs s.
+    ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) /\
+    ssa_stacks_covered s (SND rs) ==>
+    ssa_vars_covered s (FLAT (MAP block_ir_vars
+      (update_current_succ_phis rs cur bbs succs)))
+Proof
+  Induct >- simp[update_current_succ_phis_def] >>
+  rpt gen_tac >> strip_tac >>
+  simp[update_current_succ_phis_def] >>
+  Cases_on `lookup_block h bbs` >> gvs[]
+  >- (first_x_assum drule_all >>
+      disch_then (qspec_then `cur` mp_tac) >>
+      simp[update_current_succ_phis_def]) >>
+  `MEM x bbs` by metis_tac[venomExecPropsTheory.lookup_block_MEM] >>
+  `ssa_vars_covered s (block_ir_vars x)` by
+    (gvs[ssa_vars_covered_def, listTheory.EVERY_MEM,
+         listTheory.MEM_FLAT, listTheory.MEM_MAP] >> metis_tac[]) >>
+  `ssa_vars_covered s
+     (block_ir_vars
+       (x with bb_instructions :=
+         MAP (\inst. if inst.inst_opcode <> PHI then inst
+                      else inst with inst_operands :=
+                        update_current_phi_for_pred rs cur
+                          inst.inst_operands)
+             x.bb_instructions))` by
+    (gvs[block_ir_vars_def] >>
+     irule update_current_phi_insts_vars_covered >> simp[]) >>
+  `ssa_vars_covered s
+     (FLAT (MAP block_ir_vars
+       (replace_block h
+         (x with bb_instructions :=
+           MAP (\inst. if inst.inst_opcode <> PHI then inst
+                        else inst with inst_operands :=
+                          update_current_phi_for_pred rs cur
+                            inst.inst_operands)
+               x.bb_instructions) bbs)))` by
+    (irule replace_block_vars_covered >> simp[]) >>
+  first_x_assum drule_all >>
+  disch_then (qspec_then `cur` mp_tac) >>
+  simp[update_current_succ_phis_def]
+QED
+
 
 Theorem rename_current_outputs_extends:
   !vs s rs rs' s' outs.
@@ -424,6 +622,43 @@ Proof
   metis_tac[ssa_supply_extends_trans]
 QED
 
+Theorem rename_current_outputs_covered:
+  !vs s rs rs' s' outs.
+    ssa_vars_covered s vs /\
+    ssa_stacks_covered s (SND rs) /\
+    rename_current_outputs s rs vs = (rs',s',outs) ==>
+    ssa_vars_covered s' outs /\
+    ssa_stacks_covered s' (SND rs') /\
+    ssa_supply_extends s s'
+Proof
+  Induct
+  >- simp[rename_current_outputs_def, ssa_vars_covered_def,
+           ssa_supply_extends_refl] >>
+  pop_assum $ mk_asm "ih" >> rpt gen_tac >>
+  simp[rename_current_outputs_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  rename [`push_current_name s rs h = (rs1,s1,name)`,
+          `rename_current_outputs s1 rs1 vs = (rs2,s2,rest)`] >>
+  `MEM h s.irs_used_vars` by gvs[ssa_vars_covered_def] >>
+  `ssa_stacks_covered s1 (SND rs1) /\
+   MEM name s1.irs_used_vars /\
+   ssa_supply_extends s s1` by
+    (drule_all push_current_name_covered >> simp[]) >>
+  `ssa_vars_covered s1 vs` by
+    (gvs[ssa_vars_covered_def, ssa_supply_extends_def,
+         listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `ssa_vars_covered s2 rest /\
+   ssa_stacks_covered s2 (SND rs2) /\
+   ssa_supply_extends s1 s2` by
+    (asm "ih" drule_all >> simp[]) >>
+  `MEM name s2.irs_used_vars` by
+    (gvs[ssa_supply_extends_def] >> metis_tac[]) >>
+  `ssa_supply_extends s s2` by
+    (irule ssa_supply_extends_trans >> qexists `s1` >> simp[]) >>
+  gvs[ssa_vars_covered_def]
+QED
+
+
 Theorem rename_current_inst_extends:
   rename_current_inst s rs inst = (rs',s',inst') ==>
   ssa_supply_extends s s'
@@ -431,6 +666,47 @@ Proof
   simp[rename_current_inst_def] >> rpt CASE_TAC >> gvs[] >>
   pairarg_tac >> gvs[] >> strip_tac >>
   drule rename_current_outputs_extends >> simp[]
+QED
+
+
+Theorem rename_current_inst_covered:
+  ssa_vars_covered s (inst_ir_vars inst) /\
+  ssa_stacks_covered s (SND rs) /\
+  rename_current_inst s rs inst = (rs',s',inst') ==>
+  ssa_vars_covered s' (inst_ir_vars inst') /\
+  ssa_stacks_covered s' (SND rs') /\
+  ssa_supply_extends s s'
+Proof
+  simp[rename_current_inst_def] >> IF_CASES_TAC >> gvs[] >>
+  pairarg_tac >> gvs[] >> rpt strip_tac >>
+  rename1 `rename_current_outputs s rs inst.inst_outputs = (rs1,s1,outs1)`
+  >- (`ssa_vars_covered s inst.inst_outputs` by
+        gvs[inst_ir_vars_def, ssa_vars_covered_def,
+            listTheory.EVERY_APPEND] >>
+      `ssa_vars_covered s1 outs1 /\
+       ssa_stacks_covered s1 (SND rs1) /\
+       ssa_supply_extends s s1` by
+        (drule_all rename_current_outputs_covered >> simp[]) >>
+      gvs[inst_ir_vars_def, venomInstTheory.inst_uses_def,
+          ssa_vars_covered_def, listTheory.EVERY_APPEND,
+          ssa_supply_extends_def, listTheory.EVERY_MEM] >>
+      metis_tac[])
+  >> `ssa_vars_covered s inst.inst_outputs` by
+       gvs[inst_ir_vars_def, ssa_vars_covered_def,
+           listTheory.EVERY_APPEND] >>
+     `ssa_vars_covered s
+        (operand_vars (rename_current_operands rs inst.inst_operands))` by
+       (PairCases_on `rs` >> irule rename_current_operands_covered >>
+        gvs[inst_ir_vars_def, venomInstTheory.inst_uses_def,
+            ssa_vars_covered_def, listTheory.EVERY_APPEND]) >>
+     `ssa_vars_covered s1 outs1 /\
+      ssa_stacks_covered s1 (SND rs1) /\
+      ssa_supply_extends s s1` by
+       (drule_all rename_current_outputs_covered >> simp[]) >>
+     gvs[inst_ir_vars_def, venomInstTheory.inst_uses_def,
+         ssa_vars_covered_def, listTheory.EVERY_APPEND,
+         ssa_supply_extends_def, listTheory.EVERY_MEM] >>
+     metis_tac[]
 QED
 
 Theorem rename_current_block_insts_extends:
@@ -445,6 +721,65 @@ Proof
   drule rename_current_inst_extends >> strip_tac >>
   asm "ih" drule >> strip_tac >>
   metis_tac[ssa_supply_extends_trans]
+QED
+
+Theorem rename_current_block_insts_covered:
+  !insts s rs rs' s' insts'.
+    ssa_vars_covered s (FLAT (MAP inst_ir_vars insts)) /\
+    ssa_stacks_covered s (SND rs) /\
+    rename_current_block_insts s rs insts = (rs',s',insts') ==>
+    ssa_vars_covered s' (FLAT (MAP inst_ir_vars insts')) /\
+    ssa_stacks_covered s' (SND rs') /\
+    ssa_supply_extends s s'
+Proof
+  Induct
+  >- simp[rename_current_block_insts_def, ssa_vars_covered_def,
+           ssa_supply_extends_refl] >>
+  pop_assum $ mk_asm "ih" >> rpt gen_tac >>
+  simp[rename_current_block_insts_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  rename [`rename_current_inst s rs h = (rs1,s1,inst1)`,
+          `rename_current_block_insts s1 rs1 insts = (rs2,s2,rest)`] >>
+  `ssa_vars_covered s (inst_ir_vars h)` by
+    gvs[ssa_vars_covered_def, listTheory.EVERY_APPEND] >>
+  `ssa_vars_covered s1 (inst_ir_vars inst1) /\
+   ssa_stacks_covered s1 (SND rs1) /\
+   ssa_supply_extends s s1` by
+    (drule_all rename_current_inst_covered >> simp[]) >>
+  `ssa_vars_covered s1 (FLAT (MAP inst_ir_vars insts))` by
+    (gvs[ssa_vars_covered_def, ssa_supply_extends_def,
+         listTheory.EVERY_APPEND, listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `ssa_vars_covered s2 (FLAT (MAP inst_ir_vars rest)) /\
+   ssa_stacks_covered s2 (SND rs2) /\
+   ssa_supply_extends s1 s2` by
+    (asm "ih" drule_all >> simp[]) >>
+  `ssa_vars_covered s2 (inst_ir_vars inst1)` by
+    (gvs[ssa_vars_covered_def, ssa_supply_extends_def,
+         listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `ssa_supply_extends s s2` by
+    (irule ssa_supply_extends_trans >> qexists `s1` >> simp[]) >>
+  gvs[ssa_vars_covered_def, listTheory.EVERY_APPEND]
+QED
+
+
+Theorem rename_current_inst_id:
+  rename_current_inst s rs inst = (rs',s',inst') ==>
+  inst'.inst_id = inst.inst_id
+Proof
+  simp[rename_current_inst_def] >> rpt CASE_TAC >> gvs[] >>
+  pairarg_tac >> gvs[] >> rpt strip_tac >> gvs[]
+QED
+
+Theorem rename_current_block_insts_ids:
+  !insts s rs rs' s' insts'.
+    rename_current_block_insts s rs insts = (rs',s',insts') ==>
+    MAP (\inst. inst.inst_id) insts' = MAP (\inst. inst.inst_id) insts
+Proof
+  Induct >- simp[rename_current_block_insts_def] >>
+  rpt gen_tac >> simp[rename_current_block_insts_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule rename_current_inst_id >> strip_tac >>
+  first_x_assum drule >> strip_tac >> gvs[]
 QED
 
 Theorem rename_current_blocks_extends:
@@ -710,6 +1045,27 @@ Proof
   >> gvs[venomInstTheory.lookup_block_def]
 QED
 
+Theorem replace_block_inst_ids_distinct:
+  !bbs lbl bb bb'.
+    ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+    lookup_block lbl bbs = SOME bb /\
+    bb'.bb_label = lbl /\
+    block_ir_inst_ids bb' = block_ir_inst_ids bb ==>
+    FLAT (MAP block_ir_inst_ids (replace_block lbl bb' bbs)) =
+    FLAT (MAP block_ir_inst_ids bbs)
+Proof
+  rpt strip_tac >>
+  simp[cfgTransformTheory.replace_block_def] >>
+  `MAP block_ir_inst_ids
+      (MAP (\x. if basic_block_bb_label x = lbl then bb' else x) bbs) =
+    MAP block_ir_inst_ids bbs` by
+    (ho_match_mp_tac MAP_replace_at_FIND_distinct >>
+     qexists `bb` >> conj_tac
+     >- (qpat_assum `ALL_DISTINCT _` mp_tac >> simp[GSYM bb_label_eta])
+     >> gvs[venomInstTheory.lookup_block_def]) >>
+  simp[]
+QED
+
 Theorem invoke_target_labels_append:
   !xs ys.
     MAP FST (get_invoke_targets (xs ++ ys)) =
@@ -894,6 +1250,346 @@ Proof
   Cases_on `lookup_block x a` >> gvs[] >>
   drule lookup_block_label >> strip_tac >>
   irule replace_block_labels_selector >> simp[]
+QED
+
+Theorem update_current_succ_phis_inst_ids:
+  !succs rs cur bbs.
+    ALL_DISTINCT (MAP basic_block_bb_label bbs) ==>
+    FLAT (MAP block_ir_inst_ids
+      (update_current_succ_phis rs cur bbs succs)) =
+    FLAT (MAP block_ir_inst_ids bbs)
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[update_current_succ_phis_def] >>
+  qsuff_tac
+    `MAP block_ir_inst_ids
+       (FOLDL (\bs lbl.
+          case lookup_block lbl bs of
+            NONE => bs
+          | SOME bb =>
+              replace_block lbl
+                (bb with bb_instructions :=
+                  MAP (\inst. if inst.inst_opcode <> PHI then inst
+                               else inst with inst_operands :=
+                                 update_current_phi_for_pred rs cur
+                                   inst.inst_operands)
+                      bb.bb_instructions) bs) bbs succs) =
+       MAP block_ir_inst_ids bbs /\
+     MAP basic_block_bb_label
+       (FOLDL (\bs lbl.
+          case lookup_block lbl bs of
+            NONE => bs
+          | SOME bb =>
+              replace_block lbl
+                (bb with bb_instructions :=
+                  MAP (\inst. if inst.inst_opcode <> PHI then inst
+                               else inst with inst_operands :=
+                                 update_current_phi_for_pred rs cur
+                                   inst.inst_operands)
+                      bb.bb_instructions) bs) bbs succs) =
+       MAP basic_block_bb_label bbs`
+  >- simp[] >>
+  irule FOLDL_two_maps_invariant_distinct >> rpt strip_tac >>
+  Cases_on `lookup_block x a` >> gvs[] >>
+  drule lookup_block_label >> strip_tac
+  >- (simp[cfgTransformTheory.replace_block_def] >>
+      irule MAP_replace_at_FIND_distinct >>
+      conj_tac >- simp[] >> qexists `x'` >> conj_tac
+      >- (simp[block_ir_inst_ids_def, MAP_MAP_o] >>
+          irule MAP_CONG >> rw[] >>
+          Cases_on `e.inst_opcode = PHI` >> simp[])
+      >> gvs[venomInstTheory.lookup_block_def])
+  >> irule replace_block_labels_selector >> simp[]
+QED
+
+
+Theorem block_vars_covered_of_mem:
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) /\ MEM bb bbs ==>
+  ssa_vars_covered s (block_ir_vars bb)
+Proof
+  simp[ssa_vars_covered_def, listTheory.EVERY_MEM,
+       listTheory.MEM_FLAT, listTheory.MEM_MAP] >> metis_tac[]
+QED
+
+Definition rename_current_blocks_covered_inv_def:
+  rename_current_blocks_covered_inv t <=>
+    !s rs bbs sm ctrs s' bbs'.
+      rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+      ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+      ssa_stacks_covered s (SND rs) ==>
+      ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs')) /\
+      ssa_supply_extends s s'
+End
+
+Definition rename_current_children_covered_inv_def:
+  rename_current_children_covered_inv ts <=>
+    !s ctrs stacks bbs sm ctrs' s' bbs'.
+      rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+      ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+      ssa_stacks_covered s stacks ==>
+      ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs')) /\
+      ssa_supply_extends s s'
+End
+
+Theorem rename_current_blocks_covered_inv_vars_apply:
+  rename_current_blocks_covered_inv t ==>
+  rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s (SND rs) ==>
+  ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs'))
+Proof
+  simp[rename_current_blocks_covered_inv_def] >>
+  rpt strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem rename_current_blocks_covered_inv_supply_apply:
+  rename_current_blocks_covered_inv t ==>
+  rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s (SND rs) ==>
+  ssa_supply_extends s s'
+Proof
+  simp[rename_current_blocks_covered_inv_def] >>
+  rpt strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem rename_current_children_covered_inv_vars_apply:
+  rename_current_children_covered_inv ts ==>
+  rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s stacks ==>
+  ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs'))
+Proof
+  simp[rename_current_children_covered_inv_def] >>
+  rpt strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem rename_current_children_covered_inv_supply_apply:
+  rename_current_children_covered_inv ts ==>
+  rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s stacks ==>
+  ssa_supply_extends s s'
+Proof
+  simp[rename_current_children_covered_inv_def] >>
+  rpt strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem rename_current_children_cons_head_vars_probe:
+  rename_current_blocks_covered_inv child ==>
+  rename_current_children_covered_inv children ==>
+  rename_current_children s'' ctrs'' stacks bbs'' sm children =
+    (ctrs',s',bbs') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s stacks ==>
+  rename_current_blocks s (ctrs,stacks) bbs sm child =
+    (ctrs'',s'',bbs'') ==>
+  ssa_vars_covered s'' (FLAT (MAP block_ir_vars bbs''))
+Proof
+  rpt strip_tac >>
+  drule rename_current_blocks_covered_inv_vars_apply >>
+  disch_then drule >> disch_then drule >> simp[]
+QED
+
+Theorem rename_current_children_cons_head_supply_probe:
+  rename_current_blocks_covered_inv child ==>
+  rename_current_children_covered_inv children ==>
+  rename_current_children s'' ctrs'' stacks bbs'' sm children =
+    (ctrs',s',bbs') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s stacks ==>
+  rename_current_blocks s (ctrs,stacks) bbs sm child =
+    (ctrs'',s'',bbs'') ==>
+  ssa_supply_extends s s''
+Proof
+  rpt strip_tac >>
+  drule rename_current_blocks_covered_inv_supply_apply >>
+  disch_then drule >> disch_then drule >> simp[]
+QED
+
+
+Theorem rename_current_children_cons_tail_vars_probe:
+  rename_current_blocks_covered_inv child ==>
+  rename_current_children_covered_inv rest ==>
+  rename_current_blocks s (ctrs,stacks) bbs sm child =
+    (ctrs'',s'',bbs'') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s stacks ==>
+  rename_current_children s'' ctrs'' stacks bbs'' sm rest =
+    (ctrs',s',bbs') ==>
+  ssa_vars_covered s'' (FLAT (MAP block_ir_vars bbs'')) ==>
+  ssa_stacks_covered s'' stacks ==>
+  ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs'))
+Proof
+  rpt strip_tac >>
+  drule rename_current_children_covered_inv_vars_apply >>
+  disch_then drule >> disch_then drule >> simp[]
+QED
+
+Theorem rename_current_children_cons_tail_supply_probe:
+  rename_current_blocks_covered_inv child ==>
+  rename_current_children_covered_inv rest ==>
+  rename_current_blocks s (ctrs,stacks) bbs sm child =
+    (ctrs'',s'',bbs'') ==>
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_stacks_covered s stacks ==>
+  rename_current_children s'' ctrs'' stacks bbs'' sm rest =
+    (ctrs',s',bbs') ==>
+  ssa_vars_covered s'' (FLAT (MAP block_ir_vars bbs'')) ==>
+  ssa_stacks_covered s'' stacks ==>
+  ssa_supply_extends s'' s'
+Proof
+  rpt strip_tac >>
+  drule rename_current_children_covered_inv_supply_apply >>
+  disch_then drule >> disch_then drule >> simp[]
+QED
+Theorem rename_current_blocks_vars_covered:
+  (!s rs bbs sm t ctrs s' bbs'.
+     ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) /\
+     ssa_stacks_covered s (SND rs) /\
+     rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+     ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs')) /\
+     ssa_supply_extends s s') /\
+  (!s ctrs stacks bbs sm ts ctrs' s' bbs'.
+     ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) /\
+     ssa_stacks_covered s stacks /\
+     rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+     ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs')) /\
+     ssa_supply_extends s s')
+Proof
+  qsuff_tac
+    `(!t. rename_current_blocks_covered_inv t) /\
+     (!ts. rename_current_children_covered_inv ts)`
+  >- (simp[rename_current_blocks_covered_inv_def,
+           rename_current_children_covered_inv_def] >> metis_tac[])
+  >> ho_match_mp_tac current_dom_tree_induction >> rpt conj_tac
+  >- (rpt strip_tac >>
+      simp[rename_current_blocks_covered_inv_def] >> rpt strip_tac >>
+      gvs[rename_current_blocks_def, AllCaseEqs()] >>
+      TRY (rename1 `lookup_block _ _ = NONE` >>
+           simp[ssa_supply_extends_refl] >> NO_TAC) >>
+      pairarg_tac >> gvs[] >>
+         drule venomExecPropsTheory.lookup_block_MEM >> strip_tac >>
+         `ssa_vars_covered s (block_ir_vars bb)` by
+           (irule block_vars_covered_of_mem >> qexists `bbs` >> simp[]) >>
+         `ssa_vars_covered s (FLAT (MAP inst_ir_vars bb.bb_instructions))` by
+           gvs[block_ir_vars_def] >>
+         `ssa_vars_covered s1 (FLAT (MAP inst_ir_vars insts')) /\
+          ssa_stacks_covered s1 (SND rs1) /\
+          ssa_supply_extends s s1` by
+           (drule_all rename_current_block_insts_covered >> simp[]) >>
+         `ssa_vars_covered s1 (FLAT (MAP block_ir_vars bbs))` by
+           (gvs[ssa_vars_covered_def, ssa_supply_extends_def,
+                listTheory.EVERY_MEM] >> metis_tac[]) >>
+         `ssa_vars_covered s1
+            (block_ir_vars (bb with bb_instructions := insts'))` by
+           gvs[block_ir_vars_def] >>
+         `ssa_vars_covered s1 (FLAT (MAP block_ir_vars
+            (replace_block lbl
+              (bb with bb_instructions := insts') bbs)))` by
+           (irule replace_block_vars_covered >> simp[]) >>
+         `ssa_vars_covered s1 (FLAT (MAP block_ir_vars
+            (update_current_succ_phis rs1 lbl
+              (replace_block lbl
+                (bb with bb_instructions := insts') bbs)
+              (case ALOOKUP sm lbl of NONE => [] | SOME ss => ss))))` by
+           (irule update_current_succ_phis_vars_covered >> simp[]) >>
+         `ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs'))` by
+           (drule rename_current_children_covered_inv_vars_apply >>
+            disch_then drule >> disch_then drule >> simp[]) >>
+         `ssa_supply_extends s1 s'` by
+           (drule rename_current_children_covered_inv_supply_apply >>
+            disch_then drule >> disch_then drule >> simp[]) >>
+         irule ssa_supply_extends_trans >> qexists `s1` >> simp[])
+  >- simp[rename_current_children_covered_inv_def,
+           rename_current_blocks_def, ssa_supply_extends_refl]
+  >> rpt strip_tac >>
+     simp[rename_current_children_covered_inv_def] >> rpt strip_tac >>
+     gvs[rename_current_blocks_def] >>
+     pairarg_tac >> gvs[] >>
+     `ssa_vars_covered s'' (FLAT (MAP block_ir_vars bbs''))` by
+       (drule rename_current_blocks_covered_inv_vars_apply >>
+        disch_then drule >> disch_then drule >> simp[]) >>
+     `ssa_supply_extends s s''` by
+       (drule rename_current_blocks_covered_inv_supply_apply >>
+        disch_then drule >> disch_then drule >> simp[]) >>
+     `ssa_stacks_covered s'' stacks` by
+       (irule ssa_stacks_covered_mono >> qexists `s` >> simp[]) >>
+     `ssa_vars_covered s' (FLAT (MAP block_ir_vars bbs'))` by
+       (drule rename_current_children_covered_inv_vars_apply >>
+        disch_then drule >> disch_then drule >> simp[]) >>
+     `ssa_supply_extends s'' s'` by
+       (drule rename_current_children_covered_inv_supply_apply >>
+        disch_then drule >> disch_then drule >> simp[]) >>
+     irule ssa_supply_extends_trans >> qexists `s''` >> simp[]
+QED
+
+Theorem rename_current_blocks_inst_ids:
+  (!s rs bbs sm t ctrs s' bbs'.
+     ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+     rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+     FLAT (MAP block_ir_inst_ids bbs') =
+     FLAT (MAP block_ir_inst_ids bbs)) /\
+  (!s ctrs stacks bbs sm ts ctrs' s' bbs'.
+     ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+     rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+     FLAT (MAP block_ir_inst_ids bbs') =
+     FLAT (MAP block_ir_inst_ids bbs))
+Proof
+  qsuff_tac
+    `(!t s rs bbs sm ctrs s' bbs'.
+        ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+        rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+        FLAT (MAP block_ir_inst_ids bbs') =
+        FLAT (MAP block_ir_inst_ids bbs)) /\
+     (!ts s ctrs stacks bbs sm ctrs' s' bbs'.
+        ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
+        rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+        FLAT (MAP block_ir_inst_ids bbs') =
+        FLAT (MAP block_ir_inst_ids bbs))`
+  >- metis_tac[]
+  >> ho_match_mp_tac current_dom_tree_induction >> rpt conj_tac
+  >- (rpt strip_tac >>
+      gvs[rename_current_blocks_def, AllCaseEqs()]
+      >> pairarg_tac >> gvs[] >>
+         drule lookup_block_label >> strip_tac >>
+         drule rename_current_block_insts_ids >> strip_tac >>
+         `FLAT (MAP block_ir_inst_ids
+            (replace_block lbl
+              (bb with bb_instructions := insts') bbs)) =
+          FLAT (MAP block_ir_inst_ids bbs)` by
+           (irule replace_block_inst_ids_distinct >>
+            simp[block_ir_inst_ids_def]) >>
+         `ALL_DISTINCT (MAP basic_block_bb_label
+            (update_current_succ_phis rs1 lbl
+              (replace_block lbl
+                (bb with bb_instructions := insts') bbs)
+              (case ALOOKUP sm lbl of NONE => [] | SOME ss => ss)))` by
+           simp[update_current_succ_phis_labels_selector,
+                replace_block_labels_selector] >>
+         `FLAT (MAP block_ir_inst_ids
+            (update_current_succ_phis rs1 lbl
+              (replace_block lbl
+                (bb with bb_instructions := insts') bbs)
+              (case ALOOKUP sm lbl of NONE => [] | SOME ss => ss))) =
+          FLAT (MAP block_ir_inst_ids
+            (replace_block lbl
+              (bb with bb_instructions := insts') bbs))` by
+           (irule update_current_succ_phis_inst_ids >>
+            simp[replace_block_labels_selector]) >>
+         first_x_assum drule >> strip_tac >>
+         qpat_assum `!s0 c0 st0 sm0 c1 s2 out. _ ==> _` drule >>
+         strip_tac >> metis_tac[])
+  >- simp[rename_current_blocks_def]
+  >> rpt strip_tac >> gvs[rename_current_blocks_def] >>
+     pairarg_tac >> gvs[] >>
+     qpat_assum `!s0 rs0 b0 sm0 c0 s1 b1. _`
+       (drule_all_then assume_tac) >>
+     `ALL_DISTINCT (MAP basic_block_bb_label bbs'')` by
+       (drule (CONJUNCT1 rename_current_blocks_labels) >> simp[bb_label_eta]) >>
+     qpat_assum `!s0 c0 st0 b0 sm0 c1 s1 b1. _`
+       (drule_all_then assume_tac) >>
+     metis_tac[]
 QED
 
 Theorem rename_current_blocks_invoke_labels:
