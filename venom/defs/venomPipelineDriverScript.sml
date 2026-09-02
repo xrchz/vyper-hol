@@ -10,6 +10,11 @@ Ancestors
   venomPassSchedule
   venomCompilerTypes
   venomPolicyTypes
+  venomPipelineRunner
+  fcgPruning
+  staticLayoutWf
+  fmpWfDefs
+  stackPlanGen
 
 Definition pipeline_stage_tags_def:
   (pipeline_stage_tags [] = []) /\
@@ -94,6 +99,63 @@ Definition pipeline_spec_wf_def:
     dret_before_fmp (pipeline_spec_tags spec) /\
     EVERY (pass_target_supported rpolicy.rpol_target)
           (pipeline_spec_tags spec)
+End
+
+(* Checked generic execution.  The call graph bound as [frozen_fcg] is used
+ * both for pruning and for the callee-first name list; only the final safety
+ * check recomputes analysis over the actual result. *)
+Definition run_venom_pipeline_def:
+  run_venom_pipeline mem_ok calling_ok post_ok rpolicy spec unit =
+    if ~pipeline_spec_wf rpolicy spec then NONE
+    else if ~unit_wf unit then NONE
+    else if ~raw_static_inputs_wf unit.cu_context then NONE
+    else if ~mem_ok unit.cu_context then NONE
+    else if ~calling_ok unit.cu_context then NONE
+    else
+      case run_pipeline_stages rpolicy spec.ps_pre_walk_stages unit
+             (init_ir_supply unit) of
+        NONE => NONE
+      | SOME (pre_unit,pre_supply) =>
+          let frozen_fcg = fcg_analyze pre_unit.cu_context;
+              walk_unit =
+                if spec.ps_prune_unreachable then
+                  prune_unit_fcg_unreachable pre_unit frozen_fcg
+                else pre_unit
+          in
+            if spec.ps_require_acyclic_calls /\
+               ~reachable_fcg_acyclic pre_unit.cu_context frozen_fcg
+            then NONE
+            else
+              case pre_unit.cu_context.ctx_entry of
+                NONE => NONE
+              | SOME entry =>
+                  case run_callee_first rpolicy spec.ps_fn_passes
+                         (fcg_postorder frozen_fcg entry)
+                         walk_unit pre_supply of
+                    NONE => NONE
+                  | SOME (walked_unit,walked_supply) =>
+                      case run_pipeline_stages rpolicy
+                             spec.ps_post_walk_stages
+                             walked_unit walked_supply of
+                        NONE => NONE
+                      | SOME (final_unit,final_supply) =>
+                          if unit_wf final_unit /\
+                             unit_labels_wf final_unit /\
+                             context_target_safe rpolicy.rpol_target
+                               final_unit.cu_context /\
+                             concretized_static_layouts_wf
+                               final_unit.cu_context /\
+                             fmp_lowered_context_wf final_unit.cu_context /\
+                             mem_ok final_unit.cu_context /\
+                             calling_ok final_unit.cu_context /\
+                             post_ok final_unit.cu_context /\
+                             reachable_fcg_acyclic final_unit.cu_context
+                               (fcg_analyze final_unit.cu_context) /\
+                             codegen_ready final_unit.cu_context
+                          then SOME <|po_unit := final_unit;
+                                      po_final_assembly :=
+                                        spec.ps_final_assembly|>
+                          else NONE
 End
 
 Theorem o1_pipeline_spec_wf_resolved:
