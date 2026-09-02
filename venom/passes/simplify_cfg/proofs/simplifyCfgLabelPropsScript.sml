@@ -744,6 +744,56 @@ Proof
 QED
 
 
+Theorem simplify_cfg_round_with_labels_transition:
+  ALL_DISTINCT (fn_labels func) ==>
+  label_map_transition (fn_labels func)
+    (SND (simplify_cfg_round_with_labels func))
+    (fn_labels (FST (simplify_cfg_round_with_labels func)))
+Proof
+  strip_tac >> Cases_on `fn_entry_label func`
+  >- simp[simplify_cfg_round_with_labels_def, label_map_transition_refl] >>
+  rename1 `fn_entry_label func = SOME entry` >>
+  `ALL_DISTINCT
+     (fn_labels (fix_all_phis (remove_unreachable_blocks func)))` by
+    metis_tac[fn_labels_fix_all_phis,
+              fn_labels_remove_unreachable_all_distinct] >>
+  `EVERY (\label. MEM label (fn_labels func))
+     (fn_labels (fix_all_phis (remove_unreachable_blocks func)))` by
+    simp[fn_labels_fix_all_phis, fn_labels_remove_unreachable_subset] >>
+  Cases_on
+    `collapse_dfs (fix_all_phis (remove_unreachable_blocks func)) [] [] entry` >>
+  PairCases_on `r` >>
+  drule simplify_cfg_round_with_labels_event_trace >>
+  simp[] >>
+  strip_tac >>
+  `simplify_cfg_round_with_labels func =
+   (fix_all_phis (remove_unreachable_blocks
+      (if r0 = [] then q else subst_block_labels_fn r0 q)),
+    REVERSE r0)` by
+    (pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+     qpat_assum `fn_entry_label func = SOME entry`
+       (fn th => rewrite_tac[th]) >>
+     qpat_assum
+       `collapse_dfs (fix_all_phis (remove_unreachable_blocks func)) [] [] entry =
+        (q,r0,r1)`
+       (fn th => rewrite_tac[th]) >>
+     simp[]) >>
+  `label_event_trace
+     (fn_labels (fix_all_phis (remove_unreachable_blocks func)))
+     (REVERSE r0) (fn_labels q)` by
+    (qpat_x_assum
+       `label_event_trace _ (SND (simplify_cfg_round_with_labels func)) _`
+       mp_tac >>
+     qpat_assum `simplify_cfg_round_with_labels func = _`
+       (fn th => rewrite_tac[th]) >>
+     simp[]) >>
+  qpat_assum `simplify_cfg_round_with_labels func = _`
+    (fn th => rewrite_tac[th]) >>
+  irule collapse_postprocess_transition >>
+  qexists `fn_labels (fix_all_phis (remove_unreachable_blocks func))` >>
+  rpt conj_tac >> first_assum ACCEPT_TAC
+QED
+
 Theorem resolve_label_fuel_cons_irrelevant[local]:
   !fuel rest source target visited label.
     label <> source /\ ~MEM source (MAP SND rest) ==>
