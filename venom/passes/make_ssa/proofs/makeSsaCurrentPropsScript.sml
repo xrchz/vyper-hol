@@ -1222,6 +1222,65 @@ Proof
        fn_insts_blocks_invoke_labels]
 QED
 
+Definition invoke_blocks_subset_def[local]:
+  invoke_blocks_subset input output <=>
+    EVERY (\t. MEM t (FLAT (MAP block_invoke_labels input)))
+          (FLAT (MAP block_invoke_labels output))
+End
+
+Theorem invoke_blocks_subset_refl[local]:
+  invoke_blocks_subset bbs bbs
+Proof
+  simp[invoke_blocks_subset_def,listTheory.EVERY_MEM]
+QED
+
+Theorem invoke_blocks_subset_trans[local]:
+  invoke_blocks_subset bbs0 bbs1 /\ invoke_blocks_subset bbs1 bbs2 ==>
+  invoke_blocks_subset bbs0 bbs2
+Proof
+  simp[invoke_blocks_subset_def,listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem MEM_FLAT_MAP_replace_block_subset[local]:
+  !bbs lbl new_bb C x.
+    MEM x (FLAT (MAP C (replace_block lbl new_bb bbs))) ==>
+    MEM x (C new_bb) \/ MEM x (FLAT (MAP C bbs))
+Proof
+  Induct_on `bbs` >>
+  simp[cfgTransformTheory.replace_block_def,listTheory.MEM_APPEND] >>
+  rpt strip_tac >> Cases_on `h.bb_label = lbl` >>
+  gvs[cfgTransformTheory.replace_block_def,listTheory.MEM_APPEND] >>
+  metis_tac[]
+QED
+
+Theorem MEM_FLAT_MAP_component[local]:
+  MEM e es /\ MEM x (C e) ==> MEM x (FLAT (MAP C es))
+Proof
+  simp[listTheory.MEM_FLAT,listTheory.MEM_MAP] >> metis_tac[]
+QED
+
+Theorem lookup_block_MEM_subset[local]:
+  !bbs lbl bb. lookup_block lbl bbs = SOME bb ==> MEM bb bbs
+Proof
+  Induct >> simp[venomInstTheory.lookup_block_def,listTheory.FIND_thm] >>
+  rpt strip_tac >> Cases_on `h.bb_label = lbl` >> gvs[] >>
+  disj2_tac >> first_x_assum irule >> qexists `lbl` >>
+  gvs[venomInstTheory.lookup_block_def]
+QED
+
+Theorem replace_block_invoke_labels_subset[local]:
+  lookup_block lbl bbs = SOME bb /\
+  block_invoke_labels new_bb = block_invoke_labels bb ==>
+  invoke_blocks_subset bbs (replace_block lbl new_bb bbs)
+Proof
+  simp[invoke_blocks_subset_def,listTheory.EVERY_MEM] >> rpt strip_tac >>
+  drule MEM_FLAT_MAP_replace_block_subset >> strip_tac
+  >- (`MEM bb bbs` by metis_tac[lookup_block_MEM_subset] >>
+      metis_tac[MEM_FLAT_MAP_component])
+  >> simp[]
+QED
+
+
 Theorem insert_phi_at_block_invoke_labels:
   phi.inst_opcode = PHI ==>
   block_invoke_labels (insert_phi_at_block phi bb) = block_invoke_labels bb
@@ -1322,6 +1381,29 @@ Proof
   strip_tac >> simp[cfgTransformTheory.replace_block_def, MAP_MAP_o] >>
   irule MAP_CONG >> rw[] >>
   Cases_on `e.bb_label = lbl` >> simp[]
+QED
+
+
+Theorem FOLDL_invoke_blocks_subset[local]:
+  !xs step acc.
+    (!a x. invoke_blocks_subset a (step a x)) ==>
+    invoke_blocks_subset acc (FOLDL step acc xs)
+Proof
+  Induct >> rpt gen_tac >> strip_tac
+  >- simp[invoke_blocks_subset_refl]
+  >> simp[] >> metis_tac[invoke_blocks_subset_trans]
+QED
+
+Theorem update_current_succ_phis_invoke_labels_subset[local]:
+  !succs rs cur bbs.
+    invoke_blocks_subset bbs (update_current_succ_phis rs cur bbs succs)
+Proof
+  rpt gen_tac >> simp[update_current_succ_phis_def] >>
+  irule FOLDL_invoke_blocks_subset >> rpt strip_tac >>
+  Cases_on `lookup_block x a`
+  >- simp[invoke_blocks_subset_refl]
+  >> gvs[] >> irule replace_block_invoke_labels_subset >> simp[] >>
+     simp[block_invoke_labels_def,update_current_phi_insts_invoke_labels]
 QED
 
 Theorem update_current_succ_phis_invoke_labels:
@@ -2045,6 +2127,50 @@ Theorem make_ssa_current_fn_second_call_current_analysis:
 Proof
   strip_tac >> simp[make_ssa_current_fn_current_analysis_eq]
 QED
+
+Theorem rename_current_blocks_invoke_labels_subset:
+  (!s rs bbs sm t ctrs s' bbs'.
+     rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+     invoke_blocks_subset bbs bbs') /\
+  (!s ctrs stacks bbs sm ts ctrs' s' bbs'.
+     rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+     invoke_blocks_subset bbs bbs')
+Proof
+  qsuff_tac
+    `(!t s rs bbs sm ctrs s' bbs'.
+        rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+        invoke_blocks_subset bbs bbs') /\
+     (!ts s ctrs stacks bbs sm ctrs' s' bbs'.
+        rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+        invoke_blocks_subset bbs bbs')`
+  >- metis_tac[]
+  >> ho_match_mp_tac current_dom_tree_induction >> rpt conj_tac
+  >- (rpt strip_tac >>
+      gvs[rename_current_blocks_def,AllCaseEqs(),invoke_blocks_subset_refl] >>
+      pairarg_tac >> gvs[] >>
+      drule rename_current_block_insts_invoke_targets >> strip_tac >>
+      `invoke_blocks_subset bbs
+         (replace_block lbl (bb with bb_instructions := insts') bbs)` by
+        (irule replace_block_invoke_labels_subset >>
+         simp[block_invoke_labels_def]) >>
+      `invoke_blocks_subset
+         (replace_block lbl (bb with bb_instructions := insts') bbs)
+         (update_current_succ_phis rs1 lbl
+           (replace_block lbl (bb with bb_instructions := insts') bbs)
+           (case ALOOKUP sm lbl of NONE => [] | SOME ss => ss))` by
+        simp[update_current_succ_phis_invoke_labels_subset] >>
+      first_x_assum drule >> strip_tac >>
+      metis_tac[invoke_blocks_subset_trans])
+  >- simp[rename_current_blocks_def,invoke_blocks_subset_refl]
+  >> rpt strip_tac >> gvs[rename_current_blocks_def] >>
+     pairarg_tac >> gvs[] >>
+     qpat_assum `!s0 rs0 b0 sm0 c0 s1 b1. _`
+       (drule_all_then assume_tac) >>
+     qpat_assum `!s0 c0 st0 b0 sm0 c1 s1 b1. _`
+       (drule_all_then assume_tac) >>
+     metis_tac[invoke_blocks_subset_trans]
+QED
+
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
@@ -2103,6 +2229,27 @@ Proof
        (drule_all_then assume_tac) >>
      metis_tac[]
 QED
+
+Theorem make_ssa_current_fn_invoke_targets_subset:
+  make_ssa_current_fn s fn = (fn',s') ==>
+  EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+        (MAP FST (fcg_scan_function fn'))
+Proof
+  simp[make_ssa_current_fn_def] >> rpt CASE_TAC >>
+  gvs[invoke_blocks_subset_refl,fcg_scan_function_invoke_labels,
+      listTheory.EVERY_MEM] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule add_phi_nodes_supply_invoke_labels >> strip_tac >>
+  drule_all_then assume_tac
+    (CONJUNCT1 rename_current_blocks_invoke_labels_subset) >>
+  `invoke_blocks_subset fn.fn_blocks bbs1` by
+    gvs[invoke_blocks_subset_def,listTheory.EVERY_MEM] >>
+  `invoke_blocks_subset fn.fn_blocks bbs2` by
+    metis_tac[invoke_blocks_subset_trans] >>
+  gvs[invoke_blocks_subset_def,fcg_scan_function_invoke_labels,
+      listTheory.EVERY_MEM]
+QED
+
 Theorem make_ssa_current_fn_invoke_targets:
   ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks) /\
   make_ssa_current_fn s fn = (fn',s') ==>
@@ -2293,6 +2440,20 @@ Theorem make_ssa_current_fn_duplicate_label_invoke_probe:
 Proof
   EVAL_TAC
 QED
+Theorem make_ssa_current_fn_duplicate_label_invoke_subset_probe:
+  let s = <| irs_next_inst := 1; irs_next_var := 0; irs_next_label := 0;
+             irs_used_inst_ids := [0]; irs_used_vars := [];
+             irs_used_labels := ["entry"] |> in
+  let invoke = mk_inst 0 INVOKE [Label "callee"] [] in
+  let bb0 = <| bb_label := "entry"; bb_instructions := [] |> in
+  let bb1 = <| bb_label := "entry"; bb_instructions := [invoke] |> in
+  let fn = mk_raw_function "f" [bb0;bb1] in
+    EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
+      (MAP FST (fcg_scan_function (FST (make_ssa_current_fn s fn))))
+Proof
+  EVAL_TAC
+QED
+
 
 
 Definition make_ssa_collision_fn_def[local]:
