@@ -292,4 +292,27 @@ Proof
           simplify_cfg_fn_invoke_labels_def])
 QED
 
+Theorem execute_configured_fn_pass_o1_suffix_no_raw_fmp_ops:
+  MEM tag [VP_MakeSSA; VP_SimplifyCFG; VP_SingleUseExpansion;
+           VP_DFT; VP_CFGNormalization] /\
+  no_raw_fmp_ops fn /\
+  execute_configured_fn_pass rpolicy (CFP_Simple tag) unit s fn = SOME out ==>
+  no_raw_fmp_ops out.fpo_function
+Proof
+  Cases_on `tag` >>
+  gvs[execute_configured_fn_pass_def,AllCaseEqs()] >>
+  strip_tac >> gvs[] >>
+  `no_raw_fmp_ops (FST (make_ssa_current_fn s fn))` by
+    metis_tac[make_ssa_current_fn_no_raw_fmp_ops] >>
+  `no_raw_fmp_ops (FST (simplify_cfg_fn_with_labels fn))` by
+    metis_tac[simplify_cfg_fn_with_labels_no_raw_fmp_ops] >>
+  `no_raw_fmp_ops (FST (sue_expand_function_supply s fn))` by
+    metis_tac[sue_expand_function_supply_no_raw_fmp_ops] >>
+  `no_raw_fmp_ops (dft_fn fn)` by
+    metis_tac[dft_fn_no_raw_fmp_ops] >>
+  `no_raw_fmp_ops (FST (cfg_norm_function_supply s fn))` by
+    metis_tac[cfg_norm_function_supply_no_raw_fmp_ops] >>
+  gvs[]
+QED
+
 val _ = export_theory ();
