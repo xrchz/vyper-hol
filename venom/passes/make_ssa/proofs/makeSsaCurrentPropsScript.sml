@@ -2017,6 +2017,34 @@ Proof
   drule_all make_ssa_configured_inst_ids_distinct >>
   gvs[make_ssa_configured_def]
 QED
+
+Theorem make_ssa_current_fn_second_call_current_analysis:
+  make_ssa_current_fn s fn = (fn1,s1) ==>
+  make_ssa_current_fn s1 fn1 =
+    case fn_entry_label fn1 of
+      NONE => (fn1,s1)
+    | SOME entry =>
+        let cfg = cfg_analyze fn1 in
+        let dom = dom_analyze cfg fn1 in
+        let live = liveness_analyze fn1 in
+        let pred_map = current_query_map (fn_labels fn1) (cfg_preds_of cfg) in
+        let succ_map = current_query_map (fn_labels fn1) (cfg_succs_of cfg) in
+        let frontiers = current_query_map (fn_labels fn1) (frontier_of dom) in
+        let live_in = current_query_map (fn_labels fn1)
+                                        (\l. live_vars_at live l 0) in
+        let dtree = current_dom_tree_aux dom (LENGTH (fn_labels fn1)) entry in
+        let postorder = dom_tree_postorder dtree in
+        let ordered_bbs = MAP THE (FILTER IS_SOME
+          (MAP (\lbl. lookup_block lbl fn1.fn_blocks) postorder)) in
+        let defs = compute_defs ordered_bbs in
+        let (bbs1,s2) = add_phi_nodes_supply s1 frontiers pred_map live_in
+                                             fn1.fn_blocks defs in
+        let rs0 = init_current_rename_state defs in
+        let (_,s3,bbs2) = rename_current_blocks s2 rs0 bbs1 succ_map dtree in
+          (fn1 with fn_blocks := bbs2,s3)
+Proof
+  strip_tac >> simp[make_ssa_current_fn_current_analysis_eq]
+QED
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
