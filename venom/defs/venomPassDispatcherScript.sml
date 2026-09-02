@@ -9,7 +9,8 @@
 Theory venomPassDispatcher
 Ancestors
   venomPassSchedule fcgDefs lowerDloadDefs irSupply
-
+  makeSsaCurrentDefs singleUseExpansionDefs cfgNormDefs
+  simplifyCfgDefs dftDefs dretDesugarDefs concretizeMemLocDefs fmpLowerDefs
 Datatype:
   fn_pass_output = <|
     fpo_function : ir_function;
@@ -157,5 +158,149 @@ Definition introduces_no_invoke_edges_def:
       (\target. MEM target (MAP FST (fcg_scan_function before)))
       (MAP FST (fcg_scan_function after))
 End
+
+Definition execute_configured_fn_pass_def:
+  execute_configured_fn_pass rpolicy (CFP_Simple tag) unit s fn =
+    case tag of
+      VP_ConcretizeMemLoc =>
+        (case concretize_function_eval
+                unit.cu_context.ctx_global_reserved fn of
+           NONE => NONE
+         | SOME fn' => SOME <| fpo_function := fn';
+                              fpo_label_map := [];
+                              fpo_supply := s |>)
+    | VP_CFGNormalization =>
+        (case cfg_norm_function_supply s fn of
+           (fn',s') => SOME <| fpo_function := fn';
+                              fpo_label_map := [];
+                              fpo_supply := s' |>)
+    | VP_DFT =>
+        SOME <| fpo_function := dft_fn fn;
+                fpo_label_map := [];
+                fpo_supply := s |>
+    | VP_DretDesugar =>
+        (case dret_desugar_function rpolicy.rpol_target s fn of
+           NONE => NONE
+         | SOME (fn',s') => SOME <| fpo_function := fn';
+                                  fpo_label_map := [];
+                                  fpo_supply := s' |>)
+    | VP_FmpLowering =>
+        (case fmp_lower_function unit.cu_context s fn of
+           NONE => NONE
+         | SOME (fn',s') => SOME <| fpo_function := fn';
+                                  fpo_label_map := [];
+                                  fpo_supply := s' |>)
+    | VP_LowerDload =>
+        (case lower_dload_function_supply s fn of
+           (fn',s') => SOME <| fpo_function := fn';
+                              fpo_label_map := [];
+                              fpo_supply := s' |>)
+    | VP_MakeSSA =>
+        (case make_ssa_current_fn s fn of
+           (fn',s') => SOME <| fpo_function := fn';
+                              fpo_label_map := [];
+                              fpo_supply := s' |>)
+    | VP_SimplifyCFG =>
+        (case simplify_cfg_fn_with_labels fn of
+           (fn',labels) => SOME <| fpo_function := fn';
+                                  fpo_label_map := labels;
+                                  fpo_supply := s |>)
+    | VP_SingleUseExpansion =>
+        (case sue_expand_function_supply s fn of
+           (fn',s') => SOME <| fpo_function := fn';
+                              fpo_label_map := [];
+                              fpo_supply := s' |>)
+End
+
+Theorem execute_configured_fn_pass_concretize[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_ConcretizeMemLoc) unit s fn =
+  case concretize_function_eval unit.cu_context.ctx_global_reserved fn of
+    NONE => NONE
+  | SOME fn' => SOME <| fpo_function := fn'; fpo_label_map := [];
+                        fpo_supply := s |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_cfg_normalization[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_CFGNormalization) unit s fn =
+  case cfg_norm_function_supply s fn of
+    (fn',s') => SOME <| fpo_function := fn'; fpo_label_map := [];
+                       fpo_supply := s' |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_dft[simp]:
+  execute_configured_fn_pass rpolicy (CFP_Simple VP_DFT) unit s fn =
+  SOME <| fpo_function := dft_fn fn; fpo_label_map := [];
+          fpo_supply := s |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_dret[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_DretDesugar) unit s fn =
+  case dret_desugar_function rpolicy.rpol_target s fn of
+    NONE => NONE
+  | SOME (fn',s') => SOME <| fpo_function := fn'; fpo_label_map := [];
+                             fpo_supply := s' |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_fmp[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_FmpLowering) unit s fn =
+  case fmp_lower_function unit.cu_context s fn of
+    NONE => NONE
+  | SOME (fn',s') => SOME <| fpo_function := fn'; fpo_label_map := [];
+                             fpo_supply := s' |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_lower_dload[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_LowerDload) unit s fn =
+  case lower_dload_function_supply s fn of
+    (fn',s') => SOME <| fpo_function := fn'; fpo_label_map := [];
+                       fpo_supply := s' |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_make_ssa[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_MakeSSA) unit s fn =
+  case make_ssa_current_fn s fn of
+    (fn',s') => SOME <| fpo_function := fn'; fpo_label_map := [];
+                       fpo_supply := s' |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_simplify_cfg[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_SimplifyCFG) unit s fn =
+  case simplify_cfg_fn_with_labels fn of
+    (fn',labels) => SOME <| fpo_function := fn'; fpo_label_map := labels;
+                           fpo_supply := s |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
+
+Theorem execute_configured_fn_pass_sue[simp]:
+  execute_configured_fn_pass rpolicy
+    (CFP_Simple VP_SingleUseExpansion) unit s fn =
+  case sue_expand_function_supply s fn of
+    (fn',s') => SOME <| fpo_function := fn'; fpo_label_map := [];
+                       fpo_supply := s' |>
+Proof
+  simp[execute_configured_fn_pass_def]
+QED
 
 val _ = export_theory ();
