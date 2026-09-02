@@ -2,7 +2,7 @@
 
 Theory venomPipelineRunnerProps
 Ancestors
-  venomPipelineRunner venomFnScheduleRunnerProps fcgDefs
+  venomPipelineRunner venomFnScheduleRunnerProps fcgPostorder
 
 Theorem run_named_fn_schedules_append:
   run_named_fn_schedules runner rpolicy passes (xs ++ ys) unit supply =
@@ -35,7 +35,7 @@ Theorem list_index_split:
   list_index name names = SOME i ==>
   names = TAKE i names ++ name :: DROP (SUC i) names
 Proof
-  simp[list_index_def, listTheory.INDEX_OF_eq_SOME] >> strip_tac >>
+  simp[fcgDefsTheory.list_index_def, listTheory.INDEX_OF_eq_SOME] >> strip_tac >>
   drule list_split_at_EL >> simp[]
 QED
 
@@ -176,5 +176,44 @@ Theorem run_pipeline_stages_head_failure:
   run_pipeline_stages rpolicy (stage::stages) unit supply = NONE
 Proof
   simp[run_pipeline_stages_def]
+QED
+
+Theorem run_callee_first_direct_callee_processed_first:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  reachable_fcg_acyclic ctx fcg /\
+  fn_directly_calls ctx caller callee /\
+  fcg_is_reachable fcg caller /\
+  run_callee_first rpolicy passes (fcg_postorder fcg entry) unit supply =
+    SOME out ==>
+  ?callee_i caller_i
+   callee_prefix_unit callee_prefix_supply callee_unit callee_supply
+   caller_prefix_unit caller_prefix_supply caller_unit caller_supply.
+    list_index callee (fcg_postorder fcg entry) = SOME callee_i /\
+    list_index caller (fcg_postorder fcg entry) = SOME caller_i /\
+    callee_i < caller_i /\
+    run_named_fn_schedules execute_configured_fn_pass rpolicy passes
+      (TAKE callee_i (fcg_postorder fcg entry)) unit supply =
+      SOME (callee_prefix_unit,callee_prefix_supply) /\
+    run_configured_fn_passes execute_configured_fn_pass rpolicy passes callee
+      callee_prefix_unit callee_prefix_supply =
+      SOME (callee_unit,callee_supply) /\
+    run_named_fn_schedules execute_configured_fn_pass rpolicy passes
+      (DROP (SUC callee_i) (fcg_postorder fcg entry))
+      callee_unit callee_supply = SOME out /\
+    run_named_fn_schedules execute_configured_fn_pass rpolicy passes
+      (TAKE caller_i (fcg_postorder fcg entry)) unit supply =
+      SOME (caller_prefix_unit,caller_prefix_supply) /\
+    run_configured_fn_passes execute_configured_fn_pass rpolicy passes caller
+      caller_prefix_unit caller_prefix_supply =
+      SOME (caller_unit,caller_supply) /\
+    run_named_fn_schedules execute_configured_fn_pass rpolicy passes
+      (DROP (SUC caller_i) (fcg_postorder fcg entry))
+      caller_unit caller_supply = SOME out
+Proof
+  rpt strip_tac >>
+  drule_all fcg_postorder_callee_before_caller >> strip_tac >>
+  gvs[run_callee_first_def] >>
+  metis_tac[run_named_fn_schedules_indexed]
 QED
 val _ = export_theory ();
