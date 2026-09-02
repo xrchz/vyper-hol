@@ -964,3 +964,20 @@ Proof
   gvs[sue_unit_supply_def, unit_ir_inst_ids_def] >>
   metis_tac[sue_expand_context_supply_ids_ok]
 QED
+
+
+Theorem sue_configured_inst_ids_all_distinct:
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  sue_configured_with_supply unit = (unit',s') ==>
+  ALL_DISTINCT (unit_ir_inst_ids unit')
+Proof
+  rpt strip_tac >>
+  `sue_unit_supply (init_ir_supply unit) unit = (unit',s')` by
+    gvs[sue_configured_with_supply_def] >>
+  `sue_ids_supply_ok (init_ir_supply unit) (unit_ir_inst_ids unit)
+      (unit_ir_inst_ids unit') s'` by
+    (irule sue_unit_supply_ids_ok >>
+     gvs[init_ir_supply_inst_ok, init_ir_supply_fields,
+         listTheory.EVERY_MEM]) >>
+  gvs[sue_ids_supply_ok_def]
+QED
