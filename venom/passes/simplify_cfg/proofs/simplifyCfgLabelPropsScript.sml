@@ -2206,3 +2206,139 @@ Proof
     metis_tac[CONJUNCT2 collapse_metadata_joint] >>
   gvs[collapse_dfs_succs_result_def, simplify_cfg_metadata_eq_def]
 QED
+
+
+Theorem simplify_cfg_round_with_labels_metadata_eq[local]:
+  simplify_cfg_metadata_eq
+    (FST (simplify_cfg_round_with_labels func)) func
+Proof
+  Cases_on `fn_entry_label func`
+  >- simp[simplify_cfg_round_with_labels_def,
+          simplify_cfg_metadata_eq_refl] >>
+  rename1 `fn_entry_label func = SOME entry` >>
+  qabbrev_tac `func1 = remove_unreachable_blocks func` >>
+  qabbrev_tac `func1a = fix_all_phis func1` >>
+  Cases_on `collapse_dfs func1a [] [] entry` >>
+  PairCases_on `r` >>
+  rename1 `collapse_dfs func1a [] [] entry = (func2,label_map,visited)` >>
+  qabbrev_tac `func3 = if label_map = [] then func2
+                       else subst_block_labels_fn label_map func2` >>
+  `simplify_cfg_metadata_eq func1 func` by
+    simp[Abbr `func1`, simplify_cfg_metadata_eq_def,
+         remove_unreachable_blocks_metadata] >>
+  `simplify_cfg_metadata_eq func1a func1` by
+    simp[Abbr `func1a`, simplify_cfg_metadata_eq_def,
+         fix_all_phis_metadata] >>
+  `simplify_cfg_metadata_eq func2 func1a` by
+    (drule collapse_dfs_metadata >>
+     simp[simplify_cfg_metadata_eq_def]) >>
+  `simplify_cfg_metadata_eq func3 func2` by
+    (Cases_on `label_map = []`
+     >- simp[Abbr `func3`, simplify_cfg_metadata_eq_refl] >>
+     simp[Abbr `func3`, simplify_cfg_metadata_eq_def,
+          subst_block_labels_fn_metadata]) >>
+  `simplify_cfg_metadata_eq
+     (remove_unreachable_blocks func3) func3` by
+    simp[simplify_cfg_metadata_eq_def,
+         remove_unreachable_blocks_metadata] >>
+  `simplify_cfg_metadata_eq
+     (fix_all_phis (remove_unreachable_blocks func3))
+     (remove_unreachable_blocks func3)` by
+    simp[simplify_cfg_metadata_eq_def, fix_all_phis_metadata] >>
+  `simplify_cfg_metadata_eq func1a func` by
+    metis_tac[simplify_cfg_metadata_eq_trans] >>
+  `simplify_cfg_metadata_eq func2 func` by
+    metis_tac[simplify_cfg_metadata_eq_trans] >>
+  `simplify_cfg_metadata_eq func3 func` by
+    metis_tac[simplify_cfg_metadata_eq_trans] >>
+  `simplify_cfg_metadata_eq
+     (remove_unreachable_blocks func3) func` by
+    metis_tac[simplify_cfg_metadata_eq_trans] >>
+  `simplify_cfg_metadata_eq
+     (fix_all_phis (remove_unreachable_blocks func3)) func` by
+    metis_tac[simplify_cfg_metadata_eq_trans] >>
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  qpat_assum `fn_entry_label func = SOME entry`
+    (fn th => rewrite_tac[th]) >>
+  simp[Abbr `func1`, Abbr `func1a`] >>
+  qpat_assum `collapse_dfs _ _ _ _ = _`
+    (fn th => rewrite_tac[th]) >>
+  simp[Abbr `func3`]
+QED
+
+Theorem simplify_cfg_round_with_labels_metadata:
+  simplify_cfg_round_with_labels func = (func',label_map) ==>
+  fn_identity_metadata_eq func' func /\
+  fn_static_input_eq func' func /\
+  fn_static_layout_eq func' func /\
+  fn_fmp_convention_eq func' func
+Proof
+  strip_tac >>
+  `simplify_cfg_metadata_eq
+     (FST (simplify_cfg_round_with_labels func)) func` by
+    simp[simplify_cfg_round_with_labels_metadata_eq] >>
+  gvs[simplify_cfg_metadata_eq_def]
+QED
+
+Theorem simplify_cfg_iter_with_labels_metadata_eq[local]:
+  !n func. simplify_cfg_metadata_eq
+    (FST (simplify_cfg_iter_with_labels n func)) func
+Proof
+  Induct_on `n`
+  >- simp[simplify_cfg_iter_with_labels_def,
+          simplify_cfg_metadata_eq_refl] >>
+  gen_tac >>
+  Cases_on `simplify_cfg_round_with_labels func` >>
+  rename1 `simplify_cfg_round_with_labels func = (func',round_map)` >>
+  `simplify_cfg_metadata_eq func' func` by
+    (drule simplify_cfg_round_with_labels_metadata >>
+     simp[simplify_cfg_metadata_eq_def]) >>
+  pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
+    (fn th => rewrite_tac[th]) >>
+  simp[] >>
+  IF_CASES_TAC
+  >- simp[simplify_cfg_metadata_eq_refl] >>
+  `simplify_cfg_metadata_eq
+     (FST (simplify_cfg_iter_with_labels n func')) func'` by
+    metis_tac[] >>
+  Cases_on `simplify_cfg_iter_with_labels n func'` >>
+  gvs[] >>
+  metis_tac[simplify_cfg_metadata_eq_trans]
+QED
+
+Theorem simplify_cfg_iter_with_labels_metadata:
+  simplify_cfg_iter_with_labels n func = (func',label_map) ==>
+  fn_identity_metadata_eq func' func /\
+  fn_static_input_eq func' func /\
+  fn_static_layout_eq func' func /\
+  fn_fmp_convention_eq func' func
+Proof
+  strip_tac >>
+  `simplify_cfg_metadata_eq
+     (FST (simplify_cfg_iter_with_labels n func)) func` by
+    metis_tac[simplify_cfg_iter_with_labels_metadata_eq] >>
+  gvs[simplify_cfg_metadata_eq_def]
+QED
+
+Theorem simplify_cfg_fn_with_labels_metadata:
+  simplify_cfg_fn_with_labels func = (func',label_map) ==>
+  fn_identity_metadata_eq func' func /\
+  fn_static_input_eq func' func /\
+  fn_static_layout_eq func' func /\
+  fn_fmp_convention_eq func' func
+Proof
+  simp[simplify_cfg_fn_with_labels_def] >>
+  metis_tac[simplify_cfg_iter_with_labels_metadata]
+QED
+
+Theorem simplify_cfg_fn_metadata:
+  fn_identity_metadata_eq (simplify_cfg_fn func) func /\
+  fn_static_input_eq (simplify_cfg_fn func) func /\
+  fn_static_layout_eq (simplify_cfg_fn func) func /\
+  fn_fmp_convention_eq (simplify_cfg_fn func) func
+Proof
+  Cases_on `simplify_cfg_fn_with_labels func` >>
+  drule simplify_cfg_fn_with_labels_metadata >>
+  simp[simplify_cfg_fn_def]
+QED
