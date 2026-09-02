@@ -396,6 +396,61 @@ Proof
   simp[fmp_lower_inst_def, fmp_lower_inst_shape_ordinary]
 QED
 
+Definition fmp_inst_invokes_def:
+  fmp_inst_invokes target inst <=>
+    ?tail. inst.inst_opcode = INVOKE /\
+           inst.inst_operands = Label target :: tail
+End
+
+
+Theorem lookup_function_result_name[local]:
+  !name fns fn.
+    lookup_function name fns = SOME fn ==>
+    fn.fn_name = name
+Proof
+  Induct_on `fns` >> simp[venomInstTheory.lookup_function_def, listTheory.FIND_thm]
+  >> rw[] >> gvs[venomInstTheory.lookup_function_def]
+QED
+Theorem fmp_lower_inst_invokes:
+  fmp_lower_inst infos ctx runner s inst = SOME (out,s') /\
+  MEM out_inst out /\
+  fmp_inst_invokes target out_inst ==>
+  fmp_inst_invokes target inst
+Proof
+  rpt strip_tac
+  >> Cases_on `inst.inst_opcode = DALLOCA`
+  >> gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+         fmp_inst_invokes_def, fmp_resolve_invoke_def,
+         lookup_function_result_name, venomInstTheory.mk_inst_def,
+         AllCaseEqs()]
+  >> Cases_on `inst.inst_opcode = DRET`
+  >> gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+         fmp_inst_invokes_def, fmp_resolve_invoke_def,
+         lookup_function_result_name, venomInstTheory.mk_inst_def,
+         AllCaseEqs()]
+  >> Cases_on `inst.inst_opcode = GETFMP`
+  >> gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+         fmp_inst_invokes_def, fmp_resolve_invoke_def,
+         lookup_function_result_name, venomInstTheory.mk_inst_def,
+         AllCaseEqs()]
+  >> Cases_on `inst.inst_opcode = SETFMP`
+  >> gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+         fmp_inst_invokes_def, fmp_resolve_invoke_def,
+         lookup_function_result_name, venomInstTheory.mk_inst_def,
+         AllCaseEqs()]
+  >> Cases_on `inst.inst_opcode = RETFMP`
+  >> gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+         fmp_inst_invokes_def, fmp_resolve_invoke_def,
+         lookup_function_result_name, venomInstTheory.mk_inst_def,
+         AllCaseEqs()]
+  >> Cases_on `inst.inst_opcode = INVOKE`
+  >> gvs[fmp_lower_inst_def, fmp_lower_inst_shape_def,
+         fmp_inst_invokes_def, fmp_resolve_invoke_def,
+         lookup_function_result_name, venomInstTheory.mk_inst_def,
+         AllCaseEqs()]
+  >> metis_tac[lookup_function_result_name]
+QED
+
 Theorem fmp_resolve_invoke_some:
   fmp_resolve_invoke infos ctx inst = SOME (callee,info,args) ==>
   ?name sig n.
