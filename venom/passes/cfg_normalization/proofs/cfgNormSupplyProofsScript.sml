@@ -1,6 +1,6 @@
 Theory cfgNormSupplyProofs
 Ancestors
-  cfgNormDefs irSupply cfgTransform
+  cfgNormDefs irSupply cfgTransform fcgDefs
 
 Definition cfg_supply_extends_def:
   cfg_supply_extends s s' <=>
@@ -2397,4 +2397,205 @@ Proof
   gvs[cfg_norm_configured_with_supply_def,cfg_norm_unit_supply_def,
       cfg_norm_context_supply_def] >>
   metis_tac[cfg_norm_functions_supply_metadata]
+QED
+
+
+(* ===== INVOKE-target collector boundaries ===== *)
+
+Definition cfg_block_invoke_labels_def:
+  cfg_block_invoke_labels bb =
+    MAP FST (get_invoke_targets bb.bb_instructions)
+End
+
+Theorem cfg_invoke_labels_cons:
+  MAP FST (get_invoke_targets (inst::insts)) =
+  MAP FST (get_invoke_targets [inst]) ++
+  MAP FST (get_invoke_targets insts)
+Proof
+  simp[get_invoke_targets_def] >> rpt CASE_TAC >> gvs[]
+QED
+
+Theorem cfg_invoke_labels_append:
+  !xs ys.
+    MAP FST (get_invoke_targets (xs ++ ys)) =
+    MAP FST (get_invoke_targets xs) ++ MAP FST (get_invoke_targets ys)
+Proof
+  Induct >- simp[get_invoke_targets_def] >> rpt gen_tac >>
+  pure_once_rewrite_tac[listTheory.APPEND] >>
+  once_rewrite_tac[cfg_invoke_labels_cons] >> simp[]
+QED
+
+Theorem cfg_fn_insts_blocks_invoke_labels:
+  !bbs.
+    MAP FST (get_invoke_targets (fn_insts_blocks bbs)) =
+    FLAT (MAP cfg_block_invoke_labels bbs)
+Proof
+  Induct >>
+  simp[venomInstTheory.fn_insts_blocks_def,cfg_block_invoke_labels_def,
+       cfg_invoke_labels_append,get_invoke_targets_def]
+QED
+
+Theorem cfg_fcg_scan_function_invoke_labels:
+  MAP FST (fcg_scan_function fn) =
+  FLAT (MAP cfg_block_invoke_labels fn.fn_blocks)
+Proof
+  simp[fcg_scan_function_def,venomInstTheory.fn_insts_def,
+       cfg_fn_insts_blocks_invoke_labels]
+QED
+
+Theorem subst_label_inst_opcode[simp]:
+  (subst_label_inst old new inst).inst_opcode = inst.inst_opcode
+Proof
+  simp[subst_label_inst_def]
+QED
+
+Theorem map_subst_label_terminator_invoke_labels:
+  !insts.
+    MAP FST
+      (get_invoke_targets
+        (MAP (\inst. if is_terminator inst.inst_opcode
+                     then subst_label_inst old new inst else inst) insts)) =
+    MAP FST (get_invoke_targets insts)
+Proof
+  Induct >- simp[get_invoke_targets_def] >> rpt gen_tac >>
+  Cases_on `is_terminator h.inst_opcode`
+  >- (`h.inst_opcode <> INVOKE` by
+        (strip_tac >> gvs[venomInstTheory.is_terminator_def]) >>
+      simp[Once get_invoke_targets_def] >>
+      once_rewrite_tac[get_invoke_targets_def] >> simp[])
+  >> simp[Once get_invoke_targets_def] >>
+     once_rewrite_tac[get_invoke_targets_def] >> rpt CASE_TAC >> gvs[]
+QED
+
+Theorem subst_label_terminator_invoke_labels:
+  cfg_block_invoke_labels (subst_label_terminator old new bb) =
+  cfg_block_invoke_labels bb
+Proof
+  simp[cfg_block_invoke_labels_def,subst_label_terminator_def,
+       map_subst_label_terminator_invoke_labels]
+QED
+
+Theorem map_update_phis_for_split_invoke_labels:
+  !insts.
+    MAP FST
+      (get_invoke_targets
+        (MAP (\inst. if inst.inst_opcode <> PHI then inst
+                     else inst with inst_operands :=
+                       update_phi_ops old new repls inst.inst_operands) insts)) =
+    MAP FST (get_invoke_targets insts)
+Proof
+  Induct >- simp[get_invoke_targets_def] >> rpt gen_tac >>
+  Cases_on `h.inst_opcode = PHI`
+  >- (gvs[] >> simp[Once get_invoke_targets_def] >>
+      once_rewrite_tac[get_invoke_targets_def] >> simp[])
+  >> simp[Once get_invoke_targets_def] >>
+     once_rewrite_tac[get_invoke_targets_def] >> rpt CASE_TAC >> gvs[]
+QED
+
+Theorem update_phis_for_split_invoke_labels:
+  cfg_block_invoke_labels (update_phis_for_split old new repls bb) =
+  cfg_block_invoke_labels bb
+Proof
+  simp[cfg_block_invoke_labels_def,update_phis_for_split_def,
+       map_update_phis_for_split_invoke_labels]
+QED
+
+Theorem build_forwarding_assigns_supply_no_invoke:
+  !vars s repls insts s'.
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    get_invoke_targets insts = []
+Proof
+  Induct_on `vars` >> rpt gen_tac >> strip_tac
+  >- gvs[build_forwarding_assigns_supply_def,get_invoke_targets_def]
+  >> Cases_on `fresh_ir_var s` >>
+     rename1 `fresh_ir_var s = (new_var,s1)` >>
+     Cases_on `fresh_inst_id s1` >>
+     rename1 `fresh_inst_id s1 = (id,s2)` >>
+     Cases_on `build_forwarding_assigns_supply s2 vars` >>
+     PairCases_on `r` >>
+     rename1 `build_forwarding_assigns_supply s2 vars =
+              (rest_repls,rest_insts,s3)` >>
+     gvs[build_forwarding_assigns_supply_def,get_invoke_targets_def] >>
+     metis_tac[]
+QED
+
+Theorem build_split_block_supply_no_invoke:
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  cfg_block_invoke_labels split_bb = []
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+      (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+              target_bb.bb_instructions))` >> PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s1 _ =
+           (var_repls,fwd_insts,s2)` >>
+  Cases_on `fresh_inst_id s2` >>
+  rename1 `fresh_inst_id s2 = (jmp_id,s3)` >>
+  gvs[build_split_block_supply_def,cfg_block_invoke_labels_def,
+      cfg_invoke_labels_append,get_invoke_targets_def] >>
+  metis_tac[build_forwarding_assigns_supply_no_invoke]
+QED
+
+
+Theorem insert_split_supply_invoke_labels:
+  ALL_DISTINCT (fn_labels fn) /\
+  MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  MAP FST (fcg_scan_function fn') = MAP FST (fcg_scan_function fn)
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  qabbrev_tac `pred' = subst_label_terminator
+    target_bb.bb_label split_bb.bb_label pred_bb` >>
+  qabbrev_tac `target' = update_phis_for_split
+    pred_bb.bb_label split_bb.bb_label repls target_bb` >>
+  `cfg_block_invoke_labels pred' = cfg_block_invoke_labels pred_bb` by
+    simp[Abbr `pred'`,subst_label_terminator_invoke_labels] >>
+  `cfg_block_invoke_labels target' = cfg_block_invoke_labels target_bb` by
+    simp[Abbr `target'`,update_phis_for_split_invoke_labels] >>
+  `pred'.bb_label = pred_bb.bb_label` by
+    simp[Abbr `pred'`,subst_label_terminator_def] >>
+  `target'.bb_label = target_bb.bb_label` by
+    simp[Abbr `target'`,update_phis_for_split_def] >>
+  `cfg_block_invoke_labels split_bb = []` by
+    metis_tac[build_split_block_supply_no_invoke] >>
+  `FLAT (MAP cfg_block_invoke_labels
+      (replace_block pred_bb.bb_label pred' fn.fn_blocks)) =
+   FLAT (MAP cfg_block_invoke_labels fn.fn_blocks)` by
+    (irule FLAT_MAP_replace_block_unique >>
+     conj_tac >- gvs[venomInstTheory.fn_labels_def] >>
+     qexists `pred_bb` >> simp[]) >>
+  `ALL_DISTINCT (MAP (\b. b.bb_label)
+      (replace_block pred_bb.bb_label pred' fn.fn_blocks))` by
+    gvs[venomInstTheory.fn_labels_def] >>
+  Cases_on `pred_bb.bb_label = target_bb.bb_label`
+  >- (`pred_bb = target_bb` by
+        metis_tac[all_distinct_map_mem_inj_cfg,
+                  venomInstTheory.fn_labels_def] >>
+      `MEM pred'
+         (replace_block pred_bb.bb_label pred' fn.fn_blocks)` by
+        metis_tac[MEM_replace_block_new] >>
+      `FLAT (MAP cfg_block_invoke_labels
+          (replace_block target_bb.bb_label target'
+            (replace_block pred_bb.bb_label pred' fn.fn_blocks))) =
+       FLAT (MAP cfg_block_invoke_labels
+          (replace_block pred_bb.bb_label pred' fn.fn_blocks))` by
+        (irule FLAT_MAP_replace_block_unique >> simp[] >> metis_tac[]) >>
+      gvs[cfg_fcg_scan_function_invoke_labels,Abbr `pred'`,Abbr `target'`])
+  >> `MEM target_bb
+        (replace_block pred_bb.bb_label pred' fn.fn_blocks)` by
+       metis_tac[MEM_replace_block_other] >>
+     `FLAT (MAP cfg_block_invoke_labels
+        (replace_block target_bb.bb_label target'
+          (replace_block pred_bb.bb_label pred' fn.fn_blocks))) =
+      FLAT (MAP cfg_block_invoke_labels
+        (replace_block pred_bb.bb_label pred' fn.fn_blocks))` by
+       (irule FLAT_MAP_replace_block_unique >> simp[] >> metis_tac[]) >>
+     gvs[cfg_fcg_scan_function_invoke_labels,Abbr `pred'`,Abbr `target'`]
 QED
