@@ -3055,3 +3055,215 @@ Theorem simplify_cfg_entry_cycle_collapse_output[local]:
 Proof
   EVAL_TAC
 QED
+
+
+Definition simplify_cfg_entry_cycle_substituted_def:
+  simplify_cfg_entry_cycle_substituted = mk_raw_function "f"
+    [simplify_cfg_entry_cycle_d;
+     <| bb_label := "c";
+        bb_instructions :=
+          [mk_inst 4 JMP [Label "c"] [];
+           mk_inst 1 JNZ [Label "d"; Label "c"] [];
+           mk_inst 0 INVOKE [Label "callee"] [];
+           mk_inst 1 JNZ [Label "d"; Label "c"] []] |>]
+End
+
+Definition simplify_cfg_entry_cycle_result_def:
+  simplify_cfg_entry_cycle_result = mk_raw_function "f"
+    [simplify_cfg_entry_cycle_d]
+End
+
+Theorem simplify_cfg_entry_cycle_substitution[local]:
+  subst_block_labels_fn [("e","c")] simplify_cfg_entry_cycle_merged =
+    simplify_cfg_entry_cycle_substituted
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_entry_cycle_substituted_entry[local]:
+  fn_entry_label simplify_cfg_entry_cycle_substituted = SOME "d"
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_entry_cycle_substituted_no_d_succ[local]:
+  !lbl. ~fn_succ simplify_cfg_entry_cycle_substituted "d" lbl
+Proof
+  gen_tac >>
+  simp[cfgTransformTheory.fn_succ_def,
+       simplify_cfg_entry_cycle_substituted_def,
+       simplify_cfg_entry_cycle_d_def,
+       venomInstTheory.mk_raw_function_def,
+       venomInstTheory.lookup_block_def, FIND_thm,
+       venomInstTheory.bb_succs_def, venomInstTheory.get_successors_def,
+       venomInstTheory.mk_inst_def, venomInstTheory.is_terminator_def]
+QED
+
+Theorem simplify_cfg_entry_cycle_substituted_reachable[local]:
+  reachable simplify_cfg_entry_cycle_substituted "d" /\
+  ~reachable simplify_cfg_entry_cycle_substituted "c"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       simplify_cfg_entry_cycle_substituted_entry,
+       relationTheory.RTC_REFL] >>
+  strip_tac >>
+  dxrule (iffLR (SPEC_ALL relationTheory.RTC_CASES1)) >>
+  strip_tac >- gvs[] >>
+  gvs[simplify_cfg_entry_cycle_substituted_no_d_succ]
+QED
+
+Theorem simplify_cfg_entry_cycle_final_stages[local]:
+  remove_unreachable_blocks simplify_cfg_entry_cycle_substituted =
+    simplify_cfg_entry_cycle_result /\
+  fix_all_phis simplify_cfg_entry_cycle_result =
+    simplify_cfg_entry_cycle_result
+Proof
+  conj_tac
+  >- (mp_tac simplify_cfg_entry_cycle_substituted_reachable >> strip_tac >>
+      gvs[remove_unreachable_blocks_def,
+          simplify_cfg_entry_cycle_substituted_entry,
+          simplify_cfg_entry_cycle_substituted_def,
+          simplify_cfg_entry_cycle_result_def,
+          simplify_cfg_entry_cycle_d_def,
+          venomInstTheory.mk_raw_function_def]) >>
+  EVAL_TAC
+QED
+
+
+Theorem simplify_cfg_entry_cycle_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_entry_cycle_func =
+    (simplify_cfg_entry_cycle_result,[("e","c")])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  simp[simplify_cfg_entry_cycle_basic_facts,
+       simplify_cfg_entry_cycle_preprocess,
+       simplify_cfg_entry_cycle_collapse,
+       simplify_cfg_entry_cycle_substitution,
+       simplify_cfg_entry_cycle_final_stages]
+QED
+
+
+Theorem simplify_cfg_entry_cycle_result_facts[local]:
+  fn_entry_label simplify_cfg_entry_cycle_result = SOME "d" /\
+  lookup_block "d" simplify_cfg_entry_cycle_result.fn_blocks =
+    SOME simplify_cfg_entry_cycle_d /\
+  bb_succs simplify_cfg_entry_cycle_d = []
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_entry_cycle_result_reachable[local]:
+  reachable simplify_cfg_entry_cycle_result "d"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       simplify_cfg_entry_cycle_result_facts,
+       relationTheory.RTC_REFL]
+QED
+
+Theorem simplify_cfg_entry_cycle_result_stages[local]:
+  remove_unreachable_blocks simplify_cfg_entry_cycle_result =
+    simplify_cfg_entry_cycle_result /\
+  fix_all_phis simplify_cfg_entry_cycle_result =
+    simplify_cfg_entry_cycle_result
+Proof
+  conj_tac
+  >- (mp_tac simplify_cfg_entry_cycle_result_reachable >>
+      gvs[remove_unreachable_blocks_def,
+          simplify_cfg_entry_cycle_result_facts,
+          simplify_cfg_entry_cycle_result_def,
+          simplify_cfg_entry_cycle_d_def,
+          venomInstTheory.mk_raw_function_def]) >>
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_entry_cycle_result_succs[local]:
+  collapse_dfs_succs simplify_cfg_entry_cycle_result [] ["d"] [] =
+    (simplify_cfg_entry_cycle_result,[],["d"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
+QED
+
+Theorem simplify_cfg_entry_cycle_result_collapse[local]:
+  collapse_dfs simplify_cfg_entry_cycle_result [] [] "d" =
+    (simplify_cfg_entry_cycle_result,[],["d"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_entry_cycle_result_facts, try_bypass_def,
+       simplify_cfg_entry_cycle_result_succs]
+QED
+
+Theorem simplify_cfg_entry_cycle_result_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_entry_cycle_result =
+    (simplify_cfg_entry_cycle_result,[])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  simp[simplify_cfg_entry_cycle_result_facts,
+       simplify_cfg_entry_cycle_result_stages,
+       simplify_cfg_entry_cycle_result_collapse]
+QED
+
+
+Theorem simplify_cfg_entry_cycle_iteration_facts[local]:
+  LENGTH simplify_cfg_entry_cycle_func.fn_blocks = 3 /\
+  simplify_cfg_entry_cycle_result.fn_blocks <>
+    simplify_cfg_entry_cycle_func.fn_blocks
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_entry_cycle_result_iter_suc[local]:
+  !n. simplify_cfg_iter_with_labels (SUC n)
+    simplify_cfg_entry_cycle_result =
+    (simplify_cfg_entry_cycle_result,[])
+Proof
+  gen_tac >> pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  simp[simplify_cfg_entry_cycle_result_round]
+QED
+
+Theorem simplify_cfg_entry_cycle_result_iter[local]:
+  simplify_cfg_iter_with_labels 2 simplify_cfg_entry_cycle_result =
+    (simplify_cfg_entry_cycle_result,[])
+Proof
+  qspec_then `1` mp_tac simplify_cfg_entry_cycle_result_iter_suc >> simp[]
+QED
+
+Theorem simplify_cfg_entry_cycle_iter_suc_two[local]:
+  simplify_cfg_iter_with_labels (SUC 2)
+    simplify_cfg_entry_cycle_func =
+    (simplify_cfg_entry_cycle_result,[("e","c")])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  simp[simplify_cfg_entry_cycle_round,
+       simplify_cfg_entry_cycle_iteration_facts,
+       simplify_cfg_entry_cycle_result_iter]
+QED
+
+Theorem simplify_cfg_entry_cycle_fn_result[local]:
+  simplify_cfg_fn_with_labels simplify_cfg_entry_cycle_func =
+    (simplify_cfg_entry_cycle_result,[("e","c")])
+Proof
+  simp[simplify_cfg_fn_with_labels_def,
+       simplify_cfg_entry_cycle_iteration_facts] >>
+  mp_tac simplify_cfg_entry_cycle_iter_suc_two >> simp[]
+QED
+
+Theorem simplify_cfg_entry_cycle_counterexample:
+  ALL_DISTINCT (fn_labels simplify_cfg_entry_cycle_func) /\
+  all_reachable simplify_cfg_entry_cycle_func /\
+  MEM "callee"
+    (simplify_cfg_fn_invoke_labels simplify_cfg_entry_cycle_func) /\
+  ~MEM "callee"
+    (simplify_cfg_fn_invoke_labels
+      (FST (simplify_cfg_fn_with_labels simplify_cfg_entry_cycle_func)))
+Proof
+  simp[simplify_cfg_entry_cycle_basic_facts,
+       simplify_cfg_entry_cycle_all_reachable,
+       simplify_cfg_entry_cycle_fn_result,
+       simplify_cfg_entry_cycle_result_def,
+       simplify_cfg_entry_cycle_d_def,
+       simplify_cfg_fn_invoke_labels_mem,
+       simplify_cfg_block_invoke_labels_def,
+       fcgBridgeTheory.mem_get_invoke_targets,
+       venomInstTheory.mk_raw_function_def,
+       venomInstTheory.mk_inst_def]
+QED
