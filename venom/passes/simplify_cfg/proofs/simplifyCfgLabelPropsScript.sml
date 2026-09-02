@@ -2454,3 +2454,94 @@ Theorem simplify_cfg_duplicate_label_fix_all_phis[local]:
 Proof
   EVAL_TAC
 QED
+
+
+Definition simplify_cfg_duplicate_label_result_def:
+  simplify_cfg_duplicate_label_result = mk_raw_function "f"
+    [<| bb_label := "e";
+        bb_instructions := [mk_inst 1 STOP [] []] |>]
+End
+
+Theorem simplify_cfg_duplicate_label_result_lookup[local]:
+  lookup_block "e" simplify_cfg_duplicate_label_result.fn_blocks =
+  SOME <| bb_label := "e";
+          bb_instructions := [mk_inst 1 STOP [] []] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_result_succs[local]:
+  bb_succs <| bb_label := "e";
+              bb_instructions := [mk_inst 1 STOP [] []] |> = []
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_result_succs_empty[local]:
+  collapse_dfs_succs simplify_cfg_duplicate_label_result
+    [("x","e")] ["e"] [] =
+  (simplify_cfg_duplicate_label_result, [("x","e")], ["e"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_collapse[local]:
+  collapse_dfs simplify_cfg_duplicate_label_result
+    [("x","e")] [] "e" =
+  (simplify_cfg_duplicate_label_result, [("x","e")], ["e"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_duplicate_label_result_lookup,
+       simplify_cfg_duplicate_label_result_succs,
+       try_bypass_def,
+       simplify_cfg_duplicate_label_result_succs_empty]
+QED
+
+Theorem simplify_cfg_duplicate_label_initial_facts[local]:
+  lookup_block "e" simplify_cfg_duplicate_label_func.fn_blocks =
+    SOME <| bb_label := "e";
+            bb_instructions := [mk_inst 0 JMP [Label "x"] []] |> /\
+  bb_succs <| bb_label := "e";
+              bb_instructions := [mk_inst 0 JMP [Label "x"] []] |> = ["x"] /\
+  lookup_block "x" simplify_cfg_duplicate_label_func.fn_blocks =
+    SOME <| bb_label := "x";
+            bb_instructions := [mk_inst 1 STOP [] []] |> /\
+  can_merge_blocks simplify_cfg_duplicate_label_func
+    <| bb_label := "e";
+       bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>
+    <| bb_label := "x";
+       bb_instructions := [mk_inst 1 STOP [] []] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_merge_step[local]:
+  (simplify_cfg_duplicate_label_func with fn_blocks :=
+    update_succ_phi_labels "x" "e"
+      (replace_block "e"
+        (merge_blocks
+          <| bb_label := "e";
+             bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>
+          <| bb_label := "x";
+             bb_instructions := [mk_inst 1 STOP [] []] |>)
+        (remove_block "x" simplify_cfg_duplicate_label_func.fn_blocks))
+      (bb_succs
+        (merge_blocks
+          <| bb_label := "e";
+             bb_instructions := [mk_inst 0 JMP [Label "x"] []] |>
+          <| bb_label := "x";
+             bb_instructions := [mk_inst 1 STOP [] []] |>))) =
+  simplify_cfg_duplicate_label_result
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_collapse[local]:
+  collapse_dfs simplify_cfg_duplicate_label_func [] [] "e" =
+  (simplify_cfg_duplicate_label_result, [("x","e")], ["e"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_duplicate_label_initial_facts] >>
+  pure_once_rewrite_tac[simplify_cfg_duplicate_label_merge_step] >>
+  simp[simplify_cfg_duplicate_label_result_collapse]
+QED
