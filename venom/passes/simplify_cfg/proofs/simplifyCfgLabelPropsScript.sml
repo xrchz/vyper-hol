@@ -999,3 +999,45 @@ Proof
   qexists `resolved` >>
   simp[resolve_label_map_def]
 QED
+
+
+Theorem simplify_cfg_fn_with_labels_resolves:
+  ALL_DISTINCT (fn_labels func) /\
+  EVERY (\label. MEM label (unit_label_namespace unit)) (fn_labels func) ==>
+  ?resolved.
+    resolve_label_map (SND (simplify_cfg_fn_with_labels func)) = SOME resolved /\
+    resolved_label_endpoints_valid unit resolved
+Proof
+  rpt strip_tac >>
+  `label_map_transition (fn_labels func)
+     (SND (simplify_cfg_fn_with_labels func))
+     (fn_labels (FST (simplify_cfg_fn_with_labels func)))` by
+    metis_tac[simplify_cfg_fn_with_labels_transition] >>
+  fs[label_map_transition_def] >>
+  `EVERY (\entry.
+     MEM (FST entry) (unit_label_namespace unit) /\
+     MEM (SND entry) (unit_label_namespace unit))
+     (SND (simplify_cfg_fn_with_labels func))` by
+    (gvs[listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `?resolved.
+     resolve_label_map (SND (simplify_cfg_fn_with_labels func)) = SOME resolved /\
+     EVERY (\entry. MEM (SND entry) (unit_label_namespace unit)) resolved` by
+    metis_tac[chronological_label_map_resolves_endpoints] >>
+  qexists `resolved` >>
+  simp[resolved_label_endpoints_valid_def]
+QED
+
+Theorem simplify_cfg_fn_with_labels_apply_unit_label_map:
+  ALL_DISTINCT (fn_labels func) /\
+  EVERY (\label. MEM label (unit_label_namespace unit)) (fn_labels func) ==>
+  ?unit'. apply_unit_label_map
+    (SND (simplify_cfg_fn_with_labels func)) unit = SOME unit'
+Proof
+  rpt strip_tac >>
+  `?resolved.
+     resolve_label_map (SND (simplify_cfg_fn_with_labels func)) = SOME resolved /\
+     resolved_label_endpoints_valid unit resolved` by
+    metis_tac[simplify_cfg_fn_with_labels_resolves] >>
+  qexists `apply_resolved_unit_label_map resolved unit` >>
+  simp[apply_unit_label_map_def]
+QED
