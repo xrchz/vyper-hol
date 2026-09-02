@@ -2339,4 +2339,20 @@ Proof
   EVAL_TAC >> simp[]
 QED
 
+
+Theorem make_ssa_configured_collision_name_eval:
+  let (unit',s') =
+    make_ssa_configured_with_supply make_ssa_collision_unit in
+    MEM "formal_var_2" (unit_ir_vars unit') /\
+    MEM "formal_var_2" s'.irs_used_vars
+Proof
+  EVAL_TAC
+QED
+
+Theorem make_ssa_configured_collision_ids_distinct:
+  ALL_DISTINCT
+    (unit_ir_inst_ids (make_ssa_configured make_ssa_collision_unit))
+Proof
+  irule make_ssa_configured_global_ids_distinct >> EVAL_TAC
+QED
 val _ = export_theory();
