@@ -1825,7 +1825,6 @@ Proof
 QED
 
 Theorem chain_merge_invoke_subset[local]:
-  ALL_DISTINCT (fn_labels func) /\
   lookup_block bb.bb_label func.fn_blocks = SOME bb /\
   lookup_block next_bb.bb_label func.fn_blocks = SOME next_bb /\
   can_merge_blocks func bb next_bb ==>
@@ -1841,15 +1840,10 @@ Proof
   qabbrev_tac `bbs0 = remove_block next_bb.bb_label func.fn_blocks` >>
   qabbrev_tac `bbs1 = replace_block bb.bb_label merged bbs0` >>
   `merged.bb_label = bb.bb_label` by simp[Abbr `merged`, merge_blocks_def] >>
-  `ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs0)` by
-    simp[Abbr `bbs0`, cfgTransformPropsTheory.ALL_DISTINCT_remove_block,
-         GSYM venomInstTheory.fn_labels_def] >>
-  `ALL_DISTINCT (MAP (\bb. bb.bb_label) bbs1)` by
-    simp[Abbr `bbs1`, fn_labels_replace_block] >>
   simp[simplify_cfg_invoke_subset_def] >> rpt strip_tac >>
   `MEM callee
       (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1))` by
-    metis_tac[update_succ_phi_labels_invoke_labels] >>
+    metis_tac[update_succ_phi_labels_invoke_subset] >>
   qpat_x_assum
     `MEM callee (simplify_cfg_fn_invoke_labels (func with fn_blocks := bbs1))`
     mp_tac >>
