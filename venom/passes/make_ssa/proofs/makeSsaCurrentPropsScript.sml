@@ -1738,6 +1738,24 @@ Proof
   simp[] >> metis_tac[]
 QED
 
+Theorem compute_defs_lookup_blocks_vars_covered:
+  ssa_vars_covered s (FLAT (MAP block_ir_vars bbs)) ==>
+  ssa_vars_covered s
+    (MAP FST (compute_defs
+      (MAP THE (FILTER IS_SOME
+        (MAP (\lbl. lookup_block lbl bbs) labels)))))
+Proof
+  simp[ssa_vars_covered_def, listTheory.EVERY_MEM] >>
+  rpt strip_tac >>
+  first_x_assum irule >>
+  drule compute_defs_key_MEM_block_ir_vars >>
+  rewrite_tac[listTheory.MEM_FLAT] >> strip_tac >>
+  qpat_x_assum `MEM l (MAP block_ir_vars _)` mp_tac >>
+  once_rewrite_tac[listTheory.MEM_MAP] >> strip_tac >> gvs[] >>
+  drule lookup_blocks_filter_MEM >> strip_tac >>
+  simp[listTheory.MEM_FLAT, listTheory.MEM_MAP] >> metis_tac[]
+QED
+
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
