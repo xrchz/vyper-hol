@@ -1,6 +1,6 @@
 Theory cfgNormSupplyProofs
 Ancestors
-  cfgNormDefs
+  cfgNormDefs irSupply
 
 Definition cfg_supply_extends_def:
   cfg_supply_extends s s' <=>
@@ -98,4 +98,132 @@ Proof
                 `["formal_label_2";"formal_label_1"]`] >>
       EVAL_TAC)
   >> EVAL_TAC
+QED
+
+
+Definition cfg_insts_id_declared_def:
+  cfg_insts_id_declared insts id <=>
+    EXISTS (\inst. inst.inst_id = id) insts
+End
+
+Definition cfg_insts_var_declared_def:
+  cfg_insts_var_declared insts v <=>
+    EXISTS (\inst. MEM v inst.inst_outputs) insts
+End
+
+Definition cfg_forwarding_supply_contract_def:
+  cfg_forwarding_supply_contract s insts s' <=>
+    cfg_supply_extends s s' /\
+    (!id. MEM id s'.irs_used_inst_ids /\
+          ~MEM id s.irs_used_inst_ids ==>
+          cfg_insts_id_declared insts id) /\
+    (!v. MEM v s'.irs_used_vars /\ ~MEM v s.irs_used_vars ==>
+         cfg_insts_var_declared insts v) /\
+    s'.irs_used_labels = s.irs_used_labels
+End
+
+Definition cfg_block_supply_contract_def:
+  cfg_block_supply_contract s bb s' <=>
+    cfg_supply_extends s s' /\
+    (!id. MEM id s'.irs_used_inst_ids /\
+          ~MEM id s.irs_used_inst_ids ==>
+          cfg_insts_id_declared bb.bb_instructions id) /\
+    (!v. MEM v s'.irs_used_vars /\ ~MEM v s.irs_used_vars ==>
+         cfg_insts_var_declared bb.bb_instructions v) /\
+    (!l. MEM l s'.irs_used_labels /\ ~MEM l s.irs_used_labels ==>
+         bb.bb_label = l)
+End
+
+Theorem fresh_ir_var_cfg_supply_extends:
+  ir_supply_inst_ok s /\ fresh_ir_var s = (v,s') ==>
+  cfg_supply_extends s s'
+Proof
+  rpt strip_tac >> drule fresh_ir_var_contract >> strip_tac >>
+  `ir_supply_inst_ok s'` by gvs[ir_supply_inst_ok_def] >>
+  simp[cfg_supply_extends_def] >> gvs[]
+QED
+
+Theorem fresh_ir_label_cfg_supply_extends:
+  ir_supply_inst_ok s /\ fresh_ir_label s = (l,s') ==>
+  cfg_supply_extends s s'
+Proof
+  rpt strip_tac >> drule fresh_ir_label_contract >> strip_tac >>
+  `ir_supply_inst_ok s'` by gvs[ir_supply_inst_ok_def] >>
+  simp[cfg_supply_extends_def] >> gvs[]
+QED
+
+Theorem fresh_inst_id_cfg_supply_extends:
+  ir_supply_inst_ok s /\ fresh_inst_id s = (id,s') ==>
+  cfg_supply_extends s s'
+Proof
+  rpt strip_tac >> drule_all fresh_inst_id_contract >> strip_tac >>
+  simp[cfg_supply_extends_def] >> metis_tac[]
+QED
+
+Theorem build_forwarding_assigns_supply_contract:
+  !vars s repls insts s'.
+    ir_supply_inst_ok s /\
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    cfg_forwarding_supply_contract s insts s'
+Proof
+  Induct_on `vars` >> rpt strip_tac
+  >- gvs[build_forwarding_assigns_supply_def,
+          cfg_forwarding_supply_contract_def,
+          cfg_supply_extends_refl]
+  >> Cases_on `fresh_ir_var s` >>
+     rename1 `fresh_ir_var s = (new_var,s1)` >>
+     Cases_on `fresh_inst_id s1` >>
+     rename1 `fresh_inst_id s1 = (id,s2)` >>
+     Cases_on `build_forwarding_assigns_supply s2 vars` >>
+     PairCases_on `r` >>
+     rename1 `build_forwarding_assigns_supply s2 vars =
+              (rest_repls,rest_insts,s3)` >>
+     gvs[build_forwarding_assigns_supply_def] >>
+     `cfg_supply_extends s s1` by
+       metis_tac[fresh_ir_var_cfg_supply_extends] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_extends s1 s2` by
+       metis_tac[fresh_inst_id_cfg_supply_extends] >>
+     `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+     `cfg_forwarding_supply_contract s2 rest_insts s'` by metis_tac[] >>
+     drule fresh_ir_var_contract >> strip_tac >>
+     drule_all fresh_inst_id_contract >> strip_tac >>
+     gvs[cfg_forwarding_supply_contract_def,
+         cfg_insts_id_declared_def,cfg_insts_var_declared_def] >>
+     metis_tac[cfg_supply_extends_trans]
+QED
+
+Theorem build_split_block_supply_contract:
+  ir_supply_inst_ok s /\
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  cfg_block_supply_contract s split_bb s'
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+              (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+                       target_bb.bb_instructions))` >>
+  PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s1 _ =
+           (var_repls,fwd_insts,s2)` >>
+  Cases_on `fresh_inst_id s2` >>
+  rename1 `fresh_inst_id s2 = (jmp_id,s3)` >>
+  gvs[build_split_block_supply_def] >>
+  `cfg_supply_extends s s1` by
+    metis_tac[fresh_ir_label_cfg_supply_extends] >>
+  `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+  `cfg_forwarding_supply_contract s1 fwd_insts s2` by
+    metis_tac[build_forwarding_assigns_supply_contract] >>
+  `cfg_supply_extends s1 s2` by
+    gvs[cfg_forwarding_supply_contract_def] >>
+  `ir_supply_inst_ok s2` by gvs[cfg_supply_extends_def] >>
+  `cfg_supply_extends s2 s'` by
+    metis_tac[fresh_inst_id_cfg_supply_extends] >>
+  drule fresh_ir_label_contract >> strip_tac >>
+  drule_all fresh_inst_id_contract >> strip_tac >>
+  gvs[cfg_block_supply_contract_def,
+      cfg_forwarding_supply_contract_def,
+      cfg_insts_id_declared_def,cfg_insts_var_declared_def] >>
+  metis_tac[cfg_supply_extends_trans]
 QED
