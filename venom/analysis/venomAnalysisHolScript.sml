@@ -5,6 +5,8 @@ Ancestors
   venomWf
   venomEffects
   venomInstProps
+  (* configured per-function schedule runner and structural guarantees *)
+  venomFnScheduleRunnerProps
   memLocDefs
   memLocProps
   (* cfg *)
