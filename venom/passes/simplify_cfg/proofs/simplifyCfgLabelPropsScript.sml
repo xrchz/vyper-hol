@@ -794,6 +794,64 @@ Proof
   rpt conj_tac >> first_assum ACCEPT_TAC
 QED
 
+Theorem simplify_cfg_iter_with_labels_transition:
+  !n func. ALL_DISTINCT (fn_labels func) ==>
+    label_map_transition (fn_labels func)
+      (SND (simplify_cfg_iter_with_labels n func))
+      (fn_labels (FST (simplify_cfg_iter_with_labels n func)))
+Proof
+  Induct_on `n`
+  >- simp[simplify_cfg_iter_with_labels_def, label_map_transition_refl] >>
+  rpt strip_tac >>
+  Cases_on `simplify_cfg_round_with_labels func` >>
+  rename1 `simplify_cfg_round_with_labels func = (func',round_map)` >>
+  `label_map_transition (fn_labels func)
+     (SND (simplify_cfg_round_with_labels func))
+     (fn_labels (FST (simplify_cfg_round_with_labels func)))` by
+    metis_tac[simplify_cfg_round_with_labels_transition] >>
+  `label_map_transition (fn_labels func) round_map (fn_labels func')` by
+    (qpat_x_assum `label_map_transition _ (SND _) _` mp_tac >>
+     qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
+       (fn th => rewrite_tac[th]) >>
+     simp[]) >>
+  `ALL_DISTINCT (fn_labels func')` by
+    gvs[label_map_transition_def] >>
+  pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
+    (fn th => rewrite_tac[th]) >>
+  simp[] >>
+  IF_CASES_TAC
+  >- (simp[] >>
+      `fn_labels func' = fn_labels func` by
+        gvs[venomInstTheory.fn_labels_def] >>
+      gvs[]) >>
+  Cases_on `simplify_cfg_iter_with_labels n func'` >>
+  rename1 `simplify_cfg_iter_with_labels n func' = (result,later_map)` >>
+  `label_map_transition (fn_labels func')
+     (SND (simplify_cfg_iter_with_labels n func'))
+     (fn_labels (FST (simplify_cfg_iter_with_labels n func')))` by
+    metis_tac[] >>
+  `label_map_transition (fn_labels func') later_map (fn_labels result)` by
+    (qpat_x_assum `label_map_transition _ (SND _) _` mp_tac >>
+     qpat_assum `simplify_cfg_iter_with_labels n func' = (result,later_map)`
+       (fn th => rewrite_tac[th]) >>
+     simp[]) >>
+  simp[] >>
+  irule label_map_transition_append >>
+  qexists `fn_labels func'` >>
+  simp[]
+QED
+
+Theorem simplify_cfg_fn_with_labels_transition:
+  ALL_DISTINCT (fn_labels func) ==>
+  label_map_transition (fn_labels func)
+    (SND (simplify_cfg_fn_with_labels func))
+    (fn_labels (FST (simplify_cfg_fn_with_labels func)))
+Proof
+  simp[simplify_cfg_fn_with_labels_def,
+       simplify_cfg_iter_with_labels_transition]
+QED
+
 Theorem resolve_label_fuel_cons_irrelevant[local]:
   !fuel rest source target visited label.
     label <> source /\ ~MEM source (MAP SND rest) ==>
