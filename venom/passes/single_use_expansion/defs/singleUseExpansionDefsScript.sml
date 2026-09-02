@@ -34,7 +34,7 @@
 
 Theory singleUseExpansionDefs
 Ancestors
-  passSimulationDefs dfgDefs venomExecSemantics venomInst
+  passSimulationDefs dfgDefs venomExecSemantics venomInst irSupply
 
 (* ===== Opcodes to skip ===== *)
 
@@ -226,3 +226,138 @@ Definition sue_expand_context_def:
   sue_expand_context ctx =
     ctx with ctx_functions := MAP sue_expand_function ctx.ctx_functions
 End
+
+
+(* ===== Supply-aware configured transform ===== *)
+
+(* The legacy arithmetic/name-based expansion above remains the semantic model.
+   Configured callers use the traversal below, which threads one unit-wide
+   supply through every operand, instruction, block, and function. *)
+Definition sue_alloc_assign_supply_def:
+  sue_alloc_assign_supply s op =
+    case fresh_ir_var s of (vn,s1) =>
+    case fresh_inst_id s1 of (id,s2) =>
+      (<| inst_id := id; inst_opcode := ASSIGN;
+          inst_operands := [op]; inst_outputs := [vn] |>, Var vn, s2)
+End
+
+Definition sue_expand_ops_supply_def:
+  sue_expand_ops_supply dfg inst s [] op_idx = ([],[],s) /\
+  sue_expand_ops_supply dfg inst s (op::rest) op_idx =
+    case sue_expand_ops_supply dfg inst s rest (op_idx + 1) of
+      (more_assigns,more_ops,s1) =>
+      if ~sue_needs_assign dfg inst op_idx then
+        (more_assigns,op::more_ops,s1)
+      else
+        let remaining_same = sue_count_remaining op rest in
+        case op of
+          Var v =>
+            let uses = dfg_get_uses dfg v in
+            if LENGTH uses = 1 /\ remaining_same = 0 then
+              (more_assigns,op::more_ops,s1)
+            else
+              (case sue_alloc_assign_supply s1 op of (assign_inst,new_op,s2) =>
+                 (assign_inst::more_assigns,new_op::more_ops,s2))
+        | Label l => (more_assigns,op::more_ops,s1)
+        | Lit w =>
+            (case sue_alloc_assign_supply s1 op of (assign_inst,new_op,s2) =>
+               (assign_inst::more_assigns,new_op::more_ops,s2))
+End
+
+Definition sue_expand_inst_supply_def:
+  sue_expand_inst_supply dfg s inst =
+    if sue_should_skip inst.inst_opcode then ([inst],s)
+    else
+      case sue_expand_ops_supply dfg inst s inst.inst_operands 0 of
+        (assigns,new_ops,s1) =>
+          (assigns ++ [inst with inst_operands := new_ops],s1)
+End
+
+Definition sue_expand_insts_supply_def:
+  sue_expand_insts_supply dfg s [] = ([],s) /\
+  sue_expand_insts_supply dfg s (inst::insts) =
+    case sue_expand_inst_supply dfg s inst of (out,s1) =>
+    case sue_expand_insts_supply dfg s1 insts of (outs,s2) =>
+      (out ++ outs,s2)
+End
+
+Definition sue_expand_block_supply_def:
+  sue_expand_block_supply dfg s bb =
+    case sue_expand_insts_supply dfg s bb.bb_instructions of (insts,s1) =>
+      (bb with bb_instructions := insts,s1)
+End
+
+Definition sue_expand_blocks_supply_def:
+  sue_expand_blocks_supply dfg s [] = ([],s) /\
+  sue_expand_blocks_supply dfg s (bb::bbs) =
+    case sue_expand_block_supply dfg s bb of (bb',s1) =>
+    case sue_expand_blocks_supply dfg s1 bbs of (bbs',s2) =>
+      (bb'::bbs',s2)
+End
+
+Definition sue_expand_function_supply_def:
+  sue_expand_function_supply s fn =
+    let dfg = dfg_build_function fn in
+    case sue_expand_blocks_supply dfg s fn.fn_blocks of (bbs,s1) =>
+      (fn with fn_blocks := bbs,s1)
+End
+
+Definition sue_expand_functions_supply_def:
+  sue_expand_functions_supply s [] = ([],s) /\
+  sue_expand_functions_supply s (fn::fns) =
+    case sue_expand_function_supply s fn of (fn',s1) =>
+    case sue_expand_functions_supply s1 fns of (fns',s2) =>
+      (fn'::fns',s2)
+End
+
+Definition sue_expand_context_supply_def:
+  sue_expand_context_supply s ctx =
+    case sue_expand_functions_supply s ctx.ctx_functions of (fns,s1) =>
+      (ctx with ctx_functions := fns,s1)
+End
+
+Definition sue_unit_supply_def:
+  sue_unit_supply s unit =
+    case sue_expand_context_supply s unit.cu_context of (ctx,s1) =>
+      (unit with cu_context := ctx,s1)
+End
+
+Definition sue_configured_with_supply_def:
+  sue_configured_with_supply unit =
+    sue_unit_supply (init_ir_supply unit) unit
+End
+
+Definition sue_configured_def:
+  sue_configured unit = FST (sue_configured_with_supply unit)
+End
+
+
+(* Closed collision probe: the input reserves both the first supply-style name
+   and a legacy SUE-style name, has sparse IDs, and spans two functions. *)
+Definition sue_supply_collision_probe_unit_def:
+  sue_supply_collision_probe_unit = <|
+    cu_context := mk_venom_context
+      [mk_raw_function "probe_f1"
+         [<| bb_label := "probe_b1";
+             bb_instructions :=
+               [mk_inst 7 ASSIGN [Lit 0w] ["formal_var_0"];
+                mk_inst 10000 ADD [Lit 1w; Var "formal_var_0"] ["sue_7_0"]] |>];
+       mk_raw_function "probe_f2"
+         [<| bb_label := "probe_b2";
+             bb_instructions :=
+               [mk_inst 42 ADD [Lit 2w; Lit 3w] ["probe_out"]] |>]]
+      (SOME "probe_f1");
+    cu_data_segment := [] |>
+End
+
+Theorem sue_supply_collision_probe:
+  let result = sue_configured_with_supply sue_supply_collision_probe_unit in
+    (SND result).irs_next_inst = 10004 /\
+    (SND result).irs_next_var = 4 /\
+    TAKE 3 (SND result).irs_used_inst_ids = [10003;10002;10001] /\
+    TAKE 3 (SND result).irs_used_vars =
+      ["formal_var_3";"formal_var_2";"formal_var_1"] /\
+    LENGTH (FST result).cu_context.ctx_functions = 2
+Proof
+  EVAL_TAC
+QED
