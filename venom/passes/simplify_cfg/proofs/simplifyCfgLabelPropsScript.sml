@@ -487,3 +487,202 @@ Proof
                CONJUNCT1 collapse_events_joint]) >>
   gvs[collapse_result_events_pair, fn_result_events_def]
 QED
+
+Definition chronological_label_map_def:
+  chronological_label_map [] = T /\
+  chronological_label_map ((source,target)::rest) =
+    (source <> target /\
+     ~MEM source (MAP FST rest) /\
+     ~MEM source (MAP SND rest) /\
+     chronological_label_map rest)
+End
+
+Theorem label_event_trace_endpoints:
+  !initial events final.
+    label_event_trace initial events final ==>
+    EVERY (\entry.
+      MEM (FST entry) initial /\ MEM (SND entry) initial) events
+Proof
+  Induct_on `events` >> simp[label_event_trace_def] >>
+  Cases_on `h` >> simp[label_event_trace_def] >>
+  rpt strip_tac >>
+  first_x_assum drule >>
+  simp[listTheory.EVERY_MEM, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem label_event_trace_chronological:
+  !initial events final.
+    label_event_trace initial events final ==>
+    chronological_label_map events
+Proof
+  Induct_on `events` >> simp[label_event_trace_def,
+                              chronological_label_map_def] >>
+  Cases_on `h` >> simp[label_event_trace_def,
+                       chronological_label_map_def] >>
+  rpt strip_tac >>
+  `EVERY (\entry.
+      MEM (FST entry) (FILTER (\l. l <> q) initial) /\
+      MEM (SND entry) (FILTER (\l. l <> q) initial)) events` by
+    metis_tac[label_event_trace_endpoints] >>
+  gvs[listTheory.EVERY_MEM, MEM_MAP, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem chronological_label_map_all_distinct_sources:
+  !events.
+    chronological_label_map events ==>
+    ALL_DISTINCT (MAP FST events)
+Proof
+  Induct_on `events` >> simp[chronological_label_map_def] >>
+  Cases_on `h` >> simp[chronological_label_map_def]
+QED
+
+
+Theorem resolve_label_fuel_cons_irrelevant[local]:
+  !fuel rest source target visited label.
+    label <> source /\ ~MEM source (MAP SND rest) ==>
+    resolve_label_fuel ((source,target)::rest) visited fuel label =
+    resolve_label_fuel rest visited fuel label
+Proof
+  Induct_on `fuel`
+  >- simp[resolve_label_fuel_def, alistTheory.ALOOKUP_def] >>
+  rpt strip_tac >>
+  simp[resolve_label_fuel_def, alistTheory.ALOOKUP_def] >>
+  Cases_on `MEM label visited` >> simp[] >>
+  Cases_on `ALOOKUP rest label` >> simp[] >>
+  first_x_assum irule >>
+  drule alistTheory.ALOOKUP_MEM >> strip_tac >>
+  qpat_x_assum `~MEM source (MAP SND rest)` mp_tac >>
+  simp[MEM_MAP] >> strip_tac >>
+  first_x_assum (qspec_then `(label,x)` mp_tac) >> simp[]
+QED
+
+Definition visited_avoids_label_map_def:
+  visited_avoids_label_map visited label label_map <=>
+    ~MEM label visited /\
+    EVERY (\seen.
+      ~MEM seen (MAP FST label_map) /\
+      ~MEM seen (MAP SND label_map)) visited
+End
+
+Theorem resolve_label_fuel_chronological[local]:
+  !label_map fuel visited label.
+    chronological_label_map label_map /\
+    LENGTH label_map < fuel /\
+    visited_avoids_label_map visited label label_map ==>
+    ?terminal.
+      resolve_label_fuel label_map visited fuel label = SOME terminal
+Proof
+  Induct_on `label_map`
+  >- (Cases_on `fuel` >>
+      simp[resolve_label_fuel_def, visited_avoids_label_map_def]) >>
+  Cases_on `h` >> rpt strip_tac >>
+  Cases_on `fuel` >> gvs[] >>
+  fs[chronological_label_map_def, visited_avoids_label_map_def] >>
+  Cases_on `label = q`
+  >- (gvs[] >>
+      simp[resolve_label_fuel_def, alistTheory.ALOOKUP_def] >>
+      simp[resolve_label_fuel_cons_irrelevant] >>
+      first_x_assum irule >>
+      simp[visited_avoids_label_map_def] >>
+      gvs[listTheory.EVERY_MEM] >> metis_tac[]) >>
+  simp[resolve_label_fuel_cons_irrelevant] >>
+  first_x_assum irule >>
+  simp[visited_avoids_label_map_def] >>
+  gvs[listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem resolve_label_entries_chronological[local]:
+  chronological_label_map label_map /\ LENGTH label_map < fuel ==>
+  !entries.
+    ?resolved.
+      resolve_label_entries label_map fuel entries = SOME resolved
+Proof
+  strip_tac >> Induct
+  >- simp[resolve_label_entries_def] >>
+  Cases_on `h` >>
+  `?terminal.
+      resolve_label_fuel label_map [] fuel q = SOME terminal` by
+    (irule resolve_label_fuel_chronological >>
+     simp[visited_avoids_label_map_def]) >>
+  gvs[resolve_label_entries_def]
+QED
+
+Theorem chronological_label_map_resolves:
+  chronological_label_map label_map ==>
+  ?resolved. resolve_label_map label_map = SOME resolved
+Proof
+  strip_tac >>
+  `ALL_DISTINCT (MAP FST label_map)` by
+    metis_tac[chronological_label_map_all_distinct_sources] >>
+  `?resolved.
+      resolve_label_entries label_map (SUC (LENGTH label_map)) label_map =
+        SOME resolved` by
+    (irule resolve_label_entries_chronological >> simp[]) >>
+  gvs[resolve_label_map_def]
+QED
+
+Theorem resolve_label_fuel_endpoint[local]:
+  !fuel label visited terminal.
+    EVERY (\entry.
+      MEM (FST entry) namespace /\ MEM (SND entry) namespace) label_map /\
+    MEM label namespace /\
+    resolve_label_fuel label_map visited fuel label = SOME terminal ==>
+    MEM terminal namespace
+Proof
+  Induct_on `fuel`
+  >- (rpt strip_tac >>
+      gvs[resolve_label_fuel_def, AllCaseEqs()]) >>
+  rpt strip_tac >>
+  gvs[resolve_label_fuel_def, AllCaseEqs()] >>
+  drule alistTheory.ALOOKUP_MEM >> strip_tac >>
+  gvs[listTheory.EVERY_MEM] >>
+  first_x_assum drule >> simp[] >>
+  metis_tac[]
+QED
+
+Theorem resolve_label_entries_chronological_endpoints[local]:
+  chronological_label_map label_map /\
+  LENGTH label_map < fuel /\
+  EVERY (\entry.
+    MEM (FST entry) namespace /\ MEM (SND entry) namespace) label_map /\
+  EVERY (\entry. MEM (FST entry) namespace) entries ==>
+  ?resolved.
+    resolve_label_entries label_map fuel entries = SOME resolved /\
+    EVERY (\entry. MEM (SND entry) namespace) resolved
+Proof
+  Induct_on `entries`
+  >- simp[resolve_label_entries_def] >>
+  Cases_on `h` >> rpt strip_tac >>
+  gvs[] >>
+  `?terminal.
+      resolve_label_fuel label_map [] fuel q = SOME terminal` by
+    (irule resolve_label_fuel_chronological >>
+     simp[visited_avoids_label_map_def]) >>
+  `MEM terminal namespace` by
+    metis_tac[resolve_label_fuel_endpoint] >>
+  qexists `(q,terminal)::resolved` >>
+  simp[resolve_label_entries_def]
+QED
+
+Theorem chronological_label_map_resolves_endpoints:
+  chronological_label_map label_map /\
+  EVERY (\entry.
+    MEM (FST entry) namespace /\ MEM (SND entry) namespace) label_map ==>
+  ?resolved.
+    resolve_label_map label_map = SOME resolved /\
+    EVERY (\entry. MEM (SND entry) namespace) resolved
+Proof
+  strip_tac >>
+  `ALL_DISTINCT (MAP FST label_map)` by
+    metis_tac[chronological_label_map_all_distinct_sources] >>
+  `?resolved.
+      resolve_label_entries label_map (SUC (LENGTH label_map)) label_map =
+        SOME resolved /\
+      EVERY (\entry. MEM (SND entry) namespace) resolved` by
+    (irule resolve_label_entries_chronological_endpoints >>
+     simp[] >> gvs[listTheory.EVERY_MEM]) >>
+  qexists `resolved` >>
+  simp[resolve_label_map_def]
+QED
