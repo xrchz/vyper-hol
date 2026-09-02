@@ -2955,3 +2955,195 @@ Theorem cfg_norm_function_supply_duplicate_label_invoke_subset_probe:
 Proof
   EVAL_TAC
 QED
+
+
+(* ===== Raw FMP opcode preservation ===== *)
+Definition cfg_blocks_no_raw_def[local]:
+  cfg_blocks_no_raw blocks <=>
+    EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                       bb.bb_instructions) blocks
+End
+
+Theorem cfg_blocks_no_raw_fn_insts[local]:
+  cfg_blocks_no_raw blocks <=>
+  !inst. MEM inst (fn_insts_blocks blocks) ==>
+         ~is_raw_fmp_opcode inst.inst_opcode
+Proof
+  rewrite_tac[cfg_blocks_no_raw_def] >>
+  Induct_on `blocks` >>
+  simp[venomInstTheory.fn_insts_blocks_def,listTheory.EVERY_MEM,listTheory.MEM_APPEND,
+       DISJ_IMP_THM,FORALL_AND_THM]
+QED
+
+Theorem build_forwarding_assigns_supply_no_raw[local]:
+  !vars s repls insts s'.
+    build_forwarding_assigns_supply s vars = (repls,insts,s') ==>
+    EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) insts
+Proof
+  Induct_on `vars` >> rpt strip_tac
+  >- gvs[build_forwarding_assigns_supply_def] >>
+  Cases_on `fresh_ir_var s` >>
+  rename1 `fresh_ir_var s = (new_var,s1)` >>
+  Cases_on `fresh_inst_id s1` >>
+  rename1 `fresh_inst_id s1 = (id,s2)` >>
+  Cases_on `build_forwarding_assigns_supply s2 vars` >>
+  PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s2 vars =
+           (rest_repls,rest_insts,s3)` >>
+  gvs[build_forwarding_assigns_supply_def,
+      venomInstTheory.is_raw_fmp_opcode_def] >>
+  metis_tac[]
+QED
+
+Theorem build_split_block_supply_no_raw[local]:
+  build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) split_bb.bb_instructions
+Proof
+  rpt strip_tac >>
+  Cases_on `fresh_ir_label s` >>
+  rename1 `fresh_ir_label s = (split_label,s1)` >>
+  Cases_on `build_forwarding_assigns_supply s1
+    (nub (phi_vars_needing_forward pred_bb.bb_label pred_bb
+           target_bb.bb_instructions))` >>
+  PairCases_on `r` >>
+  rename1 `build_forwarding_assigns_supply s1 _ =
+           (var_repls,fwd_insts,s2)` >>
+  Cases_on `fresh_inst_id s2` >>
+  rename1 `fresh_inst_id s2 = (jmp_id,s3)` >>
+  gvs[build_split_block_supply_def,
+      venomInstTheory.is_raw_fmp_opcode_def] >>
+  metis_tac[build_forwarding_assigns_supply_no_raw]
+QED
+
+Theorem subst_label_terminator_no_raw[local]:
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) bb.bb_instructions ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+        (subst_label_terminator old new bb).bb_instructions
+Proof
+  simp[subst_label_terminator_def,listTheory.EVERY_MAP,COND_RAND,
+       subst_label_inst_opcode]
+QED
+
+Theorem update_phis_for_split_no_raw[local]:
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) bb.bb_instructions ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+        (update_phis_for_split old new repls bb).bb_instructions
+Proof
+  strip_tac >>
+  simp[update_phis_for_split_def,listTheory.EVERY_MAP] >>
+  irule listTheory.EVERY_MONOTONIC >>
+  qexists `\i. ~is_raw_fmp_opcode i.inst_opcode` >> simp[] >>
+  rpt strip_tac >> Cases_on `x.inst_opcode <> PHI` >>
+  gvs[venomInstTheory.is_raw_fmp_opcode_def]
+QED
+
+Theorem replace_block_no_raw[local]:
+  !blocks. cfg_blocks_no_raw blocks /\
+    EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) new_bb.bb_instructions ==>
+    cfg_blocks_no_raw (replace_block lbl new_bb blocks)
+Proof
+  rewrite_tac[cfg_blocks_no_raw_def,replace_block_def,
+              listTheory.EVERY_MAP] >>
+  rpt strip_tac >>
+  irule listTheory.EVERY_MONOTONIC >>
+  qexists `\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                      bb.bb_instructions` >> simp[] >>
+  rpt strip_tac >> Cases_on `x.bb_label = lbl` >> gvs[]
+QED
+
+Theorem insert_split_supply_no_raw[local]:
+  cfg_blocks_no_raw fn.fn_blocks /\
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) pred_bb.bb_instructions /\
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) target_bb.bb_instructions /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  cfg_blocks_no_raw fn'.fn_blocks
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  `EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+         split_bb.bb_instructions` by
+    metis_tac[build_split_block_supply_no_raw] >>
+  `EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+         (subst_label_terminator target_bb.bb_label split_bb.bb_label
+            pred_bb).bb_instructions` by
+    metis_tac[subst_label_terminator_no_raw] >>
+  `cfg_blocks_no_raw
+     (replace_block pred_bb.bb_label
+       (subst_label_terminator target_bb.bb_label split_bb.bb_label pred_bb)
+       fn.fn_blocks)` by metis_tac[replace_block_no_raw] >>
+  `EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+         (update_phis_for_split pred_bb.bb_label split_bb.bb_label repls
+            target_bb).bb_instructions` by
+    metis_tac[update_phis_for_split_no_raw] >>
+  `cfg_blocks_no_raw
+     (replace_block target_bb.bb_label
+       (update_phis_for_split pred_bb.bb_label split_bb.bb_label repls target_bb)
+       (replace_block pred_bb.bb_label
+         (subst_label_terminator target_bb.bb_label split_bb.bb_label pred_bb)
+         fn.fn_blocks))` by metis_tac[replace_block_no_raw] >>
+  gvs[cfg_blocks_no_raw_def]
+QED
+
+Theorem find_and_split_supply_no_raw[local]:
+  !bbs fn s fn' changed s'.
+    cfg_blocks_no_raw fn.fn_blocks /\
+    EVERY (\bb. MEM bb fn.fn_blocks) bbs /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    cfg_blocks_no_raw fn'.fn_blocks
+Proof
+  Induct_on `bbs` >> rpt gen_tac >> strip_tac
+  >- gvs[find_and_split_supply_def] >>
+  Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[]) >>
+  Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[]) >>
+  Cases_on `insert_split_supply s fn x h` >>
+  gvs[find_and_split_supply_def] >>
+  `EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) h.bb_instructions` by
+    (gvs[cfg_blocks_no_raw_def,listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `MEM x fn.fn_blocks` by
+    (imp_res_tac FIND_SOME_MEM >>
+     gvs[block_preds_def,listTheory.MEM_FILTER]) >>
+  `EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) x.bb_instructions` by
+    (gvs[cfg_blocks_no_raw_def,listTheory.EVERY_MEM] >> metis_tac[]) >>
+  metis_tac[insert_split_supply_no_raw]
+QED
+
+Theorem cfg_norm_round_supply_no_raw[local]:
+  cfg_blocks_no_raw fn.fn_blocks /\
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  cfg_blocks_no_raw fn'.fn_blocks
+Proof
+  rpt strip_tac >>
+  irule find_and_split_supply_no_raw >>
+  qexistsl [`fn.fn_blocks`,`changed`,`fn`,`s`,`s'`] >>
+  gvs[cfg_norm_round_supply_def,listTheory.EVERY_MEM]
+QED
+
+Theorem cfg_norm_iter_supply_no_raw[local]:
+  !n s fn fn' s'.
+    cfg_blocks_no_raw fn.fn_blocks /\
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    cfg_blocks_no_raw fn'.fn_blocks
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_iter_supply_def] >>
+  Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+  rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+  Cases_on `changed` >> gvs[cfg_norm_iter_supply_def] >>
+  metis_tac[cfg_norm_round_supply_no_raw]
+QED
+
+Theorem cfg_norm_function_supply_no_raw_fmp_ops:
+  no_raw_fmp_ops fn ==>
+  no_raw_fmp_ops (FST (cfg_norm_function_supply s fn))
+Proof
+  simp[venomInstTheory.no_raw_fmp_ops_def,venomInstTheory.fn_insts_def,
+       GSYM cfg_blocks_no_raw_fn_insts,cfg_norm_function_supply_def] >>
+  Cases_on `cfg_norm_iter_supply (2 * LENGTH fn.fn_blocks) s fn` >>
+  simp[] >> metis_tac[cfg_norm_iter_supply_no_raw]
+QED
