@@ -3021,3 +3021,561 @@ Proof
   rewrite_tac[CONJUNCT1 simplify_cfg_chain_collapse_eval] >>
   EVAL_TAC
 QED
+
+
+(* Raw FMP opcode preservation for the SimplifyCFG implementation. *)
+Definition scfg_blocks_no_raw_def[local]:
+  scfg_blocks_no_raw bbs <=>
+    EVERY (\bb. EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+                       bb.bb_instructions) bbs
+End
+
+Theorem scfg_blocks_no_raw_fn_insts[local]:
+  scfg_blocks_no_raw bbs <=>
+  !inst. MEM inst (fn_insts_blocks bbs) ==>
+         ~is_raw_fmp_opcode inst.inst_opcode
+Proof
+  rewrite_tac[scfg_blocks_no_raw_def] >>
+  Induct_on `bbs` >>
+  simp[venomInstTheory.fn_insts_blocks_def, listTheory.EVERY_MEM,
+       listTheory.MEM_APPEND, DISJ_IMP_THM, FORALL_AND_THM]
+QED
+
+Theorem fix_phi_inst_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode (fix_phi_inst preds inst).inst_opcode
+Proof
+  simp[fix_phi_inst_def] >> rpt CASE_TAC >>
+  gvs[venomInstTheory.is_raw_fmp_opcode_def]
+QED
+
+Theorem fix_phis_in_block_no_raw[local]:
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) bb.bb_instructions ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+        (fix_phis_in_block preds bb).bb_instructions
+Proof
+  simp[fix_phis_in_block_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  simp[listTheory.EVERY_MEM] >> rpt strip_tac >>
+  drule partition_mem_pair >> strip_tac >>
+  gvs[listTheory.MEM_MAP, listTheory.EVERY_MEM] >>
+  metis_tac[fix_phi_inst_no_raw]
+QED
+
+Theorem fix_all_phis_no_raw[local]:
+  scfg_blocks_no_raw func.fn_blocks ==>
+  scfg_blocks_no_raw (fix_all_phis func).fn_blocks
+Proof
+  simp[scfg_blocks_no_raw_def, fix_all_phis_def,
+       listTheory.EVERY_MAP] >>
+  simp[listTheory.EVERY_MEM] >> rpt strip_tac >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+         bb.bb_instructions` by
+    (simp[listTheory.EVERY_MEM] >> metis_tac[]) >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+         (fix_phis_in_block (pred_labels func bb.bb_label) bb).bb_instructions` by
+    (irule fix_phis_in_block_no_raw >> simp[]) >>
+  qpat_x_assum `EVERY _ (fix_phis_in_block _ _).bb_instructions` mp_tac >>
+  pure_rewrite_tac[listTheory.EVERY_MEM] >>
+  disch_then (qspec_then `inst` mp_tac) >> simp[]
+QED
+
+Theorem remove_unreachable_blocks_no_raw[local]:
+  scfg_blocks_no_raw func.fn_blocks ==>
+  scfg_blocks_no_raw (remove_unreachable_blocks func).fn_blocks
+Proof
+  Cases_on `fn_entry_label func` >>
+  simp[remove_unreachable_blocks_def, scfg_blocks_no_raw_def,
+       listTheory.EVERY_MEM, listTheory.MEM_FILTER] >> metis_tac[]
+QED
+
+
+Theorem subst_label_inst_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode (subst_label_inst old_lbl new_lbl inst).inst_opcode
+Proof
+  simp[cfgTransformTheory.subst_label_inst_def]
+QED
+
+Theorem subst_block_labels_inst_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode (subst_block_labels_inst label_map inst).inst_opcode
+Proof
+  Cases_on `inst.inst_opcode` >>
+  simp[cfgTransformTheory.subst_block_labels_inst_def,
+       cfgTransformTheory.subst_label_map_inst_def,
+       venomInstTheory.is_block_label_opcode_def,
+       venomInstTheory.is_terminator_def]
+QED
+
+Theorem subst_block_labels_block_no_raw[local]:
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) bb.bb_instructions ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+        (subst_block_labels_block label_map bb).bb_instructions
+Proof
+  simp[cfgTransformTheory.subst_block_labels_block_def,
+       listTheory.EVERY_MAP] >>
+  pure_rewrite_tac[listTheory.EVERY_MEM] >>
+  metis_tac[subst_block_labels_inst_no_raw]
+QED
+
+Theorem subst_block_labels_blocks_no_raw[local]:
+  scfg_blocks_no_raw bbs ==>
+  scfg_blocks_no_raw (MAP (subst_block_labels_block label_map) bbs)
+Proof
+  Induct_on `bbs`
+  >- simp[scfg_blocks_no_raw_def] >>
+  rpt strip_tac >>
+  fs[scfg_blocks_no_raw_def] >>
+  irule subst_block_labels_block_no_raw >> simp[]
+QED
+
+Theorem subst_block_labels_fn_no_raw[local]:
+  scfg_blocks_no_raw func.fn_blocks ==>
+  scfg_blocks_no_raw (subst_block_labels_fn label_map func).fn_blocks
+Proof
+  simp[cfgTransformTheory.subst_block_labels_fn_def,
+       subst_block_labels_blocks_no_raw]
+QED
+
+Theorem update_phi_bypass_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode (update_phi_bypass a_label b_label inst).inst_opcode
+Proof
+  Cases_on `inst.inst_opcode` >>
+  Cases_on `MEM (Label a_label) inst.inst_operands` >>
+  simp[update_phi_bypass_def]
+QED
+
+Theorem bypass_source_inst_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode
+    (if ~is_terminator inst.inst_opcode then inst
+     else subst_label_inst old_lbl new_lbl inst).inst_opcode
+Proof
+  strip_tac >> IF_CASES_TAC >> simp[subst_label_inst_no_raw]
+QED
+
+Theorem succ_phi_update_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode
+    (if inst.inst_opcode <> PHI then inst
+     else subst_label_inst old_lbl new_lbl inst).inst_opcode
+Proof
+  strip_tac >> IF_CASES_TAC >> simp[subst_label_inst_no_raw]
+QED
+
+Theorem remove_block_no_raw[local]:
+  scfg_blocks_no_raw bbs ==>
+  scfg_blocks_no_raw (remove_block lbl bbs)
+Proof
+  simp[scfg_blocks_no_raw_def, cfgTransformTheory.remove_block_def,
+       listTheory.EVERY_MEM, listTheory.MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem replace_block_no_raw[local]:
+  scfg_blocks_no_raw bbs /\
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+        replacement.bb_instructions ==>
+  scfg_blocks_no_raw (replace_block lbl replacement bbs)
+Proof
+  rewrite_tac[scfg_blocks_no_raw_def] >>
+  simp[cfgTransformTheory.replace_block_def, listTheory.EVERY_MAP] >>
+  pure_rewrite_tac[listTheory.EVERY_MEM] >>
+  metis_tac[]
+QED
+
+Theorem every_front[local]:
+  !xs. EVERY pred xs ==> EVERY pred (FRONT xs)
+Proof
+  Induct >> simp[] >> Cases_on `xs` >> simp[]
+QED
+
+Theorem merge_blocks_no_raw[local]:
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) a.bb_instructions /\
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) b.bb_instructions ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+        (merge_blocks a b).bb_instructions
+Proof
+  simp[merge_blocks_def, listTheory.EVERY_APPEND] >>
+  metis_tac[every_front]
+QED
+
+
+Theorem succ_phi_update_block_no_raw[local]:
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) target.bb_instructions ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+    (target with bb_instructions :=
+      MAP (\inst. if inst.inst_opcode <> PHI then inst
+                   else subst_label_inst old_lbl new_lbl inst)
+          target.bb_instructions).bb_instructions
+Proof
+  simp[listTheory.EVERY_MAP] >>
+  pure_rewrite_tac[listTheory.EVERY_MEM] >>
+  metis_tac[succ_phi_update_no_raw]
+QED
+
+Theorem update_succ_phi_labels_no_raw[local]:
+  !succs bbs.
+    scfg_blocks_no_raw bbs ==>
+    scfg_blocks_no_raw (update_succ_phi_labels old_lbl new_lbl bbs succs)
+Proof
+  Induct_on `succs`
+  >- simp[update_succ_phi_labels_def] >>
+  rpt gen_tac >> strip_tac >>
+  simp[update_succ_phi_labels_def] >>
+  Cases_on `lookup_block h bbs`
+  >- (qpat_x_assum `!bbs. _` (qspec_then `bbs` mp_tac) >>
+      simp[update_succ_phi_labels_def]) >>
+  rename1 `lookup_block h bbs = SOME target` >>
+  qabbrev_tac
+    `bbs' = replace_block h
+      (target with bb_instructions :=
+        MAP (\inst. if inst.inst_opcode <> PHI then inst
+                     else subst_label_inst old_lbl new_lbl inst)
+            target.bb_instructions) bbs` >>
+  `scfg_blocks_no_raw bbs'` by
+    (simp[Abbr `bbs'`] >>
+     irule replace_block_no_raw >> simp[] >>
+     simp[listTheory.EVERY_MAP] >>
+     pure_rewrite_tac[listTheory.EVERY_MEM] >> rpt strip_tac >>
+     `MEM target bbs` by
+       metis_tac[venomExecPropsTheory.lookup_block_MEM] >>
+     `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+            target.bb_instructions` by
+       (fs[scfg_blocks_no_raw_def, listTheory.EVERY_MEM] >> metis_tac[]) >>
+     qpat_x_assum `EVERY _ target.bb_instructions` mp_tac >>
+     pure_rewrite_tac[listTheory.EVERY_MEM] >>
+     disch_then (qspec_then `e` mp_tac) >> simp[] >>
+     metis_tac[succ_phi_update_no_raw]) >>
+  qpat_x_assum `!bbs. _` (qspec_then `bbs'` mp_tac) >>
+  simp[update_succ_phi_labels_def, Abbr `bbs'`]
+QED
+
+
+Definition simplify_cfg_no_raw_pres_def[local]:
+  simplify_cfg_no_raw_pres result original <=>
+    scfg_blocks_no_raw original.fn_blocks ==>
+    scfg_blocks_no_raw result.fn_blocks
+End
+
+Theorem simplify_cfg_no_raw_pres_refl[local]:
+  simplify_cfg_no_raw_pres func func
+Proof
+  simp[simplify_cfg_no_raw_pres_def]
+QED
+
+Theorem simplify_cfg_no_raw_pres_trans[local]:
+  simplify_cfg_no_raw_pres final middle /\
+  simplify_cfg_no_raw_pres middle initial ==>
+  simplify_cfg_no_raw_pres final initial
+Proof
+  simp[simplify_cfg_no_raw_pres_def] >> metis_tac[]
+QED
+
+Theorem bypass_source_block_no_raw[local]:
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) bb.bb_instructions ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+    (bb with bb_instructions :=
+      MAP (\inst. if ~is_terminator inst.inst_opcode then inst
+                   else subst_label_inst old_lbl new_lbl inst)
+          bb.bb_instructions).bb_instructions
+Proof
+  simp[listTheory.EVERY_MAP] >>
+  pure_rewrite_tac[listTheory.EVERY_MEM] >>
+  metis_tac[bypass_source_inst_no_raw]
+QED
+
+Theorem update_phi_bypass_block_no_raw[local]:
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) bb.bb_instructions ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+    (bb with bb_instructions :=
+      MAP (update_phi_bypass a_label b_label) bb.bb_instructions).bb_instructions
+Proof
+  simp[listTheory.EVERY_MAP] >>
+  pure_rewrite_tac[listTheory.EVERY_MEM] >>
+  metis_tac[update_phi_bypass_no_raw]
+QED
+
+Theorem lookup_block_no_raw[local]:
+  scfg_blocks_no_raw bbs /\ lookup_block lbl bbs = SOME bb ==>
+  EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) bb.bb_instructions
+Proof
+  simp[scfg_blocks_no_raw_def, listTheory.EVERY_MEM] >>
+  metis_tac[venomExecPropsTheory.lookup_block_MEM]
+QED
+
+Theorem do_merge_jump_no_raw[local]:
+  lookup_block a.bb_label func.fn_blocks = SOME a /\
+  lookup_block b.bb_label func.fn_blocks = SOME b /\
+  scfg_blocks_no_raw func.fn_blocks /\
+  do_merge_jump func a b incoming = SOME (func',outgoing) ==>
+  scfg_blocks_no_raw func'.fn_blocks
+Proof
+  rpt strip_tac >>
+  gvs[do_merge_jump_def, AllCaseEqs()] >>
+  qabbrev_tac
+    `a' = a with bb_instructions :=
+      MAP (\inst. if ~is_terminator inst.inst_opcode then inst
+                   else subst_label_inst b.bb_label target_lbl inst)
+          a.bb_instructions` >>
+  qabbrev_tac
+    `target' = target with bb_instructions :=
+      MAP (update_phi_bypass a.bb_label b.bb_label)
+          target.bb_instructions` >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode) a'.bb_instructions` by
+    (simp[Abbr `a'`, listTheory.EVERY_MAP] >>
+     pure_rewrite_tac[listTheory.EVERY_MEM] >> rpt strip_tac >>
+     `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+            a.bb_instructions` by metis_tac[lookup_block_no_raw] >>
+     qpat_x_assum `EVERY _ a.bb_instructions` mp_tac >>
+     pure_rewrite_tac[listTheory.EVERY_MEM] >>
+     disch_then (qspec_then `e` mp_tac) >> simp[] >>
+     metis_tac[bypass_source_inst_no_raw]) >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+         target'.bb_instructions` by
+    (simp[Abbr `target'`, listTheory.EVERY_MAP] >>
+     pure_rewrite_tac[listTheory.EVERY_MEM] >> rpt strip_tac >>
+     `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+            target.bb_instructions` by metis_tac[lookup_block_no_raw] >>
+     qpat_x_assum `EVERY _ target.bb_instructions` mp_tac >>
+     pure_rewrite_tac[listTheory.EVERY_MEM] >>
+     disch_then (qspec_then `e` mp_tac) >> simp[] >>
+     metis_tac[update_phi_bypass_no_raw]) >>
+  irule replace_block_no_raw >> simp[] >>
+  irule replace_block_no_raw >> simp[] >>
+  irule remove_block_no_raw >> simp[]
+QED
+
+
+Theorem try_bypass_no_raw_pres[local]:
+  !succs func incoming bb func' outgoing success.
+    lookup_block bb.bb_label func.fn_blocks = SOME bb /\
+    try_bypass func incoming bb succs = (func',outgoing,success) ==>
+    simplify_cfg_no_raw_pres func' func
+Proof
+  Induct_on `succs`
+  >- simp[try_bypass_def, simplify_cfg_no_raw_pres_refl] >>
+  rpt strip_tac >>
+  gvs[Once try_bypass_def, AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[]) >>
+  `next_bb.bb_label = h` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  simp[simplify_cfg_no_raw_pres_def] >> strip_tac >>
+  irule do_merge_jump_no_raw >>
+  qexistsl [`bb`,`next_bb`,`func`,`incoming`,`outgoing`] >>
+  simp[]
+QED
+
+Theorem chain_merge_no_raw_pres[local]:
+  lookup_block bb.bb_label func.fn_blocks = SOME bb /\
+  lookup_block next_bb.bb_label func.fn_blocks = SOME next_bb /\
+  can_merge_blocks func bb next_bb ==>
+  let merged = merge_blocks bb next_bb in
+  let bbs0 = remove_block next_bb.bb_label func.fn_blocks in
+  let bbs1 = replace_block bb.bb_label merged bbs0 in
+  let bbs2 = update_succ_phi_labels next_bb.bb_label bb.bb_label bbs1
+               (bb_succs merged) in
+  simplify_cfg_no_raw_pres (func with fn_blocks := bbs2) func
+Proof
+  rpt strip_tac >> gvs[simplify_cfg_no_raw_pres_def] >> strip_tac >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+         bb.bb_instructions` by metis_tac[lookup_block_no_raw] >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+         next_bb.bb_instructions` by metis_tac[lookup_block_no_raw] >>
+  `EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
+         (merge_blocks bb next_bb).bb_instructions` by
+    metis_tac[merge_blocks_no_raw] >>
+  irule update_succ_phi_labels_no_raw >>
+  irule replace_block_no_raw >> simp[] >>
+  irule remove_block_no_raw >> simp[]
+QED
+
+
+Theorem collapse_dfs_result_no_raw_compose[local]:
+  simplify_cfg_no_raw_pres middle initial ==>
+  collapse_dfs_result
+    (\result. simplify_cfg_no_raw_pres (FST result) middle)
+    middle label_map visited lbl ==>
+  simplify_cfg_no_raw_pres
+    (FST (collapse_dfs middle label_map visited lbl)) initial
+Proof
+  simp[collapse_dfs_result_def] >>
+  metis_tac[simplify_cfg_no_raw_pres_trans]
+QED
+
+Theorem collapse_dfs_succs_result_no_raw_compose[local]:
+  simplify_cfg_no_raw_pres middle initial ==>
+  collapse_dfs_succs_result
+    (\result. simplify_cfg_no_raw_pres (FST result) middle)
+    middle label_map visited succs ==>
+  simplify_cfg_no_raw_pres
+    (FST (collapse_dfs_succs middle label_map visited succs)) initial
+Proof
+  simp[collapse_dfs_succs_result_def] >>
+  metis_tac[simplify_cfg_no_raw_pres_trans]
+QED
+
+Theorem collapse_no_raw_joint[local]:
+  (!func label_map visited lbl.
+     collapse_dfs_result
+       (\result. simplify_cfg_no_raw_pres (FST result) func)
+       func label_map visited lbl) /\
+  (!func label_map visited succs.
+     collapse_dfs_succs_result
+       (\result. simplify_cfg_no_raw_pres (FST result) func)
+       func label_map visited succs)
+Proof
+  ho_match_mp_tac collapse_dfs_ind >>
+  rpt conj_tac
+  >- suspend "dfs"
+  >- suspend "nil"
+  >> suspend "succs"
+QED
+
+Resume collapse_no_raw_joint[dfs]:
+  rpt strip_tac >>
+  simp[NoAsms, collapse_dfs_result_def, Once collapse_dfs_def] >>
+  Cases_on `lookup_block lbl func.fn_blocks`
+  >- simp[simplify_cfg_no_raw_pres_refl] >>
+  rename1 `lookup_block lbl func.fn_blocks = SOME bb` >>
+  Cases_on `bb_succs bb`
+  >- (Cases_on `MEM lbl visited`
+      >- simp[try_bypass_def, simplify_cfg_no_raw_pres_refl]
+      >> gvs[try_bypass_def, collapse_dfs_succs_result_def]) >>
+  Cases_on `t`
+  >- (Cases_on `lookup_block h func.fn_blocks`
+      >- (Cases_on `MEM lbl visited` >>
+          simp[simplify_cfg_no_raw_pres_refl])
+      >> rename1 `lookup_block h func.fn_blocks = SOME next_bb`
+      >> Cases_on `can_merge_blocks func bb next_bb`
+      >- (gvs[] >>
+          `bb.bb_label = lbl` by
+            metis_tac[venomExecPropsTheory.lookup_block_label] >>
+          `next_bb.bb_label = h` by
+            metis_tac[venomExecPropsTheory.lookup_block_label] >>
+          qmatch_goalsub_abbrev_tac
+            `collapse_dfs merged_func merged_map visited lbl` >>
+          irule collapse_dfs_result_no_raw_compose >>
+          conj_tac
+          >- (gvs[Abbr `merged_func`, Abbr `merged_map`] >>
+              drule_all chain_merge_no_raw_pres >> simp[])
+          >> first_x_assum mp_tac >>
+          simp[collapse_dfs_result_def])
+      >> Cases_on `MEM lbl visited`
+      >- simp[simplify_cfg_no_raw_pres_refl]
+      >> gvs[collapse_dfs_result_def])
+  >> Cases_on `try_bypass func label_map bb (h::h'::t')`
+  >> PairCases_on `r`
+  >> Cases_on `r1`
+  >- (gvs[] >>
+      `bb.bb_label = lbl` by
+        metis_tac[venomExecPropsTheory.lookup_block_label] >>
+      `lookup_block bb.bb_label func.fn_blocks = SOME bb` by gvs[] >>
+      `simplify_cfg_no_raw_pres q func` by
+        metis_tac[try_bypass_no_raw_pres] >>
+      metis_tac[collapse_dfs_result_no_raw_compose])
+  >> gvs[] >>
+  `bb.bb_label = lbl` by
+    metis_tac[venomExecPropsTheory.lookup_block_label] >>
+  `lookup_block bb.bb_label func.fn_blocks = SOME bb` by gvs[] >>
+  `simplify_cfg_no_raw_pres q func` by
+    metis_tac[try_bypass_no_raw_pres] >>
+  Cases_on `MEM lbl visited`
+  >- simp[] >>
+  metis_tac[collapse_dfs_succs_result_no_raw_compose]
+QED
+
+Resume collapse_no_raw_joint[nil]:
+  simp[collapse_dfs_succs_result_def, collapse_dfs_def,
+       simplify_cfg_no_raw_pres_refl]
+QED
+
+Resume collapse_no_raw_joint[succs]:
+  rpt strip_tac >>
+  simp[collapse_dfs_succs_result_def, Once collapse_dfs_def] >>
+  Cases_on `collapse_dfs func label_map visited lbl` >>
+  PairCases_on `r` >> gvs[collapse_dfs_result_def] >>
+  `simplify_cfg_no_raw_pres q func` by gvs[] >>
+  metis_tac[collapse_dfs_succs_result_no_raw_compose]
+QED
+
+Finalise collapse_no_raw_joint
+
+Theorem collapse_dfs_no_raw_pres[local]:
+  simplify_cfg_no_raw_pres
+    (FST (collapse_dfs func label_map visited lbl)) func
+Proof
+  mp_tac (CONJUNCT1 collapse_no_raw_joint) >>
+  simp[collapse_dfs_result_def]
+QED
+
+
+Theorem simplify_cfg_round_with_labels_no_raw[local]:
+  scfg_blocks_no_raw func.fn_blocks ==>
+  scfg_blocks_no_raw (FST (simplify_cfg_round_with_labels func)).fn_blocks
+Proof
+  strip_tac >> Cases_on `fn_entry_label func`
+  >- simp[simplify_cfg_round_with_labels_def] >>
+  rename1 `fn_entry_label func = SOME entry` >>
+  qabbrev_tac `func1 = remove_unreachable_blocks func` >>
+  qabbrev_tac `func1a = fix_all_phis func1` >>
+  Cases_on `collapse_dfs func1a [] [] entry` >> PairCases_on `r` >>
+  rename1 `collapse_dfs func1a [] [] entry = (func2,label_map,visited)` >>
+  `scfg_blocks_no_raw func1.fn_blocks` by
+    metis_tac[remove_unreachable_blocks_no_raw] >>
+  `scfg_blocks_no_raw func1a.fn_blocks` by
+    metis_tac[fix_all_phis_no_raw] >>
+  `simplify_cfg_no_raw_pres
+     (FST (collapse_dfs func1a [] [] entry)) func1a` by
+    metis_tac[collapse_dfs_no_raw_pres] >>
+  `scfg_blocks_no_raw func2.fn_blocks` by
+    (qpat_x_assum `simplify_cfg_no_raw_pres _ func1a` mp_tac >>
+     qpat_assum `collapse_dfs func1a [] [] entry = _`
+       (fn th => simp[simplify_cfg_no_raw_pres_def, th])) >>
+  qabbrev_tac `func3 = if label_map = [] then func2
+                       else subst_block_labels_fn label_map func2` >>
+  `scfg_blocks_no_raw func3.fn_blocks` by
+    (simp[Abbr `func3`] >> metis_tac[subst_block_labels_fn_no_raw]) >>
+  `scfg_blocks_no_raw
+     (fix_all_phis (remove_unreachable_blocks func3)).fn_blocks` by
+    metis_tac[remove_unreachable_blocks_no_raw, fix_all_phis_no_raw] >>
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  qpat_assum `fn_entry_label func = SOME entry` (fn th => rewrite_tac[th]) >>
+  simp[Abbr `func1`, Abbr `func1a`] >>
+  qpat_assum `collapse_dfs _ _ _ _ = _` (fn th => rewrite_tac[th]) >>
+  simp[Abbr `func3`]
+QED
+
+Theorem simplify_cfg_iter_with_labels_no_raw[local]:
+  !n func.
+    scfg_blocks_no_raw func.fn_blocks ==>
+    scfg_blocks_no_raw (FST (simplify_cfg_iter_with_labels n func)).fn_blocks
+Proof
+  Induct_on `n`
+  >- simp[simplify_cfg_iter_with_labels_def] >>
+  rpt strip_tac >>
+  Cases_on `simplify_cfg_round_with_labels func` >>
+  rename1 `simplify_cfg_round_with_labels func = (func',round_map)` >>
+  `scfg_blocks_no_raw func'.fn_blocks` by
+    (mp_tac simplify_cfg_round_with_labels_no_raw >>
+     qpat_assum `simplify_cfg_round_with_labels func = _`
+       (fn th => simp[th])) >>
+  pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
+    (fn th => rewrite_tac[th]) >>
+  simp[] >> IF_CASES_TAC
+  >- simp[] >>
+  first_x_assum drule >>
+  Cases_on `simplify_cfg_iter_with_labels n func'` >> simp[]
+QED
+
+Theorem simplify_cfg_fn_with_labels_no_raw_fmp_ops:
+  no_raw_fmp_ops fn ==>
+  no_raw_fmp_ops (FST (simplify_cfg_fn_with_labels fn))
+Proof
+  simp[venomInstTheory.no_raw_fmp_ops_def,
+       venomInstTheory.fn_insts_def,
+       GSYM scfg_blocks_no_raw_fn_insts] >>
+  metis_tac[simplify_cfg_iter_with_labels_no_raw,
+            simplify_cfg_fn_with_labels_def]
+QED
