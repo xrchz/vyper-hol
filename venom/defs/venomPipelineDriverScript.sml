@@ -158,6 +158,19 @@ Definition run_venom_pipeline_def:
                           else NONE
 End
 
+Definition o1_policy_def:
+  o1_policy target = <|cpol_target := target|>
+End
+
+Definition o1_pipeline_def:
+  o1_pipeline mem_ok calling_ok post_ok target unit =
+    case resolve_o1_policy (o1_policy target) of
+      NONE => NONE
+    | SOME rpolicy =>
+        run_venom_pipeline mem_ok calling_ok post_ok rpolicy
+          o1_pipeline_spec unit
+End
+
 Theorem o1_pipeline_spec_wf_resolved:
   resolve_o1_policy policy = SOME rpolicy ==>
   pipeline_spec_wf rpolicy o1_pipeline_spec
