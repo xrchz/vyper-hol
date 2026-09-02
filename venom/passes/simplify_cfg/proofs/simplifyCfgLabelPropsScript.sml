@@ -2545,3 +2545,150 @@ Proof
   pure_once_rewrite_tac[simplify_cfg_duplicate_label_merge_step] >>
   simp[simplify_cfg_duplicate_label_result_collapse]
 QED
+
+
+Theorem simplify_cfg_duplicate_label_result_reachable[local]:
+  reachable simplify_cfg_duplicate_label_result "e"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       simplify_cfg_duplicate_label_result_def,
+       venomInstTheory.mk_raw_function_def,
+       venomInstTheory.fn_entry_label_def, venomInstTheory.entry_block_def,
+       relationTheory.RTC_REFL]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_stages[local]:
+  subst_block_labels_fn [("x","e")] simplify_cfg_duplicate_label_result =
+    simplify_cfg_duplicate_label_result /\
+  remove_unreachable_blocks simplify_cfg_duplicate_label_result =
+    simplify_cfg_duplicate_label_result /\
+  fix_all_phis simplify_cfg_duplicate_label_result =
+    simplify_cfg_duplicate_label_result
+Proof
+  conj_tac >- EVAL_TAC >>
+  conj_tac
+  >- (mp_tac simplify_cfg_duplicate_label_result_reachable >> strip_tac >>
+      gvs[remove_unreachable_blocks_def,
+          simplify_cfg_duplicate_label_result_def,
+          venomInstTheory.mk_raw_function_def,
+          venomInstTheory.fn_entry_label_def,
+          venomInstTheory.entry_block_def]) >>
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_duplicate_label_func =
+  (simplify_cfg_duplicate_label_result, [("x","e")])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  simp[simplify_cfg_duplicate_label_entry,
+       simplify_cfg_duplicate_label_remove_unreachable,
+       simplify_cfg_duplicate_label_fix_all_phis,
+       simplify_cfg_duplicate_label_collapse,
+       simplify_cfg_duplicate_label_result_stages]
+QED
+
+
+Theorem simplify_cfg_duplicate_label_result_succs_empty_nil[local]:
+  collapse_dfs_succs simplify_cfg_duplicate_label_result [] ["e"] [] =
+  (simplify_cfg_duplicate_label_result, [], ["e"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >> simp[]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_collapse_nil[local]:
+  collapse_dfs simplify_cfg_duplicate_label_result [] [] "e" =
+  (simplify_cfg_duplicate_label_result, [], ["e"])
+Proof
+  pure_once_rewrite_tac[collapse_dfs_def] >>
+  simp[simplify_cfg_duplicate_label_result_lookup,
+       simplify_cfg_duplicate_label_result_succs,
+       try_bypass_def,
+       simplify_cfg_duplicate_label_result_succs_empty_nil]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_entry[local]:
+  fn_entry_label simplify_cfg_duplicate_label_result = SOME "e"
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_result_round[local]:
+  simplify_cfg_round_with_labels simplify_cfg_duplicate_label_result =
+  (simplify_cfg_duplicate_label_result, [])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_round_with_labels_def] >>
+  simp[simplify_cfg_duplicate_label_result_entry,
+       simplify_cfg_duplicate_label_result_stages,
+       simplify_cfg_duplicate_label_result_collapse_nil]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_iter_suc[local]:
+  !n. simplify_cfg_iter_with_labels (SUC n)
+    simplify_cfg_duplicate_label_result =
+  (simplify_cfg_duplicate_label_result, [])
+Proof
+  gen_tac >> pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  simp[simplify_cfg_duplicate_label_result_round]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_iter_two[local]:
+  simplify_cfg_iter_with_labels 2 simplify_cfg_duplicate_label_result =
+  (simplify_cfg_duplicate_label_result, [])
+Proof
+  qspec_then `1` mp_tac simplify_cfg_duplicate_label_result_iter_suc >>
+  simp[]
+QED
+
+Theorem simplify_cfg_duplicate_label_blocks_changed[local]:
+  simplify_cfg_duplicate_label_result.fn_blocks <>
+  simplify_cfg_duplicate_label_func.fn_blocks
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_iter_suc_two[local]:
+  simplify_cfg_iter_with_labels (SUC 2)
+    simplify_cfg_duplicate_label_func =
+  (simplify_cfg_duplicate_label_result, [("x","e")])
+Proof
+  pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
+  simp[simplify_cfg_duplicate_label_round,
+       simplify_cfg_duplicate_label_blocks_changed,
+       simplify_cfg_duplicate_label_result_iter_two]
+QED
+
+Theorem simplify_cfg_duplicate_label_length[local]:
+  LENGTH simplify_cfg_duplicate_label_func.fn_blocks = 3
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_duplicate_label_fn_result[local]:
+  simplify_cfg_fn_with_labels simplify_cfg_duplicate_label_func =
+  (simplify_cfg_duplicate_label_result, [("x","e")])
+Proof
+  simp[simplify_cfg_fn_with_labels_def,
+       simplify_cfg_duplicate_label_length] >>
+  mp_tac simplify_cfg_duplicate_label_iter_suc_two >> simp[]
+QED
+
+Theorem simplify_cfg_duplicate_label_result_has_no_call[local]:
+  ~MEM "callee"
+    (simplify_cfg_fn_invoke_labels simplify_cfg_duplicate_label_result)
+Proof
+  EVAL_TAC
+QED
+
+Theorem simplify_cfg_all_reachable_duplicate_label_counterexample:
+  all_reachable simplify_cfg_duplicate_label_func /\
+  MEM "callee" (simplify_cfg_fn_invoke_labels simplify_cfg_duplicate_label_func) /\
+  ~MEM "callee"
+    (simplify_cfg_fn_invoke_labels
+      (FST (simplify_cfg_fn_with_labels simplify_cfg_duplicate_label_func)))
+Proof
+  simp[simplify_cfg_duplicate_label_all_reachable,
+       simplify_cfg_duplicate_label_has_call,
+       simplify_cfg_duplicate_label_fn_result,
+       simplify_cfg_duplicate_label_result_has_no_call]
+QED
