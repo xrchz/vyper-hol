@@ -79,17 +79,18 @@ End
    malformed raw operations cannot fall through as ordinary instructions. *)
 Definition fmp_lower_inst_shape_def:
   fmp_lower_inst_shape infos ctx inst <=>
-    case inst.inst_opcode of
-      DALLOCA => LENGTH inst.inst_operands = 1 /\
-                 LENGTH inst.inst_outputs = 1
-    | DRET => F
-    | GETFMP => inst.inst_operands = [] /\
-                LENGTH inst.inst_outputs = 1
-    | SETFMP => LENGTH inst.inst_operands = 1 /\
-                inst.inst_outputs = []
-    | RETFMP => inst.inst_operands <> [] /\ inst.inst_outputs = []
-    | INVOKE => IS_SOME (fmp_resolve_invoke infos ctx inst)
-    | op => ~is_raw_fmp_opcode op
+    if inst.inst_opcode = DALLOCA then
+      LENGTH inst.inst_operands = 1 /\ LENGTH inst.inst_outputs = 1
+    else if inst.inst_opcode = DRET then F
+    else if inst.inst_opcode = GETFMP then
+      inst.inst_operands = [] /\ LENGTH inst.inst_outputs = 1
+    else if inst.inst_opcode = SETFMP then
+      LENGTH inst.inst_operands = 1 /\ inst.inst_outputs = []
+    else if inst.inst_opcode = RETFMP then
+      inst.inst_operands <> [] /\ inst.inst_outputs = []
+    else if inst.inst_opcode = INVOKE then
+      IS_SOME (fmp_resolve_invoke infos ctx inst)
+    else ~is_raw_fmp_opcode inst.inst_opcode
 End
 
 Definition fmp_lower_insts_shape_def:
@@ -140,61 +141,59 @@ End
 Definition fmp_lower_inst_def:
   fmp_lower_inst infos ctx runner s inst =
     if ~fmp_lower_inst_shape infos ctx inst then NONE
-    else
-      case inst.inst_opcode of
-        DALLOCA =>
-          (case inst.inst_operands of
-             [size_op] =>
-               (case inst.inst_outputs of
-                  [old] =>
-                    (case fresh_ir_var s of (plus31,s1) =>
-                     case fresh_ir_var s1 of (aligned,s2) =>
-                     case fresh_inst_id s2 of (add_id,s3) =>
-                     case fresh_inst_id s3 of (and_id,s4) =>
-                     case fresh_inst_id s4 of (bump_id,s5) =>
-                       SOME
-                         ([mk_inst add_id ADD [size_op; Lit 31w] [plus31];
-                           mk_inst and_id AND
-                             [Var plus31;
-                              Lit 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0w]
-                             [aligned];
-                           mk_inst bump_id BUMP
-                             [Var runner; Var aligned] [old;runner]],
-                          s5))
-                | _ => NONE)
-           | _ => NONE)
-      | DRET => NONE
-      | GETFMP =>
-          (case inst.inst_outputs of
-             [out] => SOME ([inst with <| inst_opcode := ASSIGN;
-                                        inst_operands := [Var runner] |>],s)
-           | _ => NONE)
-      | SETFMP =>
-          (case inst.inst_operands of
-             [value] => SOME ([inst with <| inst_opcode := ASSIGN;
-                                          inst_outputs := [runner] |>],s)
-           | _ => NONE)
-      | RETFMP =>
-          if NULL inst.inst_operands then NONE
-          else SOME
-            ([inst with <| inst_opcode := RET;
-                         inst_operands :=
-                           FRONT inst.inst_operands ++
-                           [Var runner; LAST inst.inst_operands] |>],s)
-      | INVOKE =>
-          (case fmp_resolve_invoke infos ctx inst of
-             NONE => NONE
-           | SOME (callee,info,args) =>
-               SOME
-                 ([inst with <|
+    else if inst.inst_opcode = DALLOCA then
+      (case inst.inst_operands of
+         [size_op] =>
+           (case inst.inst_outputs of
+              [old] =>
+                (case fresh_ir_var s of (plus31,s1) =>
+                 case fresh_ir_var s1 of (aligned,s2) =>
+                 case fresh_inst_id s2 of (add_id,s3) =>
+                 case fresh_inst_id s3 of (and_id,s4) =>
+                 case fresh_inst_id s4 of (bump_id,s5) =>
+                   SOME
+                     ([mk_inst add_id ADD [size_op; Lit 31w] [plus31];
+                       mk_inst and_id AND
+                         [Var plus31;
+                          Lit 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0w]
+                         [aligned];
+                       mk_inst bump_id BUMP
+                         [Var runner; Var aligned] [old;runner]],
+                      s5))
+            | _ => NONE)
+       | _ => NONE)
+    else if inst.inst_opcode = DRET then NONE
+    else if inst.inst_opcode = GETFMP then
+      (case inst.inst_outputs of
+         [out] => SOME ([inst with <| inst_opcode := ASSIGN;
+                                    inst_operands := [Var runner] |>],s)
+       | _ => NONE)
+    else if inst.inst_opcode = SETFMP then
+      (case inst.inst_operands of
+         [value] => SOME ([inst with <| inst_opcode := ASSIGN;
+                                      inst_outputs := [runner] |>],s)
+       | _ => NONE)
+    else if inst.inst_opcode = RETFMP then
+      if NULL inst.inst_operands then NONE
+      else SOME
+        ([inst with <| inst_opcode := RET;
                      inst_operands :=
-                       Label callee.fn_name ::
-                       (args ++ if info.fi_needs_fmp then [Var runner] else []);
-                     inst_outputs :=
-                       inst.inst_outputs ++
-                       if info.fi_publishes_fmp then [runner] else [] |>],s))
-      | op =>
-          if is_raw_fmp_opcode op then NONE else SOME ([inst],s)
+                       FRONT inst.inst_operands ++
+                       [Var runner; LAST inst.inst_operands] |>],s)
+    else if inst.inst_opcode = INVOKE then
+      (case fmp_resolve_invoke infos ctx inst of
+         NONE => NONE
+       | SOME (callee,info,args) =>
+           SOME
+             ([inst with <|
+                 inst_operands :=
+                   Label callee.fn_name ::
+                   (args ++ if info.fi_needs_fmp then [Var runner] else []);
+                 inst_outputs :=
+                   inst.inst_outputs ++
+                   if info.fi_publishes_fmp then [runner] else [] |>],s))
+    else if is_raw_fmp_opcode inst.inst_opcode then NONE
+    else SOME ([inst],s)
 End
 
 Definition fmp_lower_insts_def:
@@ -369,6 +368,33 @@ Definition fmp_lower_function_def:
       NONE => NONE
     | SOME infos => fmp_lower_function_with_info infos ctx s fn
 End
+
+Theorem fmp_lower_inst_shape_ordinary:
+  inst.inst_opcode <> DALLOCA /\
+  inst.inst_opcode <> DRET /\
+  inst.inst_opcode <> GETFMP /\
+  inst.inst_opcode <> SETFMP /\
+  inst.inst_opcode <> RETFMP /\
+  inst.inst_opcode <> INVOKE ==>
+  (fmp_lower_inst_shape infos ctx inst <=>
+   ~is_raw_fmp_opcode inst.inst_opcode)
+Proof
+  simp[fmp_lower_inst_shape_def]
+QED
+
+Theorem fmp_lower_inst_ordinary:
+  inst.inst_opcode <> DALLOCA /\
+  inst.inst_opcode <> DRET /\
+  inst.inst_opcode <> GETFMP /\
+  inst.inst_opcode <> SETFMP /\
+  inst.inst_opcode <> RETFMP /\
+  inst.inst_opcode <> INVOKE ==>
+  fmp_lower_inst infos ctx runner s inst =
+    if is_raw_fmp_opcode inst.inst_opcode then NONE
+    else SOME ([inst],s)
+Proof
+  simp[fmp_lower_inst_def, fmp_lower_inst_shape_ordinary]
+QED
 
 Theorem fmp_resolve_invoke_some:
   fmp_resolve_invoke infos ctx inst = SOME (callee,info,args) ==>
