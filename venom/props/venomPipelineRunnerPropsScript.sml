@@ -3,7 +3,7 @@
 Theory venomPipelineRunnerProps
 Ancestors
   venomPipelineRunner venomFnScheduleRunnerProps fcgPostorder
-  venomPassDispatcherProps fmpLowerProps venomPassSchedule
+  venomPassDispatcherProps fmpLowerProps venomPassSchedule fcgPruning
 
 Theorem run_named_fn_schedules_append:
   run_named_fn_schedules runner rpolicy passes (xs ++ ys) unit supply =
@@ -441,6 +441,82 @@ Proof
   gvs[venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def]
 QED
 
+Theorem filter_replace_other_name[local]:
+  replacement.fn_name = name /\ other <> name ==>
+  FILTER (\fn. fn.fn_name = other)
+    (MAP (\fn. if fn.fn_name = name then replacement else fn) fns) =
+  FILTER (\fn. fn.fn_name = other) fns
+Proof
+  strip_tac >> Induct_on `fns`
+  >- simp[]
+  >> simp[] >> gen_tac >>
+  Cases_on `h.fn_name = name` >>
+  Cases_on `h.fn_name = other` >> gvs[]
+QED
+
+Theorem replace_unique_function_preserves_other_lookup[local]:
+  replace_unique_function name replacement fns = SOME fns' /\
+  lookup_unique_function other fns = SOME fn /\ other <> name ==>
+  lookup_unique_function other fns' = SOME fn
+Proof
+  simp[venomFnScheduleRunnerTheory.replace_unique_function_def] >>
+  Cases_on `replacement.fn_name = name` >> simp[] >>
+  Cases_on `FILTER (\fn. fn.fn_name = name) fns` >> simp[] >>
+  Cases_on `t` >> simp[] >> rpt strip_tac >> gvs[] >>
+  gvs[venomFnScheduleRunnerTheory.lookup_unique_function_def,
+      filter_replace_other_name]
+QED
+
+Theorem run_configured_fn_passes_preserves_other_o1[local]:
+  run_configured_fn_passes execute_configured_fn_pass rpolicy passes name
+    unit s = SOME (unit',s') /\
+  other <> name /\
+  lookup_unique_function other unit.cu_context.ctx_functions = SOME fn /\
+  o1_fn_structural_output fn ==>
+  ?fn'. lookup_unique_function other unit'.cu_context.ctx_functions = SOME fn' /\
+        o1_fn_structural_output fn'
+Proof
+  simp[venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  rpt strip_tac >> gvs[AllCaseEqs()] >>
+  `lookup_unique_function other fns = SOME fn` by
+    metis_tac[replace_unique_function_preserves_other_lookup] >>
+  `lookup_unique_function other
+      (unit with cu_context := unit.cu_context with ctx_functions := fns).
+        cu_context.ctx_functions = SOME fn /\
+   o1_fn_structural_output fn` by simp[] >>
+  drule apply_unit_label_map_o1_lookup >>
+  disch_then drule >> (impl_tac >- simp[]) >> strip_tac >>
+  goal_assum $ drule_at Any >> first_assum ACCEPT_TAC
+QED
+
+Theorem run_named_fn_schedules_preserves_absent_o1[local]:
+  run_named_fn_schedules execute_configured_fn_pass rpolicy passes names
+    unit s = SOME (unit',s') /\
+  ~MEM other names /\
+  lookup_unique_function other unit.cu_context.ctx_functions = SOME fn /\
+  o1_fn_structural_output fn ==>
+  ?fn'. lookup_unique_function other unit'.cu_context.ctx_functions = SOME fn' /\
+        o1_fn_structural_output fn'
+Proof
+  qid_spec_tac `fn` >> qid_spec_tac `s` >> qid_spec_tac `unit` >>
+  Induct_on `names`
+  >- simp[venomPipelineRunnerTheory.run_named_fn_schedules_def]
+  >> rpt strip_tac >>
+  drule run_named_fn_schedules_cons_success >> strip_tac >>
+  `other <> h` by fs[] >>
+  `run_configured_fn_passes execute_configured_fn_pass rpolicy passes h
+      unit s = SOME (unit1,supply1) /\ other <> h /\
+   lookup_unique_function other unit.cu_context.ctx_functions = SOME fn /\
+   o1_fn_structural_output fn` by simp[] >>
+  `?fn1. lookup_unique_function other unit1.cu_context.ctx_functions =
+           SOME fn1 /\ o1_fn_structural_output fn1` by
+    (drule run_configured_fn_passes_preserves_other_o1 >> simp[]) >>
+  first_x_assum irule >>
+  conj_tac >- fs[] >>
+  qexistsl [`fn1`,`supply1`,`unit1`] >> simp[]
+QED
+
+
 Theorem run_configured_fn_passes_o1_structural:
   run_configured_fn_passes execute_configured_fn_pass rpolicy o1_fn_passes
     name unit s = SOME (unit',s') ==>
@@ -469,6 +545,102 @@ Proof
   disch_then drule >> (impl_tac >- simp[]) >> strip_tac >>
   goal_assum $ drule_at Any >>
   gvs[o1_fn_structural_output_def]
+QED
+
+Theorem run_configured_fn_passes_o1_lookup[local]:
+  run_configured_fn_passes execute_configured_fn_pass rpolicy o1_fn_passes
+    name unit s = SOME (unit',s') ==>
+  ?fn'. lookup_unique_function name unit'.cu_context.ctx_functions = SOME fn' /\
+        o1_fn_structural_output fn'
+Proof
+  strip_tac >>
+  drule run_configured_fn_passes_o1_structural >> strip_tac >>
+  goal_assum $ drule_at Any >>
+  simp[o1_fn_structural_output_def]
+QED
+
+Theorem run_named_fn_schedules_o1_lookup[local]:
+  run_named_fn_schedules execute_configured_fn_pass rpolicy o1_fn_passes
+    names unit s = SOME (unit',s') /\ ALL_DISTINCT names ==>
+  !name. MEM name names ==>
+    ?fn'. lookup_unique_function name unit'.cu_context.ctx_functions = SOME fn' /\
+          o1_fn_structural_output fn'
+Proof
+  qid_spec_tac `s` >> qid_spec_tac `unit` >> Induct_on `names`
+  >- simp[venomPipelineRunnerTheory.run_named_fn_schedules_def]
+  >> rpt strip_tac >>
+  drule run_named_fn_schedules_cons_success >> strip_tac >>
+  Cases_on `name = h`
+  >- (gvs[] >>
+      `?fn1. lookup_unique_function h unit1.cu_context.ctx_functions =
+               SOME fn1 /\ o1_fn_structural_output fn1` by
+        (drule run_configured_fn_passes_o1_lookup >> simp[]) >>
+      `run_named_fn_schedules execute_configured_fn_pass rpolicy o1_fn_passes
+          names unit1 supply1 = SOME (unit',s') /\ ~MEM h names /\
+       lookup_unique_function h unit1.cu_context.ctx_functions = SOME fn1 /\
+       o1_fn_structural_output fn1` by simp[] >>
+      drule run_named_fn_schedules_preserves_absent_o1 >> simp[])
+  >> first_x_assum (qspecl_then [`unit1`,`supply1`] mp_tac) >>
+  (impl_tac >- fs[]) >>
+  disch_then (qspec_then `name` mp_tac) >> fs[]
+QED
+
+Theorem run_callee_first_o1_structural:
+  run_callee_first rpolicy o1_fn_passes names unit s = SOME (unit',s') /\
+  ALL_DISTINCT names ==>
+  !name. MEM name names ==>
+    ?fn'. lookup_unique_function name unit'.cu_context.ctx_functions = SOME fn' /\
+          IS_SOME fn'.fn_eom /\ no_raw_fmp_ops fn' /\
+          IS_SOME fn'.fn_fmp_signature
+Proof
+  rpt strip_tac >>
+  `run_named_fn_schedules execute_configured_fn_pass rpolicy o1_fn_passes
+      names unit s = SOME (unit',s') /\ ALL_DISTINCT names` by
+    gvs[venomPipelineRunnerTheory.run_callee_first_def] >>
+  drule run_named_fn_schedules_o1_lookup >>
+  disch_then (qspec_then `name` mp_tac) >>
+  simp[o1_fn_structural_output_def]
+QED
+
+Theorem run_callee_first_o1_reachable_structural:
+  fcg = fcg_analyze ctx /\ ctx.ctx_entry = SOME entry /\
+  ctx_wf ctx /\ wf_invoke_targets ctx /\
+  run_callee_first rpolicy o1_fn_passes (fcg_postorder fcg entry)
+    unit s = SOME (unit',s') ==>
+  !name. fcg_is_reachable fcg name ==>
+    ?fn'. lookup_unique_function name unit'.cu_context.ctx_functions = SOME fn' /\
+          IS_SOME fn'.fn_eom /\ no_raw_fmp_ops fn' /\
+          IS_SOME fn'.fn_fmp_signature
+Proof
+  rpt strip_tac >>
+  `MEM name (fcg_postorder fcg entry)` by
+    metis_tac[fcg_reachable_mem_postorder] >>
+  `run_callee_first rpolicy o1_fn_passes (fcg_postorder fcg entry)
+      unit s = SOME (unit',s') /\
+   ALL_DISTINCT (fcg_postorder fcg entry)` by
+    simp[fcg_postorder_all_distinct] >>
+  drule run_callee_first_o1_structural >>
+  disch_then (qspec_then `name` mp_tac) >> simp[]
+QED
+
+Theorem run_callee_first_o1_pruned_structural:
+  fcg = fcg_analyze unit.cu_context /\
+  unit.cu_context.ctx_entry = SOME entry /\
+  ctx_wf unit.cu_context /\ wf_invoke_targets unit.cu_context /\
+  run_callee_first rpolicy o1_fn_passes (fcg_postorder fcg entry)
+    (prune_unit_fcg_unreachable unit fcg) s = SOME (unit',s') ==>
+  !fn. MEM fn
+      (prune_unit_fcg_unreachable unit fcg).cu_context.ctx_functions ==>
+    ?fn'. lookup_unique_function fn.fn_name unit'.cu_context.ctx_functions = SOME fn' /\
+          IS_SOME fn'.fn_eom /\ no_raw_fmp_ops fn' /\
+          IS_SOME fn'.fn_fmp_signature
+Proof
+  rpt strip_tac >>
+  irule run_callee_first_o1_reachable_structural >>
+  qexistsl [`unit.cu_context`,`entry`,`fcg`,`rpolicy`,`s`,`s'`,
+            `prune_unit_fcg_unreachable unit fcg`] >>
+  simp[] >>
+  metis_tac[fcgPruningTheory.MEM_prune_unit_fcg_unreachable_functions]
 QED
 
 val _ = export_theory ();
