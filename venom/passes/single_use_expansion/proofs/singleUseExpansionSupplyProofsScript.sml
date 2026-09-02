@@ -1239,4 +1239,126 @@ Proof
   metis_tac[sue_expand_functions_supply_structural]
 QED
 
+
+(* Raw FMP opcode preservation for the supply-aware implementation. *)
+Theorem sue_expand_ops_supply_assign_opcodes[local]:
+  !dfg inst s ops k assigns new_ops s'.
+    sue_expand_ops_supply dfg inst s ops k = (assigns,new_ops,s') ==>
+    EVERY (\a. a.inst_opcode = ASSIGN) assigns
+Proof
+  Induct_on `ops`
+  >- (rpt strip_tac >> gvs[sue_expand_ops_supply_def]) >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_ops_supply dfg inst s ops (k + 1)` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s ops (k + 1) =
+           (more_assigns,more_ops,s1)` >>
+  `EVERY (\a. a.inst_opcode = ASSIGN) more_assigns` by metis_tac[] >>
+  Cases_on `~sue_needs_assign dfg inst k`
+  >- gvs[sue_expand_ops_supply_def] >>
+  Cases_on `h`
+  >- (Cases_on `fresh_ir_var s1` >> Cases_on `fresh_inst_id r` >>
+      gvs[sue_expand_ops_supply_def, sue_alloc_assign_supply_def])
+  >- (Cases_on `LENGTH (dfg_get_uses dfg s'') = 1 /\
+                 sue_count_remaining (Var s'') ops = 0`
+      >- gvs[sue_expand_ops_supply_def]
+      >> Cases_on `fresh_ir_var s1` >> Cases_on `fresh_inst_id r` >>
+         gvs[sue_expand_ops_supply_def, sue_alloc_assign_supply_def])
+  >> gvs[sue_expand_ops_supply_def]
+QED
+
+Theorem sue_expand_inst_supply_no_raw[local]:
+  ~is_raw_fmp_opcode inst.inst_opcode /\
+  sue_expand_inst_supply dfg s inst = (out,s') ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) out
+Proof
+  rpt strip_tac >> Cases_on `sue_should_skip inst.inst_opcode`
+  >- gvs[sue_expand_inst_supply_def] >>
+  Cases_on `sue_expand_ops_supply dfg inst s inst.inst_operands 0` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s inst.inst_operands 0 =
+           (assigns,new_ops,s1)` >>
+  gvs[sue_expand_inst_supply_def, listTheory.EVERY_APPEND] >>
+  `EVERY (\a. a.inst_opcode = ASSIGN) assigns` by
+    metis_tac[sue_expand_ops_supply_assign_opcodes] >>
+  gvs[listTheory.EVERY_MEM, is_raw_fmp_opcode_def]
+QED
+
+Theorem sue_expand_insts_supply_no_raw[local]:
+  !dfg s insts out s'.
+    EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) insts /\
+    sue_expand_insts_supply dfg s insts = (out,s') ==>
+    EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) out
+Proof
+  Induct_on `insts`
+  >- simp[sue_expand_insts_supply_def] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_inst_supply dfg s h` >>
+  rename1 `sue_expand_inst_supply dfg s h = (head_out,s1)` >>
+  Cases_on `sue_expand_insts_supply dfg s1 insts` >>
+  rename1 `sue_expand_insts_supply dfg s1 insts = (tail_out,s2)` >>
+  gvs[sue_expand_insts_supply_def, listTheory.EVERY_APPEND] >>
+  metis_tac[sue_expand_inst_supply_no_raw]
+QED
+
+Theorem sue_expand_block_supply_no_raw[local]:
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) bb.bb_instructions /\
+  sue_expand_block_supply dfg s bb = (bb',s') ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) bb'.bb_instructions
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_insts_supply dfg s bb.bb_instructions` >>
+  gvs[sue_expand_block_supply_def] >>
+  metis_tac[sue_expand_insts_supply_no_raw]
+QED
+
+Theorem sue_expand_blocks_supply_no_raw[local]:
+  !dfg s bbs bbs' s'.
+    EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                      bb.bb_instructions) bbs /\
+    sue_expand_blocks_supply dfg s bbs = (bbs',s') ==>
+    EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                      bb.bb_instructions) bbs'
+Proof
+  Induct_on `bbs`
+  >- simp[sue_expand_blocks_supply_def] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_block_supply dfg s h` >>
+  rename1 `sue_expand_block_supply dfg s h = (bb1,s1)` >>
+  Cases_on `sue_expand_blocks_supply dfg s1 bbs` >>
+  rename1 `sue_expand_blocks_supply dfg s1 bbs = (bbs1,s2)` >>
+  gvs[sue_expand_blocks_supply_def] >>
+  metis_tac[sue_expand_block_supply_no_raw]
+QED
+
+Theorem sue_blocks_no_raw_iff[local]:
+  EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                    bb.bb_instructions) bbs <=>
+  !inst. MEM inst (fn_insts_blocks bbs) ==>
+         ~is_raw_fmp_opcode inst.inst_opcode
+Proof
+  Induct_on `bbs` >>
+  simp[fn_insts_blocks_def, listTheory.EVERY_MEM,
+       listTheory.MEM_APPEND, DISJ_IMP_THM, FORALL_AND_THM]
+QED
+
+Theorem sue_expand_function_supply_no_raw_fmp_ops:
+  no_raw_fmp_ops fn ==>
+  no_raw_fmp_ops (FST (sue_expand_function_supply s fn))
+Proof
+  strip_tac >>
+  Cases_on `sue_expand_blocks_supply (dfg_build_function fn) s fn.fn_blocks` >>
+  rename1 `sue_expand_blocks_supply (dfg_build_function fn) s fn.fn_blocks =
+           (bbs,s')` >>
+  `EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                     bb.bb_instructions) fn.fn_blocks` by
+    (simp[sue_blocks_no_raw_iff, GSYM fn_insts_def,
+          GSYM no_raw_fmp_ops_def]) >>
+  `EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                     bb.bb_instructions) bbs` by
+    metis_tac[sue_expand_blocks_supply_no_raw] >>
+  gvs[sue_expand_function_supply_def, no_raw_fmp_ops_def,
+      fn_insts_def, GSYM sue_blocks_no_raw_iff]
+QED
+
 val _ = export_theory();
