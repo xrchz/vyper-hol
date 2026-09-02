@@ -653,7 +653,6 @@ Definition sue_ids_supply_ok_def:
 End
 
 Theorem sue_ids_supply_ok_append:
-  ALL_DISTINCT s.irs_used_inst_ids /\
   ALL_DISTINCT (old1 ++ old2) /\
   EVERY (\id. MEM id s.irs_used_inst_ids) (old1 ++ old2) /\
   sue_ids_supply_ok s old1 new1 s1 /\
@@ -792,4 +791,176 @@ Proof
   gvs[sue_ids_supply_ok_def, listTheory.ALL_DISTINCT_APPEND,
       listTheory.EVERY_MEM] >>
   metis_tac[sue_supply_extends_members]
+QED
+
+
+Theorem sue_expand_insts_supply_ids_ok:
+  !dfg s insts outs s'.
+    ir_supply_inst_ok s /\
+    ALL_DISTINCT (MAP (\i. i.inst_id) insts) /\
+    EVERY (\i. MEM i.inst_id s.irs_used_inst_ids) insts /\
+    sue_expand_insts_supply dfg s insts = (outs,s') ==>
+    sue_ids_supply_ok s (MAP (\i. i.inst_id) insts)
+      (MAP (\i. i.inst_id) outs) s'
+Proof
+  Induct_on `insts`
+  >- simp[sue_expand_insts_supply_def, sue_ids_supply_ok_def,
+          sue_supply_extends_refl] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_inst_supply dfg s h` >>
+  rename1 `sue_expand_inst_supply dfg s h = (head_out,s1)` >>
+  Cases_on `sue_expand_insts_supply dfg s1 insts` >>
+  rename1 `sue_expand_insts_supply dfg s1 insts = (tail_out,s2)` >>
+  gvs[sue_expand_insts_supply_def] >>
+  `sue_ids_supply_ok s [h.inst_id]
+      (MAP (\i. i.inst_id) head_out) s1` by
+    metis_tac[sue_expand_inst_supply_ids_ok] >>
+  `sue_supply_extends s s1` by gvs[sue_ids_supply_ok_def] >>
+  `ir_supply_inst_ok s1` by gvs[sue_supply_extends_def] >>
+  `EVERY (\i. MEM i.inst_id s1.irs_used_inst_ids) insts` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[sue_supply_extends_members]) >>
+  `sue_ids_supply_ok s1 (MAP (\i. i.inst_id) insts)
+      (MAP (\i. i.inst_id) tail_out) s'` by metis_tac[] >>
+  `ALL_DISTINCT ([h.inst_id] ++ MAP (\i. i.inst_id) insts)` by simp[] >>
+  `EVERY (\id. MEM id s.irs_used_inst_ids)
+      ([h.inst_id] ++ MAP (\i. i.inst_id) insts)` by
+    gvs[listTheory.EVERY_MAP] >>
+  drule_all sue_ids_supply_ok_append >> simp[]
+QED
+
+
+Theorem sue_expand_block_supply_ids_ok:
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (block_ir_inst_ids bb) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (block_ir_inst_ids bb) /\
+  sue_expand_block_supply dfg s bb = (bb',s') ==>
+  sue_ids_supply_ok s (block_ir_inst_ids bb) (block_ir_inst_ids bb') s'
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_insts_supply dfg s bb.bb_instructions` >>
+  gvs[sue_expand_block_supply_def, block_ir_inst_ids_def,
+      listTheory.EVERY_MAP] >>
+  metis_tac[sue_expand_insts_supply_ids_ok]
+QED
+
+Theorem sue_expand_blocks_supply_ids_ok:
+  !dfg s bbs bbs' s'.
+    ir_supply_inst_ok s /\
+    ALL_DISTINCT (FLAT (MAP block_ir_inst_ids bbs)) /\
+    EVERY (\id. MEM id s.irs_used_inst_ids)
+      (FLAT (MAP block_ir_inst_ids bbs)) /\
+    sue_expand_blocks_supply dfg s bbs = (bbs',s') ==>
+    sue_ids_supply_ok s (FLAT (MAP block_ir_inst_ids bbs))
+      (FLAT (MAP block_ir_inst_ids bbs')) s'
+Proof
+  Induct_on `bbs`
+  >- simp[sue_expand_blocks_supply_def, sue_ids_supply_ok_def,
+          sue_supply_extends_refl] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_block_supply dfg s h` >>
+  rename1 `sue_expand_block_supply dfg s h = (bb1,s1)` >>
+  Cases_on `sue_expand_blocks_supply dfg s1 bbs` >>
+  rename1 `sue_expand_blocks_supply dfg s1 bbs = (bbs1,s2)` >>
+  gvs[sue_expand_blocks_supply_def, listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_APPEND] >>
+  `sue_ids_supply_ok s (block_ir_inst_ids h)
+      (block_ir_inst_ids bb1) s1` by
+    metis_tac[sue_expand_block_supply_ids_ok] >>
+  `sue_supply_extends s s1` by gvs[sue_ids_supply_ok_def] >>
+  `ir_supply_inst_ok s1` by gvs[sue_supply_extends_def] >>
+  `EVERY (\id. MEM id s1.irs_used_inst_ids)
+      (FLAT (MAP block_ir_inst_ids bbs))` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[sue_supply_extends_members]) >>
+  `sue_ids_supply_ok s1 (FLAT (MAP block_ir_inst_ids bbs))
+      (FLAT (MAP block_ir_inst_ids bbs1)) s'` by metis_tac[] >>
+  `ALL_DISTINCT
+      (block_ir_inst_ids h ++ FLAT (MAP block_ir_inst_ids bbs))` by
+    simp[listTheory.ALL_DISTINCT_APPEND] >>
+  `EVERY (\id. MEM id s.irs_used_inst_ids)
+      (block_ir_inst_ids h ++ FLAT (MAP block_ir_inst_ids bbs))` by
+    simp[listTheory.EVERY_APPEND] >>
+  drule_all sue_ids_supply_ok_append >> simp[]
+QED
+
+
+Theorem sue_expand_function_supply_ids_ok:
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (fn_ir_inst_ids fn) /\
+  sue_expand_function_supply s fn = (fn',s') ==>
+  sue_ids_supply_ok s (fn_ir_inst_ids fn) (fn_ir_inst_ids fn') s'
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_blocks_supply (dfg_build_function fn) s fn.fn_blocks` >>
+  gvs[sue_expand_function_supply_def, fn_ir_inst_ids_def] >>
+  metis_tac[sue_expand_blocks_supply_ids_ok]
+QED
+
+Theorem sue_expand_functions_supply_ids_ok:
+  !s fns fns' s'.
+    ir_supply_inst_ok s /\
+    ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids fns)) /\
+    EVERY (\id. MEM id s.irs_used_inst_ids)
+      (FLAT (MAP fn_ir_inst_ids fns)) /\
+    sue_expand_functions_supply s fns = (fns',s') ==>
+    sue_ids_supply_ok s (FLAT (MAP fn_ir_inst_ids fns))
+      (FLAT (MAP fn_ir_inst_ids fns')) s'
+Proof
+  Induct_on `fns`
+  >- simp[sue_expand_functions_supply_def, sue_ids_supply_ok_def,
+          sue_supply_extends_refl] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_function_supply s h` >>
+  rename1 `sue_expand_function_supply s h = (fn1,s1)` >>
+  Cases_on `sue_expand_functions_supply s1 fns` >>
+  rename1 `sue_expand_functions_supply s1 fns = (fns1,s2)` >>
+  gvs[sue_expand_functions_supply_def, listTheory.ALL_DISTINCT_APPEND,
+      listTheory.EVERY_APPEND] >>
+  `sue_ids_supply_ok s (fn_ir_inst_ids h) (fn_ir_inst_ids fn1) s1` by
+    metis_tac[sue_expand_function_supply_ids_ok] >>
+  `sue_supply_extends s s1` by gvs[sue_ids_supply_ok_def] >>
+  `ir_supply_inst_ok s1` by gvs[sue_supply_extends_def] >>
+  `EVERY (\id. MEM id s1.irs_used_inst_ids)
+      (FLAT (MAP fn_ir_inst_ids fns))` by
+    (gvs[listTheory.EVERY_MEM] >>
+     metis_tac[sue_supply_extends_members]) >>
+  `sue_ids_supply_ok s1 (FLAT (MAP fn_ir_inst_ids fns))
+      (FLAT (MAP fn_ir_inst_ids fns1)) s'` by metis_tac[] >>
+  `ALL_DISTINCT (fn_ir_inst_ids h ++ FLAT (MAP fn_ir_inst_ids fns))` by
+    simp[listTheory.ALL_DISTINCT_APPEND] >>
+  `EVERY (\id. MEM id s.irs_used_inst_ids)
+      (fn_ir_inst_ids h ++ FLAT (MAP fn_ir_inst_ids fns))` by
+    simp[listTheory.EVERY_APPEND] >>
+  drule_all sue_ids_supply_ok_append >> simp[]
+QED
+
+Theorem sue_expand_context_supply_ids_ok:
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids)
+    (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) /\
+  sue_expand_context_supply s ctx = (ctx',s') ==>
+  sue_ids_supply_ok s (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions))
+    (FLAT (MAP fn_ir_inst_ids ctx'.ctx_functions)) s'
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_functions_supply s ctx.ctx_functions` >>
+  gvs[sue_expand_context_supply_def] >>
+  metis_tac[sue_expand_functions_supply_ids_ok]
+QED
+
+Theorem sue_unit_supply_ids_ok:
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (unit_ir_inst_ids unit) /\
+  sue_unit_supply s unit = (unit',s') ==>
+  sue_ids_supply_ok s (unit_ir_inst_ids unit)
+    (unit_ir_inst_ids unit') s'
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_context_supply s unit.cu_context` >>
+  gvs[sue_unit_supply_def, unit_ir_inst_ids_def] >>
+  metis_tac[sue_expand_context_supply_ids_ok]
 QED
