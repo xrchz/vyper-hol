@@ -2355,4 +2355,21 @@ Theorem make_ssa_configured_collision_ids_distinct:
 Proof
   irule make_ssa_configured_global_ids_distinct >> EVAL_TAC
 QED
+
+Definition fmp_current_probe_unit_def[local]:
+  fmp_current_probe_unit = <|
+    cu_context := mk_venom_context [fmp_lowered_ssa_probe_fn] (SOME "entry");
+    cu_data_segment := []
+  |>
+End
+
+Theorem fmp_lowered_current_fn_eval:
+  let s0 = init_ir_supply fmp_current_probe_unit in
+  let (fn',s1) = make_ssa_current_fn s0 fmp_lowered_ssa_probe_fn in
+    MAP (\inst. inst.inst_outputs) (HD fn'.fn_blocks).bb_instructions =
+      [["fmp"]; ["runner"]; ["ptr"; "formal_var_0"]; ["result"]; []] /\
+    MEM "formal_var_0" s1.irs_used_vars
+Proof
+  EVAL_TAC >> simp[]
+QED
 val _ = export_theory();
