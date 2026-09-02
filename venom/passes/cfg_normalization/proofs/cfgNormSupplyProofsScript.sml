@@ -1354,3 +1354,855 @@ Proof
   gvs[cfg_norm_round_supply_def,cfg_supply_covers_fn_blocks,
       listTheory.EVERY_MEM]
 QED
+
+
+Theorem cfg_norm_iter_supply_invariants:
+  !n s fn fn' s'.
+    ir_supply_inst_ok s /\
+    cfg_supply_covers_fn s fn /\
+    ALL_DISTINCT (fn_labels fn) /\
+    ALL_DISTINCT (fn_ir_inst_ids fn) /\
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    cfg_supply_extends s s' /\
+    cfg_supply_covers_fn s' fn' /\
+    ALL_DISTINCT (fn_labels fn') /\
+    ALL_DISTINCT (fn_ir_inst_ids fn')
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_iter_supply_def,cfg_supply_extends_refl]
+  >> Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+     rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+     Cases_on `changed`
+  >- (gvs[cfg_norm_iter_supply_def] >>
+      `cfg_fn_supply_contract s fn1 s1` by
+        metis_tac[cfg_norm_round_supply_contract] >>
+      `cfg_supply_extends s s1` by
+        gvs[cfg_fn_supply_contract_def] >>
+      `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+      `cfg_supply_covers_fn s1 fn1` by
+        metis_tac[cfg_norm_round_supply_covered] >>
+      `ALL_DISTINCT (fn_labels fn1) /\
+       ALL_DISTINCT (fn_ir_inst_ids fn1)` by
+        metis_tac[cfg_norm_round_supply_distinct] >>
+      `cfg_supply_extends s1 s' /\
+       cfg_supply_covers_fn s' fn' /\
+       ALL_DISTINCT (fn_labels fn') /\
+       ALL_DISTINCT (fn_ir_inst_ids fn')` by metis_tac[] >>
+      metis_tac[cfg_supply_extends_trans])
+  >> gvs[cfg_norm_iter_supply_def] >>
+     `cfg_fn_supply_contract s fn' s'` by
+       metis_tac[cfg_norm_round_supply_contract] >>
+     `cfg_supply_extends s s'` by gvs[cfg_fn_supply_contract_def] >>
+     metis_tac[cfg_norm_round_supply_covered,
+               cfg_norm_round_supply_distinct]
+QED
+
+Theorem cfg_blocks_id_declared_iff:
+  !bbs id.
+    EXISTS (\bb. cfg_insts_id_declared bb.bb_instructions id) bbs <=>
+    MEM id (FLAT (MAP block_ir_inst_ids bbs))
+Proof
+  Induct_on `bbs` >>
+  simp[cfg_insts_id_declared_def,block_ir_inst_ids_def,
+       listTheory.MEM_MAP,listTheory.EXISTS_MEM,EQ_SYM_EQ] >>
+  metis_tac[]
+QED
+
+Theorem cfg_fn_id_declared_iff:
+  cfg_fn_id_declared fn id <=> MEM id (fn_ir_inst_ids fn)
+Proof
+  simp[cfg_fn_id_declared_def,fn_ir_inst_ids_def,
+       cfg_blocks_id_declared_iff]
+QED
+
+Theorem cfg_fn_label_declared_iff:
+  cfg_fn_label_declared fn l <=> MEM l (fn_labels fn)
+Proof
+  simp[cfg_fn_label_declared_def,venomInstTheory.fn_labels_def,
+       listTheory.MEM_MAP,listTheory.EXISTS_MEM,EQ_SYM_EQ] >> metis_tac[]
+QED
+
+Theorem EXISTS_replace_block_unique_preserved:
+  !bbs old_bb P new_bb.
+  ALL_DISTINCT (MAP (\b. b.bb_label) bbs) /\
+  MEM old_bb bbs /\ EXISTS P bbs /\ (P old_bb ==> P new_bb) ==>
+  EXISTS P (replace_block old_bb.bb_label new_bb bbs)
+Proof
+  rpt strip_tac >>
+  gvs[listTheory.EXISTS_MEM] >>
+  rename1 `MEM witness bbs` >>
+  Cases_on `witness.bb_label = old_bb.bb_label`
+  >- (`witness = old_bb` by
+        metis_tac[all_distinct_map_mem_inj_cfg] >>
+      qexists `new_bb` >> simp[] >>
+      metis_tac[MEM_replace_block_new])
+  >> qexists `witness` >> simp[] >>
+     metis_tac[MEM_replace_block_other]
+QED
+
+Theorem EXISTS_replace_block_preserved_if:
+  !bbs lbl new_bb P.
+    EXISTS P bbs /\
+    (!old_bb. MEM old_bb bbs /\ old_bb.bb_label = lbl /\ P old_bb ==>
+              P new_bb) ==>
+    EXISTS P (replace_block lbl new_bb bbs)
+Proof
+  rpt strip_tac >> gvs[listTheory.EXISTS_MEM] >>
+  rename1 `MEM witness bbs` >>
+  Cases_on `witness.bb_label = lbl`
+  >- (qexists `new_bb` >> simp[] >>
+      metis_tac[MEM_replace_block_new])
+  >> qexists `witness` >> simp[] >>
+     metis_tac[MEM_replace_block_other]
+QED
+
+Definition cfg_block_decl_vars_def:
+  cfg_block_decl_vars bb = FLAT (MAP (\i. i.inst_outputs) bb.bb_instructions)
+End
+
+Definition cfg_fn_decl_vars_def:
+  cfg_fn_decl_vars fn = FLAT (MAP cfg_block_decl_vars fn.fn_blocks)
+End
+
+Theorem cfg_insts_var_declared_iff:
+  !insts v.
+    cfg_insts_var_declared insts v <=>
+    MEM v (FLAT (MAP (\i. i.inst_outputs) insts))
+Proof
+  simp[cfg_insts_var_declared_def,listTheory.EXISTS_MEM,
+       listTheory.MEM_FLAT,listTheory.MEM_MAP] >> metis_tac[]
+QED
+
+Theorem cfg_blocks_var_declared_iff:
+  !bbs v.
+    EXISTS (\bb. cfg_insts_var_declared bb.bb_instructions v) bbs <=>
+    MEM v (FLAT (MAP cfg_block_decl_vars bbs))
+Proof
+  Induct_on `bbs` >>
+  simp[cfg_block_decl_vars_def,cfg_insts_var_declared_iff]
+QED
+
+Theorem cfg_fn_var_declared_iff:
+  cfg_fn_var_declared fn v <=> MEM v (cfg_fn_decl_vars fn)
+Proof
+  simp[cfg_fn_var_declared_def,cfg_fn_decl_vars_def,
+       cfg_blocks_var_declared_iff]
+QED
+
+Theorem cfg_block_decl_vars_subst_label_terminator[simp]:
+  cfg_block_decl_vars (subst_label_terminator old new bb) =
+  cfg_block_decl_vars bb
+Proof
+  simp[cfg_block_decl_vars_def,subst_label_terminator_def,
+       subst_label_inst_def,listTheory.MAP_MAP_o,combinTheory.o_DEF,
+       COND_RAND]
+QED
+
+Theorem cfg_block_decl_vars_update_phis_for_split[simp]:
+  cfg_block_decl_vars (update_phis_for_split old new repls bb) =
+  cfg_block_decl_vars bb
+Proof
+  simp[cfg_block_decl_vars_def,update_phis_for_split_def,
+       listTheory.MAP_MAP_o,combinTheory.o_DEF,COND_RAND]
+QED
+
+Theorem insert_split_supply_decl_vars:
+  ALL_DISTINCT (fn_labels fn) /\
+  MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  ?split_bb repls.
+    build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') /\
+    cfg_fn_decl_vars fn' =
+      cfg_fn_decl_vars fn ++ cfg_block_decl_vars split_bb
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  rename1 `build_split_block_supply s pred_bb target_bb =
+           (split_bb,repls,s1)` >>
+  gvs[insert_split_supply_def] >>
+  qabbrev_tac `pred1 = subst_label_terminator
+    target_bb.bb_label split_bb.bb_label pred_bb` >>
+  qabbrev_tac `target1 = update_phis_for_split
+    pred_bb.bb_label split_bb.bb_label repls target_bb` >>
+  `cfg_block_decl_vars pred1 = cfg_block_decl_vars pred_bb` by
+    simp[Abbr `pred1`] >>
+  `cfg_block_decl_vars target1 = cfg_block_decl_vars target_bb` by
+    simp[Abbr `target1`] >>
+  `pred1.bb_label = pred_bb.bb_label` by
+    simp[Abbr `pred1`,subst_label_terminator_def] >>
+  `target1.bb_label = target_bb.bb_label` by
+    simp[Abbr `target1`,update_phis_for_split_def] >>
+  `FLAT (MAP cfg_block_decl_vars
+      (replace_block pred_bb.bb_label pred1 fn.fn_blocks)) =
+   FLAT (MAP cfg_block_decl_vars fn.fn_blocks)` by
+    (irule FLAT_MAP_replace_block_unique >>
+     conj_tac >- gvs[venomInstTheory.fn_labels_def] >>
+     qexists `pred_bb` >> simp[]) >>
+  `ALL_DISTINCT (MAP (\b. b.bb_label)
+      (replace_block pred_bb.bb_label pred1 fn.fn_blocks))` by
+    gvs[venomInstTheory.fn_labels_def] >>
+  Cases_on `pred_bb.bb_label = target_bb.bb_label`
+  >- (`pred_bb = target_bb` by
+        metis_tac[all_distinct_map_mem_inj_cfg,
+                  venomInstTheory.fn_labels_def] >>
+      `MEM pred1
+         (replace_block pred_bb.bb_label pred1 fn.fn_blocks)` by
+        metis_tac[MEM_replace_block_new] >>
+      `FLAT (MAP cfg_block_decl_vars
+          (replace_block target_bb.bb_label target1
+            (replace_block pred_bb.bb_label pred1 fn.fn_blocks))) =
+       FLAT (MAP cfg_block_decl_vars
+          (replace_block pred_bb.bb_label pred1 fn.fn_blocks))` by
+        (irule FLAT_MAP_replace_block_unique >> simp[] >> metis_tac[]) >>
+      gvs[cfg_fn_decl_vars_def,Abbr `pred1`,Abbr `target1`])
+  >> `MEM target_bb
+        (replace_block pred_bb.bb_label pred1 fn.fn_blocks)` by
+       metis_tac[MEM_replace_block_other] >>
+     `FLAT (MAP cfg_block_decl_vars
+        (replace_block target_bb.bb_label target1
+          (replace_block pred_bb.bb_label pred1 fn.fn_blocks))) =
+      FLAT (MAP cfg_block_decl_vars
+        (replace_block pred_bb.bb_label pred1 fn.fn_blocks))` by
+       (irule FLAT_MAP_replace_block_unique >> simp[] >> metis_tac[]) >>
+     gvs[cfg_fn_decl_vars_def,Abbr `pred1`,Abbr `target1`]
+QED
+
+Theorem insert_split_supply_declared_preserved:
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (fn_labels fn) /\
+  MEM pred_bb fn.fn_blocks /\ MEM target_bb fn.fn_blocks /\
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  (!id. cfg_fn_id_declared fn id ==> cfg_fn_id_declared fn' id) /\
+  (!v. cfg_fn_var_declared fn v ==> cfg_fn_var_declared fn' v) /\
+  (!l. cfg_fn_label_declared fn l ==> cfg_fn_label_declared fn' l)
+Proof
+  rpt gen_tac >> strip_tac >>
+  drule_all insert_split_supply_inst_ids >> strip_tac >>
+  drule insert_split_supply_labels >> strip_tac >>
+  `?split_bb repls.
+     build_split_block_supply s pred_bb target_bb = (split_bb,repls,s') /\
+     cfg_fn_decl_vars fn' =
+       cfg_fn_decl_vars fn ++ cfg_block_decl_vars split_bb` by
+    metis_tac[insert_split_supply_decl_vars] >>
+  rpt conj_tac >> rpt strip_tac >>
+  gvs[cfg_fn_id_declared_iff,cfg_fn_var_declared_iff,
+      cfg_fn_label_declared_iff]
+QED
+
+
+Theorem find_and_split_supply_declared_preserved:
+  !bbs fn s fn' changed s'.
+    ir_supply_inst_ok s /\
+    cfg_supply_covers_fn s fn /\
+    EVERY (cfg_supply_covers_block s) bbs /\
+    EVERY (\bb. MEM bb fn.fn_blocks) bbs /\
+    ALL_DISTINCT (fn_labels fn) /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    (!id. cfg_fn_id_declared fn id ==> cfg_fn_id_declared fn' id) /\
+    (!v. cfg_fn_var_declared fn v ==> cfg_fn_var_declared fn' v) /\
+    (!l. cfg_fn_label_declared fn l ==> cfg_fn_label_declared fn' l)
+Proof
+  Induct_on `bbs` >> rpt gen_tac >> strip_tac
+  >- gvs[find_and_split_supply_def]
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     `MEM x (block_preds fn h.bb_label)` by
+       metis_tac[FIND_SOME_MEM] >>
+     `MEM x fn.fn_blocks` by
+       gvs[block_preds_def,listTheory.MEM_FILTER] >>
+     irule insert_split_supply_declared_preserved >>
+     conj_tac >- simp[] >>
+     qexistsl [`x`,`s`,`r`,`h`] >> simp[]
+QED
+
+Theorem cfg_norm_round_supply_declared_preserved:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  (!id. cfg_fn_id_declared fn id ==> cfg_fn_id_declared fn' id) /\
+  (!v. cfg_fn_var_declared fn v ==> cfg_fn_var_declared fn' v) /\
+  (!l. cfg_fn_label_declared fn l ==> cfg_fn_label_declared fn' l)
+Proof
+  strip_tac >> irule find_and_split_supply_declared_preserved >>
+  conj_tac >- simp[] >>
+  qexistsl [`fn.fn_blocks`,`changed`,`s`,`s'`] >>
+  gvs[cfg_norm_round_supply_def,cfg_supply_covers_fn_blocks,
+      listTheory.EVERY_MEM]
+QED
+
+Theorem cfg_norm_iter_supply_declared_preserved:
+  !n s fn fn' s'.
+    ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+    ALL_DISTINCT (fn_labels fn) /\
+    ALL_DISTINCT (fn_ir_inst_ids fn) /\
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    (!id. cfg_fn_id_declared fn id ==> cfg_fn_id_declared fn' id) /\
+    (!v. cfg_fn_var_declared fn v ==> cfg_fn_var_declared fn' v) /\
+    (!l. cfg_fn_label_declared fn l ==> cfg_fn_label_declared fn' l)
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_iter_supply_def]
+  >> Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+     rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+     Cases_on `changed`
+  >- (gvs[cfg_norm_iter_supply_def] >>
+      `cfg_fn_supply_contract s fn1 s1` by
+        metis_tac[cfg_norm_round_supply_contract] >>
+      `cfg_supply_extends s s1` by gvs[cfg_fn_supply_contract_def] >>
+      `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+      `cfg_supply_covers_fn s1 fn1` by
+        metis_tac[cfg_norm_round_supply_covered] >>
+      `ALL_DISTINCT (fn_labels fn1) /\
+       ALL_DISTINCT (fn_ir_inst_ids fn1)` by
+        metis_tac[cfg_norm_round_supply_distinct] >>
+      `(!id. cfg_fn_id_declared fn id ==> cfg_fn_id_declared fn1 id) /\
+       (!v. cfg_fn_var_declared fn v ==> cfg_fn_var_declared fn1 v) /\
+       (!l. cfg_fn_label_declared fn l ==> cfg_fn_label_declared fn1 l)` by
+        metis_tac[cfg_norm_round_supply_declared_preserved] >>
+      metis_tac[])
+  >> gvs[cfg_norm_iter_supply_def] >>
+     metis_tac[cfg_norm_round_supply_declared_preserved]
+QED
+
+Theorem cfg_norm_iter_supply_contract:
+  !n s fn fn' s'.
+    ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+    ALL_DISTINCT (fn_labels fn) /\
+    ALL_DISTINCT (fn_ir_inst_ids fn) /\
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    cfg_fn_supply_contract s fn' s'
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_iter_supply_def,cfg_fn_supply_contract_def,
+          cfg_supply_extends_refl]
+  >> Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+     rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+     Cases_on `changed`
+  >- (gvs[cfg_norm_iter_supply_def] >>
+      `cfg_fn_supply_contract s fn1 s1` by
+        metis_tac[cfg_norm_round_supply_contract] >>
+      `cfg_supply_extends s s1` by gvs[cfg_fn_supply_contract_def] >>
+      `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+      `cfg_supply_covers_fn s1 fn1` by
+        metis_tac[cfg_norm_round_supply_covered] >>
+      `ALL_DISTINCT (fn_labels fn1) /\
+       ALL_DISTINCT (fn_ir_inst_ids fn1)` by
+        metis_tac[cfg_norm_round_supply_distinct] >>
+      `cfg_fn_supply_contract s1 fn' s'` by metis_tac[] >>
+      `(!id. cfg_fn_id_declared fn1 id ==> cfg_fn_id_declared fn' id) /\
+       (!v. cfg_fn_var_declared fn1 v ==> cfg_fn_var_declared fn' v) /\
+       (!l. cfg_fn_label_declared fn1 l ==> cfg_fn_label_declared fn' l)` by
+        metis_tac[cfg_norm_iter_supply_declared_preserved] >>
+      `(!id. cfg_fn_id_declared fn id ==> cfg_fn_id_declared fn1 id) /\
+       (!v. cfg_fn_var_declared fn v ==> cfg_fn_var_declared fn1 v) /\
+       (!l. cfg_fn_label_declared fn l ==> cfg_fn_label_declared fn1 l)` by
+        metis_tac[cfg_norm_round_supply_declared_preserved] >>
+      gvs[cfg_fn_supply_contract_def] >>
+      metis_tac[cfg_supply_extends_trans,cfg_supply_extends_members])
+  >> gvs[cfg_norm_iter_supply_def] >>
+     metis_tac[cfg_norm_round_supply_contract]
+QED
+
+
+Theorem cfg_norm_function_supply_contract:
+  ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  cfg_norm_function_supply s fn = (fn',s') ==>
+  cfg_fn_supply_contract s fn' s'
+Proof
+  simp[cfg_norm_function_supply_def] >>
+  metis_tac[cfg_norm_iter_supply_contract]
+QED
+
+Theorem cfg_norm_function_supply_invariants:
+  ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  cfg_norm_function_supply s fn = (fn',s') ==>
+  cfg_supply_extends s s' /\ cfg_supply_covers_fn s' fn' /\
+  ALL_DISTINCT (fn_labels fn') /\
+  ALL_DISTINCT (fn_ir_inst_ids fn')
+Proof
+  simp[cfg_norm_function_supply_def] >>
+  metis_tac[cfg_norm_iter_supply_invariants]
+QED
+
+Definition cfg_supply_covers_functions_def:
+  cfg_supply_covers_functions s fns <=> EVERY (cfg_supply_covers_fn s) fns
+End
+
+Definition cfg_functions_id_declared_def:
+  cfg_functions_id_declared fns id <=> EXISTS (\fn. cfg_fn_id_declared fn id) fns
+End
+
+Definition cfg_functions_var_declared_def:
+  cfg_functions_var_declared fns v <=> EXISTS (\fn. cfg_fn_var_declared fn v) fns
+End
+
+Definition cfg_functions_label_declared_def:
+  cfg_functions_label_declared fns l <=> EXISTS (\fn. cfg_fn_label_declared fn l) fns
+End
+
+Definition cfg_functions_supply_contract_def:
+  cfg_functions_supply_contract s fns s' <=>
+    cfg_supply_extends s s' /\ cfg_supply_covers_functions s' fns /\
+    (!id. MEM id s'.irs_used_inst_ids /\ ~MEM id s.irs_used_inst_ids ==>
+          cfg_functions_id_declared fns id) /\
+    (!v. MEM v s'.irs_used_vars /\ ~MEM v s.irs_used_vars ==>
+         cfg_functions_var_declared fns v) /\
+    (!l. MEM l s'.irs_used_labels /\ ~MEM l s.irs_used_labels ==>
+         cfg_functions_label_declared fns l)
+End
+
+
+Theorem cfg_supply_covers_functions_mono:
+  cfg_supply_covers_functions s fns /\ cfg_supply_extends s s' ==>
+  cfg_supply_covers_functions s' fns
+Proof
+  simp[cfg_supply_covers_functions_def,listTheory.EVERY_MEM] >>
+  metis_tac[cfg_supply_covers_fn_mono]
+QED
+
+Theorem cfg_norm_functions_supply_contract:
+  !fns s fns' s'.
+    ir_supply_inst_ok s /\ cfg_supply_covers_functions s fns /\
+    EVERY (\fn. ALL_DISTINCT (fn_labels fn)) fns /\
+    EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn)) fns /\
+    cfg_norm_functions_supply s fns = (fns',s') ==>
+    cfg_functions_supply_contract s fns' s' /\
+    EVERY (\fn. ALL_DISTINCT (fn_labels fn)) fns' /\
+    EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn)) fns'
+Proof
+  Induct_on `fns` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_functions_supply_def,cfg_functions_supply_contract_def,
+          cfg_supply_covers_functions_def,cfg_supply_extends_refl,
+          cfg_functions_id_declared_def,cfg_functions_var_declared_def,
+          cfg_functions_label_declared_def]
+  >> Cases_on `cfg_norm_function_supply s h` >>
+     rename1 `cfg_norm_function_supply s h = (h',s1)` >>
+     Cases_on `cfg_norm_functions_supply s1 fns` >>
+     rename1 `cfg_norm_functions_supply s1 fns = (rest,s2)` >>
+     gvs[cfg_norm_functions_supply_def,cfg_supply_covers_functions_def] >>
+     `cfg_fn_supply_contract s h' s1` by
+       metis_tac[cfg_norm_function_supply_contract] >>
+     `cfg_supply_extends s s1` by gvs[cfg_fn_supply_contract_def] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_covers_fn s1 h' /\
+      ALL_DISTINCT (fn_labels h') /\
+      ALL_DISTINCT (fn_ir_inst_ids h')` by
+       metis_tac[cfg_norm_function_supply_invariants] >>
+     `cfg_supply_covers_functions s1 fns` by
+       (gvs[cfg_supply_covers_functions_def,listTheory.EVERY_MEM] >>
+        metis_tac[cfg_supply_covers_fn_mono]) >>
+     `cfg_functions_supply_contract s1 rest s' /\
+      EVERY (\fn. ALL_DISTINCT (fn_labels fn)) rest /\
+      EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn)) rest` by
+       (first_x_assum (qspecl_then [`s1`,`rest`,`s'`] mp_tac) >>
+        disch_then irule >>
+        gvs[cfg_supply_covers_functions_def]) >>
+     `cfg_supply_extends s1 s'` by
+       gvs[cfg_functions_supply_contract_def] >>
+     `cfg_supply_covers_fn s' h'` by
+       metis_tac[cfg_supply_covers_fn_mono] >>
+     gvs[cfg_functions_supply_contract_def,
+         cfg_supply_covers_functions_def,
+         cfg_functions_id_declared_def,cfg_functions_var_declared_def,
+         cfg_functions_label_declared_def,cfg_fn_supply_contract_def] >>
+     metis_tac[cfg_supply_extends_trans,cfg_supply_extends_members]
+QED
+
+
+Definition cfg_supply_covers_unit_def:
+  cfg_supply_covers_unit s unit <=>
+    EVERY (\id. MEM id s.irs_used_inst_ids) (unit_ir_inst_ids unit) /\
+    EVERY (\v. MEM v s.irs_used_vars) (unit_ir_vars unit) /\
+    EVERY (\l. MEM l s.irs_used_labels) (unit_ir_labels unit)
+End
+
+Theorem MEM_FLAT_MAP_component:
+  MEM e es /\ MEM x (C e) ==> MEM x (FLAT (MAP C es))
+Proof
+  simp[listTheory.MEM_FLAT,listTheory.MEM_MAP] >>
+  rpt strip_tac >> qexists `C e` >> simp[] >>
+  qexists `e` >> simp[]
+QED
+
+Theorem cfg_supply_covers_unit_functions:
+  cfg_supply_covers_unit s unit ==>
+  cfg_supply_covers_functions s unit.cu_context.ctx_functions
+Proof
+  strip_tac >>
+  gvs[cfg_supply_covers_unit_def,cfg_supply_covers_functions_def,
+      cfg_supply_covers_fn_def,unit_ir_inst_ids_def,unit_ir_vars_def,
+      unit_ir_labels_def,listTheory.EVERY_FLAT,listTheory.EVERY_MAP,
+      listTheory.EVERY_MEM] >>
+  metis_tac[MEM_FLAT_MAP_component]
+QED
+
+Theorem cfg_supply_covers_unit_update_functions:
+  cfg_supply_covers_unit s unit /\ cfg_supply_extends s s' /\
+  cfg_supply_covers_functions s' fns ==>
+  cfg_supply_covers_unit s'
+    (unit with cu_context := unit.cu_context with ctx_functions := fns)
+Proof
+  rpt strip_tac >>
+  gvs[cfg_supply_covers_unit_def,cfg_supply_covers_functions_def,
+      cfg_supply_covers_fn_def,cfg_supply_extends_def,
+      unit_ir_inst_ids_def,unit_ir_vars_def,unit_ir_labels_def,
+      listTheory.EVERY_FLAT,listTheory.EVERY_MAP,listTheory.EVERY_MEM] >>
+  conj_tac
+  >- (rpt strip_tac >>
+      gvs[listTheory.MEM_FLAT,listTheory.MEM_MAP] >> metis_tac[])
+  >> conj_tac
+  >- (rpt strip_tac >>
+      gvs[listTheory.MEM_FLAT,listTheory.MEM_MAP] >> metis_tac[])
+  >> rpt strip_tac >>
+     gvs[listTheory.MEM_FLAT,listTheory.MEM_MAP,AllCaseEqs()] >>
+     metis_tac[]
+QED
+
+Definition cfg_unit_supply_contract_def:
+  cfg_unit_supply_contract s unit s' <=>
+    cfg_supply_extends s s' /\ cfg_supply_covers_unit s' unit /\
+    (!id. MEM id s'.irs_used_inst_ids /\ ~MEM id s.irs_used_inst_ids ==>
+          cfg_id_declared unit id) /\
+    (!v. MEM v s'.irs_used_vars /\ ~MEM v s.irs_used_vars ==>
+         cfg_var_declared unit v) /\
+    (!l. MEM l s'.irs_used_labels /\ ~MEM l s.irs_used_labels ==>
+         cfg_block_label_declared unit l)
+End
+
+Theorem cfg_functions_id_declared_unit_update[simp]:
+  cfg_id_declared
+    (unit with cu_context := unit.cu_context with ctx_functions := fns) id <=>
+  cfg_functions_id_declared fns id
+Proof
+  simp[cfg_id_declared_def,cfg_functions_id_declared_def,
+       cfg_fn_id_declared_iff,unit_ir_inst_ids_def,
+       listTheory.EXISTS_MEM,listTheory.MEM_FLAT,listTheory.MEM_MAP] >>
+  metis_tac[]
+QED
+
+Theorem cfg_functions_var_declared_unit_update[simp]:
+  cfg_var_declared
+    (unit with cu_context := unit.cu_context with ctx_functions := fns) v <=>
+  cfg_functions_var_declared fns v
+Proof
+  simp[cfg_var_declared_def,cfg_functions_var_declared_def,
+       cfg_fn_var_declared_def,cfg_insts_var_declared_def]
+QED
+
+Theorem cfg_functions_label_declared_unit_update[simp]:
+  cfg_block_label_declared
+    (unit with cu_context := unit.cu_context with ctx_functions := fns) l <=>
+  cfg_functions_label_declared fns l
+Proof
+  simp[cfg_block_label_declared_def,cfg_functions_label_declared_def,
+       cfg_fn_label_declared_def]
+QED
+
+Theorem cfg_norm_unit_supply_contract:
+  ir_supply_inst_ok s /\ cfg_supply_covers_unit s unit /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+    unit.cu_context.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn))
+    unit.cu_context.ctx_functions /\
+  cfg_norm_unit_supply s unit = (unit',s') ==>
+  cfg_unit_supply_contract s unit' s' /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+    unit'.cu_context.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn))
+    unit'.cu_context.ctx_functions
+Proof
+  rpt strip_tac >>
+  Cases_on `cfg_norm_context_supply s unit.cu_context` >>
+  rename1 `cfg_norm_context_supply s unit.cu_context = (ctx',s1)` >>
+  Cases_on `cfg_norm_functions_supply s unit.cu_context.ctx_functions` >>
+  rename1 `cfg_norm_functions_supply s unit.cu_context.ctx_functions =
+           (fns',s2)` >>
+  gvs[cfg_norm_unit_supply_def,cfg_norm_context_supply_def] >>
+  `cfg_supply_covers_functions s unit.cu_context.ctx_functions` by
+    metis_tac[cfg_supply_covers_unit_functions] >>
+  `cfg_functions_supply_contract s fns' s' /\
+   EVERY (\fn. ALL_DISTINCT (fn_labels fn)) fns' /\
+   EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn)) fns'` by
+    metis_tac[cfg_norm_functions_supply_contract] >>
+  `cfg_supply_extends s s'` by gvs[cfg_functions_supply_contract_def] >>
+  `cfg_supply_covers_unit s'
+     (unit with cu_context := unit.cu_context with ctx_functions := fns')` by
+    (irule cfg_supply_covers_unit_update_functions >>
+     conj_tac
+     >- gvs[cfg_functions_supply_contract_def]
+     >> qexists `s` >> simp[]) >>
+  gvs[cfg_unit_supply_contract_def,cfg_functions_supply_contract_def,
+      cfg_functions_id_declared_def,cfg_functions_var_declared_def,
+      cfg_functions_label_declared_def,cfg_id_declared_def,
+      cfg_var_declared_def,cfg_block_label_declared_def,
+      cfg_fn_id_declared_def,cfg_fn_var_declared_def,
+      cfg_fn_label_declared_def] >>
+  metis_tac[]
+QED
+
+
+Theorem cfg_norm_context_supply_contract:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_functions s ctx.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn)) ctx.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn)) ctx.ctx_functions /\
+  cfg_norm_context_supply s ctx = (ctx',s') ==>
+  cfg_functions_supply_contract s ctx'.ctx_functions s' /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn)) ctx'.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_ir_inst_ids fn)) ctx'.ctx_functions
+Proof
+  rpt strip_tac >>
+  Cases_on `cfg_norm_functions_supply s ctx.ctx_functions` >>
+  rename1 `cfg_norm_functions_supply s ctx.ctx_functions = (fns',s1)` >>
+  gvs[cfg_norm_context_supply_def] >>
+  metis_tac[cfg_norm_functions_supply_contract]
+QED
+
+
+Theorem find_and_split_supply_inst_ids_delta:
+  !bbs fn s fn' changed s'.
+    ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+    EVERY (cfg_supply_covers_block s) bbs /\
+    EVERY (\bb. MEM bb fn.fn_blocks) bbs /\
+    ALL_DISTINCT (fn_labels fn) /\
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    ?new_ids.
+      fn_ir_inst_ids fn' = fn_ir_inst_ids fn ++ new_ids /\
+      ALL_DISTINCT new_ids /\
+      EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids
+Proof
+  Induct_on `bbs` >> rpt gen_tac >> strip_tac
+  >- (gvs[find_and_split_supply_def] >> qexists `[]` >> simp[])
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> qexists `[]` >> simp[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> qexists `[]` >> simp[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     `MEM x (block_preds fn h.bb_label)` by metis_tac[FIND_SOME_MEM] >>
+     `MEM x fn.fn_blocks` by
+       gvs[block_preds_def,listTheory.MEM_FILTER] >>
+     drule_all insert_split_supply_inst_ids >> strip_tac >>
+     qexists `block_ir_inst_ids split_bb` >> simp[] >>
+     metis_tac[build_split_block_supply_ids_fresh]
+QED
+
+Theorem cfg_norm_round_supply_inst_ids_delta:
+  ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  ?new_ids.
+    fn_ir_inst_ids fn' = fn_ir_inst_ids fn ++ new_ids /\
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids
+Proof
+  strip_tac >> irule find_and_split_supply_inst_ids_delta >>
+  simp[] >> qexistsl [`fn.fn_blocks`,`changed`,`s'`] >>
+  gvs[cfg_norm_round_supply_def,cfg_supply_covers_fn_blocks,
+      listTheory.EVERY_MEM]
+QED
+
+
+Theorem cfg_norm_iter_supply_inst_ids_delta:
+  !n s fn fn' s'.
+    ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+    ALL_DISTINCT (fn_labels fn) /\
+    ALL_DISTINCT (fn_ir_inst_ids fn) /\
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    ?new_ids.
+      fn_ir_inst_ids fn' = fn_ir_inst_ids fn ++ new_ids /\
+      ALL_DISTINCT new_ids /\
+      EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- (gvs[cfg_norm_iter_supply_def] >> qexists `[]` >> simp[])
+  >> Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+     rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+     Cases_on `changed`
+  >- (gvs[cfg_norm_iter_supply_def] >>
+      `cfg_fn_supply_contract s fn1 s1` by
+        metis_tac[cfg_norm_round_supply_contract] >>
+      `cfg_supply_extends s s1` by gvs[cfg_fn_supply_contract_def] >>
+      `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+      `cfg_supply_covers_fn s1 fn1` by
+        metis_tac[cfg_norm_round_supply_covered] >>
+      `ALL_DISTINCT (fn_labels fn1) /\
+       ALL_DISTINCT (fn_ir_inst_ids fn1)` by
+        metis_tac[cfg_norm_round_supply_distinct] >>
+      `?new1. fn_ir_inst_ids fn1 = fn_ir_inst_ids fn ++ new1 /\
+              ALL_DISTINCT new1 /\
+              EVERY (\id. ~MEM id s.irs_used_inst_ids) new1` by
+        metis_tac[cfg_norm_round_supply_inst_ids_delta] >>
+      `?new2. fn_ir_inst_ids fn' = fn_ir_inst_ids fn1 ++ new2 /\
+              ALL_DISTINCT new2 /\
+              EVERY (\id. ~MEM id s1.irs_used_inst_ids) new2` by
+        metis_tac[] >>
+      qexists `new1 ++ new2` >>
+      simp[listTheory.APPEND_ASSOC,listTheory.ALL_DISTINCT_APPEND,
+           listTheory.EVERY_MEM] >>
+      rpt strip_tac
+      >- (gvs[cfg_supply_covers_fn_def,listTheory.EVERY_MEM] >>
+          metis_tac[])
+      >> `MEM id s1.irs_used_inst_ids` by
+           (drule cfg_supply_extends_members >> strip_tac >> metis_tac[]) >>
+         gvs[listTheory.EVERY_MEM])
+  >> gvs[cfg_norm_iter_supply_def] >>
+     metis_tac[cfg_norm_round_supply_inst_ids_delta]
+QED
+
+Theorem cfg_norm_function_supply_inst_ids_delta:
+  ir_supply_inst_ok s /\ cfg_supply_covers_fn s fn /\
+  ALL_DISTINCT (fn_labels fn) /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  cfg_norm_function_supply s fn = (fn',s') ==>
+  ?new_ids.
+    fn_ir_inst_ids fn' = fn_ir_inst_ids fn ++ new_ids /\
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids
+Proof
+  simp[cfg_norm_function_supply_def] >>
+  metis_tac[cfg_norm_iter_supply_inst_ids_delta]
+QED
+
+
+Theorem cfg_norm_functions_supply_inst_ids_delta:
+  !fns s fns' s'.
+    ir_supply_inst_ok s /\ cfg_supply_covers_functions s fns /\
+    EVERY (\fn. ALL_DISTINCT (fn_labels fn)) fns /\
+    ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids fns)) /\
+    cfg_norm_functions_supply s fns = (fns',s') ==>
+    ?new_ids.
+      ALL_DISTINCT new_ids /\
+      EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids /\
+      (!id. MEM id (FLAT (MAP fn_ir_inst_ids fns')) <=>
+            MEM id (FLAT (MAP fn_ir_inst_ids fns)) \/ MEM id new_ids) /\
+      ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids fns'))
+Proof
+  Induct_on `fns` >> rpt gen_tac >> strip_tac
+  >- (gvs[cfg_norm_functions_supply_def] >> qexists `[]` >> simp[])
+  >> Cases_on `cfg_norm_function_supply s h` >>
+     rename1 `cfg_norm_function_supply s h = (h',s1)` >>
+     Cases_on `cfg_norm_functions_supply s1 fns` >>
+     rename1 `cfg_norm_functions_supply s1 fns = (rest,s2)` >>
+     gvs[cfg_norm_functions_supply_def,cfg_supply_covers_functions_def,
+         listTheory.ALL_DISTINCT_APPEND] >>
+     `cfg_fn_supply_contract s h' s1` by
+       metis_tac[cfg_norm_function_supply_contract] >>
+     `cfg_supply_extends s s1` by gvs[cfg_fn_supply_contract_def] >>
+     `ir_supply_inst_ok s1` by gvs[cfg_supply_extends_def] >>
+     `cfg_supply_covers_fn s1 h' /\
+      ALL_DISTINCT (fn_labels h') /\
+      ALL_DISTINCT (fn_ir_inst_ids h')` by
+       metis_tac[cfg_norm_function_supply_invariants] >>
+     `cfg_supply_covers_functions s1 fns` by
+       (gvs[cfg_supply_covers_functions_def,listTheory.EVERY_MEM] >>
+        metis_tac[cfg_supply_covers_fn_mono]) >>
+     `?new1.
+        fn_ir_inst_ids h' = fn_ir_inst_ids h ++ new1 /\
+        ALL_DISTINCT new1 /\
+        EVERY (\id. ~MEM id s.irs_used_inst_ids) new1` by
+       metis_tac[cfg_norm_function_supply_inst_ids_delta] >>
+     `?new2.
+        ALL_DISTINCT new2 /\
+        EVERY (\id. ~MEM id s1.irs_used_inst_ids) new2 /\
+        (!id. MEM id (FLAT (MAP fn_ir_inst_ids rest)) <=>
+              MEM id (FLAT (MAP fn_ir_inst_ids fns)) \/ MEM id new2) /\
+        ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids rest))` by
+       (first_x_assum (qspecl_then [`s1`,`rest`,`s'`] mp_tac) >>
+        disch_then irule >> gvs[cfg_supply_covers_functions_def]) >>
+     qexists `new1 ++ new2` >>
+     simp[listTheory.ALL_DISTINCT_APPEND,listTheory.EVERY_MEM] >>
+     rpt strip_tac
+     >- (gvs[cfg_supply_covers_fn_def,listTheory.EVERY_MEM] >> metis_tac[])
+     >- (drule cfg_supply_extends_members >> strip_tac >>
+         gvs[listTheory.EVERY_MEM] >> metis_tac[])
+     >- metis_tac[]
+     >> gvs[cfg_supply_covers_fn_def,cfg_supply_covers_functions_def,
+            listTheory.EVERY_MEM,listTheory.ALL_DISTINCT_APPEND]
+     >- (`MEM e s.irs_used_inst_ids` by metis_tac[] >>
+         `MEM e s1.irs_used_inst_ids` by
+           (drule cfg_supply_extends_members >> strip_tac >> metis_tac[]) >>
+         metis_tac[])
+     >- (`MEM e s.irs_used_inst_ids` by
+           (gvs[listTheory.MEM_FLAT,listTheory.MEM_MAP] >> metis_tac[]) >>
+         metis_tac[])
+     >> `MEM e s1.irs_used_inst_ids` by metis_tac[] >>
+        metis_tac[]
+QED
+
+
+Theorem cfg_norm_context_supply_inst_ids_delta:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_functions s ctx.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn)) ctx.ctx_functions /\
+  ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) /\
+  cfg_norm_context_supply s ctx = (ctx',s') ==>
+  ?new_ids.
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids /\
+    (!id. MEM id (FLAT (MAP fn_ir_inst_ids ctx'.ctx_functions)) <=>
+          MEM id (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) \/
+          MEM id new_ids) /\
+    ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids ctx'.ctx_functions))
+Proof
+  rpt strip_tac >>
+  Cases_on `cfg_norm_functions_supply s ctx.ctx_functions` >>
+  rename1 `cfg_norm_functions_supply s ctx.ctx_functions = (fns',s1)` >>
+  gvs[cfg_norm_context_supply_def] >>
+  metis_tac[cfg_norm_functions_supply_inst_ids_delta]
+QED
+
+Theorem cfg_norm_unit_supply_inst_ids_delta:
+  ir_supply_inst_ok s /\ cfg_supply_covers_unit s unit /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  cfg_norm_unit_supply s unit = (unit',s') ==>
+  ?new_ids.
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. ~MEM id s.irs_used_inst_ids) new_ids /\
+    (!id. MEM id (unit_ir_inst_ids unit') <=>
+          MEM id (unit_ir_inst_ids unit) \/ MEM id new_ids) /\
+    ALL_DISTINCT (unit_ir_inst_ids unit')
+Proof
+  rpt strip_tac >>
+  Cases_on `cfg_norm_context_supply s unit.cu_context` >>
+  rename1 `cfg_norm_context_supply s unit.cu_context = (ctx',s1)` >>
+  gvs[cfg_norm_unit_supply_def,unit_ir_inst_ids_def] >>
+  irule cfg_norm_context_supply_inst_ids_delta >>
+  gvs[unit_ir_inst_ids_def] >>
+  metis_tac[cfg_supply_covers_unit_functions]
+QED
+
+
+Theorem cfg_norm_context_supply_inst_ids_all_distinct:
+  ir_supply_inst_ok s /\
+  cfg_supply_covers_functions s ctx.ctx_functions /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn)) ctx.ctx_functions /\
+  ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids ctx.ctx_functions)) /\
+  cfg_norm_context_supply s ctx = (ctx',s') ==>
+  ALL_DISTINCT (FLAT (MAP fn_ir_inst_ids ctx'.ctx_functions))
+Proof
+  metis_tac[cfg_norm_context_supply_inst_ids_delta]
+QED
+
+Theorem cfg_norm_unit_supply_inst_ids_all_distinct:
+  ir_supply_inst_ok s /\ cfg_supply_covers_unit s unit /\
+  EVERY (\fn. ALL_DISTINCT (fn_labels fn))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  cfg_norm_unit_supply s unit = (unit',s') ==>
+  ALL_DISTINCT (unit_ir_inst_ids unit')
+Proof
+  metis_tac[cfg_norm_unit_supply_inst_ids_delta]
+QED
