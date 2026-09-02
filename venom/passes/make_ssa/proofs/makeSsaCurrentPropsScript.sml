@@ -2294,4 +2294,49 @@ Proof
   EVAL_TAC
 QED
 
+
+Definition make_ssa_collision_fn_def[local]:
+  make_ssa_collision_fn = mk_raw_function "collision"
+    [<| bb_label := "entry";
+        bb_instructions :=
+          [mk_inst 10 ASSIGN [Lit 11w] ["x"];
+           mk_inst 20 ASSIGN [Lit 22w] ["x"];
+           mk_inst 30 STOP [] []] |>]
+End
+
+Definition make_ssa_collision_unit_def[local]:
+  make_ssa_collision_unit = <|
+    cu_context := mk_venom_context
+      [make_ssa_collision_fn;
+       mk_raw_function "occupied"
+         [<| bb_label := "occupied";
+             bb_instructions :=
+               [mk_inst 9000 STOP [] ["formal_var_0"; "formal_var_1"]] |>]]
+      (SOME "collision");
+    cu_data_segment := []
+  |>
+End
+
+Theorem make_ssa_collision_init_eval:
+  (init_ir_supply make_ssa_collision_unit).irs_next_inst = 9001 /\
+  (init_ir_supply make_ssa_collision_unit).irs_next_var = 0 /\
+  MEM "formal_var_0"
+    (init_ir_supply make_ssa_collision_unit).irs_used_vars /\
+  MEM "formal_var_1"
+    (init_ir_supply make_ssa_collision_unit).irs_used_vars
+Proof
+  EVAL_TAC
+QED
+
+Theorem make_ssa_collision_current_fn_eval:
+  let s0 = init_ir_supply make_ssa_collision_unit in
+  let (fn',s1) = make_ssa_current_fn s0 make_ssa_collision_fn in
+    MAP (\inst. inst.inst_outputs) (HD fn'.fn_blocks).bb_instructions =
+      [["x"]; ["formal_var_2"]; []] /\
+    s1.irs_next_var = 3 /\
+    MEM "formal_var_2" s1.irs_used_vars
+Proof
+  EVAL_TAC >> simp[]
+QED
+
 val _ = export_theory();
