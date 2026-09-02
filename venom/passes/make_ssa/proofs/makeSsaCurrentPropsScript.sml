@@ -875,6 +875,41 @@ Proof
   metis_tac[ssa_supply_extends_trans]
 QED
 
+Theorem rename_current_blocks_inst_supply_ok:
+  (!s rs bbs sm t ctrs s' bbs'.
+     ir_supply_inst_ok s /\
+     rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+     ir_supply_inst_ok s') /\
+  (!s ctrs stacks bbs sm ts ctrs' s' bbs'.
+     ir_supply_inst_ok s /\
+     rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+     ir_supply_inst_ok s')
+Proof
+  qsuff_tac
+    `(!t s rs bbs sm ctrs s' bbs'.
+        ir_supply_inst_ok s /\
+        rename_current_blocks s rs bbs sm t = (ctrs,s',bbs') ==>
+        ir_supply_inst_ok s') /\
+     (!ts s ctrs stacks bbs sm ctrs' s' bbs'.
+        ir_supply_inst_ok s /\
+        rename_current_children s ctrs stacks bbs sm ts = (ctrs',s',bbs') ==>
+        ir_supply_inst_ok s')`
+  >- metis_tac[]
+  >> ho_match_mp_tac current_dom_tree_induction >> rpt conj_tac
+  >- (rpt strip_tac >>
+      gvs[rename_current_blocks_def, AllCaseEqs()]
+      >> pairarg_tac >> gvs[] >>
+      drule_all rename_current_block_insts_inst_ok >> strip_tac >>
+      first_x_assum drule_all >> simp[])
+  >- simp[rename_current_blocks_def]
+  >> rpt strip_tac >>
+  gvs[rename_current_blocks_def] >>
+  pairarg_tac >> gvs[] >>
+  first_x_assum drule_all >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+
 Theorem make_ssa_current_fn_extends:
   make_ssa_current_fn s fn = (fn',s') ==> ssa_supply_extends s s'
 Proof
