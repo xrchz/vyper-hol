@@ -4,7 +4,7 @@
 
 Theory singleUseExpansionSupplyProofs
 Ancestors
-  singleUseExpansionDefs irSupply venomInst
+  singleUseExpansionDefs irSupply venomInst fcgDefs
 
 (* unit_ir_vars is an occurrence collector (definitions and uses), so it is
    deliberately not ALL_DISTINCT after a generated ASSIGN feeds the rewritten
@@ -981,3 +981,262 @@ Proof
          listTheory.EVERY_MEM]) >>
   gvs[sue_ids_supply_ok_def]
 QED
+
+
+(* ===== Structural preservation for the configured adapter ===== *)
+
+Definition sue_operand_label_def:
+  sue_operand_label op =
+    case op of Label l => SOME l | _ => NONE
+End
+
+Definition sue_fn_invoke_labels_def:
+  sue_fn_invoke_labels fn =
+    FLAT (MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions))
+              fn.fn_blocks)
+End
+
+Theorem sue_alloc_assign_supply_shape:
+  sue_alloc_assign_supply s op = (a,newop,s') ==>
+  a.inst_opcode = ASSIGN /\ sue_operand_label newop = NONE
+Proof
+  Cases_on `fresh_ir_var s` >>
+  Cases_on `fresh_inst_id r` >>
+  rpt strip_tac >>
+  gvs[sue_alloc_assign_supply_def, sue_operand_label_def]
+QED
+Theorem sue_get_invoke_targets_cons:
+  MAP FST (get_invoke_targets (inst::insts)) =
+  MAP FST (get_invoke_targets [inst]) ++
+  MAP FST (get_invoke_targets insts)
+Proof
+  simp[get_invoke_targets_def] >> rpt CASE_TAC >> gvs[]
+QED
+
+Theorem sue_get_invoke_targets_append:
+  MAP FST (get_invoke_targets (xs ++ ys)) =
+  MAP FST (get_invoke_targets xs) ++ MAP FST (get_invoke_targets ys)
+Proof
+  Induct_on `xs` >- simp[get_invoke_targets_def] >>
+  rpt gen_tac >> pure_once_rewrite_tac[listTheory.APPEND] >>
+  once_rewrite_tac[sue_get_invoke_targets_cons] >> simp[]
+QED
+
+Theorem sue_expand_ops_supply_operand_labels:
+  !dfg inst s ops k assigns new_ops s'.
+    sue_expand_ops_supply dfg inst s ops k = (assigns,new_ops,s') ==>
+    MAP sue_operand_label new_ops = MAP sue_operand_label ops
+Proof
+  Induct_on `ops`
+  >- (rpt strip_tac >> gvs[sue_expand_ops_supply_def]) >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_ops_supply dfg inst s ops (k + 1)` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s ops (k + 1) =
+           (more_assigns,more_ops,s1)` >>
+  `MAP sue_operand_label more_ops = MAP sue_operand_label ops` by
+    metis_tac[] >>
+  Cases_on `~sue_needs_assign dfg inst k`
+  >- gvs[sue_expand_ops_supply_def] >>
+  Cases_on `h`
+  >- (Cases_on `fresh_ir_var s1` >> Cases_on `fresh_inst_id r` >>
+      gvs[sue_expand_ops_supply_def, sue_alloc_assign_supply_def,
+          sue_operand_label_def])
+  >- (Cases_on `LENGTH (dfg_get_uses dfg s'') = 1 /\
+                 sue_count_remaining (Var s'') ops = 0`
+      >- gvs[sue_expand_ops_supply_def, sue_operand_label_def]
+      >> Cases_on `fresh_ir_var s1` >> Cases_on `fresh_inst_id r` >>
+         gvs[sue_expand_ops_supply_def, sue_alloc_assign_supply_def,
+             sue_operand_label_def])
+  >> gvs[sue_expand_ops_supply_def, sue_operand_label_def]
+QED
+
+Theorem sue_expand_ops_supply_assigns_no_invokes:
+  !dfg inst s ops k assigns new_ops s'.
+    sue_expand_ops_supply dfg inst s ops k = (assigns,new_ops,s') ==>
+    get_invoke_targets assigns = []
+Proof
+  Induct_on `ops`
+  >- (rpt strip_tac >> gvs[sue_expand_ops_supply_def,
+                            get_invoke_targets_def]) >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_ops_supply dfg inst s ops (k + 1)` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s ops (k + 1) =
+           (more_assigns,more_ops,s1)` >>
+  `get_invoke_targets more_assigns = []` by metis_tac[] >>
+  Cases_on `~sue_needs_assign dfg inst k`
+  >- gvs[sue_expand_ops_supply_def] >>
+  Cases_on `h`
+  >- (Cases_on `fresh_ir_var s1` >> Cases_on `fresh_inst_id r` >>
+      gvs[sue_expand_ops_supply_def, sue_alloc_assign_supply_def,
+          get_invoke_targets_def])
+  >- (Cases_on `LENGTH (dfg_get_uses dfg s'') = 1 /\
+                 sue_count_remaining (Var s'') ops = 0`
+      >- gvs[sue_expand_ops_supply_def]
+      >> Cases_on `fresh_ir_var s1` >> Cases_on `fresh_inst_id r` >>
+         gvs[sue_expand_ops_supply_def, sue_alloc_assign_supply_def,
+             get_invoke_targets_def])
+  >> gvs[sue_expand_ops_supply_def]
+QED
+
+Theorem sue_expand_inst_supply_invoke_labels:
+  sue_expand_inst_supply dfg s inst = (out,s') ==>
+  MAP FST (get_invoke_targets out) =
+  MAP FST (get_invoke_targets [inst])
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_should_skip inst.inst_opcode`
+  >- gvs[sue_expand_inst_supply_def] >>
+  Cases_on `sue_expand_ops_supply dfg inst s inst.inst_operands 0` >>
+  PairCases_on `r` >>
+  rename1 `sue_expand_ops_supply dfg inst s inst.inst_operands 0 =
+           (assigns,new_ops,s1)` >>
+  gvs[sue_expand_inst_supply_def] >>
+  `get_invoke_targets assigns = []` by
+    metis_tac[sue_expand_ops_supply_assigns_no_invokes] >>
+  `MAP sue_operand_label new_ops =
+   MAP sue_operand_label inst.inst_operands` by
+    metis_tac[sue_expand_ops_supply_operand_labels] >>
+  rewrite_tac[sue_get_invoke_targets_append] >> simp[] >>
+  Cases_on `inst.inst_opcode = INVOKE`
+  >- (Cases_on `inst.inst_operands` >> Cases_on `new_ops` >>
+      gvs[get_invoke_targets_def, sue_operand_label_def] >>
+      Cases_on `h` >> gvs[sue_operand_label_def] >>
+      rpt CASE_TAC >> gvs[get_invoke_targets_def, sue_operand_label_def])
+  >> gvs[get_invoke_targets_def]
+QED
+
+Theorem sue_expand_insts_supply_invoke_labels:
+  !dfg s insts out s'.
+    sue_expand_insts_supply dfg s insts = (out,s') ==>
+    MAP FST (get_invoke_targets out) =
+    MAP FST (get_invoke_targets insts)
+Proof
+  Induct_on `insts`
+  >- simp[sue_expand_insts_supply_def, get_invoke_targets_def] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_inst_supply dfg s h` >>
+  rename1 `sue_expand_inst_supply dfg s h = (head_out,s1)` >>
+  Cases_on `sue_expand_insts_supply dfg s1 insts` >>
+  rename1 `sue_expand_insts_supply dfg s1 insts = (tail_out,s2)` >>
+  gvs[sue_expand_insts_supply_def] >>
+  `MAP FST (get_invoke_targets head_out) =
+   MAP FST (get_invoke_targets [h])` by
+    metis_tac[sue_expand_inst_supply_invoke_labels] >>
+  `MAP FST (get_invoke_targets tail_out) =
+   MAP FST (get_invoke_targets insts)` by metis_tac[] >>
+  once_rewrite_tac[sue_get_invoke_targets_append] >>
+  once_rewrite_tac[sue_get_invoke_targets_cons] >> simp[]
+QED
+
+Theorem sue_expand_block_supply_invoke_labels:
+  sue_expand_block_supply dfg s bb = (bb',s') ==>
+  MAP FST (get_invoke_targets bb'.bb_instructions) =
+  MAP FST (get_invoke_targets bb.bb_instructions)
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_insts_supply dfg s bb.bb_instructions` >>
+  gvs[sue_expand_block_supply_def] >>
+  metis_tac[sue_expand_insts_supply_invoke_labels]
+QED
+
+Theorem sue_expand_blocks_supply_invoke_labels:
+  !dfg s bbs bbs' s'.
+    sue_expand_blocks_supply dfg s bbs = (bbs',s') ==>
+    MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions)) bbs' =
+    MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions)) bbs
+Proof
+  Induct_on `bbs`
+  >- simp[sue_expand_blocks_supply_def] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_block_supply dfg s h` >>
+  rename1 `sue_expand_block_supply dfg s h = (bb1,s1)` >>
+  Cases_on `sue_expand_blocks_supply dfg s1 bbs` >>
+  rename1 `sue_expand_blocks_supply dfg s1 bbs = (bbs1,s2)` >>
+  gvs[sue_expand_blocks_supply_def] >>
+  `MAP FST (get_invoke_targets bb1.bb_instructions) =
+   MAP FST (get_invoke_targets h.bb_instructions)` by
+    metis_tac[sue_expand_block_supply_invoke_labels] >>
+  `MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions)) bbs1 =
+   MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions)) bbs` by
+    metis_tac[] >>
+  simp[]
+QED
+
+Theorem sue_expand_function_supply_structural:
+  sue_expand_function_supply s fn = (fn',s') ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_static_input_eq fn' fn /\
+  fn_static_layout_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn /\
+  sue_fn_invoke_labels fn' = sue_fn_invoke_labels fn
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_blocks_supply (dfg_build_function fn) s fn.fn_blocks` >>
+  gvs[sue_expand_function_supply_def] >>
+  `MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions)) q =
+   MAP (\bb. MAP FST (get_invoke_targets bb.bb_instructions)) fn.fn_blocks` by
+    metis_tac[sue_expand_blocks_supply_invoke_labels] >>
+  gvs[fn_identity_metadata_eq_def, fn_static_input_eq_def,
+      fn_static_layout_eq_def, fn_fmp_convention_eq_def,
+      sue_fn_invoke_labels_def]
+QED
+
+Theorem sue_expand_functions_supply_structural:
+  !s fns fns' s'.
+    sue_expand_functions_supply s fns = (fns',s') ==>
+    LIST_REL
+      (\fn' fn.
+         fn_identity_metadata_eq fn' fn /\
+         fn_static_input_eq fn' fn /\
+         fn_static_layout_eq fn' fn /\
+         fn_fmp_convention_eq fn' fn) fns' fns /\
+    MAP sue_fn_invoke_labels fns' = MAP sue_fn_invoke_labels fns
+Proof
+  Induct_on `fns`
+  >- simp[sue_expand_functions_supply_def] >>
+  rpt strip_tac >>
+  Cases_on `sue_expand_function_supply s h` >>
+  rename1 `sue_expand_function_supply s h = (fn1,s1)` >>
+  Cases_on `sue_expand_functions_supply s1 fns` >>
+  rename1 `sue_expand_functions_supply s1 fns = (fns1,s2)` >>
+  gvs[sue_expand_functions_supply_def] >>
+  `fn_identity_metadata_eq fn1 h /\
+   fn_static_input_eq fn1 h /\
+   fn_static_layout_eq fn1 h /\
+   fn_fmp_convention_eq fn1 h /\
+   sue_fn_invoke_labels fn1 = sue_fn_invoke_labels h` by
+    metis_tac[sue_expand_function_supply_structural] >>
+  `LIST_REL
+      (\fn' fn.
+         fn_identity_metadata_eq fn' fn /\
+         fn_static_input_eq fn' fn /\
+         fn_static_layout_eq fn' fn /\
+         fn_fmp_convention_eq fn' fn) fns1 fns /\
+   MAP sue_fn_invoke_labels fns1 = MAP sue_fn_invoke_labels fns` by
+    metis_tac[] >>
+  simp[]
+QED
+
+Theorem sue_configured_structural:
+  sue_configured_with_supply unit = (unit',s') ==>
+  LIST_REL
+    (\fn' fn.
+       fn_identity_metadata_eq fn' fn /\
+       fn_static_input_eq fn' fn /\
+       fn_static_layout_eq fn' fn /\
+       fn_fmp_convention_eq fn' fn)
+    unit'.cu_context.ctx_functions unit.cu_context.ctx_functions /\
+  MAP sue_fn_invoke_labels unit'.cu_context.ctx_functions =
+  MAP sue_fn_invoke_labels unit.cu_context.ctx_functions
+Proof
+  rpt strip_tac >>
+  Cases_on `sue_expand_functions_supply (init_ir_supply unit)
+              unit.cu_context.ctx_functions` >>
+  gvs[sue_configured_with_supply_def, sue_unit_supply_def,
+      sue_expand_context_supply_def] >>
+  metis_tac[sue_expand_functions_supply_structural]
+QED
+
+val _ = export_theory();
