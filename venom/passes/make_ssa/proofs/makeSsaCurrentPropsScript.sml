@@ -1687,6 +1687,47 @@ Proof
      metis_tac[]
 QED
 
+Theorem alist_update_or_prepend_key_MEM[local]:
+  !alist k f d v.
+    MEM v (MAP FST (alist_update_or_prepend k f d alist)) ==>
+    v = k \/ MEM v (MAP FST alist)
+Proof
+  Induct >> simp[makeSsaDefsTheory.alist_update_or_prepend_def] >>
+  rpt gen_tac >> PairCases_on `h` >>
+  simp[makeSsaDefsTheory.alist_update_or_prepend_def] >>
+  IF_CASES_TAC >> gvs[] >> metis_tac[]
+QED
+
+Theorem foldr_alist_update_key_MEM[local]:
+  !vars lbl acc v.
+    MEM v (MAP FST
+      (FOLDR (\var a.
+        alist_update_or_prepend var (CONS lbl) [lbl] a) acc vars)) ==>
+    MEM v vars \/ MEM v (MAP FST acc)
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  drule alist_update_or_prepend_key_MEM >>
+  metis_tac[]
+QED
+
+Theorem compute_defs_key_MEM_block_ir_vars:
+  MEM v (MAP FST (compute_defs bbs)) ==>
+  MEM v (FLAT (MAP block_ir_vars bbs))
+Proof
+  Induct_on `bbs` >- simp[makeSsaDefsTheory.compute_defs_def] >>
+  simp[Once makeSsaDefsTheory.compute_defs_def] >> rpt strip_tac >>
+  drule foldr_alist_update_key_MEM >> strip_tac
+  >- (gvs[makeSsaDefsTheory.block_assignments_def, block_ir_vars_def, inst_ir_vars_def,
+          listTheory.MEM_FLAT, listTheory.MEM_MAP] >>
+      disj1_tac >>
+      qexists `inst.inst_outputs ++ inst_uses inst` >> simp[] >>
+      metis_tac[])
+  >> gvs[]
+QED
+
+
+
+
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
