@@ -8,7 +8,7 @@
 
 Theory makeSsaCurrentDefs
 Ancestors
-  makeSsaDefs cfgDefs dominatorDefs livenessDefs
+  makeSsaDefs cfgDefs dominatorDefs livenessDefs irSupply
   list alist
 
 (* A finite association-list view of a query function, in function-label
@@ -67,6 +67,186 @@ End
 
 Definition current_dom_postorder_def:
   current_dom_postorder fn = dom_tree_postorder (current_dom_tree fn)
+End
+
+(* ===== Supply-aware PHI insertion ===== *)
+
+(* The ID is supplied explicitly by fresh_inst_id at the unique insertion
+   point; this constructor contains no placeholder or arithmetic ID. *)
+Definition build_phi_inst_supply_def:
+  build_phi_inst_supply id var pred_labels =
+    <| inst_id := id;
+       inst_opcode := PHI;
+       inst_operands := FLAT (MAP (\l. [Label l; Var var]) pred_labels);
+       inst_outputs := [var] |>
+End
+
+Definition process_frontiers_supply_def:
+  process_frontiers_supply s var pred_map live_in bbs rest has_phi [] =
+    (bbs, rest, has_phi, s) /\
+  process_frontiers_supply s var pred_map live_in bbs rest has_phi (f::fs) =
+    if MEM f has_phi then
+      process_frontiers_supply s var pred_map live_in bbs rest has_phi fs
+    else
+      let is_live = case ALOOKUP live_in f of
+                      SOME vars => MEM var vars
+                    | NONE => F in
+      if ~is_live then
+        process_frontiers_supply s var pred_map live_in bbs rest
+                                 (f::has_phi) fs
+      else
+        let preds = case ALOOKUP pred_map f of SOME ps => ps | NONE => [] in
+        let (id,s') = fresh_inst_id s in
+        let phi = build_phi_inst_supply id var preds in
+        let bbs' = MAP (\bb.
+          if bb.bb_label = f then insert_phi_at_block phi bb else bb) bbs in
+          process_frontiers_supply s' var pred_map live_in bbs'
+                                   (f::rest) (f::has_phi) fs
+End
+
+Triviality process_frontiers_supply_labels:
+  !fs s var pm li bbs rest hp bbs' rest' hp' s'.
+    process_frontiers_supply s var pm li bbs rest hp fs =
+      (bbs',rest',hp',s') ==>
+    MAP (\bb. bb.bb_label) bbs' = MAP (\bb. bb.bb_label) bbs
+Proof
+  Induct >- simp[process_frontiers_supply_def] >>
+  pop_assum $ mk_asm "ih" >>
+  simp[process_frontiers_supply_def] >> rpt gen_tac >>
+  IF_CASES_TAC >> gvs[]
+  >- (strip_tac >> asm "ih" drule >> simp[])
+  >> IF_CASES_TAC >> gvs[]
+  >- (strip_tac >> asm "ih" drule >> simp[])
+  >> rpt CASE_TAC >> gvs[] >>
+  pairarg_tac >> gvs[] >> strip_tac >>
+  asm "ih" drule >>
+  rw[MAP_MAP_o, insert_phi_at_block_def] >>
+  irule MAP_CONG >> rw[]
+QED
+
+Triviality filter_add_mem_decrease_supply:
+  !U (h:'a) hp.
+    MEM h U /\ ~MEM h hp /\ ALL_DISTINCT U ==>
+    LENGTH (FILTER (\x. ~MEM x (h::hp)) U) + 1 <=
+    LENGTH (FILTER (\x. ~MEM x hp) U)
+Proof
+  Induct >> simp[ALL_DISTINCT] >> rpt strip_tac >> gvs[]
+  >- (
+    `LENGTH (FILTER (\x. x <> h /\ ~MEM x hp) U) <=
+     LENGTH (FILTER (\x. ~MEM x hp) U)` suffices_by DECIDE_TAC >>
+    irule LENGTH_FILTER_LEQ_MONO >> simp[])
+  >- (
+    Cases_on `MEM h hp`
+    >- (`~(h <> h' /\ ~MEM h hp)` by simp[] >>
+        `~(~MEM h hp)` by simp[] >>
+        simp[] >> first_x_assum drule_all >> simp[])
+    >- (`h <> h'` by metis_tac[MEM] >>
+        simp[LENGTH] >> first_x_assum drule_all >> DECIDE_TAC))
+QED
+
+Triviality filter_weaken_exclusion_supply:
+  !(U:'a list) hp1 hp2.
+    (!x. MEM x hp1 ==> MEM x hp2) ==>
+    LENGTH (FILTER (\x. ~MEM x hp2) U) <=
+    LENGTH (FILTER (\x. ~MEM x hp1) U)
+Proof
+  Induct >> rw[FILTER] >> gvs[] >> res_tac >> DECIDE_TAC
+QED
+
+Triviality process_frontiers_supply_measure:
+  !fs s var pm li bbs rest hp bbs' rest' hp' s' U.
+    process_frontiers_supply s var pm li bbs rest hp fs =
+      (bbs',rest',hp',s') ==>
+    (!f. MEM f fs ==> MEM f U) ==>
+    ALL_DISTINCT U ==>
+    LENGTH (FILTER (\x. ~MEM x hp') U) + LENGTH rest' <=
+    LENGTH (FILTER (\x. ~MEM x hp) U) + LENGTH rest
+Proof
+  Induct >- simp[process_frontiers_supply_def] >>
+  pop_assum $ mk_asm "ih" >>
+  simp[process_frontiers_supply_def] >> rpt gen_tac >>
+  IF_CASES_TAC >> gvs[]
+  >- (
+    rpt strip_tac >>
+    `!f. MEM f fs ==> MEM f U` by metis_tac[] >>
+    asm "ih" (drule_then (qspec_then `U` mp_tac)) >>
+    simp[])
+  >> IF_CASES_TAC >> gvs[]
+  >- (
+    rpt strip_tac >>
+    `!f. MEM f fs ==> MEM f U` by metis_tac[] >>
+    asm "ih" (drule_then (qspec_then `U` mp_tac)) >>
+    (impl_tac >- simp[]) >> strip_tac >>
+    `LENGTH (FILTER (\x. ~MEM x (h::hp)) U) <=
+     LENGTH (FILTER (\x. ~MEM x hp) U)` by
+      (irule filter_weaken_exclusion_supply >> simp[]) >>
+    DECIDE_TAC)
+  >> rpt CASE_TAC >> gvs[] >> pairarg_tac >> gvs[] >> rpt strip_tac >>
+  `!f. MEM f fs ==> MEM f U` by metis_tac[] >>
+  asm "ih" (drule_then (qspec_then `U` mp_tac)) >>
+  (impl_tac >- simp[]) >> strip_tac >>
+  `MEM h U` by metis_tac[] >>
+  `LENGTH (FILTER (\x. ~MEM x (h::hp)) U) + 1 <=
+   LENGTH (FILTER (\x. ~MEM x hp) U)` by
+    (irule filter_add_mem_decrease_supply >> simp[]) >>
+  gvs[LENGTH] >> DECIDE_TAC
+QED
+
+
+Definition insert_phis_for_var_supply_def:
+  insert_phis_for_var_supply s var dom_frontiers pred_map live_in bbs [] has_phi =
+    (bbs,s) /\
+  insert_phis_for_var_supply s var dom_frontiers pred_map live_in bbs
+                             (d::rest) has_phi =
+    let frontiers = case ALOOKUP dom_frontiers d of
+                      SOME fs => fs | NONE => [] in
+    let (bbs',rest',has_phi',s') =
+      process_frontiers_supply s var pred_map live_in bbs rest has_phi
+                               frontiers in
+      insert_phis_for_var_supply s' var dom_frontiers pred_map live_in
+                                 bbs' rest' has_phi'
+Termination
+  WF_REL_TAC `measure (\(s,var,df,pm,li,bbs,wl,hp).
+    LENGTH (FILTER (\x. ~MEM x hp)
+      (nub (MAP (\bb. bb.bb_label) bbs ++ FLAT (MAP SND df)))) +
+    LENGTH wl)` >>
+  rpt strip_tac >>
+  qabbrev_tac `fs = case ALOOKUP dom_frontiers d of
+                      NONE => [] | SOME x => x` >>
+  qabbrev_tac `U = nub (MAP (\bb. bb.bb_label) bbs ++
+                         FLAT (MAP SND dom_frontiers))` >>
+  qabbrev_tac `result = process_frontiers_supply s var pred_map live_in
+                          bbs rest has_phi fs` >>
+  `result = (bbs',rest',has_phi',s')` by
+    simp[Abbr `result`, Abbr `fs`] >>
+  pop_assum SUBST_ALL_TAC >> simp[] >>
+  `process_frontiers_supply s var pred_map live_in bbs rest has_phi fs =
+   (bbs',rest',has_phi',s')` by gvs[markerTheory.Abbrev_def] >>
+  `MAP (\bb. bb.bb_label) bbs' = MAP (\bb. bb.bb_label) bbs` by
+    (irule process_frontiers_supply_labels >> metis_tac[]) >>
+  `nub (MAP (\bb. bb.bb_label) bbs' ++ FLAT (MAP SND dom_frontiers)) = U` by
+    simp[Abbr `U`] >>
+  gvs[] >>
+  `!f. MEM f fs ==> MEM f U` by (
+    unabbrev_all_tac >> rpt strip_tac >>
+    Cases_on `ALOOKUP dom_frontiers d` >> gvs[] >>
+    simp[MEM_nub, MEM_APPEND, MEM_FLAT, MEM_MAP] >>
+    disj2_tac >> qexists_tac `x` >> simp[] >>
+    qexists_tac `(d,x)` >> simp[] >> metis_tac[ALOOKUP_MEM]) >>
+  `ALL_DISTINCT U` by simp[Abbr `U`, all_distinct_nub] >>
+  `LENGTH (FILTER (\x. ~MEM x has_phi') U) + LENGTH rest' <=
+   LENGTH (FILTER (\x. ~MEM x has_phi) U) + LENGTH rest` by
+    metis_tac[process_frontiers_supply_measure] >>
+  DECIDE_TAC
+End
+
+Definition add_phi_nodes_supply_def:
+  (add_phi_nodes_supply s dom_frontiers pred_map live_in bbs [] = (bbs,s)) /\
+  (add_phi_nodes_supply s dom_frontiers pred_map live_in bbs
+                        ((var,def_blocks)::defs) =
+    let (bbs',s') = insert_phis_for_var_supply s var dom_frontiers pred_map
+                                                live_in bbs def_blocks [] in
+      add_phi_nodes_supply s' dom_frontiers pred_map live_in bbs' defs)
 End
 
 Theorem ALOOKUP_current_query_map:
