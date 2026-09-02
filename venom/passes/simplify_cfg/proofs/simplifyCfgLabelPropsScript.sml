@@ -2143,11 +2143,9 @@ Proof
 QED
 
 Theorem simplify_cfg_round_with_labels_invoke_subset:
-  ALL_DISTINCT (fn_labels func) ==>
   simplify_cfg_invoke_subset
     (FST (simplify_cfg_round_with_labels func)) func
 Proof
-  strip_tac >>
   Cases_on `fn_entry_label func`
   >- simp[simplify_cfg_round_with_labels_def,
           simplify_cfg_invoke_subset_refl] >>
@@ -2157,9 +2155,6 @@ Proof
   Cases_on `collapse_dfs func1a [] [] entry` >>
   PairCases_on `r` >>
   rename1 `collapse_dfs func1a [] [] entry = (func2,label_map,visited)` >>
-  `ALL_DISTINCT (fn_labels func1a)` by
-    simp[Abbr `func1a`, Abbr `func1`, fn_labels_fix_all_phis,
-         fn_labels_remove_unreachable_all_distinct] >>
   `simplify_cfg_invoke_subset
      (FST (collapse_dfs func1a [] [] entry)) func1a` by
     metis_tac[collapse_dfs_invoke_subset] >>
@@ -2191,29 +2186,20 @@ QED
 
 
 Theorem simplify_cfg_iter_with_labels_invoke_subset:
-  !n func. ALL_DISTINCT (fn_labels func) ==>
+  !n func.
     simplify_cfg_invoke_subset
       (FST (simplify_cfg_iter_with_labels n func)) func
 Proof
   Induct_on `n`
   >- simp[simplify_cfg_iter_with_labels_def,
           simplify_cfg_invoke_subset_refl] >>
-  rpt strip_tac >>
+  gen_tac >>
   Cases_on `simplify_cfg_round_with_labels func` >>
   rename1 `simplify_cfg_round_with_labels func = (func',round_map)` >>
   `simplify_cfg_invoke_subset
      (FST (simplify_cfg_round_with_labels func)) func` by
     metis_tac[simplify_cfg_round_with_labels_invoke_subset] >>
   `simplify_cfg_invoke_subset func' func` by gvs[] >>
-  `label_map_transition (fn_labels func)
-     (SND (simplify_cfg_round_with_labels func))
-     (fn_labels (FST (simplify_cfg_round_with_labels func)))` by
-    metis_tac[simplify_cfg_round_with_labels_transition] >>
-  `ALL_DISTINCT (fn_labels func')` by
-    (qpat_x_assum `label_map_transition _ _ _` mp_tac >>
-     qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
-       (fn th => rewrite_tac[th]) >>
-     simp[label_map_transition_def]) >>
   pure_once_rewrite_tac[simplify_cfg_iter_with_labels_def] >>
   qpat_assum `simplify_cfg_round_with_labels func = (func',round_map)`
     (fn th => rewrite_tac[th]) >>
@@ -2229,7 +2215,6 @@ Proof
 QED
 
 Theorem simplify_cfg_fn_with_labels_invoke_subset:
-  ALL_DISTINCT (fn_labels func) ==>
   simplify_cfg_invoke_subset
     (FST (simplify_cfg_fn_with_labels func)) func
 Proof
@@ -2238,15 +2223,13 @@ Proof
 QED
 
 Theorem simplify_cfg_fn_with_labels_no_new_call_edges:
-  ALL_DISTINCT (fn_labels func) ==>
   !callee.
     MEM callee
       (simplify_cfg_fn_invoke_labels
         (FST (simplify_cfg_fn_with_labels func))) ==>
     MEM callee (simplify_cfg_fn_invoke_labels func)
 Proof
-  strip_tac >>
-  drule simplify_cfg_fn_with_labels_invoke_subset >>
+  mp_tac simplify_cfg_fn_with_labels_invoke_subset >>
   simp[simplify_cfg_invoke_subset_def]
 QED
 
