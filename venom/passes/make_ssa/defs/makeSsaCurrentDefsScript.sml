@@ -249,6 +249,217 @@ Definition add_phi_nodes_supply_def:
       add_phi_nodes_supply s' dom_frontiers pred_map live_in bbs' defs)
 End
 
+(* ===== Supply-aware concrete-name renaming ===== *)
+
+Definition init_current_rename_state_def:
+  init_current_rename_state defs =
+    let vars = MAP FST defs in
+      (MAP (\v. (v,0n)) vars, MAP (\v. (v,[v])) vars)
+End
+
+Definition latest_current_name_def:
+  latest_current_name
+    (counters : (string # num) list, stacks : (string # string list) list) var =
+    case ALOOKUP stacks var of SOME (name::_) => name | _ => var
+End
+
+(* Counter zero is the original spelling and consumes no supply.  Every later
+   definition gets its concrete spelling directly from fresh_ir_var. *)
+Definition push_current_name_def:
+  push_current_name s
+    (counters : (string # num) list, stacks : (string # string list) list) var =
+    let n = case ALOOKUP counters var of SOME k => k | NONE => 0n in
+    let counters' = (var,n+1)::FILTER (\(v,_). v <> var) counters in
+    if n = 0 then
+      let stacks' = (var,var::case ALOOKUP stacks var of
+                                SOME ns => ns | NONE => []) ::
+                    FILTER (\(v,_). v <> var) stacks in
+        ((counters',stacks'),s,var)
+    else
+      let (name,s') = fresh_ir_var s in
+      let stacks' = (var,name::case ALOOKUP stacks var of
+                                  SOME ns => ns | NONE => []) ::
+                    FILTER (\(v,_). v <> var) stacks in
+        ((counters',stacks'),s',name)
+End
+
+Definition rename_current_operands_def:
+  (rename_current_operands rs [] = []) /\
+  (rename_current_operands rs (Var v::ops) =
+    Var (latest_current_name rs v)::rename_current_operands rs ops) /\
+  (rename_current_operands rs (op::ops) =
+    op::rename_current_operands rs ops)
+End
+
+Definition rename_current_outputs_def:
+  (rename_current_outputs s rs [] = (rs,s,[]:string list)) /\
+  (rename_current_outputs s rs (v::vs) =
+    let (rs',s',name) = push_current_name s rs v in
+    let (rs'',s'',rest) = rename_current_outputs s' rs' vs in
+      (rs'',s'',name::rest))
+End
+
+Definition rename_current_inst_def:
+  rename_current_inst s rs inst =
+    if inst.inst_opcode = PHI then
+      let (rs',s',outs') = rename_current_outputs s rs inst.inst_outputs in
+        (rs',s',inst with inst_outputs := outs')
+    else
+      let ops' = rename_current_operands rs inst.inst_operands in
+      let (rs',s',outs') = rename_current_outputs s rs inst.inst_outputs in
+        (rs',s',inst with <| inst_operands := ops'; inst_outputs := outs' |>)
+End
+
+Definition rename_current_block_insts_def:
+  (rename_current_block_insts s rs [] = (rs,s,[])) /\
+  (rename_current_block_insts s rs (inst::rest) =
+    let (rs',s',inst') = rename_current_inst s rs inst in
+    let (rs'',s'',rest') = rename_current_block_insts s' rs' rest in
+      (rs'',s'',inst'::rest'))
+End
+
+Definition update_current_phi_for_pred_def:
+  (update_current_phi_for_pred rs current_label [] = []) /\
+  (update_current_phi_for_pred rs current_label [x] = [x]) /\
+  (update_current_phi_for_pred rs current_label (Label l::Var v::rest) =
+    (if l = current_label
+     then Label l::Var (latest_current_name rs v)::
+          update_current_phi_for_pred rs current_label rest
+     else Label l::Var v::update_current_phi_for_pred rs current_label rest)) /\
+  (update_current_phi_for_pred rs current_label (x::y::rest) =
+    x::y::update_current_phi_for_pred rs current_label rest)
+End
+
+Definition update_current_succ_phis_def:
+  update_current_succ_phis rs current_label bbs succs =
+    FOLDL (\bs lbl.
+      case lookup_block lbl bs of
+        NONE => bs
+      | SOME bb =>
+          let bb' = bb with bb_instructions :=
+            MAP (\inst. if inst.inst_opcode <> PHI then inst
+                        else inst with inst_operands :=
+                          update_current_phi_for_pred rs current_label
+                                                      inst.inst_operands)
+                bb.bb_instructions in
+            replace_block lbl bb' bs) bbs succs
+End
+
+Definition rename_current_blocks_def:
+  (rename_current_blocks s rs bbs succ_map (DNode lbl children) =
+    case lookup_block lbl bbs of
+      NONE => (FST rs,s,bbs)
+    | SOME bb =>
+        let (rs1,s1,insts') =
+          rename_current_block_insts s rs bb.bb_instructions in
+        let bb' = bb with bb_instructions := insts' in
+        let bbs1 = replace_block lbl bb' bbs in
+        let succs = case ALOOKUP succ_map lbl of SOME ss => ss | NONE => [] in
+        let bbs2 = update_current_succ_phis rs1 lbl bbs1 succs in
+          rename_current_children s1 (FST rs1) (SND rs1) bbs2 succ_map
+                                  children) /\
+  (rename_current_children s ctrs stacks bbs succ_map [] = (ctrs,s,bbs)) /\
+  (rename_current_children s ctrs stacks bbs succ_map (child::rest) =
+    let (ctrs',s',bbs') =
+      rename_current_blocks s (ctrs,stacks) bbs succ_map child in
+      rename_current_children s' ctrs' stacks bbs' succ_map rest)
+End
+
+(* This boundary intentionally binds every analysis from this very fn. *)
+Definition make_ssa_current_fn_def:
+  make_ssa_current_fn s fn =
+    case fn_entry_label fn of
+      NONE => (fn,s)
+    | SOME entry =>
+        let cfg = cfg_analyze fn in
+        let dom = dom_analyze cfg fn in
+        let live = liveness_analyze fn in
+        let pred_map = current_query_map (fn_labels fn) (cfg_preds_of cfg) in
+        let succ_map = current_query_map (fn_labels fn) (cfg_succs_of cfg) in
+        let frontiers = current_query_map (fn_labels fn) (frontier_of dom) in
+        let live_in = current_query_map (fn_labels fn)
+                                        (\l. live_vars_at live l 0) in
+        let dtree = current_dom_tree_aux dom (LENGTH (fn_labels fn)) entry in
+        let postorder = dom_tree_postorder dtree in
+        let ordered_bbs = MAP THE (FILTER IS_SOME
+          (MAP (\lbl. lookup_block lbl fn.fn_blocks) postorder)) in
+        let defs = compute_defs ordered_bbs in
+        let (bbs1,s1) = add_phi_nodes_supply s frontiers pred_map live_in
+                                             fn.fn_blocks defs in
+        let rs0 = init_current_rename_state defs in
+        let (_,s2,bbs2) = rename_current_blocks s1 rs0 bbs1 succ_map dtree in
+          (fn with fn_blocks := bbs2,s2)
+End
+
+Definition make_ssa_functions_supply_def:
+  (make_ssa_functions_supply s [] = ([],s)) /\
+  (make_ssa_functions_supply s (fn::fns) =
+    let (fn',s') = make_ssa_current_fn s fn in
+    let (fns',s'') = make_ssa_functions_supply s' fns in
+      (fn'::fns',s''))
+End
+
+Definition make_ssa_ctx_supply_def:
+  make_ssa_ctx_supply s ctx =
+    let (fns,s') = make_ssa_functions_supply s ctx.ctx_functions in
+      (ctx with ctx_functions := fns,s')
+End
+
+Definition make_ssa_unit_supply_def:
+  make_ssa_unit_supply s unit =
+    let (ctx,s') = make_ssa_ctx_supply s unit.cu_context in
+      (unit with cu_context := ctx,s')
+End
+
+Definition make_ssa_configured_with_supply_def:
+  make_ssa_configured_with_supply unit =
+    make_ssa_unit_supply (init_ir_supply unit) unit
+End
+
+Definition make_ssa_configured_def:
+  make_ssa_configured unit = FST (make_ssa_configured_with_supply unit)
+End
+
+Theorem make_ssa_configured_with_supply_eq:
+  make_ssa_configured_with_supply unit =
+    make_ssa_unit_supply (init_ir_supply unit) unit
+Proof
+  simp[make_ssa_configured_with_supply_def]
+QED
+
+Theorem make_ssa_configured_eq:
+  make_ssa_configured unit = FST (make_ssa_configured_with_supply unit)
+Proof
+  simp[make_ssa_configured_def]
+QED
+
+Theorem make_ssa_current_fn_current_analysis_eq:
+  make_ssa_current_fn s fn =
+    case fn_entry_label fn of
+      NONE => (fn,s)
+    | SOME entry =>
+        let cfg = cfg_analyze fn in
+        let dom = dom_analyze cfg fn in
+        let live = liveness_analyze fn in
+        let pred_map = current_query_map (fn_labels fn) (cfg_preds_of cfg) in
+        let succ_map = current_query_map (fn_labels fn) (cfg_succs_of cfg) in
+        let frontiers = current_query_map (fn_labels fn) (frontier_of dom) in
+        let live_in = current_query_map (fn_labels fn)
+                                        (\l. live_vars_at live l 0) in
+        let dtree = current_dom_tree_aux dom (LENGTH (fn_labels fn)) entry in
+        let postorder = dom_tree_postorder dtree in
+        let ordered_bbs = MAP THE (FILTER IS_SOME
+          (MAP (\lbl. lookup_block lbl fn.fn_blocks) postorder)) in
+        let defs = compute_defs ordered_bbs in
+        let (bbs1,s1) = add_phi_nodes_supply s frontiers pred_map live_in
+                                             fn.fn_blocks defs in
+        let rs0 = init_current_rename_state defs in
+        let (_,s2,bbs2) = rename_current_blocks s1 rs0 bbs1 succ_map dtree in
+          (fn with fn_blocks := bbs2,s2)
+Proof
+  simp[make_ssa_current_fn_def]
+QED
+
 Theorem ALOOKUP_current_query_map:
   !labels query l.
     MEM l labels ==>
