@@ -1725,8 +1725,18 @@ Proof
   >> gvs[]
 QED
 
-
-
+Theorem lookup_blocks_filter_MEM:
+  MEM bb (MAP THE (FILTER IS_SOME
+    (MAP (\lbl. lookup_block lbl bbs) labels))) ==>
+  MEM bb bbs
+Proof
+  Induct_on `labels` >- simp[] >>
+  gen_tac >>
+  Cases_on `lookup_block h bbs`
+  >- (simp[] >> metis_tac[])
+  >> `MEM x bbs` by metis_tac[venomExecPropsTheory.lookup_block_MEM] >>
+  simp[] >> metis_tac[]
+QED
 
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
