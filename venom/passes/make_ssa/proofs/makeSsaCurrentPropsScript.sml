@@ -1756,6 +1756,79 @@ Proof
   simp[listTheory.MEM_FLAT, listTheory.MEM_MAP] >> metis_tac[]
 QED
 
+Theorem make_ssa_current_fn_supply_ok:
+  ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks) /\
+  ir_supply_inst_ok s /\
+  ALL_DISTINCT (fn_ir_inst_ids fn) /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) (fn_ir_inst_ids fn) /\
+  ssa_vars_covered s (fn_ir_vars fn) /\
+  make_ssa_current_fn s fn = (fn',s') ==>
+  ssa_ids_supply_ok s (fn_ir_inst_ids fn) (fn_ir_inst_ids fn') s' /\
+  ssa_vars_covered s' (fn_ir_vars fn')
+Proof
+  simp[make_ssa_current_fn_def] >> rpt CASE_TAC >> gvs[]
+  >- (rpt strip_tac >> gvs[ssa_ids_supply_ok_refl]) >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  `ssa_vars_covered s
+     (MAP FST (compute_defs
+       (MAP THE (FILTER IS_SOME
+         (MAP (\lbl. lookup_block lbl fn.fn_blocks)
+           (dom_tree_postorder
+             (current_dom_tree_aux (dom_analyze (cfg_analyze fn) fn)
+               (LENGTH (fn_labels fn)) x)))))))` by
+    (irule compute_defs_lookup_blocks_vars_covered >>
+     gvs[fn_ir_vars_def]) >>
+  `ssa_ids_supply_ok s (FLAT (MAP block_ir_inst_ids fn.fn_blocks))
+      (FLAT (MAP block_ir_inst_ids bbs1)) s1 /\
+   MAP basic_block_bb_label bbs1 =
+      MAP basic_block_bb_label fn.fn_blocks /\
+   ssa_vars_covered s1 (FLAT (MAP block_ir_vars bbs1))` by
+    (irule add_phi_nodes_supply_ok >>
+     gvs[fn_ir_vars_def, fn_ir_inst_ids_def] >>
+     (conj_tac
+      >- (qpat_assum `ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks)` mp_tac >>
+          once_rewrite_tac[GSYM bb_label_eta] >> simp[])) >>
+     metis_tac[]) >>
+  `ssa_supply_extends s s1` by
+    metis_tac[ssa_ids_supply_ok_extends] >>
+  `ssa_vars_covered s1
+     (MAP FST (compute_defs
+       (MAP THE (FILTER IS_SOME
+         (MAP (\lbl. lookup_block lbl fn.fn_blocks)
+           (dom_tree_postorder
+             (current_dom_tree_aux (dom_analyze (cfg_analyze fn) fn)
+               (LENGTH (fn_labels fn)) x)))))))` by
+    (irule ssa_vars_covered_mono >> qexists `s` >> simp[]) >>
+  `ssa_stacks_covered s1
+     (SND (init_current_rename_state
+       (compute_defs
+         (MAP THE (FILTER IS_SOME
+           (MAP (\lbl. lookup_block lbl fn.fn_blocks)
+             (dom_tree_postorder
+               (current_dom_tree_aux (dom_analyze (cfg_analyze fn) fn)
+                 (LENGTH (fn_labels fn)) x))))))))` by
+    (gvs[init_current_rename_state_def, ssa_stacks_covered_def,
+         ssa_vars_covered_def, listTheory.EVERY_MEM,
+         listTheory.MEM_MAP] >>
+     rpt strip_tac >> gvs[] >> metis_tac[]) >>
+  drule_all (CONJUNCT1 rename_current_blocks_vars_covered) >> strip_tac >>
+  `ir_supply_inst_ok s1` by
+    metis_tac[ssa_ids_supply_ok_output] >>
+  `ir_supply_inst_ok s'` by
+    (drule_all (CONJUNCT1 rename_current_blocks_inst_supply_ok) >>
+     simp[]) >>
+  `ALL_DISTINCT (MAP basic_block_bb_label bbs1)` by metis_tac[] >>
+  `FLAT (MAP block_ir_inst_ids bbs2) =
+   FLAT (MAP block_ir_inst_ids bbs1)` by
+    (irule (CONJUNCT1 rename_current_blocks_inst_ids) >> metis_tac[]) >>
+  conj_tac
+  >- (gvs[fn_ir_inst_ids_def, ssa_ids_supply_ok_def] >>
+      (conj_tac
+       >- (irule ssa_supply_extends_trans >> qexists `s1` >> simp[])) >>
+      gvs[ssa_supply_extends_def, listTheory.EVERY_MEM]) >>
+  gvs[fn_ir_vars_def]
+QED
+
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
