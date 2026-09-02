@@ -1,7 +1,7 @@
 (* Structural proofs for target-checked DRET desugaring. *)
 Theory dretDesugarProofs
 Ancestors
-  dretDesugarDefs irSupply
+  dretDesugarDefs irSupply fcgDefs
 Libs
   bossLib listTheory
 
@@ -696,6 +696,90 @@ Proof
   simp[expand_dret_pairs_def, fresh_ir_var_def, seek_fresh_name_def,
        inst_ir_labels_def, operand_ir_labels_def] >> EVAL_TAC >>
   simp[inst_ir_labels_def, operand_ir_labels_def]
+QED
+
+Theorem dret_get_invoke_targets_append[local]:
+  get_invoke_targets (xs ++ ys) =
+  get_invoke_targets xs ++ get_invoke_targets ys
+Proof
+  Induct_on `xs`
+  >- simp[get_invoke_targets_def]
+  >> gen_tac >> Cases_on `h.inst_opcode = INVOKE`
+  >- (Cases_on `h.inst_operands`
+      >- simp[get_invoke_targets_def]
+      >> Cases_on `h'` >> simp[get_invoke_targets_def])
+  >> simp[get_invoke_targets_def]
+QED
+
+Theorem expand_dret_pairs_no_invoke[local]:
+  !s cursor pairs body dsts final_cursor s'.
+    expand_dret_pairs s cursor pairs =
+      SOME (DretPairExpansion body dsts final_cursor s') ==>
+    get_invoke_targets body = []
+Proof
+  recInduct expand_dret_pairs_ind >>
+  rpt strip_tac >>
+  gvs[Once expand_dret_pairs_def, AllCaseEqs(),
+      get_invoke_targets_def, venomInstTheory.mk_inst_def]
+QED
+
+Theorem replace_dret_inst_no_invoke[local]:
+  replace_dret_inst s cursor inst = SOME (replacement,s') ==>
+  get_invoke_targets replacement = []
+Proof
+  simp[replace_dret_inst_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  imp_res_tac expand_dret_pairs_no_invoke >>
+  gvs[dret_get_invoke_targets_append, get_invoke_targets_def,
+      venomInstTheory.mk_inst_def]
+QED
+
+Theorem dret_desugar_insts_invoke_targets[local]:
+  !s out s'.
+    dret_desugar_insts s cursor insts = SOME (out,s') ==>
+    get_invoke_targets out = get_invoke_targets insts
+Proof
+  Induct_on `insts`
+  >- simp[dret_desugar_insts_def, get_invoke_targets_def]
+  >> gen_tac >> rpt gen_tac >>
+     Cases_on `h.inst_opcode = DRET`
+  >- (gvs[dret_desugar_insts_def, AllCaseEqs()] >>
+      rpt strip_tac >> gvs[] >>
+      imp_res_tac replace_dret_inst_no_invoke >>
+      first_x_assum drule >> strip_tac >>
+      gvs[dret_get_invoke_targets_append, get_invoke_targets_def])
+  >> gvs[dret_desugar_insts_def, AllCaseEqs()] >>
+     rpt strip_tac >> gvs[] >>
+     first_x_assum drule >> strip_tac >>
+     gvs[get_invoke_targets_def]
+QED
+
+Theorem dret_desugar_blocks_invoke_targets[local]:
+  !s out s'.
+    dret_desugar_blocks s cursor blocks = SOME (out,s') ==>
+    get_invoke_targets (fn_insts_blocks out) =
+    get_invoke_targets (fn_insts_blocks blocks)
+Proof
+  Induct_on `blocks`
+  >- simp[dret_desugar_blocks_def, venomInstTheory.fn_insts_blocks_def,
+          get_invoke_targets_def]
+  >> gen_tac >> rpt gen_tac >>
+     gvs[dret_desugar_blocks_def, AllCaseEqs()] >>
+     rpt strip_tac >> gvs[] >>
+     imp_res_tac dret_desugar_insts_invoke_targets >>
+     first_x_assum drule >> strip_tac >>
+     gvs[venomInstTheory.fn_insts_blocks_def, dret_get_invoke_targets_append]
+QED
+
+Theorem dret_desugar_function_invoke_targets:
+  dret_desugar_function target s fn = SOME (fn',s') ==>
+  MAP FST (fcg_scan_function fn') = MAP FST (fcg_scan_function fn)
+Proof
+  simp[dret_desugar_function_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  imp_res_tac dret_desugar_blocks_invoke_targets >>
+  gvs[fcg_scan_function_def, venomInstTheory.fn_insts_def, venomInstTheory.fn_insts_blocks_def,
+      get_invoke_targets_def, venomInstTheory.mk_inst_def]
 QED
 
 val _ = export_theory();

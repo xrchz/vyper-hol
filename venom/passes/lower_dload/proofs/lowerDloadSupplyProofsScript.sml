@@ -1,7 +1,7 @@
 (* Supply-aware lower-DLOAD contracts and executable validation. *)
 Theory lowerDloadSupplyProofs
 Ancestors
-  lowerDloadDefs irSupply venomInst
+  lowerDloadDefs irSupply venomInst fcgDefs
 
 Definition ld_probe_supply_def:
   ld_probe_supply = <|
@@ -621,4 +621,84 @@ Proof
      first_x_assum (qspecl_then [`bb`,`inst`] mp_tac) >> simp[]) >>
   metis_tac[lower_dload_function_supply_preserves_layout]
 QED
+Theorem lower_dload_get_invoke_targets_append[local]:
+  get_invoke_targets (xs ++ ys) =
+  get_invoke_targets xs ++ get_invoke_targets ys
+Proof
+  Induct_on `xs`
+  >- simp[get_invoke_targets_def]
+  >> gen_tac >>
+     Cases_on `h.inst_opcode = INVOKE`
+  >- (Cases_on `h.inst_operands`
+      >- simp[get_invoke_targets_def]
+      >> Cases_on `h'` >> simp[get_invoke_targets_def])
+  >> simp[get_invoke_targets_def]
+QED
+
+Theorem lower_dload_inst_supply_invoke_targets[local]:
+  lower_dload_inst_supply s inst = (out,s') ==>
+  get_invoke_targets out = get_invoke_targets [inst]
+Proof
+  Cases_on `inst.inst_opcode = DLOAD`
+  >- (gvs[lower_dload_inst_supply_def, get_invoke_targets_def, AllCaseEqs()] >>
+      strip_tac >> gvs[get_invoke_targets_def])
+  >> Cases_on `inst.inst_opcode = DLOADBYTES`
+  >- (gvs[lower_dload_inst_supply_def, get_invoke_targets_def, AllCaseEqs()] >>
+      strip_tac >> gvs[get_invoke_targets_def])
+  >> simp[lower_dload_inst_supply_def]
+QED
+
+Theorem lower_dload_insts_supply_invoke_targets[local]:
+  !s out s'.
+    lower_dload_insts_supply s insts = (out,s') ==>
+    get_invoke_targets out = get_invoke_targets insts
+Proof
+  Induct_on `insts`
+  >- simp[lower_dload_insts_supply_def, get_invoke_targets_def]
+  >> rpt gen_tac >>
+     Cases_on `lower_dload_inst_supply s h` >>
+     rename1 `lower_dload_inst_supply s h = (head,s1)` >>
+     Cases_on `lower_dload_insts_supply s1 insts` >>
+     rename1 `lower_dload_insts_supply s1 insts = (tail,s2)` >>
+     simp[lower_dload_insts_supply_def] >> strip_tac >>
+     drule lower_dload_inst_supply_invoke_targets >>
+     first_x_assum drule >>
+     rpt strip_tac >>
+     gvs[lower_dload_get_invoke_targets_append, get_invoke_targets_def] >>
+     Cases_on `h.inst_opcode = INVOKE` >> gvs[] >>
+     Cases_on `h.inst_operands` >> gvs[] >>
+     Cases_on `h'` >> gvs[]
+QED
+
+Theorem lower_dload_blocks_supply_invoke_targets[local]:
+  !s out s'.
+    lower_dload_blocks_supply s bbs = (out,s') ==>
+    get_invoke_targets (fn_insts_blocks out) =
+    get_invoke_targets (fn_insts_blocks bbs)
+Proof
+  Induct_on `bbs`
+  >- simp[lower_dload_blocks_supply_def, fn_insts_blocks_def,
+          get_invoke_targets_def]
+  >> rpt gen_tac >>
+     Cases_on `lower_dload_block_supply s h` >>
+     rename1 `lower_dload_block_supply s h = (head,s1)` >>
+     Cases_on `lower_dload_blocks_supply s1 bbs` >>
+     rename1 `lower_dload_blocks_supply s1 bbs = (tail,s2)` >>
+     simp[lower_dload_blocks_supply_def] >> strip_tac >>
+     first_x_assum drule >>
+     gvs[lower_dload_block_supply_def, AllCaseEqs()] >>
+     imp_res_tac lower_dload_insts_supply_invoke_targets >>
+     simp[fn_insts_blocks_def, lower_dload_get_invoke_targets_append]
+QED
+
+Theorem lower_dload_function_supply_invoke_targets:
+  lower_dload_function_supply s fn = (fn',s') ==>
+  MAP FST (fcg_scan_function fn') = MAP FST (fcg_scan_function fn)
+Proof
+  simp[lower_dload_function_supply_def, AllCaseEqs()] >>
+  rpt strip_tac >>
+  imp_res_tac lower_dload_blocks_supply_invoke_targets >>
+  gvs[fcg_scan_function_def, fn_insts_def]
+QED
+
 val _ = export_theory();

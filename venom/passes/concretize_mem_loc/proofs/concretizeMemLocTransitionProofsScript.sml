@@ -4,7 +4,7 @@ Theory concretizeMemLocTransitionProofs
 Ancestors
   staticLayoutCompletionProofs staticLayoutAllocatorProofs
   staticLayoutFoldProofs staticLayoutWf concretizeMemLocDefs staticLayoutDefs
-  passSimulationDefs passSharedDefs passSharedProps venomInst list
+  passSimulationDefs passSharedDefs passSharedProps venomInst list fcgDefs
 
 (* Disprove-first probe for the proposed certificate boundary. *)
 Theorem concretize_layout_wf_malformed_output_probe:
@@ -575,4 +575,128 @@ Proof
   fs[fn_has_alloca_def, EXISTS_MEM, is_alloca_op_eq_alloca] >>
   metis_tac[]
 QED
+Theorem concretize_get_invoke_targets_append[local]:
+  get_invoke_targets (xs ++ ys) =
+  get_invoke_targets xs ++ get_invoke_targets ys
+Proof
+  Induct_on `xs`
+  >- simp[get_invoke_targets_def]
+  >> gen_tac >> Cases_on `h.inst_opcode = INVOKE`
+  >- (Cases_on `h.inst_operands`
+      >- simp[get_invoke_targets_def]
+      >> Cases_on `h'` >> simp[get_invoke_targets_def])
+  >> simp[get_invoke_targets_def]
+QED
+
+Theorem concretize_get_invoke_targets_cons[local]:
+  get_invoke_targets (inst::insts) =
+  get_invoke_targets [inst] ++ get_invoke_targets insts
+Proof
+  Cases_on `inst.inst_opcode = INVOKE`
+  >- (Cases_on `inst.inst_operands`
+      >- simp[get_invoke_targets_def]
+      >> Cases_on `h` >> simp[get_invoke_targets_def])
+  >> simp[get_invoke_targets_def]
+QED
+
+Theorem concretize_inst_with_positions_invoke_targets[local]:
+  get_invoke_targets [concretize_inst_with_positions positions inst] =
+  get_invoke_targets [inst]
+Proof
+  Cases_on `inst.inst_opcode = ALLOCA`
+  >- (Cases_on `inst.inst_outputs`
+      >- simp[concretize_inst_with_positions_def, get_invoke_targets_def]
+      >> Cases_on `t`
+      >- (Cases_on `FLOOKUP positions (Allocation inst.inst_id)` >>
+          simp[concretize_inst_with_positions_def, get_invoke_targets_def,
+               mk_assign_inst_def, mk_nop_inst_def])
+      >> simp[concretize_inst_with_positions_def, get_invoke_targets_def])
+  >> simp[concretize_inst_with_positions_def]
+QED
+
+Theorem concretize_insts_with_positions_invoke_targets[local]:
+  get_invoke_targets (MAP (concretize_inst_with_positions positions) insts) =
+  get_invoke_targets insts
+Proof
+  Induct_on `insts`
+  >- simp[get_invoke_targets_def]
+  >> gen_tac >> Cases_on `h.inst_opcode = ALLOCA`
+  >- (Cases_on `h.inst_outputs`
+      >- simp[concretize_inst_with_positions_def, get_invoke_targets_def]
+      >> Cases_on `t`
+      >- (Cases_on `FLOOKUP positions (Allocation h.inst_id)` >>
+          simp[concretize_inst_with_positions_def, get_invoke_targets_def,
+               mk_assign_inst_def, mk_nop_inst_def])
+      >> simp[concretize_inst_with_positions_def, get_invoke_targets_def])
+  >> simp[concretize_inst_with_positions_def, get_invoke_targets_def]
+QED
+
+Theorem concretize_filter_nops_invoke_targets[local]:
+  get_invoke_targets (FILTER (\inst. inst.inst_opcode <> NOP) insts) =
+  get_invoke_targets insts
+Proof
+  Induct_on `insts`
+  >- simp[get_invoke_targets_def]
+  >> gen_tac >> Cases_on `h.inst_opcode = NOP`
+  >- gvs[get_invoke_targets_def]
+  >> simp[get_invoke_targets_def]
+QED
+
+Theorem concretize_mapped_blocks_invoke_targets[local]:
+  get_invoke_targets
+    (fn_insts_blocks
+      (MAP (block_map_transform
+        (concretize_inst_with_positions positions)) blocks)) =
+  get_invoke_targets (fn_insts_blocks blocks)
+Proof
+  Induct_on `blocks`
+  >- simp[fn_insts_blocks_def, get_invoke_targets_def]
+  >> simp[fn_insts_blocks_def, block_map_transform_def,
+          concretize_get_invoke_targets_append,
+          concretize_insts_with_positions_invoke_targets]
+QED
+
+Theorem concretize_clear_nops_blocks_invoke_targets[local]:
+  get_invoke_targets (fn_insts_blocks (MAP clear_nops_block blocks)) =
+  get_invoke_targets (fn_insts_blocks blocks)
+Proof
+  Induct_on `blocks`
+  >- simp[fn_insts_blocks_def, get_invoke_targets_def]
+  >> simp[fn_insts_blocks_def, clear_nops_block_def,
+          concretize_get_invoke_targets_append,
+          concretize_filter_nops_invoke_targets]
+QED
+
+Theorem concretize_clear_nops_invoke_targets[local]:
+  get_invoke_targets (fn_insts (clear_nops_function fn)) =
+  get_invoke_targets (fn_insts fn)
+Proof
+  simp[clear_nops_function_def, fn_insts_def,
+       concretize_clear_nops_blocks_invoke_targets]
+QED
+
+Theorem concretize_function_with_positions_invoke_targets[local]:
+  MAP FST (fcg_scan_function
+    (concretize_function_with_positions positions fn)) =
+  MAP FST (fcg_scan_function fn)
+Proof
+  rewrite_tac[concretize_function_with_positions_def,
+              fcg_scan_function_def] >>
+  rewrite_tac[concretize_clear_nops_invoke_targets] >>
+  simp[function_map_transform_def, fn_insts_def,
+       concretize_mapped_blocks_invoke_targets]
+QED
+
+Theorem concretize_function_eval_invoke_targets:
+  concretize_function_eval reserved fn = SOME fn' ==>
+  MAP FST (fcg_scan_function fn') = MAP FST (fcg_scan_function fn)
+Proof
+  simp[concretize_function_eval_def, apply_concretize_layout_def,
+       AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  simp[fcg_scan_function_def, fn_insts_def] >>
+  rewrite_tac[GSYM fn_insts_def, GSYM fcg_scan_function_def] >>
+  simp[concretize_function_with_positions_invoke_targets]
+QED
+
 val _ = export_theory();
