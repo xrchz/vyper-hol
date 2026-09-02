@@ -640,8 +640,137 @@ Proof
        (drule_all_then assume_tac) >>
      metis_tac[]
 QED
+Theorem make_ssa_current_fn_invoke_targets:
+  ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks) /\
+  make_ssa_current_fn s fn = (fn',s') ==>
+  MAP FST (fcg_scan_function fn') = MAP FST (fcg_scan_function fn)
+Proof
+  simp[make_ssa_current_fn_def] >> rpt CASE_TAC >> gvs[]
+  >> pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+     drule add_phi_nodes_supply_invoke_labels >> strip_tac >>
+     `ALL_DISTINCT (MAP basic_block_bb_label bbs1)` by
+       (drule add_phi_nodes_supply_labels >> strip_tac >>
+        gvs[bb_label_eta]) >>
+     drule_all_then assume_tac
+       (CONJUNCT1 rename_current_blocks_invoke_labels) >>
+     gvs[fcg_scan_function_invoke_labels]
+QED
+
+Theorem make_ssa_functions_supply_invoke_targets:
+  !fns s fns' s'.
+    EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks)) fns /\
+    make_ssa_functions_supply s fns = (fns',s') ==>
+    MAP (\fn. MAP FST (fcg_scan_function fn)) fns' =
+    MAP (\fn. MAP FST (fcg_scan_function fn)) fns
+Proof
+  Induct >- simp[make_ssa_functions_supply_def] >>
+  rpt gen_tac >> simp[make_ssa_functions_supply_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule_all make_ssa_current_fn_invoke_targets >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >> gvs[]
+QED
+
+Theorem make_ssa_functions_supply_metadata:
+  !fns s fns' s'.
+    make_ssa_functions_supply s fns = (fns',s') ==>
+    LIST_REL (\fn' fn.
+      fn_identity_metadata_eq fn' fn /\
+      fn_static_input_eq fn' fn /\
+      fn_static_layout_eq fn' fn /\
+      fn_fmp_convention_eq fn' fn) fns' fns
+Proof
+  Induct >- simp[make_ssa_functions_supply_def] >>
+  rpt gen_tac >> simp[make_ssa_functions_supply_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule make_ssa_current_fn_metadata >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >> gvs[]
+QED
+
+Theorem make_ssa_functions_supply_labels:
+  !fns s fns' s'.
+    make_ssa_functions_supply s fns = (fns',s') ==>
+    MAP (\fn. MAP (\bb. bb.bb_label) fn.fn_blocks) fns' =
+    MAP (\fn. MAP (\bb. bb.bb_label) fn.fn_blocks) fns
+Proof
+  Induct >- simp[make_ssa_functions_supply_def] >>
+  rpt gen_tac >> simp[make_ssa_functions_supply_def] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule make_ssa_current_fn_labels >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >> gvs[]
+QED
 
 
+
+
+Theorem make_ssa_ctx_supply_invoke_targets:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    ctx.ctx_functions /\
+  make_ssa_ctx_supply s ctx = (ctx',s') ==>
+  MAP (\fn. MAP FST (fcg_scan_function fn)) ctx'.ctx_functions =
+  MAP (\fn. MAP FST (fcg_scan_function fn)) ctx.ctx_functions
+Proof
+  simp[make_ssa_ctx_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule_all make_ssa_functions_supply_invoke_targets >> gvs[]
+QED
+
+Theorem make_ssa_ctx_supply_metadata:
+  make_ssa_ctx_supply s ctx = (ctx',s') ==>
+  LIST_REL (\fn' fn.
+    fn_identity_metadata_eq fn' fn /\
+    fn_static_input_eq fn' fn /\
+    fn_static_layout_eq fn' fn /\
+    fn_fmp_convention_eq fn' fn)
+    ctx'.ctx_functions ctx.ctx_functions
+Proof
+  simp[make_ssa_ctx_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule make_ssa_functions_supply_metadata >> gvs[]
+QED
+
+Theorem make_ssa_ctx_supply_labels:
+  make_ssa_ctx_supply s ctx = (ctx',s') ==>
+  MAP (\fn. MAP (\bb. bb.bb_label) fn.fn_blocks) ctx'.ctx_functions =
+  MAP (\fn. MAP (\bb. bb.bb_label) fn.fn_blocks) ctx.ctx_functions
+Proof
+  simp[make_ssa_ctx_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule make_ssa_functions_supply_labels >> gvs[]
+QED
+
+Theorem make_ssa_unit_supply_invoke_targets:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  make_ssa_unit_supply s unit = (unit',s') ==>
+  MAP (\fn. MAP FST (fcg_scan_function fn))
+    unit'.cu_context.ctx_functions =
+  MAP (\fn. MAP FST (fcg_scan_function fn))
+    unit.cu_context.ctx_functions
+Proof
+  simp[make_ssa_unit_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule_all make_ssa_ctx_supply_invoke_targets >> gvs[]
+QED
+
+Theorem make_ssa_unit_supply_metadata:
+  make_ssa_unit_supply s unit = (unit',s') ==>
+  LIST_REL (\fn' fn.
+    fn_identity_metadata_eq fn' fn /\
+    fn_static_input_eq fn' fn /\
+    fn_static_layout_eq fn' fn /\
+    fn_fmp_convention_eq fn' fn)
+    unit'.cu_context.ctx_functions unit.cu_context.ctx_functions
+Proof
+  simp[make_ssa_unit_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule make_ssa_ctx_supply_metadata >> gvs[]
+QED
+
+Theorem make_ssa_unit_supply_labels:
+  make_ssa_unit_supply s unit = (unit',s') ==>
+  MAP (\fn. MAP (\bb. bb.bb_label) fn.fn_blocks)
+    unit'.cu_context.ctx_functions =
+  MAP (\fn. MAP (\bb. bb.bb_label) fn.fn_blocks)
+    unit.cu_context.ctx_functions
+Proof
+  simp[make_ssa_unit_supply_def] >> pairarg_tac >> gvs[] >> strip_tac >>
+  drule make_ssa_ctx_supply_labels >> gvs[]
+QED
 
 Theorem make_ssa_functions_supply_extends:
   !fns s fns' s'.
