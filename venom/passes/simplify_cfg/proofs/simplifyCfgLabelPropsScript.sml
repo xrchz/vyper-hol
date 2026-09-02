@@ -591,6 +591,123 @@ Proof
   >> gvs[]
 QED
 
+Theorem bb_label_fix_phis_in_block[local]:
+  (fix_phis_in_block actual_preds bb).bb_label = bb.bb_label
+Proof
+  simp[fix_phis_in_block_def] >>
+  pairarg_tac >> simp[]
+QED
+
+Theorem fn_labels_fix_all_phis[local]:
+  fn_labels (fix_all_phis func) = fn_labels func
+Proof
+  simp[fix_all_phis_def, venomInstTheory.fn_labels_def,
+       listTheory.MAP_MAP_o, combinTheory.o_DEF,
+       bb_label_fix_phis_in_block]
+QED
+
+Theorem bb_label_subst_block_labels_block[local]:
+  (subst_block_labels_block label_map bb).bb_label = bb.bb_label
+Proof
+  simp[cfgTransformTheory.subst_block_labels_block_def]
+QED
+
+Theorem fn_labels_subst_block_labels_fn[local]:
+  fn_labels (subst_block_labels_fn label_map func) = fn_labels func
+Proof
+  simp[cfgTransformTheory.subst_block_labels_fn_def,
+       venomInstTheory.fn_labels_def, listTheory.MAP_MAP_o,
+       combinTheory.o_DEF, bb_label_subst_block_labels_block]
+QED
+
+Theorem fn_labels_remove_unreachable_subset[local]:
+  EVERY (\label. MEM label (fn_labels func))
+    (fn_labels (remove_unreachable_blocks func))
+Proof
+  Cases_on `fn_entry_label func` >>
+  simp[remove_unreachable_blocks_def, venomInstTheory.fn_labels_def,
+       listTheory.EVERY_MEM, MEM_MAP, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem fn_labels_filter_blocks[local]:
+  MAP (\bb. bb.bb_label) (FILTER (\bb. pred bb.bb_label) blocks) =
+  FILTER pred (MAP (\bb. bb.bb_label) blocks)
+Proof
+  Induct_on `blocks` >> simp[] >>
+  gen_tac >> Cases_on `pred h.bb_label` >> simp[]
+QED
+
+Theorem fn_labels_remove_unreachable_all_distinct[local]:
+  ALL_DISTINCT (fn_labels func) ==>
+  ALL_DISTINCT (fn_labels (remove_unreachable_blocks func))
+Proof
+  Cases_on `fn_entry_label func` >>
+  simp[remove_unreachable_blocks_def, venomInstTheory.fn_labels_def,
+       fn_labels_filter_blocks, FILTER_ALL_DISTINCT]
+QED
+Theorem label_event_trace_final_subset[local]:
+  !initial events final.
+    label_event_trace initial events final ==>
+    EVERY (\label. MEM label initial) final
+Proof
+  Induct_on `events`
+  >- simp[label_event_trace_def, listTheory.EVERY_MEM] >>
+  Cases_on `h` >>
+  simp[label_event_trace_def] >>
+  rpt strip_tac >>
+  first_x_assum drule >>
+  gvs[listTheory.EVERY_MEM, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem label_event_trace_sources_absent[local]:
+  !initial events final.
+    label_event_trace initial events final ==>
+    EVERY (\entry. ~MEM (FST entry) final) events
+Proof
+  Induct_on `events`
+  >- simp[label_event_trace_def] >>
+  Cases_on `h` >>
+  simp[label_event_trace_def] >>
+  rpt strip_tac >>
+  `EVERY (\label. MEM label (FILTER (\l. l <> q) initial)) final` by
+    metis_tac[label_event_trace_final_subset] >>
+  first_x_assum drule >>
+  gvs[listTheory.EVERY_MEM, MEM_FILTER] >>
+  metis_tac[]
+QED
+
+Theorem label_event_trace_transition[local]:
+  ALL_DISTINCT initial /\ label_event_trace initial events final ==>
+  label_map_transition initial events final
+Proof
+  rpt strip_tac >>
+  simp[label_map_transition_def] >>
+  metis_tac[label_event_trace_chronological,
+            label_event_trace_endpoints,
+            label_event_trace_sources_absent,
+            label_event_trace_final_subset,
+            label_event_trace_all_distinct]
+QED
+
+Theorem label_map_transition_widen_restrict[local]:
+  label_map_transition inner label_map middle /\
+  EVERY (\label. MEM label outer) inner /\
+  EVERY (\label. MEM label middle) final /\
+  ALL_DISTINCT final ==>
+  label_map_transition outer label_map final
+Proof
+  rpt strip_tac >>
+  fs[label_map_transition_def] >>
+  simp[label_map_transition_def] >>
+  rpt conj_tac
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >> gvs[]
+QED
+
 
 Theorem resolve_label_fuel_cons_irrelevant[local]:
   !fuel rest source target visited label.
