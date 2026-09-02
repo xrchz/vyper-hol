@@ -1947,6 +1947,76 @@ Proof
   drule_all make_ssa_ctx_supply_ok >>
   gvs[unit_ir_inst_ids_def, unit_ir_vars_def]
 QED
+
+Theorem make_ssa_configured_supply_contract[local]:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  make_ssa_configured_with_supply unit = (unit',s') ==>
+  ssa_ids_supply_ok (init_ir_supply unit) (unit_ir_inst_ids unit)
+    (unit_ir_inst_ids unit') s' /\
+  ssa_vars_covered s' (unit_ir_vars unit')
+Proof
+  strip_tac >>
+  irule make_ssa_unit_supply_ok >>
+  gvs[make_ssa_configured_with_supply_def, init_ir_supply_inst_ok,
+      init_ir_supply_fields, ssa_vars_covered_def, listTheory.EVERY_MEM]
+QED
+
+Theorem make_ssa_configured_inst_ids_distinct:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  make_ssa_configured_with_supply unit = (unit',s') ==>
+  ALL_DISTINCT (unit_ir_inst_ids unit')
+Proof
+  strip_tac >> drule_all make_ssa_configured_supply_contract >>
+  simp[ssa_ids_supply_ok_def]
+QED
+
+Theorem make_ssa_configured_supply_extends:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  make_ssa_configured_with_supply unit = (unit',s') ==>
+  ssa_supply_extends (init_ir_supply unit) s'
+Proof
+  strip_tac >> drule_all make_ssa_configured_supply_contract >>
+  simp[ssa_ids_supply_ok_def]
+QED
+
+Theorem make_ssa_configured_inst_ids_covered:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  make_ssa_configured_with_supply unit = (unit',s') ==>
+  EVERY (\id. MEM id s'.irs_used_inst_ids) (unit_ir_inst_ids unit')
+Proof
+  strip_tac >> drule_all make_ssa_configured_supply_contract >>
+  simp[ssa_ids_supply_ok_def]
+QED
+
+Theorem make_ssa_configured_vars_covered:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) /\
+  make_ssa_configured_with_supply unit = (unit',s') ==>
+  ssa_vars_covered s' (unit_ir_vars unit')
+Proof
+  strip_tac >> drule_all make_ssa_configured_supply_contract >> simp[]
+QED
+
+Theorem make_ssa_configured_global_ids_distinct:
+  EVERY (\fn. ALL_DISTINCT (MAP (\bb. bb.bb_label) fn.fn_blocks))
+    unit.cu_context.ctx_functions /\
+  ALL_DISTINCT (unit_ir_inst_ids unit) ==>
+  ALL_DISTINCT (unit_ir_inst_ids (make_ssa_configured unit))
+Proof
+  rpt strip_tac >>
+  Cases_on `make_ssa_configured_with_supply unit` >>
+  drule_all make_ssa_configured_inst_ids_distinct >>
+  gvs[make_ssa_configured_def]
+QED
 Theorem rename_current_blocks_invoke_labels:
   (!s rs bbs sm t ctrs s' bbs'.
      ALL_DISTINCT (MAP basic_block_bb_label bbs) /\
