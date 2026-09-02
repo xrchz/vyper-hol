@@ -2268,3 +2268,133 @@ Proof
   metis_tac[cfg_norm_unit_supply_inst_ids_all_distinct,
             init_ir_supply_inst_ok,init_ir_supply_cfg_supply_covers_unit]
 QED
+
+
+(* ===== Structural preservation for the configured CFG adapter ===== *)
+
+Theorem insert_split_supply_metadata:
+  insert_split_supply s fn pred_bb target_bb = (fn',s') ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_static_input_eq fn' fn /\
+  fn_static_layout_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn
+Proof
+  rpt strip_tac >>
+  Cases_on `build_split_block_supply s pred_bb target_bb` >>
+  PairCases_on `r` >>
+  gvs[insert_split_supply_def,venomInstTheory.fn_identity_metadata_eq_def,
+      venomInstTheory.fn_static_input_eq_def,venomInstTheory.fn_static_layout_eq_def,
+      venomInstTheory.fn_fmp_convention_eq_def]
+QED
+
+Theorem find_and_split_supply_metadata:
+  !bbs fn s fn' changed s'.
+    find_and_split_supply fn s bbs = (fn',changed,s') ==>
+    fn_identity_metadata_eq fn' fn /\
+    fn_static_input_eq fn' fn /\
+    fn_static_layout_eq fn' fn /\
+    fn_fmp_convention_eq fn' fn
+Proof
+  Induct_on `bbs` >> rpt gen_tac >> strip_tac
+  >- gvs[find_and_split_supply_def,venomInstTheory.fn_identity_metadata_eq_def,
+          venomInstTheory.fn_static_input_eq_def,venomInstTheory.fn_static_layout_eq_def,
+          venomInstTheory.fn_fmp_convention_eq_def]
+  >> Cases_on `LENGTH (block_preds fn h.bb_label) <= 1`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `FIND (\p. num_succs p > 1) (block_preds fn h.bb_label)`
+  >- (gvs[find_and_split_supply_def] >> metis_tac[])
+  >> Cases_on `insert_split_supply s fn x h` >>
+     gvs[find_and_split_supply_def] >>
+     metis_tac[insert_split_supply_metadata]
+QED
+
+Theorem cfg_norm_round_supply_metadata:
+  cfg_norm_round_supply s fn = (fn',changed,s') ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_static_input_eq fn' fn /\
+  fn_static_layout_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn
+Proof
+  simp[cfg_norm_round_supply_def] >>
+  metis_tac[find_and_split_supply_metadata]
+QED
+
+Theorem cfg_norm_iter_supply_metadata:
+  !n s fn fn' s'.
+    cfg_norm_iter_supply n s fn = (fn',s') ==>
+    fn_identity_metadata_eq fn' fn /\
+    fn_static_input_eq fn' fn /\
+    fn_static_layout_eq fn' fn /\
+    fn_fmp_convention_eq fn' fn
+Proof
+  Induct_on `n` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_iter_supply_def,venomInstTheory.fn_identity_metadata_eq_def,
+          venomInstTheory.fn_static_input_eq_def,venomInstTheory.fn_static_layout_eq_def,
+          venomInstTheory.fn_fmp_convention_eq_def]
+  >> Cases_on `cfg_norm_round_supply s fn` >> PairCases_on `r` >>
+     rename1 `cfg_norm_round_supply s fn = (fn1,changed,s1)` >>
+     Cases_on `changed`
+  >- (gvs[cfg_norm_iter_supply_def] >>
+      `fn_identity_metadata_eq fn1 fn /\
+       fn_static_input_eq fn1 fn /\
+       fn_static_layout_eq fn1 fn /\
+       fn_fmp_convention_eq fn1 fn` by
+        metis_tac[cfg_norm_round_supply_metadata] >>
+      `fn_identity_metadata_eq fn' fn1 /\
+       fn_static_input_eq fn' fn1 /\
+       fn_static_layout_eq fn' fn1 /\
+       fn_fmp_convention_eq fn' fn1` by metis_tac[] >>
+      gvs[venomInstTheory.fn_identity_metadata_eq_def,venomInstTheory.fn_static_input_eq_def,
+          venomInstTheory.fn_static_layout_eq_def,venomInstTheory.fn_fmp_convention_eq_def])
+  >> gvs[cfg_norm_iter_supply_def] >>
+     metis_tac[cfg_norm_round_supply_metadata]
+QED
+
+Theorem cfg_norm_function_supply_metadata:
+  cfg_norm_function_supply s fn = (fn',s') ==>
+  fn_identity_metadata_eq fn' fn /\
+  fn_static_input_eq fn' fn /\
+  fn_static_layout_eq fn' fn /\
+  fn_fmp_convention_eq fn' fn
+Proof
+  simp[cfg_norm_function_supply_def] >>
+  metis_tac[cfg_norm_iter_supply_metadata]
+QED
+
+Theorem cfg_norm_functions_supply_metadata:
+  !s fns fns' s'.
+    cfg_norm_functions_supply s fns = (fns',s') ==>
+    LIST_REL
+      (\fn' fn.
+         fn_identity_metadata_eq fn' fn /\
+         fn_static_input_eq fn' fn /\
+         fn_static_layout_eq fn' fn /\
+         fn_fmp_convention_eq fn' fn) fns' fns
+Proof
+  Induct_on `fns` >> rpt gen_tac >> strip_tac
+  >- gvs[cfg_norm_functions_supply_def]
+  >> Cases_on `cfg_norm_function_supply s h` >>
+     rename1 `cfg_norm_function_supply s h = (h',s1)` >>
+     Cases_on `cfg_norm_functions_supply s1 fns` >>
+     rename1 `cfg_norm_functions_supply s1 fns = (rest,s2)` >>
+     gvs[cfg_norm_functions_supply_def] >>
+     metis_tac[cfg_norm_function_supply_metadata]
+QED
+
+Theorem cfg_norm_configured_metadata:
+  cfg_norm_configured_with_supply unit = (unit',s') ==>
+  LIST_REL
+    (\fn' fn.
+       fn_identity_metadata_eq fn' fn /\
+       fn_static_input_eq fn' fn /\
+       fn_static_layout_eq fn' fn /\
+       fn_fmp_convention_eq fn' fn)
+    unit'.cu_context.ctx_functions unit.cu_context.ctx_functions
+Proof
+  rpt strip_tac >>
+  Cases_on `cfg_norm_functions_supply (init_ir_supply unit)
+              unit.cu_context.ctx_functions` >>
+  gvs[cfg_norm_configured_with_supply_def,cfg_norm_unit_supply_def,
+      cfg_norm_context_supply_def] >>
+  metis_tac[cfg_norm_functions_supply_metadata]
+QED
