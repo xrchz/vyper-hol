@@ -82,6 +82,13 @@ Proof
   simp[ssa_supply_extends_def] >> metis_tac[arithmeticTheory.LESS_IMP_LESS_OR_EQ]
 QED
 
+Theorem fresh_ir_var_inst_ok:
+  ir_supply_inst_ok s /\ fresh_ir_var s = (v,s') ==> ir_supply_inst_ok s'
+Proof
+  rpt strip_tac >> drule fresh_ir_var_contract >> strip_tac >>
+  gvs[ir_supply_inst_ok_def]
+QED
+
 Theorem fresh_inst_id_supply_ok:
   ir_supply_inst_ok s /\ fresh_inst_id s = (id,s') ==>
   ssa_ids_supply_ok s [] [id] s'
@@ -430,6 +437,18 @@ Proof
   pairarg_tac >> gvs[] >>
   metis_tac[fresh_ir_var_extends]
 QED
+
+Theorem push_current_name_inst_ok:
+  ir_supply_inst_ok s /\
+  push_current_name s rs v = (rs',s',name) ==>
+  ir_supply_inst_ok s'
+Proof
+  PairCases_on `rs` >>
+  simp[push_current_name_def] >> rpt CASE_TAC >> gvs[] >>
+  TRY (pairarg_tac >> gvs[]) >>
+  metis_tac[fresh_ir_var_inst_ok]
+QED
+
 Theorem push_current_name_covered:
   ssa_stacks_covered s (SND rs) /\
   MEM v s.irs_used_vars /\
