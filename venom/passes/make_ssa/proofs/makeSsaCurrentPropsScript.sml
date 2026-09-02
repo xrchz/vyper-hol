@@ -27,6 +27,47 @@ Proof
   simp[ssa_supply_extends_def] >> metis_tac[arithmeticTheory.LESS_EQ_TRANS]
 QED
 
+Definition ssa_ids_supply_ok_def:
+  ssa_ids_supply_ok s old_ids new_ids s' <=>
+    ssa_supply_extends s s' /\
+    ir_supply_inst_ok s' /\
+    ALL_DISTINCT new_ids /\
+    EVERY (\id. MEM id s'.irs_used_inst_ids) new_ids /\
+    (!id. MEM id new_ids /\ MEM id s.irs_used_inst_ids ==>
+          MEM id old_ids)
+End
+
+Definition ssa_vars_covered_def:
+  ssa_vars_covered s vars <=>
+    EVERY (\v. MEM v s.irs_used_vars) vars
+End
+
+Definition ssa_stacks_covered_def:
+  ssa_stacks_covered s stacks <=>
+    EVERY (\entry. ssa_vars_covered s (SND entry)) stacks
+End
+
+Theorem ssa_ids_supply_ok_refl:
+  ir_supply_inst_ok s /\ ALL_DISTINCT ids /\
+  EVERY (\id. MEM id s.irs_used_inst_ids) ids ==>
+  ssa_ids_supply_ok s ids ids s
+Proof
+  simp[ssa_ids_supply_ok_def, ssa_supply_extends_refl]
+QED
+
+Theorem ssa_ids_supply_ok_trans:
+  ssa_ids_supply_ok s old_ids mid_ids s1 /\
+  ssa_ids_supply_ok s1 mid_ids new_ids s2 ==>
+  ssa_ids_supply_ok s old_ids new_ids s2
+Proof
+  simp[ssa_ids_supply_ok_def, listTheory.EVERY_MEM] >>
+  rpt strip_tac
+  >- metis_tac[ssa_supply_extends_trans]
+  >> `MEM id s1.irs_used_inst_ids` by
+       (gvs[ssa_supply_extends_def] >> metis_tac[]) >>
+     metis_tac[]
+QED
+
 Theorem fresh_inst_id_extends:
   fresh_inst_id s = (id,s') ==> ssa_supply_extends s s'
 Proof
@@ -39,6 +80,27 @@ Theorem fresh_ir_var_extends:
 Proof
   strip_tac >> drule fresh_ir_var_contract >>
   simp[ssa_supply_extends_def] >> metis_tac[arithmeticTheory.LESS_IMP_LESS_OR_EQ]
+QED
+
+Theorem fresh_inst_id_supply_ok:
+  ir_supply_inst_ok s /\ fresh_inst_id s = (id,s') ==>
+  ssa_ids_supply_ok s [] [id] s'
+Proof
+  rpt strip_tac >> drule fresh_inst_id_contract >>
+  disch_then drule >> strip_tac >>
+  simp[ssa_ids_supply_ok_def] >>
+  metis_tac[fresh_inst_id_extends]
+QED
+
+Theorem fresh_ir_var_covered:
+  ssa_vars_covered s vars /\ fresh_ir_var s = (v,s') ==>
+  ssa_vars_covered s' (v::vars) /\ ssa_supply_extends s s'
+Proof
+  rewrite_tac[ssa_vars_covered_def] >> strip_tac >>
+  drule fresh_ir_var_contract >> strip_tac >>
+  conj_tac
+  >- (gvs[listTheory.EVERY_MEM] >> metis_tac[])
+  >> metis_tac[fresh_ir_var_extends]
 QED
 
 Theorem process_frontiers_supply_extends:
