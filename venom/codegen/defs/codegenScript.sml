@@ -31,7 +31,7 @@ Definition codegen_def:
     case generate_context_plan ctx of
       NONE => NONE
     | SOME plan =>
-        let code_asm = execute_plan (context_plan_ops plan) in
+        let code_asm = execute_plan plan.cp_initial_fmp (context_plan_ops plan) in
         let data_asm = data_segment_asm data_seg in
         SOME (assemble (code_asm ++ data_asm))
 End
@@ -43,7 +43,7 @@ Definition codegen_fuel_def:
     case generate_context_plan_fuel fuel ctx of
       NONE => NONE
     | SOME plan =>
-        let code_asm = execute_plan (context_plan_ops plan) in
+        let code_asm = execute_plan plan.cp_initial_fmp (context_plan_ops plan) in
         let data_asm = data_segment_asm data_seg in
         SOME (assemble (code_asm ++ data_asm))
 End
