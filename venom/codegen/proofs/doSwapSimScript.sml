@@ -2919,3 +2919,71 @@ Proof
   mp_tac headroom_allocator_trajectory >>
   simp[LET_THM]
 QED
+
+
+Theorem headroom_final_allocator_layout[local]:
+  let res = spill_alloc_n [] headroom_alloc headroom_stack;
+      offsets = FST res;
+      alloc2 = FOLDL (\al off. free_spill_slot off al) (SND res) offsets
+  in spill_alloc_layout_wf alloc2 FEMPTY
+Proof
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  mp_tac headroom_final_allocator >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
+  fs[spill_alloc_layout_wf_def] >>
+  conj_tac
+  >- (rpt strip_tac >> fs[MEM_EL] >>
+      mp_tac headroom_offset_layout_props >>
+      rewrite_tac[LET_THM] >> BETA_TAC >>
+      disch_then (qspec_then `n` mp_tac) >> simp[]) >>
+  conj_tac
+  >- simp[headroom_offsets_all_distinct] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `i < j`
+  >- (mp_tac headroom_offset_layout_props >>
+      rewrite_tac[LET_THM] >> BETA_TAC >>
+      disch_then (qspec_then `j` mp_tac) >> simp[] >>
+      disch_then (qspec_then `i` mp_tac) >> simp[]) >>
+  `j < i` by decide_tac >>
+  mp_tac headroom_offset_layout_props >>
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  disch_then (qspec_then `i` mp_tac) >>
+  (impl_tac >- simp[]) >> strip_tac >>
+  qpat_x_assum `!j. j < i ==> _` (qspec_then `j` mp_tac) >>
+  simp[]
+QED
+
+Theorem do_swap_headroom_post_layout:
+  let post = SND (do_swap 17 headroom_ps) in
+    spill_alloc_layout_wf post.ps_alloc post.ps_spilled /\
+    post.ps_alloc.sa_spill_base = 0 /\
+    post.ps_alloc.sa_next_offset = dimword(:256) /\
+    post.ps_spilled = FEMPTY /\
+    ALL_DISTINCT post.ps_stack /\
+    ~spill_alloc_wf post.ps_alloc post.ps_spilled
+Proof
+  rewrite_tac[LET_THM] >>
+  mp_tac (Q.SPECL [`17`, `headroom_ps`] do_swap_big_decompose) >>
+  (impl_tac >- simp[headroom_ps_def, headroom_stack_def]) >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
+  qpat_x_assum `do_swap 17 headroom_ps = _`
+    (fn th => rewrite_tac[th]) >>
+  `headroom_ps.ps_alloc = headroom_alloc` by
+    simp[headroom_ps_def] >>
+  `top_n 18 headroom_ps.ps_stack = headroom_stack` by
+    simp[headroom_ps_def, headroom_stack_def, top_n_def] >>
+  `ALL_DISTINCT
+     (TAKE (LENGTH headroom_ps.ps_stack - (17 + 1)) headroom_ps.ps_stack ++
+      MAP (\idx. EL idx (top_n (17 + 1) headroom_ps.ps_stack))
+        ([17] ++ GENLIST (\i. i + 1) (17 - 1) ++ [0]))` by
+    simp[headroom_ps_def, headroom_stack_def, top_n_def] >>
+  `headroom_ps.ps_spilled = FEMPTY` by
+    simp[headroom_ps_def, init_plan_state_def] >>
+  simp[] >>
+  mp_tac headroom_final_allocator_layout >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> disch_then assume_tac >>
+  mp_tac headroom_final_allocator >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
+  ASM_REWRITE_TAC[spill_alloc_wf_iff_layout_ready] >>
+  simp[headroom_ps_def, headroom_stack_def, top_n_def]
+QED
