@@ -11,8 +11,8 @@ Ancestors
   memLocProps
   (* cfg *)
   cfgAnalysis
-  (* fcg *)
-  fcgAnalysis
+  (* fcg: public executable + postorder/correctness interface *)
+  fcgAnalysisProps
   (* dataflow framework *)
   dataflowAnalysis
   (* liveness *)
