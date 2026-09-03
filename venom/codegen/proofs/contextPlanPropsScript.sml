@@ -145,4 +145,67 @@ Proof
   simp[context_plan_layout_wf_def] >>
   metis_tac[ordered_spill_regions_EL]
 QED
+
+Theorem generated_spill_access_bound:
+  generate_context_plan ctx = SOME cp /\
+  MEM r cp.cp_regions /\ region_spill_access r off ==>
+  r.sr_spill_base <= off /\
+  off + 32 <= r.sr_spill_end /\
+  off + 32 <= cp.cp_peak_spill_end
+Proof
+  simp[generate_context_plan_def, generate_context_plan_with_def] >>
+  Cases_on `max_live_eom ctx`
+  >- simp[] >>
+  simp[] >>
+  Cases_on `generate_context_regions generate_fn_plan ctx.ctx_functions
+    <|cpa_regions := []; cpa_label_counter := 0;
+      cpa_next_spill_base := x; cpa_peak_spill_end := 0|>`
+  >- simp[] >>
+  simp[finish_context_plan_def] >>
+  rpt strip_tac >> gvs[] >>
+  drule generate_context_regions_access_peak_regular >>
+  disch_then (qspec_then `x` mp_tac) >>
+  simp[context_region_acc_wf_def, ordered_spill_regions_def, EVERY_MEM] >>
+  metis_tac[]
+QED
+
+Theorem generate_context_plan_peak_bound:
+  generate_context_plan ctx = SOME cp ==>
+  cp.cp_peak_spill_end <= cp.cp_initial_fmp
+Proof
+  strip_tac >>
+  drule generate_context_plan_layout_wf >>
+  simp[context_plan_layout_wf_def]
+QED
+
+Theorem generate_context_plan_missing_eom:
+  (?fn. MEM fn ctx.ctx_functions /\ fn.fn_eom = NONE) ==>
+  generate_context_plan ctx = NONE
+Proof
+  rpt strip_tac >>
+  `max_live_eom ctx = NONE` by metis_tac[max_live_eom_missing] >>
+  simp[generate_context_plan_def, generate_context_plan_with_def]
+QED
+
+Theorem generate_context_plan_malformed_reservations:
+  ~reserved_intervals_wf ctx.ctx_global_reserved ==>
+  generate_context_plan ctx = NONE
+Proof
+  strip_tac >>
+  drule max_live_eom_malformed >>
+  simp[generate_context_plan_def, generate_context_plan_with_def]
+QED
+
+Theorem generate_context_plan_initial_fmp_overflow:
+  max_live_eom ctx = SOME max_eom /\
+  generate_context_regions generate_fn_plan ctx.ctx_functions
+    <|cpa_regions := []; cpa_label_counter := 0;
+      cpa_next_spill_base := max_eom; cpa_peak_spill_end := 0|> = SOME acc /\
+  dimword (:256) <= ceil32 (MAX max_eom acc.cpa_peak_spill_end) ==>
+  generate_context_plan ctx = NONE
+Proof
+  simp[generate_context_plan_def, generate_context_plan_with_def,
+       finish_context_plan_def] >>
+  decide_tac
+QED
 val _ = export_theory();
