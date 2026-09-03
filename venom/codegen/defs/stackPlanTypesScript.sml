@@ -13,8 +13,7 @@
 
 Theory stackPlanTypes
 Ancestors
-  asmIR
-
+  asmIR venomLayout
 (* =========================================================================
    Spill Allocator State (global within a function)
    ========================================================================= *)
@@ -40,6 +39,68 @@ Datatype:
   |>
 End
 
+
+(* =========================================================================
+   Context Spill Planning
+   ========================================================================= *)
+
+Datatype:
+  spill_region = <|
+    sr_fn_name : string;
+    sr_spill_base : num;
+    sr_spill_end : num;
+    sr_plan : stack_op list
+  |>
+End
+
+Datatype:
+  context_plan = <|
+    cp_regions : spill_region list;
+    cp_max_static_eom : num;
+    cp_peak_spill_end : num;
+    cp_initial_fmp : num
+  |>
+End
+
+Datatype:
+  context_plan_acc = <|
+    cpa_regions : spill_region list;
+    cpa_label_counter : num;
+    cpa_next_spill_base : num;
+    cpa_peak_spill_end : num
+  |>
+End
+
+Definition ordered_spill_regions_def:
+  (ordered_spill_regions [] = T) /\
+  (ordered_spill_regions (r::rs) =
+    (r.sr_spill_base <= r.sr_spill_end /\
+     EVERY (\r'. r.sr_spill_end <= r'.sr_spill_base) rs /\
+     ordered_spill_regions rs))
+End
+
+Definition context_plan_layout_wf_def:
+  context_plan_layout_wf cp <=>
+    EVERY
+      (\r. cp.cp_max_static_eom <= r.sr_spill_base /\
+           r.sr_spill_base <= r.sr_spill_end)
+      cp.cp_regions /\
+    ordered_spill_regions cp.cp_regions /\
+    EVERY
+      (\r. r.sr_spill_base < r.sr_spill_end ==>
+           r.sr_spill_end <= cp.cp_peak_spill_end)
+      cp.cp_regions /\
+    cp.cp_initial_fmp =
+      ceil32 (MAX cp.cp_max_static_eom cp.cp_peak_spill_end) /\
+    cp.cp_max_static_eom <= cp.cp_initial_fmp /\
+    cp.cp_peak_spill_end <= cp.cp_initial_fmp /\
+    cp.cp_initial_fmp MOD 32 = 0
+End
+
+Definition region_spill_access_def:
+  region_spill_access r off <=>
+    MEM (SOSpill off) r.sr_plan \/ MEM (SORestore off) r.sr_plan
+End
 (* =========================================================================
    Spill Slot Management
    ========================================================================= *)
