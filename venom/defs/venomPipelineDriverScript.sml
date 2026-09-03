@@ -1557,6 +1557,32 @@ Proof
   gvs [venomInstTheory.is_terminator_def]
 QED
 
+
+Theorem task041_pruning_unit_wf:
+  unit_wf task041_pruning_unit
+Proof
+  EVAL_TAC >>
+  simp [listTheory.REV_DEF, venomInstTheory.is_terminator_def,
+        venomStateTheory.get_label_def] >>
+  EVAL_TAC >> rpt strip_tac >>
+  gvs [venomInstTheory.fn_insts_blocks_def,
+       venomInstTheory.is_terminator_def, listTheory.REV_DEF,
+       venomStateTheory.get_label_def]
+QED
+
+Theorem task041_pruning_driver_facts:
+  unit_wf task041_pruning_unit /\
+  raw_static_inputs_wf task041_pruning_unit.cu_context /\
+  reachable_fcg_acyclic task041_pruning_unit.cu_context
+    (fcg_analyze task041_pruning_unit.cu_context) /\
+  task041_pruning_unit.cu_context.ctx_entry = SOME "main" /\
+  prune_unit_fcg_unreachable task041_pruning_unit
+    (fcg_analyze task041_pruning_unit.cu_context) = task041_raw_unit /\
+  fcg_postorder (fcg_analyze task041_pruning_unit.cu_context) "main" = ["main"]
+Proof
+  simp [task041_pruning_unit_wf, task041_pruning_reduces_to_raw] >>
+  EVAL_TAC >> rpt strip_tac >> gvs []
+QED
 Theorem task041_raw_driver_facts:
   unit_wf task041_raw_unit /\
   raw_static_inputs_wf task041_raw_unit.cu_context /\
@@ -1616,6 +1642,43 @@ Proof
   >> Cases_on `v = "formal_var_0"` >> simp []
 QED
 
+
+Theorem task041_walked_fn_names:
+  ctx_fn_names task041_walked_unit.cu_context = ["main"]
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_schedule_transaction_closed:
+  run_configured_fn_passes execute_configured_fn_pass task039_policy
+    (CFP_Simple VP_DretDesugar :: o1_fn_passes) "main" task041_raw_unit
+    (init_ir_supply task041_pruning_unit) =
+  SOME (task041_walked_unit,task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  pure_rewrite_tac [task041_pruning_walked_transaction_facts,
+                    task041_raw_structure_facts] >>
+  simp [task041_pruning_schedule_fold,
+        task041_pruning_walked_transaction_facts]
+QED
+
+Theorem task041_pruning_validation:
+  ctx_fn_names task041_pruning_unit.cu_context = ["main";"unreachable"] /\
+  ctx_fn_names task041_walked_unit.cu_context = ["main"] /\
+  run_venom_pipeline (K T) (K T) (K T) task039_policy
+    task041_pruning_spec task041_pruning_unit =
+  SOME <|po_unit := task041_walked_unit;
+         po_final_assembly := FAP_Optimize|>
+Proof
+  simp [run_venom_pipeline_def, task041_pruning_spec_wf,
+        task041_pruning_spec_def, task041_pruning_driver_facts,
+        task041_pruning_structure_facts, task041_walked_fn_names,
+        run_pipeline_stages_def, task041_pruning_schedule_walk,
+        run_callee_first_def, run_named_fn_schedules_def,
+        task041_pruning_schedule_transaction_closed,
+        task041_walked_final_facts]
+QED
 Theorem task041_o1_walk:
   run_callee_first task039_policy o1_fn_passes
     (fcg_postorder (fcg_analyze task041_raw_unit.cu_context) "main")
