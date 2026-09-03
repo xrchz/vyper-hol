@@ -503,6 +503,77 @@ Proof
        ops_spill_bounded_def, region_spill_access_def]
 QED
 
+Theorem generate_context_regions_access_bounded:
+  !gen fns acc acc'.
+    generate_context_regions gen fns acc = SOME acc' /\
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      acc.cpa_regions ==>
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      acc'.cpa_regions
+Proof
+  gen_tac >> Induct
+  >- simp[generate_context_regions_def] >>
+  rpt gen_tac >>
+  simp[generate_context_regions_def] >>
+  Cases_on `gen h acc.cpa_next_spill_base acc.cpa_label_counter` >>
+  gvs[] >> PairCases_on `x` >>
+  gvs[AllCaseEqs(), EVERY_SNOC] >>
+  rpt strip_tac >>
+  first_x_assum drule >>
+  disch_then irule >>
+  simp[EVERY_SNOC] >>
+  fs[spill_plan_in_region_iff_ops_spill_bounded,
+     ops_spill_bounded_def, region_spill_access_def] >>
+  first_assum ACCEPT_TAC
+QED
+
+Theorem generate_context_plan_with_access_bounded:
+  !gen ctx cp.
+    generate_context_plan_with gen ctx = SOME cp ==>
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      cp.cp_regions
+Proof
+  rpt gen_tac >>
+  simp[generate_context_plan_with_def] >>
+  Cases_on `max_live_eom ctx` >> gvs[] >>
+  Cases_on `generate_context_regions gen ctx.ctx_functions
+    <|cpa_regions := []; cpa_label_counter := 0;
+      cpa_next_spill_base := x; cpa_peak_spill_end := 0|>` >>
+  gvs[finish_context_plan_def] >>
+  rpt strip_tac >>
+  drule generate_context_regions_access_bounded >>
+  gvs[]
+QED
+
+Theorem generate_context_plan_access_bounded:
+  !ctx cp.
+    generate_context_plan ctx = SOME cp ==>
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      cp.cp_regions
+Proof
+  simp[generate_context_plan_def] >>
+  metis_tac[generate_context_plan_with_access_bounded]
+QED
+
+Theorem generate_context_plan_fuel_access_bounded:
+  !fuel ctx cp.
+    generate_context_plan_fuel fuel ctx = SOME cp ==>
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      cp.cp_regions
+Proof
+  simp[generate_context_plan_fuel_def] >>
+  metis_tac[generate_context_plan_with_access_bounded]
+QED
 
 
 
