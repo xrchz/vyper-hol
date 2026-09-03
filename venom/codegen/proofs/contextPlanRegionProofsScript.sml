@@ -129,4 +129,26 @@ Proof
   gvs[] >> decide_tac
 QED
 
+Theorem generate_context_regions_names:
+  !gen fns acc acc'.
+    generate_context_regions gen fns acc = SOME acc' ==>
+    MAP (\r. r.sr_fn_name) acc'.cpa_regions =
+      MAP (\r. r.sr_fn_name) acc.cpa_regions ++
+      MAP (\fn. fn.fn_name) fns
+Proof
+  gen_tac >>
+  Induct_on `fns`
+  >- simp[generate_context_regions_def] >>
+  rpt gen_tac >>
+  simp[generate_context_regions_def] >>
+  Cases_on `gen h acc.cpa_next_spill_base acc.cpa_label_counter`
+  >- simp[] >>
+  PairCases_on `x` >>
+  simp[] >>
+  IF_CASES_TAC >> simp[] >>
+  strip_tac >>
+  first_x_assum drule >>
+  simp[MAP_SNOC]
+QED
+
 val _ = export_theory();
