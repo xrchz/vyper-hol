@@ -1193,3 +1193,40 @@ Proof
   imp_res_tac (cj 1 fn_plan_aux_alloc_mono) >>
   gvs[init_plan_state_def, init_spill_alloc_def]
 QED
+
+
+Theorem fn_plan_aux_fuel_alloc_mono:
+  (!fuel liveness dfg cfg fn worklist visited ps ops visited' ps'.
+    generate_fn_plan_aux_fuel fuel liveness dfg cfg fn worklist visited ps =
+      SOME (ops, visited', ps') ==>
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
+    ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset) /\
+  (!fuel liveness dfg cfg fn ss sp succs visited ps ops visited' ps'.
+    generate_succs_plan_fuel fuel liveness dfg cfg fn ss sp succs visited ps =
+      SOME (ops, visited', ps') ==>
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
+    ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset)
+Proof
+  ho_match_mp_tac generate_fn_plan_aux_fuel_ind >> rpt conj_tac >>
+  rpt gen_tac >> simp[Once generate_fn_plan_aux_fuel_def] >>
+  every_case_tac >> gvs[] >> rpt strip_tac >>
+  imp_res_tac generate_block_plan_alloc_mono >> gvs[] >> decide_tac
+QED
+
+Theorem generate_fn_plan_fuel_alloc_mono:
+  !fuel fn spill_base lbl_ctr ops ps_final.
+    generate_fn_plan_fuel fuel fn spill_base lbl_ctr = SOME (ops, ps_final) ==>
+    ps_final.ps_alloc.sa_spill_base = spill_base /\
+    spill_base <= ps_final.ps_alloc.sa_next_offset
+Proof
+  rpt gen_tac >>
+  Cases_on `fn_entry_label fn`
+  >- (simp[generate_fn_plan_fuel_def, init_plan_state_def,
+           init_spill_alloc_def] >> rpt strip_tac >> gvs[])
+  >> simp[generate_fn_plan_fuel_def] >>
+  every_case_tac >> gvs[] >> strip_tac >> gvs[] >>
+  imp_res_tac (cj 1 fn_plan_aux_fuel_alloc_mono) >>
+  gvs[init_plan_state_def, init_spill_alloc_def]
+QED
+
+val _ = export_theory();
