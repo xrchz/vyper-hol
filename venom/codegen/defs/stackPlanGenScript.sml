@@ -934,17 +934,19 @@ Definition generate_context_regions_def:
           sr_spill_end := spill_end;
           sr_plan := fn_ops
         |> in
-        let peak =
-          if spill_base < spill_end then
-            MAX acc.cpa_peak_spill_end spill_end
-          else acc.cpa_peak_spill_end in
-        generate_context_regions gen fns
-          (acc with <|
-            cpa_regions := SNOC region acc.cpa_regions;
-            cpa_label_counter := ps.ps_label_counter;
-            cpa_next_spill_base := spill_end;
-            cpa_peak_spill_end := peak
-          |>))
+        if spill_plan_in_region spill_base spill_end fn_ops then
+          let peak =
+            if spill_base < spill_end then
+              MAX acc.cpa_peak_spill_end spill_end
+            else acc.cpa_peak_spill_end in
+          generate_context_regions gen fns
+            (acc with <|
+              cpa_regions := SNOC region acc.cpa_regions;
+              cpa_label_counter := ps.ps_label_counter;
+              cpa_next_spill_base := spill_end;
+              cpa_peak_spill_end := peak
+            |>)
+        else NONE)
 End
 
 Definition finish_context_plan_def:
@@ -985,6 +987,29 @@ Definition generate_context_plan_fuel_def:
   generate_context_plan_fuel fuel ctx =
     generate_context_plan_with (generate_fn_plan_fuel fuel) ctx
 End
+Theorem generate_context_regions_rejects_malformed_spill:
+  generate_context_regions
+    (\fn base labels. SOME ([SOSpill base], init_plan_state base))
+    [fn] acc = NONE
+Proof
+  simp[generate_context_regions_def,
+       stackPlanTypesTheory.spill_plan_in_region_def,
+       stackPlanTypesTheory.stack_op_in_spill_region_def,
+       stackPlanTypesTheory.init_plan_state_def,
+       stackPlanTypesTheory.init_spill_alloc_def]
+QED
+
+Theorem generate_context_regions_accepts_empty_plan:
+  IS_SOME
+    (generate_context_regions
+      (\fn base labels. SOME ([], init_plan_state base)) [fn] acc)
+Proof
+  simp[generate_context_regions_def,
+       stackPlanTypesTheory.spill_plan_in_region_def,
+       stackPlanTypesTheory.init_plan_state_def,
+       stackPlanTypesTheory.init_spill_alloc_def]
+QED
+
 
 Definition context_plan_ops_def:
   context_plan_ops cp =

@@ -101,6 +101,19 @@ Definition region_spill_access_def:
   region_spill_access r off <=>
     MEM (SOSpill off) r.sr_plan \/ MEM (SORestore off) r.sr_plan
 End
+
+Definition stack_op_in_spill_region_def:
+  stack_op_in_spill_region base spill_end op =
+    case op of
+      SOSpill off => base <= off /\ off + 32 <= spill_end
+    | SORestore off => base <= off /\ off + 32 <= spill_end
+    | _ => T
+End
+
+Definition spill_plan_in_region_def:
+  spill_plan_in_region base spill_end ops <=>
+    EVERY (stack_op_in_spill_region base spill_end) ops
+End
 (* =========================================================================
    Spill Slot Management
    ========================================================================= *)
