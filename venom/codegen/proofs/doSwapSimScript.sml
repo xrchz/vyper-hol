@@ -2123,6 +2123,57 @@ Proof
   irule do_swap_big_stack_permutation >> simp[] >> decide_tac
 QED
 
+Theorem do_swap_structural_layout_wf:
+  !dist ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    dist < LENGTH ps.ps_stack ==>
+    spill_alloc_layout_wf (SND (do_swap dist ps)).ps_alloc
+                          (SND (do_swap dist ps)).ps_spilled /\
+    ALL_DISTINCT (SND (do_swap dist ps)).ps_stack /\
+    DISJOINT (set (SND (do_swap dist ps)).ps_stack)
+             (FDOM (SND (do_swap dist ps)).ps_spilled)
+Proof
+  rpt gen_tac >> strip_tac >>
+  `ALL_DISTINCT (SND (do_swap dist ps)).ps_stack /\
+   set (SND (do_swap dist ps)).ps_stack = set ps.ps_stack` by (
+    irule do_swap_stack_permutation >> simp[]) >>
+  `(SND (do_swap dist ps)).ps_spilled = ps.ps_spilled` by (
+    Cases_on `dist = 0` >- simp[do_swap_def] >>
+    Cases_on `dist <= 16` >- simp[do_swap_def] >>
+    mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+    simp[LET_THM]) >>
+  `spill_alloc_layout_wf (SND (do_swap dist ps)).ps_alloc
+                         (SND (do_swap dist ps)).ps_spilled` by (
+    Cases_on `dist = 0` >- gvs[do_swap_def] >>
+    Cases_on `dist <= 16` >- gvs[do_swap_def] >>
+    `dist > 16 /\ dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+    `ALL_DISTINCT (top_n (dist + 1) ps.ps_stack)` by
+      simp[top_n_def, ALL_DISTINCT_REVERSE, ALL_DISTINCT_TAKE] >>
+    `DISJOINT (set (top_n (dist + 1) ps.ps_stack))
+              (FDOM ps.ps_spilled)` by (
+      fs[DISJOINT_DEF, EXTENSION] >> gen_tac >>
+      qpat_x_assum `!x. ~MEM x ps.ps_stack \/ _`
+        (qspec_then `x` mp_tac) >>
+      simp[top_n_def] >> metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+    `spill_alloc_layout_wf
+       (FOLDL (\a off. free_spill_slot off a)
+          (SND (spill_alloc_n [] ps.ps_alloc
+             (top_n (dist + 1) ps.ps_stack)))
+          (FST (spill_alloc_n [] ps.ps_alloc
+             (top_n (dist + 1) ps.ps_stack))))
+       ps.ps_spilled` by (
+      mp_tac (Q.SPECL [`ps.ps_alloc`, `ps.ps_spilled`,
+        `top_n (dist + 1) ps.ps_stack`] spill_alloc_n_free_layout_wf) >>
+      simp[LET_THM]) >>
+    mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+    simp[LET_THM] >> strip_tac >> gvs[]) >>
+  rpt conj_tac >> simp[] >>
+  fs[DISJOINT_DEF, EXTENSION] >> metis_tac[]
+QED
+
+
 (* ---------------------------------------------------------------
    do_swap_venom_asm_rel_big: dist > 16 case
    --------------------------------------------------------------- *)
