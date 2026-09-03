@@ -286,8 +286,8 @@ QED
 
 (* execute_plan distributes over append *)
 Theorem execute_plan_append:
-  !ops1 ops2. execute_plan (ops1 ++ ops2) =
-              execute_plan ops1 ++ execute_plan ops2
+  !initial_fmp ops1 ops2. execute_plan initial_fmp (ops1 ++ ops2) =
+              execute_plan initial_fmp ops1 ++ execute_plan initial_fmp ops2
 Proof
   rw[execute_plan_def, MAP_APPEND, FLAT_APPEND]
 QED

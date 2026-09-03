@@ -171,7 +171,7 @@ Proof
 QED
 
 Theorem exec_prefix_step_preserves:
-  !op inst lo o2pc (st:asm_state) st'.
+  !initial_fmp op inst lo o2pc (st:asm_state) st'.
     is_prefix_op op /\
     MEM inst (exec_stack_op initial_fmp op) /\
     asm_step lo o2pc inst st = AsmOK st' ==> ^side_fields
