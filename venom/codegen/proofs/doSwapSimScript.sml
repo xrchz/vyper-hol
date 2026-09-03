@@ -303,6 +303,69 @@ Proof
 QED
 
 
+(* Allocation preserves durable layout even at allocator saturation. *)
+Theorem spill_alloc_layout_wf_after_alloc:
+  !al spilled off al' op.
+    spill_alloc_layout_wf al spilled /\
+    alloc_spill_slot al = (off, al') ==>
+    spill_alloc_layout_wf al' (spilled |+ (op, off))
+Proof
+  rpt gen_tac >> strip_tac >>
+  fs[spill_alloc_layout_wf_def, alloc_spill_slot_def] >>
+  Cases_on `al.sa_free_slots` >> gvs[]
+  >- (simp[FLOOKUP_UPDATE, spill_alloc_layout_wf_def] >>
+      rpt conj_tac >> rpt gen_tac >>
+      every_case_tac >> rpt strip_tac >> gvs[] >>
+      res_tac >> decide_tac)
+  >> rename1 `h::tail` >>
+  `al.sa_spill_base <= LAST (h::tail) /\
+   LAST (h::tail) + 32 <= al.sa_next_offset` by (
+    qpat_x_assum `!off'. off' = h \/ MEM off' tail ==> _`
+      (qspec_then `LAST (h::tail)` mp_tac) >>
+    (impl_tac >-
+      (`MEM (LAST (h::tail)) (h::tail)` by simp[MEM_LAST] >> fs[])) >>
+    simp[]) >>
+  `!op0 off0. FLOOKUP spilled op0 = SOME off0 ==>
+      off0 + 32 <= LAST (h::tail) \/ LAST (h::tail) + 32 <= off0` by (
+    rpt gen_tac >> strip_tac >>
+    qpat_x_assum `!op off1 off2. FLOOKUP spilled op = SOME off1 /\ _ ==> _`
+      (qspecl_then [`op0`, `off0`, `LAST (h::tail)`] mp_tac) >>
+    (impl_tac >- (`MEM (LAST (h::tail)) (h::tail)` by simp[MEM_LAST] >> fs[])) >>
+    simp[]) >>
+  `!x. MEM x (FRONT (h::tail)) ==>
+      x + 32 <= LAST (h::tail) \/ LAST (h::tail) + 32 <= x` by (
+    rpt strip_tac >>
+    `MEM x (h::tail)` by metis_tac[MEM_FRONT] >>
+    `MEM (LAST (h::tail)) (h::tail)` by simp[MEM_LAST] >>
+    `ALL_DISTINCT (h::tail)` by simp[] >>
+    `~MEM (LAST (h::tail)) (FRONT (h::tail))` by
+      (irule MEM_FRONT_NOT_LAST >> simp[]) >>
+    `x <> LAST (h::tail)` by metis_tac[] >>
+    `?ix. ix < LENGTH (h::tail) /\ x = EL ix (h::tail)` by
+      metis_tac[MEM_EL] >>
+    `?il. il < LENGTH (h::tail) /\ LAST (h::tail) = EL il (h::tail)` by
+      metis_tac[MEM_EL] >>
+    `ix <> il` by metis_tac[] >>
+    qpat_x_assum `!i j. i < SUC _ /\ j < SUC _ /\ i <> j ==> _`
+      (qspecl_then [`ix`, `il`] mp_tac) >>
+    (impl_tac >- gvs[]) >> simp[]) >>
+  simp[FLOOKUP_UPDATE, spill_alloc_layout_wf_def] >>
+  rpt conj_tac >> rpt gen_tac >>
+  every_case_tac >> rpt strip_tac >> gvs[MEM_FRONT, ALL_DISTINCT_FRONT] >>
+  TRY (res_tac >> decide_tac) >>
+  TRY decide_tac >>
+  TRY (imp_res_tac MEM_FRONT >> gvs[] >> res_tac >> decide_tac) >>
+  TRY (fs[EL_FRONT, LENGTH_FRONT] >>
+       qpat_x_assum `!i j. i < SUC _ /\ _ ==> _`
+         (qspecl_then [`i`, `j`] mp_tac) >>
+       simp[]) >>
+  imp_res_tac MEM_FRONT >> fs[] >>
+  qpat_x_assum `!op off1 off2. FLOOKUP _ _ = SOME _ /\ _ ==> _`
+    (qspecl_then [`op'`, `off1`, `off2`] mp_tac) >>
+  simp[]
+QED
+
+
 Theorem separated_slots_snoc[local]:
   !slots off.
     (!i j. i < LENGTH slots /\ j < LENGTH slots /\ i <> j ==>
