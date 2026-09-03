@@ -269,6 +269,23 @@ Definition task041_bad_schedule_def:
       ps_fn_passes := [CFP_Simple VP_DFT; CFP_Simple VP_MakeSSA]
 End
 
+Definition task041_pruning_spec_def:
+  task041_pruning_spec = <|
+    ps_pre_walk_stages := [];
+    ps_fn_passes := CFP_Simple VP_DretDesugar :: o1_fn_passes;
+    ps_prune_unreachable := T;
+    ps_require_acyclic_calls := T;
+    ps_post_walk_stages := [];
+    ps_final_assembly := FAP_Optimize
+  |>
+End
+
+Theorem task041_pruning_spec_wf:
+  pipeline_spec_wf task039_policy task041_pruning_spec
+Proof
+  EVAL_TAC
+QED
+
 Theorem task041_schedule_evaluations:
   pipeline_spec_wf task039_policy o1_pipeline_spec /\
   run_venom_pipeline (K T) (K T) (K T) task039_policy
