@@ -6502,8 +6502,11 @@ Proof
   `a.inst_opcode <> INVOKE` by
     (Cases_on `a.inst_opcode` >> gvs[is_pseudo_def]) >>
   gvs[step_inst_non_invoke] >>
-  Cases_on `a.inst_opcode` >> gvs[is_pseudo_def] >>
-  gvs[Once step_inst_base_def, AllCaseEqs()] >> metis_tac[]
+  Cases_on `a.inst_opcode` >> gvs[is_pseudo_def]
+  >- gvs[Once step_inst_base_def]
+  >- (gvs[Once step_inst_base_def] >> gvs[AllCaseEqs()] >> metis_tac[])
+  >- (gvs[Once step_inst_base_def] >> gvs[AllCaseEqs()] >> metis_tac[])
+  >- (gvs[Once step_inst_base_def] >> gvs[AllCaseEqs()] >> metis_tac[])
 QED
 
 (* Pseudo swap: if pseudo a is data-independent from b, and a->b both OK,
