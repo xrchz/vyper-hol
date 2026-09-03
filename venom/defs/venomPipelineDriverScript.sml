@@ -15,7 +15,9 @@ Ancestors
   staticLayoutWf
   fmpWfDefs
   stackPlanGen
-
+  simplifyCfgLabelProps
+  dretDesugarProofs
+  fmpLowerProps
 Definition pipeline_stage_tags_def:
   (pipeline_stage_tags [] = []) /\
   (pipeline_stage_tags (PS_MapFunctions pass::stages) =
@@ -223,7 +225,7 @@ Definition task041_raw_function_def:
   task041_raw_function name id =
     mk_raw_function name
       [<|bb_label := "entry";
-          bb_instructions := [mk_inst id STOP [] []]|>]
+          bb_instructions := [mk_inst id RET [Lit 0w] []]|>]
 End
 
 Definition task041_raw_unit_def:
@@ -294,5 +296,320 @@ Proof
   EVAL_TAC
 QED
 
+Theorem task041_simplify_result:
+  simplify_cfg_fn_with_labels (task041_raw_function "main" 1) =
+    (task041_raw_function "main" 1,[])
+Proof
+  simp [task041_raw_function_def, simplify_cfg_single_ret_with_labels]
+QED
+
+Theorem task041_simplify_execute:
+  execute_configured_fn_pass task039_policy
+    (CFP_Simple VP_SimplifyCFG) task041_raw_unit
+    (init_ir_supply task041_raw_unit) (task041_raw_function "main" 1) =
+  SOME <|fpo_function := task041_raw_function "main" 1;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_raw_function_def, simplify_cfg_single_ret_with_labels]
+QED
+
+Theorem task041_raw_transaction_facts:
+  ir_supply_covers_unit
+    (init_ir_supply task041_raw_unit) task041_raw_unit /\
+  fn_pass_effects_hold VP_SimplifyCFG
+    (task041_raw_function "main" 1)
+    <|fpo_function := task041_raw_function "main" 1;
+      fpo_label_map := [];
+      fpo_supply := init_ir_supply task041_raw_unit|> /\
+  introduces_no_invoke_edges
+    (task041_raw_function "main" 1) (task041_raw_function "main" 1) /\
+  ir_supply_extends
+    (init_ir_supply task041_raw_unit) (init_ir_supply task041_raw_unit) /\
+  ir_supply_covers_fn
+    (init_ir_supply task041_raw_unit) (task041_raw_function "main" 1) /\
+  unit_labels_wf task041_raw_unit /\
+  unit_global_inst_ids_distinct task041_raw_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_raw_structure_facts:
+  ctx_fn_names task041_raw_unit.cu_context = ["main"] /\
+  lookup_unique_function "main" task041_raw_unit.cu_context.ctx_functions =
+    SOME (task041_raw_function "main" 1) /\
+  replace_unique_function "main" (task041_raw_function "main" 1)
+    task041_raw_unit.cu_context.ctx_functions =
+    SOME task041_raw_unit.cu_context.ctx_functions /\
+  (task041_raw_unit with cu_context :=
+     task041_raw_unit.cu_context with ctx_functions :=
+       task041_raw_unit.cu_context.ctx_functions) = task041_raw_unit /\
+  unit_with_current_fn task041_raw_unit
+    (task041_raw_function "main" 1) = SOME task041_raw_unit /\
+  apply_unit_label_map [] task041_raw_unit = SOME task041_raw_unit /\
+  list_subset (unit_invoke_targets task041_raw_unit)
+    (unit_invoke_targets task041_raw_unit)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_simplify_transaction:
+  run_configured_fn_passes execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_SimplifyCFG] "main" task041_raw_unit
+    (init_ir_supply task041_raw_unit) =
+  SOME (task041_raw_unit,init_ir_supply task041_raw_unit)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  pure_rewrite_tac [task041_raw_transaction_facts,
+                    task041_raw_structure_facts] >>
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_simplify_execute] >>
+  simp [fn_pass_tag_def, task041_simplify_result,
+        task041_raw_transaction_facts, task041_raw_structure_facts,
+        venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def]
+QED
+
+Theorem task041_simplify_mapped:
+  run_pipeline_stage task039_policy
+    (PS_MapFunctions (CFP_Simple VP_SimplifyCFG)) task041_raw_unit
+    (init_ir_supply task041_raw_unit) =
+  SOME (task041_raw_unit,init_ir_supply task041_raw_unit)
+Proof
+  simp [run_pipeline_stage_def, run_mapped_functions_def,
+        run_named_fn_schedules_def, task041_raw_structure_facts,
+        task041_simplify_transaction]
+QED
+
+Theorem task041_raw_no_dret:
+  no_dret (task041_raw_function "main" 1)
+Proof
+  EVAL_TAC >> simp []
+QED
+
+Theorem task041_dret_execute:
+  execute_configured_fn_pass task039_policy
+    (CFP_Simple VP_DretDesugar) task041_raw_unit
+    (init_ir_supply task041_raw_unit) (task041_raw_function "main" 1) =
+  SOME <|fpo_function := task041_raw_function "main" 1;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [dret_desugar_function_identity, task041_raw_no_dret]
+QED
+
+Theorem task041_dret_effect_fact:
+  fn_pass_effects_hold VP_DretDesugar
+    (task041_raw_function "main" 1)
+    <|fpo_function := task041_raw_function "main" 1;
+      fpo_label_map := [];
+      fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_dret_transaction:
+  run_configured_fn_passes execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_DretDesugar] "main" task041_raw_unit
+    (init_ir_supply task041_raw_unit) =
+  SOME (task041_raw_unit,init_ir_supply task041_raw_unit)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  pure_rewrite_tac [task041_raw_transaction_facts,
+                    task041_raw_structure_facts] >>
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_dret_execute] >>
+  simp [fn_pass_tag_def, dret_desugar_function_identity,
+        task041_raw_no_dret, task041_dret_effect_fact,
+        task041_raw_transaction_facts, task041_raw_structure_facts,
+        venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def]
+QED
+
+Theorem task041_dret_mapped:
+  run_pipeline_stage task039_policy
+    (PS_MapFunctions (CFP_Simple VP_DretDesugar)) task041_raw_unit
+    (init_ir_supply task041_raw_unit) =
+  SOME (task041_raw_unit,init_ir_supply task041_raw_unit)
+Proof
+  simp [run_pipeline_stage_def, run_mapped_functions_def,
+        run_named_fn_schedules_def, task041_raw_structure_facts,
+        task041_dret_transaction]
+QED
+
+Theorem task041_dret_mapped_functions:
+  run_mapped_functions task039_policy (CFP_Simple VP_DretDesugar)
+    task041_raw_unit (init_ir_supply task041_raw_unit) =
+  SOME (task041_raw_unit,init_ir_supply task041_raw_unit)
+Proof
+  mp_tac task041_dret_mapped >> simp [run_pipeline_stage_def]
+QED
+
+Theorem task041_pre_walk:
+  run_pipeline_stages task039_policy o1_pipeline_spec.ps_pre_walk_stages
+    task041_raw_unit (init_ir_supply task041_raw_unit) =
+  SOME (task041_raw_unit,init_ir_supply task041_raw_unit)
+Proof
+  simp [o1_pipeline_spec_def, run_pipeline_stages_def,
+        run_pipeline_stage_def, task041_simplify_mapped,
+        task041_dret_mapped, task041_dret_mapped_functions]
+QED
+
+Theorem task041_make_ssa_result:
+  make_ssa_current_fn (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) =
+  (task041_raw_function "main" 1,init_ir_supply task041_raw_unit)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_lower_dload_result:
+  lower_dload_function_supply (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) =
+  (task041_raw_function "main" 1,init_ir_supply task041_raw_unit)
+Proof
+  EVAL_TAC
+QED
+
+Definition task041_concretized_function_def:
+  task041_concretized_function =
+    (task041_raw_function "main" 1) with fn_eom := SOME 0
+End
+
+Theorem task041_concretize_result:
+  concretize_function_eval [] (task041_raw_function "main" 1) =
+  SOME task041_concretized_function
+Proof
+  EVAL_TAC
+QED
+
+Definition task041_concretized_observation_def:
+  task041_concretized_observation =
+    task041_raw_unit with cu_context :=
+      task041_raw_unit.cu_context with ctx_functions :=
+        [task041_concretized_function]
+End
+
+Theorem task041_concretized_observation_result:
+  unit_with_current_fn task041_raw_unit task041_concretized_function =
+  SOME task041_concretized_observation /\
+  lookup_unique_function "main"
+    task041_concretized_observation.cu_context.ctx_functions =
+  SOME task041_concretized_function
+Proof
+  EVAL_TAC
+QED
+
+Definition task041_fmp_function_def:
+  task041_fmp_function =
+    task041_concretized_function with fn_fmp_signature :=
+      SOME <|fms_has_fmp_param := F; fms_publishes := F|>
+End
+
+Definition task041_fmp_infos_def:
+  task041_fmp_infos =
+    FEMPTY |+ ("main",fmp_info_bottom)
+End
+
+Definition task041_fmp_states_def:
+  task041_fmp_states = THE (fmp_reclaim_states task041_concretized_function)
+End
+
+Theorem task041_fmp_analysis_result:
+  analyze_fmp_context task041_concretized_observation.cu_context =
+  SOME task041_fmp_infos
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_info_valid:
+  fmp_info_valid task041_concretized_observation.cu_context task041_fmp_infos
+Proof
+  irule fmpAnalysisPropsTheory.analyze_fmp_context_valid >>
+  ACCEPT_TAC task041_fmp_analysis_result
+QED
+
+Theorem task041_fmp_lower_input:
+  fmp_lower_input task041_fmp_infos
+    task041_concretized_observation.cu_context task041_concretized_function
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_function_wf:
+  wf_function task041_concretized_function /\
+  fn_inst_wf task041_concretized_function
+Proof
+  EVAL_TAC >>
+  simp [listTheory.REV_DEF, venomInstTheory.is_terminator_def,
+        venomStateTheory.get_label_def] >>
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_states_result:
+  fmp_reclaim_states task041_concretized_function =
+  SOME task041_fmp_states
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_candidate_empty:
+  fmp_candidate_plan task041_fmp_infos
+    task041_concretized_observation.cu_context task041_concretized_function
+    task041_fmp_states = FEMPTY
+Proof
+  EVAL_TAC >>
+  simp [finite_mapTheory.FLOOKUP_FUNION,
+        finite_mapTheory.FLOOKUP_UPDATE,
+        fmpReclaimDefsTheory.fmp_plan_of_list_def]
+QED
+
+Theorem task041_fmp_reclaim_result:
+  analyze_fmp_reclaims task041_fmp_infos
+    task041_concretized_observation.cu_context task041_concretized_function =
+  SOME FEMPTY
+Proof
+  irule fmpReclaimPropsTheory.analyze_fmp_reclaims_ready >>
+  simp [task041_fmp_info_valid, task041_fmp_function_wf,
+        task041_fmp_states_result, task041_fmp_candidate_empty,
+        fmpReclaimDefsTheory.fmp_reclaim_plan_ok_def] >>
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_pre_seal_facts:
+  task041_concretized_function.fn_fmp_signature = NONE /\
+  FLOOKUP task041_fmp_infos task041_concretized_function.fn_name =
+    SOME fmp_info_bottom /\
+  fmp_reclaim_input task041_concretized_function FEMPTY
+Proof
+  EVAL_TAC >>
+  simp [fmpLowerDefsTheory.fmp_reclaim_input_def]
+QED
+
+Theorem task041_fmp_checked_seal_result:
+  fmp_checked_seal task041_concretized_observation.cu_context
+    task041_concretized_function
+    <|fi_needs_fmp := F; fi_publishes_fmp := F|>
+    task041_concretized_function.fn_blocks = SOME task041_fmp_function
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_after_concretize_result:
+  fmp_lower_function task041_concretized_observation.cu_context
+    (init_ir_supply task041_raw_unit) task041_concretized_function =
+  SOME (task041_fmp_function,init_ir_supply task041_raw_unit)
+Proof
+  rewrite_tac [fmpLowerDefsTheory.fmp_lower_function_def,
+               task041_fmp_analysis_result] >>
+  simp [fmpLowerDefsTheory.fmp_lower_function_with_info_def,
+        task041_fmp_info_valid, task041_fmp_lower_input,
+        task041_fmp_reclaim_result, task041_fmp_pre_seal_facts,
+        task041_fmp_checked_seal_result,
+        fmpAnalysisDefsTheory.fmp_info_bottom_def]
+QED
 
 val _ = export_theory ();
+

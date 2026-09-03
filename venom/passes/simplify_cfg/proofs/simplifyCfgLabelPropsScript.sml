@@ -3691,3 +3691,121 @@ Proof
   qspecl_then [`name`,`lbl`,`id`] mp_tac simplify_cfg_single_stop_iter >>
   simp []
 QED
+
+
+Definition simplify_cfg_single_ret_fn_def[local]:
+  simplify_cfg_single_ret_fn name lbl id =
+    mk_raw_function name
+      [<|bb_label := lbl;
+         bb_instructions := [mk_inst id RET [Lit 0w] []]|>]
+End
+
+Theorem simplify_cfg_single_ret_facts[local]:
+  !name lbl id.
+    fn_entry_label (simplify_cfg_single_ret_fn name lbl id) = SOME lbl /\
+    lookup_block lbl (simplify_cfg_single_ret_fn name lbl id).fn_blocks =
+      SOME <|bb_label := lbl;
+             bb_instructions := [mk_inst id RET [Lit 0w] []]|> /\
+    bb_succs <|bb_label := lbl;
+               bb_instructions := [mk_inst id RET [Lit 0w] []]|> = [] /\
+    fix_all_phis (simplify_cfg_single_ret_fn name lbl id) =
+      simplify_cfg_single_ret_fn name lbl id
+Proof
+  simp [simplify_cfg_single_ret_fn_def,
+        venomInstTheory.mk_raw_function_def,
+        venomInstTheory.mk_inst_def,
+        venomInstTheory.fn_entry_label_def,
+        venomInstTheory.entry_block_def,
+        venomInstTheory.lookup_block_def,
+        venomInstTheory.bb_succs_def,
+        venomInstTheory.get_successors_def,
+        venomInstTheory.is_terminator_def,
+        venomStateTheory.get_label_def,
+        listTheory.FIND_def, listTheory.INDEX_FIND_def,
+        sortingTheory.PARTITION_DEF, sortingTheory.PART_DEF,
+        fix_all_phis_def, fix_phis_in_block_def, fix_phi_inst_def,
+        cfgTransformTheory.pred_labels_def,
+        cfgTransformTheory.block_preds_def]
+QED
+
+Theorem simplify_cfg_single_ret_reachable[local]:
+  !name lbl id. reachable (simplify_cfg_single_ret_fn name lbl id) lbl
+Proof
+  simp [cfgTransformTheory.reachable_def,
+        simplify_cfg_single_ret_facts, relationTheory.RTC_REFL]
+QED
+
+Theorem simplify_cfg_single_ret_remove_unreachable[local]:
+  !name lbl id.
+    remove_unreachable_blocks (simplify_cfg_single_ret_fn name lbl id) =
+      simplify_cfg_single_ret_fn name lbl id
+Proof
+  rpt gen_tac >>
+  qspecl_then [`name`,`lbl`,`id`] assume_tac
+    simplify_cfg_single_ret_reachable >>
+  pure_once_rewrite_tac [remove_unreachable_blocks_def] >>
+  simp [simplify_cfg_single_ret_facts] >>
+  fs [simplify_cfg_single_ret_fn_def,
+      venomInstTheory.mk_raw_function_def]
+QED
+
+Theorem simplify_cfg_single_ret_collapse[local]:
+  !name lbl id.
+    collapse_dfs (simplify_cfg_single_ret_fn name lbl id) [] [] lbl =
+      (simplify_cfg_single_ret_fn name lbl id,[],[lbl])
+Proof
+  rpt gen_tac >>
+  pure_once_rewrite_tac [collapse_dfs_def] >>
+  simp [simplify_cfg_single_ret_facts, try_bypass_def] >>
+  pure_once_rewrite_tac [collapse_dfs_def] >> simp []
+QED
+
+Theorem simplify_cfg_single_ret_round[local]:
+  !name lbl id.
+    simplify_cfg_round_with_labels
+      (simplify_cfg_single_ret_fn name lbl id) =
+      (simplify_cfg_single_ret_fn name lbl id,[])
+Proof
+  rpt gen_tac >>
+  pure_once_rewrite_tac [simplify_cfg_round_with_labels_def] >>
+  simp [simplify_cfg_single_ret_facts,
+        simplify_cfg_single_ret_remove_unreachable,
+        simplify_cfg_single_ret_collapse]
+QED
+
+Theorem simplify_cfg_single_ret_length[local]:
+  !name lbl id.
+    LENGTH (simplify_cfg_single_ret_fn name lbl id).fn_blocks = 1
+Proof
+  simp [simplify_cfg_single_ret_fn_def,
+        venomInstTheory.mk_raw_function_def]
+QED
+
+Theorem simplify_cfg_single_ret_iter[local]:
+  !name lbl id.
+    simplify_cfg_iter_with_labels (SUC 0)
+      (simplify_cfg_single_ret_fn name lbl id) =
+      (simplify_cfg_single_ret_fn name lbl id,[])
+Proof
+  rpt gen_tac >>
+  pure_once_rewrite_tac [simplify_cfg_iter_with_labels_def] >>
+  simp [simplify_cfg_single_ret_round]
+QED
+
+Theorem simplify_cfg_single_ret_with_labels:
+  !name lbl id.
+    simplify_cfg_fn_with_labels
+      (mk_raw_function name
+        [<|bb_label := lbl;
+           bb_instructions := [mk_inst id RET [Lit 0w] []]|>]) =
+      (mk_raw_function name
+        [<|bb_label := lbl;
+           bb_instructions := [mk_inst id RET [Lit 0w] []]|>], [])
+Proof
+  rpt gen_tac >>
+  simp [GSYM simplify_cfg_single_ret_fn_def,
+        simplify_cfg_fn_with_labels_def,
+        simplify_cfg_single_ret_length] >>
+  qspecl_then [`name`,`lbl`,`id`] mp_tac simplify_cfg_single_ret_iter >>
+  simp []
+QED
