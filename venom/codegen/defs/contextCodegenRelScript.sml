@@ -8,7 +8,7 @@
 
 Theory contextCodegenRel
 Ancestors
-  codegenRel venomExecSemantics
+  codegenRel venomExecSemantics venomWf fcgDefs
 
 (* A byte in any function's half-open spill interval. *)
 Definition context_spill_byte_def:
@@ -166,6 +166,129 @@ Definition source_memory_reads_disjoint_def:
     !i. source_memory_read_byte inst vs i ==>
         ~context_spill_byte cp i
 End
+
+(* The entry dispatcher must not return through the internal-call protocol. *)
+Definition entry_fn_no_ret_def:
+  entry_fn_no_ret fn <=>
+    EVERY (\bb. EVERY (\inst. inst.inst_opcode <> RET)
+                      bb.bb_instructions) fn.fn_blocks
+End
+
+(* Connect an invariant point to the state's current executable instruction. *)
+Definition active_inst_def:
+  active_inst fn inst vs <=>
+    ?bb. MEM bb fn.fn_blocks /\
+         bb.bb_label = vs.vs_current_bb /\
+         vs.vs_inst_idx < LENGTH bb.bb_instructions /\
+         EL vs.vs_inst_idx bb.bb_instructions = inst
+End
+
+(* A non-vacuous initial witness at the context's actual entry function. *)
+Definition initial_entry_satisfies_def:
+  initial_entry_satisfies Inv ctx initial_vs <=>
+    ?name fn inst.
+      ctx.ctx_entry = SOME name /\
+      lookup_function name ctx.ctx_functions = SOME fn /\
+      active_inst fn inst initial_vs /\
+      Inv ctx fn inst initial_vs
+End
+
+(* Closure across an ordinary successful instruction step, when the result
+   exposes another active instruction in the same function. *)
+Definition reachable_inv_closed_under_steps_def:
+  reachable_inv_closed_under_steps Inv ctx <=>
+    !fn inst next_inst vs vs' fuel.
+      Inv ctx fn inst vs /\ active_inst fn inst vs /\
+      inst.inst_opcode <> INVOKE /\
+      step_inst fuel ctx inst vs = OK vs' /\
+      active_inst fn next_inst vs' ==>
+      Inv ctx fn next_inst vs'
+End
+
+(* Closure when an INVOKE transfers control into a freshly set-up callee. *)
+Definition reachable_inv_closed_under_calls_def:
+  reachable_inv_closed_under_calls Inv ctx <=>
+    !caller_fn invoke caller_vs callee_name arg_ops callee_fn args callee_vs
+     callee_inst.
+      Inv ctx caller_fn invoke caller_vs /\
+      active_inst caller_fn invoke caller_vs /\
+      invoke.inst_opcode = INVOKE /\
+      decode_invoke invoke = SOME (callee_name,arg_ops) /\
+      lookup_function callee_name ctx.ctx_functions = SOME callee_fn /\
+      eval_operands arg_ops caller_vs = SOME args /\
+      setup_callee callee_fn args caller_vs = SOME callee_vs /\
+      active_inst callee_fn callee_inst callee_vs ==>
+      Inv ctx callee_fn callee_inst callee_vs
+End
+
+(* Closure across the explicit return-state plumbing used by INVOKE. *)
+Definition reachable_inv_closed_under_returns_def:
+  reachable_inv_closed_under_returns Inv ctx <=>
+    !caller_fn invoke caller_vs callee_fn callee_inst callee_vs callee_done
+     ret merged adopted returned_vs.
+      Inv ctx caller_fn invoke caller_vs /\
+      Inv ctx callee_fn callee_inst callee_vs /\
+      active_inst callee_fn callee_inst callee_vs /\
+      step_inst_base callee_inst callee_vs = IntRet ret callee_done /\
+      merged = merge_callee_state caller_vs callee_done /\
+      adopted = adopt_return_fmp ret merged /\
+      bind_outputs invoke.inst_outputs ret.iret_values adopted = SOME returned_vs ==>
+      Inv ctx caller_fn invoke returned_vs
+End
+
+(* INVOKE is aggregate in step_inst: callee run, merge, FMP adoption, and
+   output binding occur inside one successful semantic step. *)
+Definition reachable_inv_closed_under_invoke_def:
+  reachable_inv_closed_under_invoke Inv ctx <=>
+    !fn inst vs vs' fuel.
+      Inv ctx fn inst vs /\ active_inst fn inst vs /\
+      inst.inst_opcode = INVOKE /\
+      step_inst fuel ctx inst vs = OK vs' ==>
+      Inv ctx fn inst vs'
+End
+
+Definition codegen_memory_obligations_def:
+  codegen_memory_obligations Inv ctx cp <=>
+    !fn inst vs1 vs2 fuel.
+      Inv ctx fn inst vs1 /\
+      MEM fn ctx.ctx_functions /\
+      MEM inst (fn_insts fn) ==>
+      source_memory_reads_disjoint cp inst vs1 /\
+      (step_inst fuel ctx inst vs1 = OK vs2 ==>
+       context_spill_step_safe cp vs1 vs2)
+End
+
+Definition reachable_call_graph_acyclic_def:
+  reachable_call_graph_acyclic ctx <=>
+    reachable_fcg_acyclic ctx (fcg_analyze ctx)
+End
+
+Definition codegen_reachability_package_def:
+  codegen_reachability_package Inv ctx initial_vs <=>
+    initial_entry_satisfies Inv ctx initial_vs /\
+    reachable_inv_closed_under_steps Inv ctx /\
+    reachable_inv_closed_under_calls Inv ctx /\
+    reachable_inv_closed_under_returns Inv ctx /\
+    reachable_inv_closed_under_invoke Inv ctx
+End
+
+Definition codegen_context_obligations_def:
+  codegen_context_obligations Inv ctx cp <=>
+    generate_context_plan ctx = SOME cp /\
+    context_plan_layout_wf cp /\
+    codegen_ready ctx /\ ctx_wf ctx /\
+    reachable_call_graph_acyclic ctx /\
+    (!name efn. ctx.ctx_entry = SOME name /\
+       lookup_function name ctx.ctx_functions = SOME efn ==>
+       entry_fn_no_ret efn) /\
+    codegen_memory_obligations Inv ctx cp
+End
+
+Theorem initial_entry_satisfies_false[simp]:
+  ~initial_entry_satisfies (\ctx fn inst vs. F) ctx initial_vs
+Proof
+  simp[initial_entry_satisfies_def]
+QED
 
 Theorem byte_in_memory_range_zero[simp]:
   ~byte_in_memory_range (off,0) i

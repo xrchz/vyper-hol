@@ -72,7 +72,7 @@ Theory codegenCorrectness
 Ancestors
   asmToBytecodeProps venomToAsmProps codegen vfmExecution
   codegenRel asmSem asmWf stackPlanGen stackPlanTypes planExec
-  symbolResolve venomExecSemantics venomState venomInst
+  symbolResolve venomExecSemantics venomState venomInst contextCodegenRel
   stackOpSim list rich_list finite_map arithmetic
 Libs
   BasicProvers
@@ -183,17 +183,8 @@ Definition final_state_rel_def:
      | [] => F)
 End
 
-(* ===== Entry Function Constraints ===== *)
-
-(* The entry function (dispatcher) never uses RET.
-   RET produces IntRet which only makes sense for internal function calls.
-   Vyper's entry function dispatches to external-facing functions and
-   terminates via STOP/RETURN/REVERT, never RET. *)
-Definition entry_fn_no_ret_def:
-  entry_fn_no_ret fn ⇔
-    EVERY (λbb. EVERY (λinst. inst.inst_opcode ≠ RET)
-                      bb.bb_instructions) fn.fn_blocks
-End
+(* entry_fn_no_ret is defined in contextCodegenRel so context-wide
+   obligations and this correctness interface share one constant. *)
 
 (* ===== Composition Helpers ===== *)
 
