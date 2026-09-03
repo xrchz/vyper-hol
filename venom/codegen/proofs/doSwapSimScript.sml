@@ -1,5 +1,6 @@
 (*
  * do_swap simulation for all distances.
+ * Allocator boundary probes below are deliberately factored.
  *
  * For dist <= 16: simple SOSwap via simple_prefix_venom_asm_rel + do_swap_align.
  * For dist > 16: via mixed_prefix_venom_asm_rel (spill/restore sequence).
@@ -220,6 +221,72 @@ Proof
   qpat_x_assum `!op off1 off2. FLOOKUP _ _ = SOME _ /\ _ ==> _`
     (qspecl_then [`op'`, `off1`, `off2`] mp_tac) >>
   simp[]
+QED
+
+
+Theorem separated_slots_snoc[local]:
+  !slots off.
+    (!i j. i < LENGTH slots /\ j < LENGTH slots /\ i <> j ==>
+       EL i slots + 32 <= EL j slots \/ EL j slots + 32 <= EL i slots) /\
+    (!old. MEM old slots ==>
+       old + 32 <= off \/ off + 32 <= old) ==>
+    !i j. i < SUC (LENGTH slots) /\
+          j < SUC (LENGTH slots) /\ i <> j ==>
+       EL i (SNOC off slots) + 32 <= EL j (SNOC off slots) \/
+       EL j (SNOC off slots) + 32 <= EL i (SNOC off slots)
+Proof
+  rpt gen_tac >> strip_tac >> rpt gen_tac >> strip_tac >>
+  fs[] >>
+  Cases_on `i = LENGTH slots` >> Cases_on `j = LENGTH slots`
+  >- gvs[]
+  >- (`j < LENGTH slots` by decide_tac >>
+      simp[listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC] >>
+      first_x_assum (qspec_then `EL j slots` mp_tac) >>
+      simp[MEM_EL] >> metis_tac[])
+  >- (`i < LENGTH slots` by decide_tac >>
+      simp[listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC] >>
+      first_x_assum match_mp_tac >> metis_tac[MEM_EL])
+  >> `i < LENGTH slots /\ j < LENGTH slots` by decide_tac >>
+     simp[listTheory.EL_SNOC] >> metis_tac[]
+QED
+(* Returning an active slot to the reusable list preserves canonical allocator
+   consistency, provided its map entry is removed in the same transition. *)
+Theorem spill_alloc_wf_after_free:
+  !al spilled op off.
+    spill_alloc_wf al spilled /\
+    FLOOKUP spilled op = SOME off ==>
+    spill_alloc_wf (free_spill_slot off al) (spilled \\ op)
+Proof
+  rpt gen_tac >> strip_tac >>
+  fs[spill_alloc_wf_def] >>
+  simp[spill_alloc_wf_def, free_spill_slot_def, ALL_DISTINCT_SNOC,
+       finite_mapTheory.DOMSUB_FLOOKUP_THM] >>
+  rpt conj_tac
+  >- metis_tac[]
+  >- metis_tac[]
+  >- metis_tac[]
+  >- (strip_tac >>
+      qpat_x_assum `!op' off1 off2. _`
+        (qspecl_then [`op`, `off`, `off`] mp_tac) >>
+      simp[] >> decide_tac)
+  >- (rpt gen_tac >> strip_tac >>
+      Cases_on `i = LENGTH al.sa_free_slots` >>
+      Cases_on `j = LENGTH al.sa_free_slots`
+      >- gvs[]
+      >- (`j < LENGTH al.sa_free_slots` by decide_tac >>
+          simp[listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC] >>
+          qpat_x_assum `!op' off1 off2. _`
+            (qspecl_then [`op`, `off`, `EL j al.sa_free_slots`] mp_tac) >>
+          simp[MEM_EL] >> metis_tac[])
+      >- (`i < LENGTH al.sa_free_slots` by decide_tac >>
+          simp[listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC] >>
+          qpat_x_assum `!op' off1 off2. _`
+            (qspecl_then [`op`, `off`, `EL i al.sa_free_slots`] mp_tac) >>
+          simp[MEM_EL] >> metis_tac[])
+      >> `i < LENGTH al.sa_free_slots /\ j < LENGTH al.sa_free_slots`
+           by decide_tac >>
+         simp[listTheory.EL_SNOC] >> metis_tac[])
+  >> rpt gen_tac >> strip_tac >> gvs[] >> metis_tac[]
 QED
 
 (* =========================================================================
@@ -875,7 +942,7 @@ Proof
     (* conjunct 3: offset properties — via spill_offset_transfer *)
     >> (
       match_mp_tac spill_offset_transfer >>
-      metis_tac[]
+      gvs[] >> metis_tac[]
     )
   ) >>
   (* Apply IH *)
@@ -886,7 +953,7 @@ Proof
                   MAX ps.ps_alloc.sa_next_offset (off0 + 32) |>`,
     `vs`, `st'`] mp_tac) >>
   simp[] >>
-  (impl_tac >- metis_tac[]) >>
+  (impl_tac >- (gvs[] >> metis_tac[])) >>
   strip_tac >>
   (* Compose: 2 steps (spill first) + 2*LENGTH pairs steps (IH) *)
   qexists_tac `st''` >>
@@ -1077,7 +1144,7 @@ Resume spill_alloc_n_wf[wf_preconds]:
   PURE_REWRITE_TAC[SNOC_APPEND] >>
   simp[GSYM ZIP_APPEND, FUPDATE_LIST_APPEND, FUPDATE_LIST_THM] >>
   irule spill_alloc_wf_after_spill >>
-  conj_tac >- decide_tac >>
+  conj_tac >- (gvs[] >> decide_tac) >>
   qexists_tac `al0` >> simp[]
 QED
 
@@ -1146,7 +1213,7 @@ Resume spill_alloc_n_offset_props[setup]:
   SUBGOAL_THEN ``spill_alloc_wf al1 (sp |+ (h, off0))``
     (fn th => REWRITE_TAC[th]) THENL
     [irule spill_alloc_wf_after_spill >>
-     CONJ_TAC THENL [decide_tac, ALL_TAC] >>
+     CONJ_TAC THENL [gvs[] >> decide_tac, ALL_TAC] >>
      qexists_tac `al0` >> simp[FUPDATE_LIST_THM],
      ALL_TAC] >>
   disch_tac >>
@@ -1660,7 +1727,7 @@ Resume do_swap_venom_asm_rel_big[offset_props]:
   simp[EL_ZIP, LENGTH_REVERSE, Abbr `offsets`] >>
   qspecl_then [`items`, `ps.ps_alloc`, `ps.ps_spilled`]
     mp_tac spill_alloc_n_offset_props >>
-  simp[LET_THM, spill_alloc_n_offsets_length] >>
+  gvs[LET_THM, spill_alloc_n_offsets_length] >>
   disch_then (qspec_then `k` mp_tac) >>
   simp[] >> metis_tac[]
 QED
@@ -1755,8 +1822,8 @@ Resume do_swap_venom_asm_rel_big[flookup_bound]:
     rpt strip_tac >> rpt IF_CASES_TAC >> simp[]
   )) >>
   (conj_tac >- (
-    match_mp_tac spill_offsets_every_bound >>
-    qexists_tac `ps.ps_spilled` >> simp[]
+    match_mp_tac (SIMP_RULE (srw_ss()) [] spill_offsets_every_bound) >>
+    qexists_tac `ps.ps_spilled` >> gvs[]
   )) >>
   fs[LENGTH_MAP, LENGTH_REVERSE, spill_alloc_n_offsets_length]
 QED
@@ -2257,3 +2324,72 @@ QED
 Finalise do_swap_apply_stack_align
 
 
+
+(* -------------------------------------------------------------------------
+   Factored high-water boundary probe
+   ------------------------------------------------------------------------- *)
+
+Definition headroom_slots_def:
+  (headroom_slots : num list) =
+    [0;32;64;96;128;160;192;224;256;
+     288;320;352;384;416;448;480;512]
+End
+
+Definition headroom_stack_def:
+  headroom_stack =
+    [Var "a"; Var "b"; Var "c"; Var "d"; Var "e"; Var "f";
+     Var "g"; Var "h"; Var "i"; Var "j"; Var "k"; Var "l";
+     Var "m"; Var "n"; Var "o"; Var "p"; Var "q"; Var "r"]
+End
+
+Definition headroom_alloc_def:
+  headroom_alloc =
+    <| sa_free_slots := headroom_slots;
+       sa_next_offset := dimword(:256) - 32;
+       sa_spill_base := 0 |>
+End
+
+Definition headroom_ps_def:
+  headroom_ps = (init_plan_state 0) with <|
+    ps_stack := headroom_stack;
+    ps_alloc := headroom_alloc |>
+End
+
+Theorem spill_alloc_n_exhausts_free[local]:
+  !items offs al.
+    LENGTH items = LENGTH al.sa_free_slots ==>
+    (SND (spill_alloc_n offs al items)).sa_free_slots = [] /\
+    (SND (spill_alloc_n offs al items)).sa_next_offset = al.sa_next_offset /\
+    FST (spill_alloc_n offs al items) =
+      offs ++ REVERSE al.sa_free_slots
+Proof
+  Induct
+  >- simp[spill_alloc_n_def] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `al.sa_free_slots`
+  >- gvs[] >>
+  simp[spill_alloc_n_def, alloc_spill_slot_def] >>
+  first_x_assum (qspecl_then
+    [`SNOC (LAST (h'::t)) offs`,
+     `al with sa_free_slots := FRONT (h'::t)`] mp_tac) >>
+  simp[] >>
+  (impl_tac >- fs[]) >> strip_tac >>
+  `SNOC (LAST (h'::t)) (FRONT (h'::t)) = h'::t` by
+    simp[SNOC_LAST_FRONT] >>
+  `REVERSE (h'::t) = LAST (h'::t) :: REVERSE (FRONT (h'::t))` by
+    metis_tac[REVERSE_SNOC] >>
+  gvs[SNOC_APPEND]
+QED
+
+Theorem headroom_allocator_trajectory[local]:
+  let res = spill_alloc_n [] headroom_alloc headroom_stack
+  in
+    (SND res).sa_free_slots = [] /\
+    (SND res).sa_next_offset = dimword(:256) /\
+    FST res = REVERSE headroom_slots ++ [dimword(:256) - 32]
+Proof
+  simp[LET_THM, headroom_alloc_def, headroom_stack_def,
+       headroom_slots_def, spill_alloc_n_def, alloc_spill_slot_def] >>
+  `32 <= dimword(:256)` by (EVAL_TAC >> simp[wordsTheory.dimword_def]) >>
+  decide_tac
+QED
