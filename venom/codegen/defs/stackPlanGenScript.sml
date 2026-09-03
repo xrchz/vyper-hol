@@ -13,7 +13,7 @@
 Theory stackPlanGen
 Ancestors
   stackPlanOps livenessDefs cfgDefs venomWf passSharedDefs staticLayoutDefs
-  list relation pair pred_set arithmetic
+  callLayoutDefs list relation pair pred_set arithmetic
 
 (* =========================================================================
    Emit Input Operands
@@ -125,7 +125,9 @@ End
 Definition generate_emit_ops_def:
   generate_emit_ops inst log_topic_count ps =
     let opc = inst.inst_opcode in
-    case venom_to_evm_name opc of
+    if opc = INITIAL_FMP then ([SOInitialFmp], ps)
+    else if opc = BUMP then ([SODup 2; SOEmit "ADD"], ps)
+    else case venom_to_evm_name opc of
       SOME name => ([SOEmit name], ps)
     | NONE =>
         if opc = JNZ then
@@ -260,12 +262,10 @@ Definition generate_regular_inst_plan_def:
        pop_ops ++ opt_ops, ps10)
 End
 
-(* Extended-core FMP operations that still require lowering.  The foundational
-   is_raw_fmp_opcode classifier deliberately excludes setup operations, so keep
-   the complete legacy-codegen boundary explicit here. *)
+(* Raw FMP operations still require lowering before legacy codegen.  Setup
+   operations INITIAL_FMP and BUMP have explicit stack-plan implementations. *)
 Definition is_unlowered_fmp_opcode_def:
-  is_unlowered_fmp_opcode opc ⇔
-    is_raw_fmp_opcode opc ∨ MEM opc [INITIAL_FMP; BUMP]
+  is_unlowered_fmp_opcode opc ⇔ is_raw_fmp_opcode opc
 End
 
 Definition is_unlowered_internal_call_opcode_def:
@@ -275,16 +275,16 @@ End
 (* Opcodes that should never appear at legacy codegen time. *)
 Definition is_pre_codegen_opcode_def:
   is_pre_codegen_opcode opc ⇔
-    MEM opc [ALLOCA; SINK; DLOAD; DLOADBYTES] ∨
+    MEM opc [ALLOCA; SINK; DLOAD; DLOADBYTES; MEMTOP] ∨
     is_unlowered_fmp_opcode opc ∨
-    is_unlowered_internal_call_opcode opc ∨
-    is_fmp_param_opcode opc
+    is_unlowered_internal_call_opcode opc
 End
 
 Theorem task063_extended_pre_codegen_eval:
   MAP is_pre_codegen_opcode
     [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
-     INVOKE; FMP_PARAM; RETPC_PARAM] = REPLICATE 10 T
+     INVOKE; FMP_PARAM; RETPC_PARAM] =
+    [T; T; T; T; T; F; F; T; F; F]
 Proof
   EVAL_TAC
 QED
@@ -308,6 +308,7 @@ End
 (* Per-function: structural WF + SSA + SUE + normalized CFG + no bad opcodes *)
 Definition codegen_ready_fn_def:
   codegen_ready_fn fn ⇔
+    canonical_param_prefix fn ∧
     wf_function fn ∧
     fn_inst_wf fn ∧
     ssa_form fn ∧
@@ -332,7 +333,7 @@ Definition generate_inst_plan_def:
       SOME (generate_phi_plan inst next_liveness ps)
     else if inst.inst_opcode = OFFSET then
       SOME (generate_offset_plan inst ps)
-    else if inst.inst_opcode = PARAM then
+    else if is_param_opcode inst.inst_opcode then
       SOME ([] : stack_op list, ps)
     else if inst.inst_opcode = NOP then
       SOME ([], ps)
@@ -359,7 +360,7 @@ QED
 Definition get_params_def:
   get_params [] = ([] : instruction list) ∧
   get_params (inst :: rest) =
-    if inst.inst_opcode = PARAM then inst :: get_params rest
+    if is_param_opcode inst.inst_opcode then inst :: get_params rest
     else []
 End
 
@@ -382,7 +383,7 @@ Definition prepare_params_plan_def:
       let (pop_ops, ps'') = popmany_plan to_pop_vars ps' in
       (* Python: _optimistic_swap checks if the next instruction (first
          non-param) is a terminator. Compute that here. *)
-      let first_non_param = FIND (λinst. inst.inst_opcode ≠ PARAM)
+      let first_non_param = FIND (λinst. ¬is_param_opcode inst.inst_opcode)
             entry.bb_instructions in
       let next_is_term = case first_non_param of
           SOME inst => is_terminator inst.inst_opcode
@@ -425,7 +426,7 @@ End
 
 Definition non_param_insts_def:
   non_param_insts bb =
-    FILTER (λinst. inst.inst_opcode ≠ PARAM) bb.bb_instructions
+    FILTER (λinst. ¬is_param_opcode inst.inst_opcode) bb.bb_instructions
 End
 
 (* =========================================================================
@@ -868,30 +869,34 @@ End
 
 Definition generate_fn_plan_def:
   generate_fn_plan fn spill_base (lbl_ctr : num) =
-    let liveness = liveness_analyze fn in
-    let dfg = dfg_build_function fn in
-    let cfg = cfg_analyze fn in
-    let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
-    case fn_entry_label fn of
-      NONE => SOME ([] : stack_op list, ps)
-    | SOME lbl =>
-        case generate_fn_plan_aux liveness dfg cfg fn [lbl] [] ps of
-          NONE => NONE
-        | SOME (ops, _, ps') => SOME (ops, ps')
+    if ¬canonical_param_prefix fn then NONE
+    else
+      let liveness = liveness_analyze fn in
+      let dfg = dfg_build_function fn in
+      let cfg = cfg_analyze fn in
+      let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
+      case fn_entry_label fn of
+        NONE => SOME ([] : stack_op list, ps)
+      | SOME lbl =>
+          case generate_fn_plan_aux liveness dfg cfg fn [lbl] [] ps of
+            NONE => NONE
+          | SOME (ops, _, ps') => SOME (ops, ps')
 End
 
 Definition generate_fn_plan_fuel_def:
   generate_fn_plan_fuel fuel fn spill_base (lbl_ctr : num) =
-    let liveness = liveness_analyze_fuel fuel fn in
-    let dfg = dfg_build_function fn in
-    let cfg = cfg_analyze fn in
-    let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
-    case fn_entry_label fn of
-      NONE => SOME ([] : stack_op list, ps)
-    | SOME lbl =>
-        case generate_fn_plan_aux_fuel fuel liveness dfg cfg fn [lbl] [] ps of
-          NONE => NONE
-        | SOME (ops, _, ps') => SOME (ops, ps')
+    if ¬canonical_param_prefix fn then NONE
+    else
+      let liveness = liveness_analyze_fuel fuel fn in
+      let dfg = dfg_build_function fn in
+      let cfg = cfg_analyze fn in
+      let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
+      case fn_entry_label fn of
+        NONE => SOME ([] : stack_op list, ps)
+      | SOME lbl =>
+          case generate_fn_plan_aux_fuel fuel liveness dfg cfg fn [lbl] [] ps of
+            NONE => NONE
+          | SOME (ops, _, ps') => SOME (ops, ps')
 End
 
 Definition revert_postamble_def:
