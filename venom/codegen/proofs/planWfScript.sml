@@ -1429,7 +1429,10 @@ Theorem generate_emit_ops_some[local,simp]:
     venom_to_evm_name inst.inst_opcode = SOME name ==>
     generate_emit_ops inst ltc ps = ([SOEmit name], ps)
 Proof
-  rpt strip_tac >> simp[generate_emit_ops_def, LET_THM]
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode = INITIAL_FMP` >> gvs[venom_to_evm_name_def] >>
+  Cases_on `inst.inst_opcode = BUMP` >> gvs[venom_to_evm_name_def] >>
+  simp[generate_emit_ops_def, LET_THM]
 QED
 
 (* regular_plan_prefix_wf_gen below supersedes the old regular_plan_prefix_wf.
@@ -1467,6 +1470,8 @@ Theorem regular_plan_empty_prefix:
       ([SOEmit name], ps_out)
 Proof
   rpt strip_tac >>
+  Cases_on `inst.inst_opcode = INITIAL_FMP` >> gvs[venom_to_evm_name_def] >>
+  Cases_on `inst.inst_opcode = BUMP` >> gvs[venom_to_evm_name_def] >>
   simp[generate_regular_inst_plan_def] >>
   simp[emit_input_plan_nil] >>
   simp[] >>

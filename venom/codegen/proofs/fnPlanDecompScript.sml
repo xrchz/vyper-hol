@@ -115,13 +115,13 @@ Proof
   simp[]
 QED
 
-(* Lifting: sub in middle component of a 3-way concat, through execute_plan *)
+(* Lifting: sub in middle component of a 3-way concat, through execute_plan initial_fmp *)
 Theorem ops_contain_at_in_concat3:
   !prefix inner suffix sub off.
-    ops_contain_at off (execute_plan inner) (execute_plan sub) ==>
-    ops_contain_at (LENGTH (execute_plan prefix) + off)
-      (execute_plan (prefix ++ inner ++ suffix))
-      (execute_plan sub)
+    ops_contain_at off (execute_plan initial_fmp inner) (execute_plan initial_fmp sub) ==>
+    ops_contain_at (LENGTH (execute_plan initial_fmp prefix) + off)
+      (execute_plan initial_fmp (prefix ++ inner ++ suffix))
+      (execute_plan initial_fmp sub)
 Proof
   rpt strip_tac >>
   REWRITE_TAC[execute_plan_append, GSYM APPEND_ASSOC] >>
@@ -132,10 +132,10 @@ QED
 (* Lifting: sub in left component of a 2-way concat *)
 Theorem ops_contain_at_in_concat2_left:
   !left right sub off.
-    ops_contain_at off (execute_plan left) (execute_plan sub) ==>
+    ops_contain_at off (execute_plan initial_fmp left) (execute_plan initial_fmp sub) ==>
     ops_contain_at off
-      (execute_plan (left ++ right))
-      (execute_plan sub)
+      (execute_plan initial_fmp (left ++ right))
+      (execute_plan initial_fmp sub)
 Proof
   rpt strip_tac >>
   REWRITE_TAC[execute_plan_append] >>
@@ -145,10 +145,10 @@ QED
 (* Lifting: sub in right component of a 2-way concat *)
 Theorem ops_contain_at_in_concat2_right:
   !left right sub off.
-    ops_contain_at off (execute_plan right) (execute_plan sub) ==>
-    ops_contain_at (LENGTH (execute_plan left) + off)
-      (execute_plan (left ++ right))
-      (execute_plan sub)
+    ops_contain_at off (execute_plan initial_fmp right) (execute_plan initial_fmp sub) ==>
+    ops_contain_at (LENGTH (execute_plan initial_fmp left) + off)
+      (execute_plan initial_fmp (left ++ right))
+      (execute_plan initial_fmp sub)
 Proof
   rpt strip_tac >>
   REWRITE_TAC[execute_plan_append] >>
@@ -168,8 +168,8 @@ Theorem fn_plan_aux_per_block:
       ?ps_lbl block_ops ps_after off.
         generate_block_plan liveness dfg cfg fn bb ps_lbl =
           SOME (block_ops, ps_after) /\
-        ops_contain_at off (execute_plan ops)
-          (execute_plan block_ops)) /\
+        ops_contain_at off (execute_plan initial_fmp ops)
+          (execute_plan initial_fmp block_ops)) /\
   (!liveness dfg cfg fn ss sp succs visited ps ops visited' ps'.
     generate_succs_plan liveness dfg cfg fn ss sp succs visited ps =
       SOME (ops, visited', ps') ==>
@@ -179,8 +179,8 @@ Theorem fn_plan_aux_per_block:
       ?ps_lbl block_ops ps_after off.
         generate_block_plan liveness dfg cfg fn bb ps_lbl =
           SOME (block_ops, ps_after) /\
-        ops_contain_at off (execute_plan ops)
-          (execute_plan block_ops))
+        ops_contain_at off (execute_plan initial_fmp ops)
+          (execute_plan initial_fmp block_ops))
 Proof
   ho_match_mp_tac generate_fn_plan_aux_ind >> rpt conj_tac
   (* base: worklist = [] *)
@@ -239,10 +239,10 @@ Proof
       `?ps_lbl block_ops ps_after off.
          generate_block_plan liveness dfg cfg fn bb ps_lbl =
            SOME (block_ops, ps_after) /\
-         ops_contain_at off (execute_plan succ_ops)
-           (execute_plan block_ops)` by metis_tac[] >>
+         ops_contain_at off (execute_plan initial_fmp succ_ops)
+           (execute_plan initial_fmp block_ops)` by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,
-                     `LENGTH (execute_plan block_ops_h) + off`] >>
+                     `LENGTH (execute_plan initial_fmp block_ops_h) + off`] >>
       simp[] >>
       drule ops_contain_at_in_concat3 >>
       disch_then (qspecl_then [`block_ops_h`, `rest_ops`] mp_tac) >>
@@ -256,10 +256,10 @@ Proof
       `?ps_lbl block_ops ps_after off.
          generate_block_plan liveness dfg cfg fn bb ps_lbl =
            SOME (block_ops, ps_after) /\
-         ops_contain_at off (execute_plan rest_ops)
-           (execute_plan block_ops)` by metis_tac[] >>
+         ops_contain_at off (execute_plan initial_fmp rest_ops)
+           (execute_plan initial_fmp block_ops)` by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,
-                     `LENGTH (execute_plan (block_ops_h ++ succ_ops)) + off`] >>
+                     `LENGTH (execute_plan initial_fmp (block_ops_h ++ succ_ops)) + off`] >>
       simp[] >>
       drule ops_contain_at_in_concat2_right >>
       disch_then (qspec_then `block_ops_h ++ succ_ops` mp_tac) >>
@@ -289,8 +289,8 @@ Proof
       `?ps_lbl block_ops ps_after off.
          generate_block_plan liveness dfg cfg fn qbb ps_lbl =
            SOME (block_ops, ps_after) /\
-         ops_contain_at off (execute_plan s_ops)
-           (execute_plan block_ops)` by metis_tac[] >>
+         ops_contain_at off (execute_plan initial_fmp s_ops)
+           (execute_plan initial_fmp block_ops)` by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`, `off`] >> simp[] >>
       drule ops_contain_at_in_concat2_left >>
       disch_then (qspec_then `rest_ops` mp_tac) >> simp[]
@@ -301,10 +301,10 @@ Proof
       `?ps_lbl block_ops ps_after off.
          generate_block_plan liveness dfg cfg fn qbb ps_lbl =
            SOME (block_ops, ps_after) /\
-         ops_contain_at off (execute_plan rest_ops)
-           (execute_plan block_ops)` by metis_tac[] >>
+         ops_contain_at off (execute_plan initial_fmp rest_ops)
+           (execute_plan initial_fmp block_ops)` by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,
-                     `LENGTH (execute_plan s_ops) + off`] >> simp[] >>
+                     `LENGTH (execute_plan initial_fmp s_ops) + off`] >> simp[] >>
       drule ops_contain_at_in_concat2_right >>
       disch_then (qspec_then `s_ops` mp_tac) >> simp[]
     )
@@ -325,8 +325,8 @@ Theorem fn_plan_aux_entry_state:
       ?ps_lbl block_ops ps_after off.
         generate_block_plan liveness dfg cfg fn bb ps_lbl =
           SOME (block_ops, ps_after) /\
-        ops_contain_at off (execute_plan ops)
-          (execute_plan block_ops) /\
+        ops_contain_at off (execute_plan initial_fmp ops)
+          (execute_plan initial_fmp block_ops) /\
         ps_lbl.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
         ps.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset) /\
   (!liveness dfg cfg fn ss sp succs visited ps ops visited' ps'.
@@ -338,8 +338,8 @@ Theorem fn_plan_aux_entry_state:
       ?ps_lbl block_ops ps_after off.
         generate_block_plan liveness dfg cfg fn bb ps_lbl =
           SOME (block_ops, ps_after) /\
-        ops_contain_at off (execute_plan ops)
-          (execute_plan block_ops) /\
+        ops_contain_at off (execute_plan initial_fmp ops)
+          (execute_plan initial_fmp block_ops) /\
         ps_lbl.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
         ps.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset)
 Proof
@@ -400,13 +400,13 @@ Proof
       `?ps_lbl block_ops ps_after off.
          generate_block_plan liveness dfg cfg fn bb ps_lbl =
            SOME (block_ops, ps_after) /\
-         ops_contain_at off (execute_plan succ_ops)
-           (execute_plan block_ops) /\
+         ops_contain_at off (execute_plan initial_fmp succ_ops)
+           (execute_plan initial_fmp block_ops) /\
          ps_lbl.ps_alloc.sa_spill_base = ps1.ps_alloc.sa_spill_base /\
          ps1.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset`
            by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,
-                     `LENGTH (execute_plan block_ops_h) + off`] >>
+                     `LENGTH (execute_plan initial_fmp block_ops_h) + off`] >>
       simp[] >> rpt conj_tac
       >- (drule ops_contain_at_in_concat3 >>
           disch_then (qspecl_then [`block_ops_h`, `rest_ops`] mp_tac) >>
@@ -426,13 +426,13 @@ Proof
       `?ps_lbl block_ops ps_after off.
          generate_block_plan liveness dfg cfg fn bb ps_lbl =
            SOME (block_ops, ps_after) /\
-         ops_contain_at off (execute_plan rest_ops)
-           (execute_plan block_ops) /\
+         ops_contain_at off (execute_plan initial_fmp rest_ops)
+           (execute_plan initial_fmp block_ops) /\
          ps_lbl.ps_alloc.sa_spill_base = ps2.ps_alloc.sa_spill_base /\
          ps2.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset`
            by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,
-                     `LENGTH (execute_plan (block_ops_h ++ succ_ops)) + off`] >>
+                     `LENGTH (execute_plan initial_fmp (block_ops_h ++ succ_ops)) + off`] >>
       simp[] >> rpt conj_tac
       >- (drule ops_contain_at_in_concat2_right >>
           disch_then (qspec_then `block_ops_h ++ succ_ops` mp_tac) >>
@@ -480,7 +480,7 @@ Proof
       qpat_assum `generate_fn_plan_aux _ _ _ _ [_] _ _ = _`
         (fn th => assume_tac (MATCH_MP (cj 1 fn_plan_aux_alloc_mono) th)) >>
       qexistsl_tac [`ps2`, `bops2`, `pa2`,
-                     `LENGTH (execute_plan s_ops) + off2`] >>
+                     `LENGTH (execute_plan initial_fmp s_ops) + off2`] >>
       gvs[] >> rpt conj_tac
       >- (drule ops_contain_at_in_concat2_right >>
           disch_then (qspec_then `s_ops` mp_tac) >> simp[])

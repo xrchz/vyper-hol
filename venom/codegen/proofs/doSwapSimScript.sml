@@ -248,11 +248,11 @@ Theorem do_swap_venom_asm_rel_small[local]:
     dist <= 16 /\
     dist < LENGTH ps.ps_stack /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st =
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
             AsmOK st' /\
           venom_asm_rel lo ps' vs st' /\
-          st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
   Cases_on `dist = 0`
@@ -262,7 +262,7 @@ Proof
    ps' = ps with ps_stack := stack_swap dist ps.ps_stack` by
     (fs[do_swap_def] >> gvs[]) >>
   gvs[] >>
-  qspecl_then [`[SOSwap dist]`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
+  qspecl_then [`[SOSwap dist]`, `initial_fmp`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
     mp_tac simple_prefix_venom_asm_rel >>
   (impl_tac >- (
     simp[is_simple_stack_op_def, prefix_wf_def, stack_op_wf_def] >>
@@ -280,7 +280,7 @@ QED
 (* sa_spill_base is unchanged by any prefix op *)
 Theorem apply_prefix_op_spill_base[local]:
   !lo op ps.
-    (apply_prefix_op lo op ps).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
+    (apply_prefix_op initial_fmp lo op ps).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> Cases_on `op` >>
   simp[apply_prefix_op_def, apply_simple_op_def,
@@ -291,7 +291,7 @@ QED
 
 Theorem apply_prefix_ops_spill_base[local]:
   !lo ops ps.
-    (apply_prefix_ops lo ops ps).ps_alloc.sa_spill_base =
+    (apply_prefix_ops initial_fmp lo ops ps).ps_alloc.sa_spill_base =
     ps.ps_alloc.sa_spill_base
 Proof
   Induct_on `ops` >>
@@ -302,7 +302,7 @@ QED
 Theorem apply_prefix_op_next_offset[local]:
   !lo op ps.
     ps.ps_alloc.sa_next_offset <=
-    (apply_prefix_op lo op ps).ps_alloc.sa_next_offset
+    (apply_prefix_op initial_fmp lo op ps).ps_alloc.sa_next_offset
 Proof
   rpt gen_tac >> Cases_on `op` >>
   simp[apply_prefix_op_def, apply_simple_op_def,
@@ -342,7 +342,7 @@ QED
 (* SORestore doesn't change ps_alloc at all *)
 Theorem apply_prefix_op_restore_alloc[local]:
   !lo off ps.
-    (apply_prefix_op lo (SORestore off) ps).ps_alloc = ps.ps_alloc
+    (apply_prefix_op initial_fmp lo (SORestore off) ps).ps_alloc = ps.ps_alloc
 Proof
   simp[apply_prefix_op_def, spill_lookup_def]
 QED
@@ -351,7 +351,7 @@ QED
 Theorem apply_prefix_ops_restore_next_offset[local]:
   !lo ops ps.
     EVERY (\op. ?off. op = SORestore off) ops ==>
-    (apply_prefix_ops lo ops ps).ps_alloc.sa_next_offset =
+    (apply_prefix_ops initial_fmp lo ops ps).ps_alloc.sa_next_offset =
     ps.ps_alloc.sa_next_offset
 Proof
   Induct_on `ops` >>
@@ -441,7 +441,7 @@ QED
 Theorem apply_spill_ops_stack:
   !offsets lo ps.
     LENGTH offsets <= LENGTH ps.ps_stack ==>
-    (apply_prefix_ops lo (MAP SOSpill offsets) ps).ps_stack =
+    (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack =
     TAKE (LENGTH ps.ps_stack - LENGTH offsets) ps.ps_stack
 Proof
   Induct >>
@@ -470,9 +470,9 @@ QED
 
 Theorem prefix_spill_wf_append[local]:
   !l1 l2 lo ps.
-    prefix_spill_wf lo (l1 ++ l2) ps <=>
-    prefix_spill_wf lo l1 ps /\
-    prefix_spill_wf lo l2 (apply_prefix_ops lo l1 ps)
+    prefix_spill_wf initial_fmp lo (l1 ++ l2) ps <=>
+    prefix_spill_wf initial_fmp lo l1 ps /\
+    prefix_spill_wf initial_fmp lo l2 (apply_prefix_ops initial_fmp lo l1 ps)
 Proof
   Induct >> simp[prefix_spill_wf_def, apply_prefix_ops_def] >>
   metis_tac[]
@@ -500,10 +500,10 @@ QED
 (* Generalized: prefix_spill_wf for spill FOLDL starting from arbitrary acc. *)
 Theorem prefix_spill_wf_spill_gen[local]:
   !items ops0 offs0 al0 lo ps.
-    prefix_spill_wf lo ops0 ps /\
-    spill_alloc_wf al0 (apply_prefix_ops lo ops0 ps).ps_spilled /\
+    prefix_spill_wf initial_fmp lo ops0 ps /\
+    spill_alloc_wf al0 (apply_prefix_ops initial_fmp lo ops0 ps).ps_spilled /\
     al0.sa_spill_base = ps.ps_alloc.sa_spill_base /\
-    LENGTH items <= LENGTH (apply_prefix_ops lo ops0 ps).ps_stack /\
+    LENGTH items <= LENGTH (apply_prefix_ops initial_fmp lo ops0 ps).ps_stack /\
     al0.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
     (let (ops, offs, al') =
        FOLDL
@@ -511,7 +511,7 @@ Theorem prefix_spill_wf_spill_gen[local]:
             (\(off,al'). (ops ++ [SOSpill off], SNOC off offs, al'))
               (alloc_spill_slot al))
          (ops0,offs0,al0) items
-     in prefix_spill_wf lo ops ps)
+     in prefix_spill_wf initial_fmp lo ops ps)
 Proof
   Induct
   >- simp[]
@@ -572,7 +572,7 @@ Theorem prefix_spill_wf_spill_phase[local]:
             (\(off,al'). (ops ++ [SOSpill off], SNOC off offs, al'))
               (alloc_spill_slot al))
          ([],offs0,al0) items
-     in prefix_spill_wf lo ops ps)
+     in prefix_spill_wf initial_fmp lo ops ps)
 Proof
   rpt strip_tac >>
   irule prefix_spill_wf_spill_gen >>
@@ -776,7 +776,7 @@ Theorem spill_n_sim[local]:
           SND (EL j pairs) + 32 <= SND (EL k pairs) \/
           SND (EL k pairs) + 32 <= SND (EL j pairs))) /\
     asm_block_at prog st.as_pc
-      (execute_plan (MAP SOSpill (MAP SND pairs))) ==>
+      (execute_plan initial_fmp (MAP SOSpill (MAP SND pairs))) ==>
     ?st'.
       asm_steps lo o2pc prog (2 * LENGTH pairs) st = AsmOK st' /\
       st'.as_pc = st.as_pc + 2 * LENGTH pairs /\
@@ -824,17 +824,17 @@ Proof
   (impl_tac
   >- (
     rpt conj_tac >> TRY (fs[] >> NO_TAC) >>
-    qpat_x_assum `asm_block_at _ _ (execute_plan _)` mp_tac >>
+    qpat_x_assum `asm_block_at _ _ (execute_plan initial_fmp _)` mp_tac >>
     simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons,
          asm_block_at_nil]
   )) >>
   strip_tac >>
   (* Extract asm_block_at for remaining spill ops *)
   SUBGOAL_THEN ``asm_block_at prog (st.as_pc + 2)
-    (execute_plan (MAP SOSpill (MAP SND (pairs:(operand#num) list))))``
+    (execute_plan initial_fmp (MAP SOSpill (MAP SND (pairs:(operand#num) list))))``
     ASSUME_TAC
   >- (
-    qpat_x_assum `asm_block_at _ _ (execute_plan _)` mp_tac >>
+    qpat_x_assum `asm_block_at _ _ (execute_plan initial_fmp _)` mp_tac >>
     simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons,
          asm_block_at_nil]
   ) >>
@@ -924,7 +924,7 @@ Theorem restore_n_sim[local]:
        FLOOKUP ps.ps_spilled (EL k items) = SOME (EL k offsets) /\
        EL k offsets < dimword(:256)) /\
     asm_block_at prog st.as_pc
-      (execute_plan (MAP SORestore offsets)) ==>
+      (execute_plan initial_fmp (MAP SORestore offsets)) ==>
     ?st'.
       asm_steps lo o2pc prog (2 * LENGTH items) st = AsmOK st' /\
       st'.as_pc = st.as_pc + 2 * LENGTH items /\
@@ -957,15 +957,15 @@ Proof
       rpt conj_tac >> TRY (fs[] >> NO_TAC)
       >- (first_x_assum (qspec_then `0` mp_tac) >> simp[])
       >- (first_x_assum (qspec_then `0` mp_tac) >> simp[])
-      >> (qpat_x_assum `asm_block_at _ _ (execute_plan _)` mp_tac >>
+      >> (qpat_x_assum `asm_block_at _ _ (execute_plan initial_fmp _)` mp_tac >>
           simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons,
                asm_block_at_nil])
     )) >>
     strip_tac >>
     SUBGOAL_THEN ``asm_block_at prog (st.as_pc + 2)
-      (execute_plan (MAP SORestore t))`` ASSUME_TAC
+      (execute_plan initial_fmp (MAP SORestore t))`` ASSUME_TAC
     >- (
-      qpat_x_assum `asm_block_at _ _ (execute_plan _)` mp_tac >>
+      qpat_x_assum `asm_block_at _ _ (execute_plan initial_fmp _)` mp_tac >>
       simp[execute_plan_def, exec_stack_op_def,
            asm_block_at_append, asm_block_at_cons, asm_block_at_nil]
     ) >>
@@ -1487,26 +1487,26 @@ Proof
   simp[el_desired_list, el_reverse_desired_list]
 QED
 
-(* execute_plan length for MAP SOSpill *)
+(* execute_plan initial_fmp length for MAP SOSpill *)
 Theorem execute_plan_map_spill_length[local]:
-  !offs. LENGTH (execute_plan (MAP SOSpill offs)) = 2 * LENGTH offs
+  !offs. LENGTH (execute_plan initial_fmp (MAP SOSpill offs)) = 2 * LENGTH offs
 Proof
   Induct >> simp[execute_plan_def, exec_stack_op_def] >>
   fs[execute_plan_def]
 QED
 
-(* execute_plan length for MAP SORestore *)
+(* execute_plan initial_fmp length for MAP SORestore *)
 Theorem execute_plan_map_restore_length[local]:
-  !offs. LENGTH (execute_plan (MAP SORestore offs)) = 2 * LENGTH offs
+  !offs. LENGTH (execute_plan initial_fmp (MAP SORestore offs)) = 2 * LENGTH offs
 Proof
   Induct >> simp[execute_plan_def, exec_stack_op_def] >>
   fs[execute_plan_def]
 QED
 
-(* execute_plan length for spill ++ restore *)
+(* execute_plan initial_fmp length for spill ++ restore *)
 Theorem execute_plan_spill_restore_length[local]:
   !spill_offs restore_offs.
-    LENGTH (execute_plan (MAP SOSpill spill_offs ++ MAP SORestore restore_offs)) =
+    LENGTH (execute_plan initial_fmp (MAP SOSpill spill_offs ++ MAP SORestore restore_offs)) =
       2 * LENGTH spill_offs + 2 * LENGTH restore_offs
 Proof
   simp[execute_plan_append, LENGTH_APPEND,
@@ -1587,11 +1587,11 @@ Theorem do_swap_venom_asm_rel_big[local]:
     ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
     DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st =
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
             AsmOK st' /\
           venom_asm_rel lo ps' vs st' /\
-          st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
   (* Abbreviations *)
@@ -1649,7 +1649,7 @@ Resume do_swap_venom_asm_rel_big[spill_precond2]:
     (* 3. offset properties *)
     suspend "offset_props",
     (* 4. asm_block_at for spill phase *)
-    qpat_x_assum `asm_block_at prog st.as_pc (execute_plan _)` mp_tac >>
+    qpat_x_assum `asm_block_at prog st.as_pc (execute_plan initial_fmp _)` mp_tac >>
     simp[execute_plan_append, asm_block_at_append] >>
     simp[MAP_ZIP, LENGTH_REVERSE]
   ]
@@ -1769,7 +1769,7 @@ Resume do_swap_venom_asm_rel_big[flookup_eq]:
 QED
 
 Resume do_swap_venom_asm_rel_big[asm_block_at_restore]:
-  qpat_x_assum `asm_block_at prog _ (execute_plan _)` mp_tac >>
+  qpat_x_assum `asm_block_at prog _ (execute_plan initial_fmp _)` mp_tac >>
   simp[execute_plan_append, asm_block_at_append,
        execute_plan_map_spill_length, MAP_ZIP, LENGTH_REVERSE,
        Abbr `offsets`, spill_alloc_n_offsets_length]
@@ -1785,7 +1785,7 @@ Resume do_swap_venom_asm_rel_big[compose]:
 QED
 
 Resume do_swap_venom_asm_rel_big[compose_steps]:
-  (* Rewrite LENGTH(execute_plan ops) to match assumption step counts *)
+  (* Rewrite LENGTH(execute_plan initial_fmp ops) to match assumption step counts *)
   qpat_x_assum `asm_steps _ _ _ (2 * LENGTH (ZIP _)) st = _`
     (fn th1 =>
      qpat_x_assum `asm_steps _ _ _ (2 * LENGTH restored) st' = _`
@@ -1938,11 +1938,11 @@ Theorem do_swap_venom_asm_rel:
        DISJOINT (set (top_n (dist + 1) ps.ps_stack))
                 (FDOM ps.ps_spilled)) /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st =
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
             AsmOK st' /\
           venom_asm_rel lo ps' vs st' /\
-          st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
   Cases_on `dist <= 16`
@@ -1962,7 +1962,7 @@ QED
 Theorem apply_spill_ops_spilled[local]:
   !offsets lo ps.
     LENGTH offsets <= LENGTH ps.ps_stack ==>
-    (apply_prefix_ops lo (MAP SOSpill offsets) ps).ps_spilled =
+    (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
     ps.ps_spilled |++
       ZIP (TAKE (LENGTH offsets) (REVERSE ps.ps_stack), offsets)
 Proof
@@ -2005,7 +2005,7 @@ Theorem apply_restore_ops_stack[local]:
        FLOOKUP ps.ps_spilled op1 = SOME off1 /\
        FLOOKUP ps.ps_spilled op2 = SOME off2 /\ op1 <> op2 ==>
        off1 + 32 <= off2 \/ off2 + 32 <= off1) ==>
-    (apply_prefix_ops lo (MAP SORestore offsets) ps).ps_stack =
+    (apply_prefix_ops initial_fmp lo (MAP SORestore offsets) ps).ps_stack =
     ps.ps_stack ++ items
 Proof
   Induct
@@ -2059,7 +2059,7 @@ Theorem do_swap_apply_stack_align:
                 (FDOM ps.ps_spilled) /\
        spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
        ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256)) ==>
-    (apply_prefix_ops lo (FST (do_swap dist ps)) ps).ps_stack =
+    (apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps).ps_stack =
     (SND (do_swap dist ps)).ps_stack
 Proof
   rpt strip_tac >>
@@ -2093,11 +2093,11 @@ Proof
   simp[] >> strip_tac >>
   simp[apply_prefix_ops_append] >>
   (* After spill phase: stack = base_stack *)
-  `(apply_prefix_ops lo (MAP SOSpill offsets) ps).ps_stack = base_stack` by (
+  `(apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack = base_stack` by (
     qspecl_then [`offsets`, `lo`, `ps`] mp_tac apply_spill_ops_stack >>
     simp[Abbr `base_stack`, Abbr `chunk`]) >>
   (* After spill phase: spilled *)
-  `(apply_prefix_ops lo (MAP SOSpill offsets) ps).ps_spilled =
+  `(apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
    ps.ps_spilled |++ ZIP(REVERSE items, offsets)` by (
     qspecl_then [`offsets`, `lo`, `ps`] mp_tac apply_spill_ops_spilled >>
     simp[Abbr `chunk`] >>
@@ -2125,7 +2125,7 @@ Resume do_swap_apply_stack_align[restore]:
     simp[Abbr `rev_items`, LENGTH_REVERSE] >>
   (* Apply apply_restore_ops_stack *)
   qspecl_then [`items_pushed`, `restore_offsets`, `lo`,
-    `apply_prefix_ops lo (MAP SOSpill offsets) ps`]
+    `apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps`]
     mp_tac apply_restore_ops_stack >>
   (* Discharge LENGTH and rewrite spilled/stack, but keep items_pushed *)
   simp[] >>

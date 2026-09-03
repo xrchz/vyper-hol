@@ -763,7 +763,9 @@ Proof
   Cases_on `inst.inst_opcode = ASSERT_UNREACHABLE` >> gvs[]
   >- (pairarg_tac >> gvs[] >> drule fresh_label_spill_base >> simp[]) >>
   Cases_on `inst.inst_opcode = LOG` >> gvs[] >>
-  Cases_on `inst.inst_opcode = ISTORE` >> gvs[]
+  Cases_on `inst.inst_opcode = ISTORE` >> gvs[] >>
+  Cases_on `inst.inst_opcode = INITIAL_FMP` >> gvs[] >>
+  Cases_on `inst.inst_opcode = BUMP` >> gvs[]
 QED
 
 Theorem generate_emit_ops_spill_base:

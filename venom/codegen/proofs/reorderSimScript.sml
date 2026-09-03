@@ -296,7 +296,7 @@ Theorem reorder_single_op_val_on_tos:
     reorder_plan dfg [op] ps = (rops, ps') /\
     (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 16) /\
     plan_stack_rel lo vs
-      (apply_prefix_ops lo rops ps).ps_stack as_stk /\
+      (apply_prefix_ops initial_fmp lo rops ps).ps_stack as_stk /\
     as_stk <> [] /\
     (!at. operand_equiv dfg op at ==>
           operand_val vs lo op = operand_val vs lo at) ==>
@@ -373,10 +373,10 @@ Theorem apply_ssr_indep[local]:
      (?off. op = SORestore off)) /\
     ps1.ps_stack = ps2.ps_stack /\
     ps1.ps_spilled = ps2.ps_spilled ==>
-    (apply_prefix_op lo op ps1).ps_stack =
-      (apply_prefix_op lo op ps2).ps_stack /\
-    (apply_prefix_op lo op ps1).ps_spilled =
-      (apply_prefix_op lo op ps2).ps_spilled
+    (apply_prefix_op initial_fmp lo op ps1).ps_stack =
+      (apply_prefix_op initial_fmp lo op ps2).ps_stack /\
+    (apply_prefix_op initial_fmp lo op ps1).ps_spilled =
+      (apply_prefix_op initial_fmp lo op ps2).ps_spilled
 Proof
   rpt gen_tac >> strip_tac >>
   gvs[apply_prefix_op_def, apply_simple_op_def, LET_THM,
@@ -390,10 +390,10 @@ Theorem apply_ssr_ops_indep[local]:
                 (?off. op = SORestore off)) ops /\
     ps1.ps_stack = ps2.ps_stack /\
     ps1.ps_spilled = ps2.ps_spilled ==>
-    (apply_prefix_ops lo ops ps1).ps_stack =
-      (apply_prefix_ops lo ops ps2).ps_stack /\
-    (apply_prefix_ops lo ops ps1).ps_spilled =
-      (apply_prefix_ops lo ops ps2).ps_spilled
+    (apply_prefix_ops initial_fmp lo ops ps1).ps_stack =
+      (apply_prefix_ops initial_fmp lo ops ps2).ps_stack /\
+    (apply_prefix_ops initial_fmp lo ops ps1).ps_spilled =
+      (apply_prefix_ops initial_fmp lo ops ps2).ps_spilled
 Proof
   Induct >> simp[apply_prefix_ops_def] >>
   rpt gen_tac >> strip_tac >>
@@ -404,9 +404,9 @@ QED
 (* do_spill_at: apply_prefix_ops aligns with do_spill_at on stack+spilled *)
 Theorem do_spill_at_align[local]:
   !d ps lo.
-    (apply_prefix_ops lo (FST (do_spill_at d ps)) ps).ps_stack =
+    (apply_prefix_ops initial_fmp lo (FST (do_spill_at d ps)) ps).ps_stack =
       (SND (do_spill_at d ps)).ps_stack /\
-    (apply_prefix_ops lo (FST (do_spill_at d ps)) ps).ps_spilled =
+    (apply_prefix_ops initial_fmp lo (FST (do_spill_at d ps)) ps).ps_spilled =
       (SND (do_spill_at d ps)).ps_spilled
 Proof
   rpt gen_tac >>
@@ -461,8 +461,8 @@ QED
 Theorem reduce_depth_plan_align[local]:
   !fuel target_ops target_op ps lo.
     let (ops, ps') = reduce_depth_plan fuel target_ops target_op ps in
-    (apply_prefix_ops lo ops ps).ps_stack = ps'.ps_stack /\
-    (apply_prefix_ops lo ops ps).ps_spilled = ps'.ps_spilled
+    (apply_prefix_ops initial_fmp lo ops ps).ps_stack = ps'.ps_stack /\
+    (apply_prefix_ops initial_fmp lo ops ps).ps_spilled = ps'.ps_spilled
 Proof
   Induct >> simp[reduce_depth_plan_def, LET_THM, apply_prefix_ops_def]
   >>
@@ -491,8 +491,8 @@ QED
 
 Resume reduce_depth_plan_align[step]:
   (* do_spill_at_align gives stack+spilled equality *)
-  `(apply_prefix_ops lo spill_ops ps).ps_stack = ps1.ps_stack /\
-   (apply_prefix_ops lo spill_ops ps).ps_spilled = ps1.ps_spilled` by (
+  `(apply_prefix_ops initial_fmp lo spill_ops ps).ps_stack = ps1.ps_stack /\
+   (apply_prefix_ops initial_fmp lo spill_ops ps).ps_spilled = ps1.ps_spilled` by (
     qspecl_then [`cand`, `ps`, `lo`] mp_tac do_spill_at_align >>
     gvs[]) >>
   (* rest_ops are SOSwap/SOSpill, weaken to include SORestore *)
@@ -507,7 +507,7 @@ Resume reduce_depth_plan_align[step]:
     simp[] >> metis_tac[]) >>
   (* apply_ssr_ops_indep + IH *)
   qspecl_then [`rest_ops`, `lo`,
-    `apply_prefix_ops lo spill_ops ps`, `ps1`]
+    `apply_prefix_ops initial_fmp lo spill_ops ps`, `ps1`]
     mp_tac apply_ssr_ops_indep >>
   simp[]
 QED
@@ -523,7 +523,7 @@ Theorem reorder_single_op_val_on_tos_deep:
     reorder_plan dfg [op] ps = (rops, ps') /\
     (?d. stack_get_depth op ps.ps_stack = SOME d) /\
     plan_stack_rel lo vs
-      (apply_prefix_ops lo rops ps).ps_stack as_stk /\
+      (apply_prefix_ops initial_fmp lo rops ps).ps_stack as_stk /\
     as_stk <> [] /\
     (!at. operand_equiv dfg op at ==>
           operand_val vs lo op = operand_val vs lo at) /\
@@ -563,8 +563,8 @@ Proof
   pairarg_tac >> simp[] >>
   rename1 `reduce_depth_plan _ _ _ _ = (reduce_ops, ps2)` >>
   (* Stack+spilled alignment: apply_prefix_ops reduce_ops ps = ps2 *)
-  `(apply_prefix_ops lo reduce_ops ps).ps_stack = ps2.ps_stack /\
-   (apply_prefix_ops lo reduce_ops ps).ps_spilled = ps2.ps_spilled` by (
+  `(apply_prefix_ops initial_fmp lo reduce_ops ps).ps_stack = ps2.ps_stack /\
+   (apply_prefix_ops initial_fmp lo reduce_ops ps).ps_spilled = ps2.ps_spilled` by (
     qspecl_then [`LENGTH ps.ps_stack`, `[op]`, `op`, `ps`, `lo`]
       mp_tac reduce_depth_plan_align >>
     simp[LET_THM]) >>
@@ -638,7 +638,7 @@ Resume reorder_single_op_val_on_tos_deep[swap_le16]:
     qpat_x_assum `do_swap _ _ = _` mp_tac >>
     simp[do_swap_def]) >>
   (* Rewrite plan_stack_rel to use stack_swap *)
-  `(apply_prefix_ops lo q ps).ps_stack =
+  `(apply_prefix_ops initial_fmp lo q ps).ps_stack =
    stack_swap dist' ps2.ps_stack` by (
     qpat_x_assum `_ = q` (SUBST_ALL_TAC o SYM) >>
     simp[apply_prefix_ops_append, apply_prefix_ops_def,
@@ -701,15 +701,15 @@ Resume reorder_single_op_val_on_tos_deep[deep_swap]:
     `swap1_ops = FST (do_swap dist' ps2)` by gvs[] >>
     metis_tac[do_swap_ops_ssr]) >>
   (* apply_ssr_ops_indep bridges reduce_ops gap *)
-  `(apply_prefix_ops lo swap1_ops
-      (apply_prefix_ops lo reduce_ops ps)).ps_stack =
-   (apply_prefix_ops lo swap1_ops ps2).ps_stack` by (
+  `(apply_prefix_ops initial_fmp lo swap1_ops
+      (apply_prefix_ops initial_fmp lo reduce_ops ps)).ps_stack =
+   (apply_prefix_ops initial_fmp lo swap1_ops ps2).ps_stack` by (
     qspecl_then [`swap1_ops`, `lo`,
-      `apply_prefix_ops lo reduce_ops ps`, `ps2`]
+      `apply_prefix_ops initial_fmp lo reduce_ops ps`, `ps2`]
       mp_tac apply_ssr_ops_indep >>
     simp[]) >>
   (* do_swap_apply_stack_align *)
-  `(apply_prefix_ops lo swap1_ops ps2).ps_stack =
+  `(apply_prefix_ops initial_fmp lo swap1_ops ps2).ps_stack =
    (SND (do_swap dist' ps2)).ps_stack` by (
     `swap1_ops = FST (do_swap dist' ps2)` by simp[] >>
     pop_assum SUBST_ALL_TAC >>
@@ -725,9 +725,9 @@ Resume reorder_single_op_val_on_tos_deep[deep_swap]:
     qpat_x_assum `plan_stack_rel _ _ _ _`
       (mp_tac o REWRITE_RULE [eq, apply_prefix_ops_append])) >>
   (* Rewrite using the stack equality chain *)
-  qpat_x_assum `(apply_prefix_ops lo swap1_ops
-    (apply_prefix_ops lo reduce_ops ps)).ps_stack = _` (SUBST1_TAC) >>
-  qpat_x_assum `(apply_prefix_ops lo swap1_ops ps2).ps_stack = _`
+  qpat_x_assum `(apply_prefix_ops initial_fmp lo swap1_ops
+    (apply_prefix_ops initial_fmp lo reduce_ops ps)).ps_stack = _` (SUBST1_TAC) >>
+  qpat_x_assum `(apply_prefix_ops initial_fmp lo swap1_ops ps2).ps_stack = _`
     (SUBST1_TAC) >>
   strip_tac >>
   (* plan_stack_rel on (SND (do_swap dist' ps2)).ps_stack *)

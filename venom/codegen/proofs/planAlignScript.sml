@@ -24,7 +24,7 @@ Libs
 Theorem do_swap_align:
   !dist ps ops ps'.
     do_swap dist ps = (ops, ps') /\ dist <= 16 ==>
-    !lo. apply_prefix_ops lo ops ps = ps'
+    !lo. apply_prefix_ops initial_fmp lo ops ps = ps'
 Proof
   rpt strip_tac >>
   fs[do_swap_def] >>
@@ -41,7 +41,7 @@ QED
 Theorem do_dup_align:
   !dist ps ops ps'.
     do_dup dist ps = (ops, ps') /\ dist <= 15 ==>
-    !lo. apply_prefix_ops lo ops ps = ps'
+    !lo. apply_prefix_ops initial_fmp lo ops ps = ps'
 Proof
   rpt strip_tac >>
   fs[do_dup_def] >>
@@ -56,7 +56,7 @@ QED
 
 Theorem sopop_align:
   !n ps lo.
-    apply_prefix_ops lo [SOPop n] ps =
+    apply_prefix_ops initial_fmp lo [SOPop n] ps =
       ps with ps_stack := TAKE (LENGTH ps.ps_stack - n) ps.ps_stack
 Proof
   simp[apply_prefix_ops_def, apply_prefix_op_def, apply_simple_op_def]
@@ -68,15 +68,15 @@ QED
 
 Theorem apply_prefix_ops_append:
   !ops1 ops2 lo ps.
-    apply_prefix_ops lo (ops1 ++ ops2) ps =
-    apply_prefix_ops lo ops2 (apply_prefix_ops lo ops1 ps)
+    apply_prefix_ops initial_fmp lo (ops1 ++ ops2) ps =
+    apply_prefix_ops initial_fmp lo ops2 (apply_prefix_ops initial_fmp lo ops1 ps)
 Proof
   Induct_on `ops1` >>
   simp[apply_prefix_ops_def]
 QED
 
 Theorem apply_prefix_ops_nil:
-  !lo ps. apply_prefix_ops lo [] ps = ps
+  !lo ps. apply_prefix_ops initial_fmp lo [] ps = ps
 Proof
   simp[apply_prefix_ops_def]
 QED
@@ -95,7 +95,7 @@ Theorem popmany_plan_contiguous_align:
     is_contiguous_top (MAP THE
       (MAP (\v. stack_get_depth v ps.ps_stack) to_pop)) /\
     LENGTH to_pop <= 16 ==>
-    !lo. apply_prefix_ops lo ops ps = ps'
+    !lo. apply_prefix_ops initial_fmp lo ops ps = ps'
 Proof
   rpt strip_tac >>
   (* to_pop <> [] so unfold the non-empty clause *)
@@ -107,7 +107,7 @@ Proof
   Cases_on `do_swap (LENGTH (h::t)) ps` >>
   rename1 `do_swap _ _ = (swap_ops, ps2)` >>
   gvs[] >>
-  `apply_prefix_ops lo swap_ops ps = ps2` by
+  `apply_prefix_ops initial_fmp lo swap_ops ps = ps2` by
     metis_tac[do_swap_align] >>
   simp[apply_prefix_ops_append, sopop_align, stack_pop_def]
 QED
@@ -119,7 +119,7 @@ QED
 Theorem apply_prefix_op_simple:
   !lo op ps.
     is_simple_stack_op op ==>
-    apply_prefix_op lo op ps = apply_simple_op lo op ps
+    apply_prefix_op initial_fmp lo op ps = apply_simple_op lo op ps
 Proof
   rpt strip_tac >>
   Cases_on `op` >> fs[is_simple_stack_op_def, apply_prefix_op_def] >>
@@ -129,13 +129,13 @@ QED
 Theorem apply_prefix_ops_eq_simple:
   !ops lo ps.
     EVERY is_simple_stack_op ops ==>
-    apply_prefix_ops lo ops ps = apply_simple_ops lo ops ps
+    apply_prefix_ops initial_fmp lo ops ps = apply_simple_ops lo ops ps
 Proof
   Induct_on `ops` >>
   simp[apply_prefix_ops_def, apply_simple_ops_def] >>
   rpt strip_tac >>
   fs[EVERY_DEF] >>
-  `apply_prefix_op lo h ps = apply_simple_op lo h ps` by
+  `apply_prefix_op initial_fmp lo h ps = apply_simple_op lo h ps` by
     metis_tac[apply_prefix_op_simple] >>
   ASM_REWRITE_TAC[]
 QED
@@ -220,15 +220,15 @@ Theorem popmany_plan_contiguous_sim:
     LENGTH to_pop <= 16 /\
     LENGTH to_pop < LENGTH ps.ps_stack /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st =
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
             AsmOK st' /\
           venom_asm_rel lo ps' vs st' /\
-          st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
   (* Use simple_prefix_venom_asm_rel *)
-  qspecl_then [`ops`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
+  qspecl_then [`ops`, `initial_fmp`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
     mp_tac simple_prefix_venom_asm_rel >>
   (impl_tac >- (
     rpt conj_tac
@@ -241,9 +241,9 @@ Proof
   (* Bridge: apply_simple_ops = apply_prefix_ops for simple ops *)
   `EVERY is_simple_stack_op ops` by
     metis_tac[popmany_plan_contiguous_simple] >>
-  `apply_simple_ops lo ops ps = apply_prefix_ops lo ops ps` by
+  `apply_simple_ops lo ops ps = apply_prefix_ops initial_fmp lo ops ps` by
     metis_tac[apply_prefix_ops_eq_simple] >>
-  `apply_prefix_ops lo ops ps = ps'` by
+  `apply_prefix_ops initial_fmp lo ops ps = ps'` by
     metis_tac[popmany_plan_contiguous_align] >>
   gvs[]
 QED
@@ -288,8 +288,8 @@ Theorem do_restore_ss_align:
        FLOOKUP ps.ps_spilled op2 = SOME off2 /\
        op1 <> op2 ==>
        off1 + 32 <= off2 \/ off2 + 32 <= off1) ==>
-    !lo. (apply_prefix_ops lo ops ps).ps_stack = ps'.ps_stack /\
-         (apply_prefix_ops lo ops ps).ps_spilled = ps'.ps_spilled
+    !lo. (apply_prefix_ops initial_fmp lo ops ps).ps_stack = ps'.ps_stack /\
+         (apply_prefix_ops initial_fmp lo ops ps).ps_spilled = ps'.ps_spilled
 Proof
   rpt strip_tac >>
   fs[do_restore_def] >>
@@ -337,8 +337,8 @@ Theorem emit_one_input_ss_align:
        op1 <> op2 ==> off1 + 32 <= off2 \/ off2 + 32 <= off1) /\
     LENGTH ps.ps_stack <= 15 /\
     ~(?l. op = Label l /\ opc = INVOKE) ==>
-    !lo. (apply_prefix_ops lo ops ps).ps_stack = ps'.ps_stack /\
-         (apply_prefix_ops lo ops ps).ps_spilled = ps'.ps_spilled
+    !lo. (apply_prefix_ops initial_fmp lo ops ps).ps_stack = ps'.ps_stack /\
+         (apply_prefix_ops initial_fmp lo ops ps).ps_spilled = ps'.ps_spilled
 Proof
   rpt gen_tac >> strip_tac >> gen_tac >>
   qpat_x_assum `emit_one_input _ _ _ _ = _` mp_tac >>
@@ -352,8 +352,8 @@ Proof
     rename1 `do_restore op ps = (restore_ops, ps1)` >>
     simp[] >>
     (* do_restore alignment *)
-    `(apply_prefix_ops lo restore_ops ps).ps_stack = ps1.ps_stack /\
-     (apply_prefix_ops lo restore_ops ps).ps_spilled = ps1.ps_spilled` by
+    `(apply_prefix_ops initial_fmp lo restore_ops ps).ps_stack = ps1.ps_stack /\
+     (apply_prefix_ops initial_fmp lo restore_ops ps).ps_spilled = ps1.ps_spilled` by
       (irule do_restore_ss_align >> metis_tac[]) >>
     (* ps1 stack length bound *)
     `LENGTH ps1.ps_stack <= 16` by (
@@ -380,7 +380,7 @@ Proof
             fs[do_dup_def]) >>
           gvs[] >>
           (* Abbreviate intermediate state after restore *)
-          qmatch_goalsub_abbrev_tac `apply_prefix_ops lo _ ps_mid` >>
+          qmatch_goalsub_abbrev_tac `apply_prefix_ops initial_fmp lo _ ps_mid` >>
           (* Unfold SODup on ps_mid *)
           simp[apply_prefix_ops_def, apply_prefix_op_def,
                apply_simple_op_def] >>

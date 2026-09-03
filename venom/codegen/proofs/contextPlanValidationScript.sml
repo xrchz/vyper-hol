@@ -92,6 +92,13 @@ Definition context_plan_two_fn_ctx_def:
       ctx_entry := SOME "first"; ctx_global_reserved := [(128,32)]|>
 End
 
+Theorem context_plan_fn_canonical_eval[local,simp]:
+  canonical_param_prefix context_plan_first_fn /\
+  canonical_param_prefix context_plan_second_fn
+Proof
+  EVAL_TAC
+QED
+
 Theorem context_plan_first_live_eval[local]:
   liveness_analyze context_plan_first_fn = spill_base_spilling_live
 Proof

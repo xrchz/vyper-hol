@@ -317,11 +317,11 @@ Theorem emit_one_input_sim:
     (!l. op = Label l ==> IS_SOME (FLOOKUP lo l)) /\
     emit_one_input opc nl op ps = (ops, ps') /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
     ?st'.
-      asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st = AsmOK st' /\
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st' /\
       venom_asm_rel lo ps' vs st' /\
-      st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt gen_tac >> strip_tac >>
   (* Key: keep equation emit_one_input ... = (ops, ps') intact.
@@ -349,7 +349,7 @@ Proof
        mp_tac emit_one_input_state_bridge >>
      (impl_tac >- ASM_REWRITE_TAC[]) >> gvs[]) >>
   (* Apply simple_prefix_venom_asm_rel *)
-  qspecl_then [`ops`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
+  qspecl_then [`ops`, `initial_fmp`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
     mp_tac simple_prefix_venom_asm_rel >>
   (impl_tac >- ASM_REWRITE_TAC[]) >> strip_tac >>
   qexists_tac `st'` >> ASM_REWRITE_TAC[] >>

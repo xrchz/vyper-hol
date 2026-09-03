@@ -48,10 +48,8 @@ Definition spill_base_spilling_fn_def:
 End
 
 Theorem spill_base_empty_plan_eval:
-  generate_fn_plan spill_base_empty_fn 96 7 =
-    SOME ([], (init_plan_state 96) with ps_label_counter := 7) /\
-  generate_fn_plan_fuel 20 spill_base_empty_fn 96 7 =
-    SOME ([], (init_plan_state 96) with ps_label_counter := 7)
+  generate_fn_plan spill_base_empty_fn 96 7 = NONE /\
+  generate_fn_plan_fuel 20 spill_base_empty_fn 96 7 = NONE
 Proof
   EVAL_TAC
 QED
@@ -392,6 +390,12 @@ Theorem init_plan_state_counter_zero:
   (init_plan_state b with ps_label_counter := 0) = init_plan_state b
 Proof
   simp[stackPlanTypesTheory.init_plan_state_def]
+QED
+
+Theorem spill_base_spilling_canonical_eval[simp]:
+  canonical_param_prefix spill_base_spilling_fn
+Proof
+  EVAL_TAC
 QED
 
 Theorem spill_base_spilling_plan_exact:
