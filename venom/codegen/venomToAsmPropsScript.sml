@@ -152,7 +152,7 @@ QED
    entry block's prepare_params_plan processes dead params.
 
    Spill safety: required for every Venom step during function
-   execution. Uses fn_init_ps alloc (sa_fn_eom = fn_eom).
+   execution. Uses fn_init_ps alloc (sa_spill_base = fn_eom).
    spill_mem_covered: initial memory covers spill high-water mark
    so MEMTOP agrees between Venom and asm from the start. *)
 Theorem gen_fn_simulation:

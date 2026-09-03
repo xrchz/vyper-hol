@@ -236,7 +236,7 @@ QED
 Theorem memory_rel_mem_write32:
   !alloc vm am off (v:bytes32).
     memory_rel alloc vm am /\
-    alloc.sa_fn_eom <= off /\
+    alloc.sa_spill_base <= off /\
     off + 32 <= alloc.sa_next_offset ==>
     memory_rel alloc vm (mem_write32 off v am)
 Proof
@@ -487,7 +487,7 @@ Theorem spill_op_venom_asm_rel:
     LENGTH ps.ps_stack >= 1 /\
     off < dimword(:256) /\
     op = stack_peek 0 ps.ps_stack /\
-    ps.ps_alloc.sa_fn_eom <= off /\
+    ps.ps_alloc.sa_spill_base <= off /\
     (!op2 off2. FLOOKUP ps.ps_spilled op2 = SOME off2 ==>
                 off2 + 32 <= off \/ off + 32 <= off2) /\
     asm_block_at prog st.as_pc

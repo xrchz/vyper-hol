@@ -2,7 +2,7 @@
  * Alloc Monotonicity Toolkit
  *
  * Every plan_state-threading function in the codegen preserves
- * sa_fn_eom and is monotone on sa_next_offset. This file proves
+ * sa_spill_base and is monotone on sa_next_offset. This file proves
  * these properties bottom-up from alloc_spill_slot/free_spill_slot
  * through generate_block_plan.
  *
@@ -21,7 +21,7 @@ Libs
 Theorem alloc_spill_slot_fn_eom:
   !a off a'.
     alloc_spill_slot a = (off, a') ==>
-    a'.sa_fn_eom = a.sa_fn_eom
+    a'.sa_spill_base = a.sa_spill_base
 Proof
   rpt gen_tac >> simp[alloc_spill_slot_def] >>
   Cases_on `a.sa_free_slots` >> simp[] >> strip_tac >> gvs[]
@@ -37,7 +37,7 @@ Proof
 QED
 
 Theorem free_spill_slot_fn_eom:
-  !off a. (free_spill_slot off a).sa_fn_eom = a.sa_fn_eom
+  !off a. (free_spill_slot off a).sa_spill_base = a.sa_spill_base
 Proof
   simp[free_spill_slot_def]
 QED
@@ -57,7 +57,7 @@ Theorem foldl_alloc_fn_eom:
        (ops ++ [SOSpill (FST (alloc_spill_slot al))],
         SNOC (FST (alloc_spill_slot al)) offs,
         SND (alloc_spill_slot al)))
-     (ops, offs, al) items))).sa_fn_eom = al.sa_fn_eom
+     (ops, offs, al) items))).sa_spill_base = al.sa_spill_base
 Proof
   Induct >> simp[] >> rpt gen_tac >>
   Cases_on `alloc_spill_slot al` >>
@@ -91,8 +91,8 @@ QED
 
 Theorem foldl_free_fn_eom:
   !offs al.
-    (FOLDL (\al off. free_spill_slot off al) al offs).sa_fn_eom =
-    al.sa_fn_eom
+    (FOLDL (\al off. free_spill_slot off al) al offs).sa_spill_base =
+    al.sa_spill_base
 Proof
   Induct >> simp[free_spill_slot_fn_eom]
 QED
@@ -115,7 +115,7 @@ QED
 Theorem do_spill_tos_fn_eom:
   !ps ops ps'.
     do_spill_tos ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[do_spill_tos_def] >>
   pairarg_tac >> gvs[] >> strip_tac >> gvs[] >>
@@ -137,7 +137,7 @@ QED
 Theorem do_spill_at_fn_eom:
   !dist ps ops ps'.
     do_spill_at dist ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[do_spill_at_def] >>
   IF_CASES_TAC >> gvs[]
@@ -163,7 +163,7 @@ QED
 Theorem do_restore_fn_eom:
   !op ps ops ps'.
     do_restore op ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[do_restore_def] >>
   Cases_on `FLOOKUP ps.ps_spilled op` >> simp[] >>
@@ -187,7 +187,7 @@ QED
 Theorem do_swap_fn_eom:
   !dist ps ops ps'.
     do_swap dist ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[do_swap_def] >>
   IF_CASES_TAC >> gvs[] >>
@@ -221,7 +221,7 @@ QED
 Theorem do_dup_fn_eom:
   !dist ps ops ps'.
     do_dup dist ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[do_dup_def] >>
   IF_CASES_TAC >> gvs[]
@@ -252,7 +252,7 @@ QED
 Theorem reduce_depth_plan_fn_eom:
   !fuel target_ops target_op ps ops ps'.
     reduce_depth_plan fuel target_ops target_op ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   Induct >> rpt gen_tac
   >- (simp[reduce_depth_plan_def] >> strip_tac >> gvs[])
@@ -286,7 +286,7 @@ QED
 Theorem reorder_one_fn_eom:
   !dfg target_ops target_idx op ps ops ps'.
     reorder_one dfg target_ops target_idx op ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >>
   rewrite_tac[reorder_one_def] >>
@@ -337,11 +337,11 @@ QED
 
 (* ========== FOLDL invariants for plan_state threading ========== *)
 
-(* Single-accumulator FOLDL: sa_fn_eom preserved when each step preserves it *)
+(* Single-accumulator FOLDL: sa_spill_base preserved when each step preserves it *)
 Theorem foldl_fn_eom_direct[local]:
   !f items ps.
-    (!ps' item. (f ps' item).ps_alloc.sa_fn_eom = ps'.ps_alloc.sa_fn_eom) ==>
-    (FOLDL f ps items).ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    (!ps' item. (f ps' item).ps_alloc.sa_spill_base = ps'.ps_alloc.sa_spill_base) ==>
+    (FOLDL f ps items).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   gen_tac >> Induct >> simp[FOLDL]
 QED
@@ -356,13 +356,13 @@ Proof
   gen_tac >> Induct >> simp[FOLDL]
 QED
 
-(* Specialized: SND of pair-accumulator FOLDL preserves sa_fn_eom *)
+(* Specialized: SND of pair-accumulator FOLDL preserves sa_spill_base *)
 Theorem foldl_snd_fn_eom_invariant[local]:
   !f items init.
-    (!x item. (SND (f x item)).ps_alloc.sa_fn_eom =
-              (SND x).ps_alloc.sa_fn_eom) ==>
-    (SND (FOLDL f init items)).ps_alloc.sa_fn_eom =
-    (SND init).ps_alloc.sa_fn_eom
+    (!x item. (SND (f x item)).ps_alloc.sa_spill_base =
+              (SND x).ps_alloc.sa_spill_base) ==>
+    (SND (FOLDL f init items)).ps_alloc.sa_spill_base =
+    (SND init).ps_alloc.sa_spill_base
 Proof
   gen_tac >> Induct >> simp[FOLDL]
 QED
@@ -409,9 +409,9 @@ QED
 
 Theorem foldl_simple_fn_eom[local]:
   !f items init_ps.
-    (!item ps. (SND (f item ps)).ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom) ==>
-    (FOLDL (\ps item. SND (f item ps)) init_ps items).ps_alloc.sa_fn_eom =
-    init_ps.ps_alloc.sa_fn_eom
+    (!item ps. (SND (f item ps)).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base) ==>
+    (FOLDL (\ps item. SND (f item ps)) init_ps items).ps_alloc.sa_spill_base =
+    init_ps.ps_alloc.sa_spill_base
 Proof
   gen_tac >> Induct >> simp[FOLDL]
 QED
@@ -458,9 +458,9 @@ QED
 (* Pair-item simple FOLDL preserves fn_eom *)
 Theorem foldl_pair_simple_fn_eom[local]:
   !g items init_ps.
-    (!a b ps. (SND (g a b ps)).ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom) ==>
-    (FOLDL (\ps (a,b). SND (g a b ps)) init_ps items).ps_alloc.sa_fn_eom =
-    init_ps.ps_alloc.sa_fn_eom
+    (!a b ps. (SND (g a b ps)).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base) ==>
+    (FOLDL (\ps (a,b). SND (g a b ps)) init_ps items).ps_alloc.sa_spill_base =
+    init_ps.ps_alloc.sa_spill_base
 Proof
   gen_tac >> Induct >> simp[FOLDL] >>
   Cases >> simp[FOLDL]
@@ -484,7 +484,7 @@ QED
 Theorem reorder_plan_fn_eom:
   !dfg target_ops ps ops ps'.
     reorder_plan dfg target_ops ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> PURE_REWRITE_TAC[reorder_plan_def] >> strip_tac >>
   `ps' = SND (ops, ps')` by simp[] >> pop_assum SUBST1_TAC >>
@@ -542,7 +542,7 @@ val snd_next_offset_rules = map mk_snd_fn_eom [
 Theorem emit_one_input_fn_eom:
   !opc next_liveness op ps ops ps'.
     emit_one_input opc next_liveness op ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   Cases_on `op` >> rpt gen_tac >>
   simp[emit_one_input_def, is_var_operand_def, LET_THM] >>
@@ -581,7 +581,7 @@ QED
 Theorem emit_input_plan_fn_eom:
   !opc operands next_liveness ps ops ps'.
     emit_input_plan opc operands next_liveness ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> PURE_REWRITE_TAC[emit_input_plan_def] >> strip_tac >>
   `ps' = SND (ops, ps')` by simp[] >> pop_assum SUBST1_TAC >>
@@ -614,7 +614,7 @@ QED
 Theorem popmany_individual_fn_eom:
   !to_pop ps ops ps'.
     popmany_individual to_pop ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[popmany_individual_def] >> strip_tac >>
   `ps' = SND (ops, ps')` by simp[] >> pop_assum SUBST1_TAC >>
@@ -654,7 +654,7 @@ QED
 Theorem popmany_plan_fn_eom:
   !to_pop ps ops ps'.
     popmany_plan to_pop ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   Cases >> simp[popmany_plan_def] >>
   rpt gen_tac >> IF_CASES_TAC >> simp[]
@@ -684,7 +684,7 @@ QED
 Theorem optimistic_swap_plan_fn_eom:
   !dfg inst next_liveness next_is_term ps ops ps'.
     optimistic_swap_plan dfg inst next_liveness next_is_term ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[optimistic_swap_plan_def] >>
   every_case_tac >> gvs[] >> strip_tac >> gvs[] >>
@@ -705,8 +705,8 @@ QED
 
 Theorem release_dead_spills_fn_eom:
   !next_liveness ps.
-    (release_dead_spills next_liveness ps).ps_alloc.sa_fn_eom =
-    ps.ps_alloc.sa_fn_eom
+    (release_dead_spills next_liveness ps).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[release_dead_spills_def] >>
   match_mp_tac foldl_fn_eom_direct >> rpt gen_tac >>
@@ -769,7 +769,7 @@ QED
 Theorem generate_emit_ops_fn_eom:
   !inst ltc ps ops ps'.
     generate_emit_ops inst ltc ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   metis_tac[generate_emit_ops_alloc]
 QED
@@ -787,7 +787,7 @@ QED
 Theorem generate_phi_plan_fn_eom:
   !inst next_liveness ps ops ps'.
     generate_phi_plan inst next_liveness ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[generate_phi_plan_def] >>
   every_case_tac >> gvs[] >> strip_tac >> gvs[] >>
@@ -832,7 +832,7 @@ Theorem generate_regular_inst_plan_fn_eom:
   !liveness dfg cfg fn inst nl ih nit bbl ps ops ps'.
     generate_regular_inst_plan liveness dfg cfg fn inst nl ih nit bbl ps =
       (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[generate_regular_inst_plan_def] >>
   rpt (pairarg_tac >> gvs[]) >>
@@ -840,7 +840,7 @@ Proof
   qpat_x_assum `Abbrev _` kall_tac >>
   drule emit_input_plan_fn_eom >> strip_tac >>
   (* JMP reorder *)
-  `ps2.ps_alloc.sa_fn_eom = ps1.ps_alloc.sa_fn_eom` by
+  `ps2.ps_alloc.sa_spill_base = ps1.ps_alloc.sa_spill_base` by
     (qpat_x_assum `(if _ then _ else _) = (join_ops,ps2)` mp_tac >>
      simp[AllCaseEqs()] >> metis_tac[reorder_plan_fn_eom]) >>
   `ps3 = ps2` by
@@ -848,17 +848,17 @@ Proof
      rpt IF_CASES_TAC >> gvs[] >> strip_tac >> gvs[]) >>
   rpt BasicProvers.VAR_EQ_TAC >>
   (* operands reorder *)
-  `ps4.ps_alloc.sa_fn_eom = ps2.ps_alloc.sa_fn_eom` by
+  `ps4.ps_alloc.sa_spill_base = ps2.ps_alloc.sa_spill_base` by
     metis_tac[reorder_plan_fn_eom] >>
   (* emit ops *)
   drule generate_emit_ops_fn_eom >> strip_tac >>
   (* popmany *)
-  `ps8.ps_alloc.sa_fn_eom = ps7.ps_alloc.sa_fn_eom` by
+  `ps8.ps_alloc.sa_spill_base = ps7.ps_alloc.sa_spill_base` by
     (qpat_x_assum `(if _ then _ else _) = (pop_ops,ps8)` mp_tac >>
      IF_CASES_TAC >> gvs[] >> strip_tac >> gvs[] >>
      metis_tac[popmany_plan_fn_eom]) >>
   (* optimistic swap *)
-  `ps9.ps_alloc.sa_fn_eom = ps8.ps_alloc.sa_fn_eom` by
+  `ps9.ps_alloc.sa_spill_base = ps8.ps_alloc.sa_spill_base` by
     (qpat_x_assum `(if _ then _ else _) = (opt_ops,ps9)` mp_tac >>
      IF_CASES_TAC >> gvs[] >> strip_tac >> gvs[] >>
      metis_tac[optimistic_swap_plan_fn_eom]) >>
@@ -920,7 +920,7 @@ Theorem generate_inst_plan_fn_eom:
   !liveness dfg cfg fn inst nl ih nit bbl ps ops ps'.
     generate_inst_plan liveness dfg cfg fn inst nl ih nit bbl ps =
       SOME (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[generate_inst_plan_def] >>
   every_case_tac >> gvs[] >> strip_tac >> gvs[] >>
@@ -947,7 +947,7 @@ QED
 Theorem prepare_params_plan_fn_eom:
   !liveness fn ps ops ps'.
     prepare_params_plan liveness fn ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[prepare_params_plan_def] >>
   IF_CASES_TAC >> gvs[] >>
@@ -955,15 +955,15 @@ Proof
   strip_tac >> gvs[] >>
   (* popmany preserves fn_eom *)
   qmatch_goalsub_abbrev_tac `SND (popmany_plan fl fps)` >>
-  `(SND (popmany_plan fl fps)).ps_alloc.sa_fn_eom =
-   fps.ps_alloc.sa_fn_eom` by
+  `(SND (popmany_plan fl fps)).ps_alloc.sa_spill_base =
+   fps.ps_alloc.sa_spill_base` by
     (Cases_on `popmany_plan fl fps` >> simp[] >>
      metis_tac[popmany_plan_fn_eom]) >>
-  `fps.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom` by
+  `fps.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base` by
     (simp[Abbr `fps`] >> match_mp_tac foldl_fn_eom_direct >> simp[]) >>
   (* optimistic_swap_plan preserves fn_eom *)
   qmatch_goalsub_abbrev_tac `SND osp_res` >>
-  `(SND osp_res).ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom` by
+  `(SND osp_res).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base` by
     (Cases_on `osp_res` >> simp[] >>
      qpat_x_assum `Abbrev (osp_res = _)` (assume_tac o
        REWRITE_RULE [markerTheory.Abbrev_def]) >> gvs[] >>
@@ -1002,7 +1002,7 @@ QED
 Theorem clean_stack_plan_fn_eom:
   !liveness cfg fn bb ps ops ps'.
     clean_stack_plan liveness cfg fn bb ps = (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> simp[clean_stack_plan_def] >>
   every_case_tac >> gvs[] >> strip_tac >> gvs[] >>
@@ -1075,7 +1075,7 @@ fun mk_block_foldl_inv pred_term =
 
 val block_foldl_fn_eom = mk_block_foldl_inv
   `\(ops1 : stack_op list, ps1 : plan_state).
-     ps1.ps_alloc.sa_fn_eom = ps0.ps_alloc.sa_fn_eom`;
+     ps1.ps_alloc.sa_spill_base = ps0.ps_alloc.sa_spill_base`;
 
 val block_foldl_next_offset = mk_block_foldl_inv
   `\(ops1 : stack_op list, ps1 : plan_state).
@@ -1101,7 +1101,7 @@ fun gen_block_plan_tac foldl_thm inst_thm extra_tac =
 Theorem generate_block_plan_fn_eom:
   !liveness dfg cfg fn bb ps ops ps'.
     generate_block_plan liveness dfg cfg fn bb ps = SOME (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   gen_block_plan_tac block_foldl_fn_eom generate_inst_plan_fn_eom all_tac
 QED
@@ -1119,7 +1119,7 @@ QED
 Theorem generate_block_plan_alloc_mono:
   !liveness dfg cfg fn bb ps ops ps'.
     generate_block_plan liveness dfg cfg fn bb ps = SOME (ops, ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
     ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset
 Proof
   metis_tac[generate_block_plan_fn_eom, generate_block_plan_next_offset]
@@ -1127,7 +1127,7 @@ QED
 
 (* ========== DFS-level alloc monotonicity (mutual induction) ========== *)
 
-(* generate_fn_plan_aux and generate_succs_plan both preserve sa_fn_eom
+(* generate_fn_plan_aux and generate_succs_plan both preserve sa_spill_base
    and are monotone on sa_next_offset. Proved by the DFS mutual induction
    principle, using generate_block_plan_alloc_mono as the base case. *)
 
@@ -1135,12 +1135,12 @@ Theorem fn_plan_aux_alloc_mono:
   (!liveness dfg cfg fn worklist visited ps ops visited' ps'.
     generate_fn_plan_aux liveness dfg cfg fn worklist visited ps =
       SOME (ops, visited', ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
     ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset) /\
   (!liveness dfg cfg fn ss sp succs visited ps ops visited' ps'.
     generate_succs_plan liveness dfg cfg fn ss sp succs visited ps =
       SOME (ops, visited', ps') ==>
-    ps'.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
     ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset)
 Proof
   ho_match_mp_tac generate_fn_plan_aux_ind >> rpt conj_tac

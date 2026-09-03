@@ -413,7 +413,7 @@ Theorem e2e_venom_to_evm:
     (!fn inst vs1 vs2 fuel'.
        MEM fn ctx.ctx_functions /\
        step_inst fuel' ctx inst vs1 = OK vs2 ==>
-       step_mem_safe <| sa_fn_eom := 0;
+       step_mem_safe <| sa_spill_base := 0;
                         sa_next_offset := spill_hwm;
                         sa_free_slots := [] |> vs1 vs2)
     ==>
@@ -478,7 +478,7 @@ Definition codegen_context_obligations_def:
     (!fn inst vs1 vs2 fuel'.
        MEM fn ctx.ctx_functions ∧
        step_inst fuel' ctx inst vs1 = OK vs2 ⇒
-       step_mem_safe <| sa_fn_eom := 0;
+       step_mem_safe <| sa_spill_base := 0;
                         sa_next_offset := spill_hwm;
                         sa_free_slots := [] |> vs1 vs2)
 End
@@ -504,7 +504,7 @@ Theorem compile_vyper_raw_well_formed:
     (!fn inst vs1 vs2 fuel'.
        MEM fn ctx'.ctx_functions /\
        step_inst fuel' ctx' inst vs1 = OK vs2 ==>
-       step_mem_safe <| sa_fn_eom := 0;
+       step_mem_safe <| sa_spill_base := 0;
                         sa_next_offset := spill_hwm;
                         sa_free_slots := [] |> vs1 vs2)
 Proof

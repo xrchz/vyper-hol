@@ -27,11 +27,11 @@ Libs BasicProvers
 
 Definition spill_alloc_wf_def:
   spill_alloc_wf (al : spill_alloc) (spilled : (operand, num) fmap) <=>
-    al.sa_fn_eom <= al.sa_next_offset /\
+    al.sa_spill_base <= al.sa_next_offset /\
     (!op off. FLOOKUP spilled op = SOME off ==>
-       al.sa_fn_eom <= off /\ off + 32 <= al.sa_next_offset) /\
+       al.sa_spill_base <= off /\ off + 32 <= al.sa_next_offset) /\
     (!off. MEM off al.sa_free_slots ==>
-       al.sa_fn_eom <= off /\ off + 32 <= al.sa_next_offset) /\
+       al.sa_spill_base <= off /\ off + 32 <= al.sa_next_offset) /\
     (!op1 off1 op2 off2.
        FLOOKUP spilled op1 = SOME off1 /\
        FLOOKUP spilled op2 = SOME off2 /\
@@ -56,9 +56,9 @@ End
 Theorem alloc_spill_slot_ge_fn_eom:
   !al off al'.
     alloc_spill_slot al = (off, al') /\
-    al.sa_fn_eom <= al.sa_next_offset /\
-    EVERY (\s. al.sa_fn_eom <= s) al.sa_free_slots ==>
-    al.sa_fn_eom <= off
+    al.sa_spill_base <= al.sa_next_offset /\
+    EVERY (\s. al.sa_spill_base <= s) al.sa_free_slots ==>
+    al.sa_spill_base <= off
 Proof
   rpt strip_tac >>
   fs[alloc_spill_slot_def] >>
@@ -72,7 +72,7 @@ QED
 Theorem alloc_spill_slot_fn_eom:
   !al off al'.
     alloc_spill_slot al = (off, al') ==>
-    al'.sa_fn_eom = al.sa_fn_eom
+    al'.sa_spill_base = al.sa_spill_base
 Proof
   rpt strip_tac >>
   fs[alloc_spill_slot_def] >>
@@ -110,7 +110,7 @@ QED
 
 Theorem free_spill_slot_preserves:
   !off al.
-    (free_spill_slot off al).sa_fn_eom = al.sa_fn_eom /\
+    (free_spill_slot off al).sa_spill_base = al.sa_spill_base /\
     (free_spill_slot off al).sa_next_offset = al.sa_next_offset
 Proof
   rpt strip_tac >> simp[free_spill_slot_def]
@@ -144,9 +144,9 @@ Theorem alloc_spill_slot_wf:
   !al spilled off al'.
     spill_alloc_wf al spilled /\
     alloc_spill_slot al = (off, al') ==>
-    al.sa_fn_eom <= off /\
+    al.sa_spill_base <= off /\
     off + 32 <= al'.sa_next_offset /\
-    al'.sa_fn_eom = al.sa_fn_eom /\
+    al'.sa_spill_base = al.sa_spill_base /\
     al.sa_next_offset <= al'.sa_next_offset /\
     off < dimword(:256) /\
     (!op2 off2. FLOOKUP spilled op2 = SOME off2 ==>
@@ -166,7 +166,7 @@ Proof
   (`MEM (LAST (h::t')) (h::t')` by simp[MEM_LAST]) >>
   (`~MEM (LAST (h::t')) (FRONT (h::t'))` by
     (irule MEM_FRONT_NOT_LAST >> simp[])) >>
-  (`al.sa_fn_eom <= LAST (h::t') /\ LAST (h::t') + 32 <= al.sa_next_offset` by
+  (`al.sa_spill_base <= LAST (h::t') /\ LAST (h::t') + 32 <= al.sa_next_offset` by
     (qpat_x_assum `!off'. _ ==> _` (qspec_then `LAST (h::t')` mp_tac) >>
      fs[MEM])) >>
   rpt conj_tac >> rpt gen_tac
@@ -231,7 +231,7 @@ Theorem venom_asm_rel_ps_transfer:
     venom_asm_rel lo ps1 vs st /\
     ps2.ps_stack = ps1.ps_stack /\
     ps2.ps_spilled = ps1.ps_spilled /\
-    ps2.ps_alloc.sa_fn_eom = ps1.ps_alloc.sa_fn_eom /\
+    ps2.ps_alloc.sa_spill_base = ps1.ps_alloc.sa_spill_base /\
     ps2.ps_alloc.sa_next_offset = ps1.ps_alloc.sa_next_offset ==>
     venom_asm_rel lo ps2 vs st
 Proof
@@ -277,10 +277,10 @@ QED
    apply_prefix_ops field preservation
    ========================================================================= *)
 
-(* sa_fn_eom is unchanged by any prefix op *)
+(* sa_spill_base is unchanged by any prefix op *)
 Theorem apply_prefix_op_fn_eom[local]:
   !lo op ps.
-    (apply_prefix_op lo op ps).ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    (apply_prefix_op lo op ps).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> Cases_on `op` >>
   simp[apply_prefix_op_def, apply_simple_op_def,
@@ -291,8 +291,8 @@ QED
 
 Theorem apply_prefix_ops_fn_eom[local]:
   !lo ops ps.
-    (apply_prefix_ops lo ops ps).ps_alloc.sa_fn_eom =
-    ps.ps_alloc.sa_fn_eom
+    (apply_prefix_ops lo ops ps).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
 Proof
   Induct_on `ops` >>
   simp[apply_prefix_ops_def, apply_prefix_op_fn_eom]
@@ -394,7 +394,7 @@ QED
 
 Theorem spill_alloc_n_fn_eom[local]:
   !items offs0 al0.
-    (SND (spill_alloc_n offs0 al0 items)).sa_fn_eom = al0.sa_fn_eom
+    (SND (spill_alloc_n offs0 al0 items)).sa_spill_base = al0.sa_spill_base
 Proof
   Induct >> simp[spill_alloc_n_def] >>
   rpt strip_tac >>
@@ -461,7 +461,7 @@ Proof
   REWRITE_TAC[ADD1]
 QED
 
-(* After applying n SOSpill ops, sa_fn_eom unchanged *)
+(* After applying n SOSpill ops, sa_spill_base unchanged *)
 (* (already follows from apply_prefix_ops_fn_eom) *)
 
 (* =========================================================================
@@ -487,7 +487,7 @@ Theorem spill_op_wf_from_alloc[local]:
   !ps al off al'.
     alloc_spill_slot al = (off, al') /\
     spill_alloc_wf al ps.ps_spilled /\
-    al.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+    al.sa_spill_base = ps.ps_alloc.sa_spill_base /\
     al'.sa_next_offset < dimword(:256) ==>
     spill_op_wf ps (SOSpill off)
 Proof
@@ -502,7 +502,7 @@ Theorem prefix_spill_wf_spill_gen[local]:
   !items ops0 offs0 al0 lo ps.
     prefix_spill_wf lo ops0 ps /\
     spill_alloc_wf al0 (apply_prefix_ops lo ops0 ps).ps_spilled /\
-    al0.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+    al0.sa_spill_base = ps.ps_alloc.sa_spill_base /\
     LENGTH items <= LENGTH (apply_prefix_ops lo ops0 ps).ps_stack /\
     al0.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
     (let (ops, offs, al') =
@@ -564,7 +564,7 @@ Theorem prefix_spill_wf_spill_phase[local]:
   !items offs0 al0 lo ps.
     spill_alloc_wf al0 ps.ps_spilled /\
     LENGTH items <= LENGTH ps.ps_stack /\
-    al0.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+    al0.sa_spill_base = ps.ps_alloc.sa_spill_base /\
     al0.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
     (let (ops, offs, al') =
        FOLDL
@@ -768,7 +768,7 @@ Theorem spill_n_sim[local]:
     ALL_DISTINCT (MAP FST pairs) /\
     (!k. k < LENGTH pairs ==>
        SND (EL k pairs) < dimword(:256) /\
-       ps.ps_alloc.sa_fn_eom <= SND (EL k pairs) /\
+       ps.ps_alloc.sa_spill_base <= SND (EL k pairs) /\
        (!op2 off2. FLOOKUP ps.ps_spilled op2 = SOME off2 ==>
           off2 + 32 <= SND (EL k pairs) \/
           SND (EL k pairs) + 32 <= off2) /\
@@ -844,7 +844,7 @@ Proof
      ALL_DISTINCT (MAP FST (pairs:(operand#num) list)) /\
      (!k. k < LENGTH (pairs:(operand#num) list) ==>
         SND (EL k pairs) < dimword(:256) /\
-        ps.ps_alloc.sa_fn_eom <= SND (EL k pairs) /\
+        ps.ps_alloc.sa_spill_base <= SND (EL k pairs) /\
         (!op2 off2. FLOOKUP (ps.ps_spilled |+ (stack_peek 0 ps.ps_stack, off0))
            op2 = SOME off2 ==>
            off2 + 32 <= SND (EL k pairs) \/
@@ -1118,7 +1118,7 @@ Theorem spill_alloc_n_offset_props[local]:
     let offsets = FST (spill_alloc_n [] al0 items) in
     !k. k < LENGTH offsets ==>
       EL k offsets < dimword(:256) /\
-      al0.sa_fn_eom <= EL k offsets /\
+      al0.sa_spill_base <= EL k offsets /\
       (!op2 off2. FLOOKUP sp op2 = SOME off2 ==>
          off2 + 32 <= EL k offsets \/
          EL k offsets + 32 <= off2) /\
@@ -1373,11 +1373,11 @@ Proof
   simp[Once free_spill_slot_def]
 QED
 
-(* FOLDL free_spill_slot preserves sa_fn_eom *)
+(* FOLDL free_spill_slot preserves sa_spill_base *)
 Theorem foldl_free_fn_eom[local]:
   !offsets al.
-    (FOLDL (\al off. free_spill_slot off al) al offsets).sa_fn_eom =
-      al.sa_fn_eom
+    (FOLDL (\al off. free_spill_slot off al) al offsets).sa_spill_base =
+      al.sa_spill_base
 Proof
   Induct >> rpt strip_tac >> simp[] >>
   simp[Once free_spill_slot_def]
@@ -1811,7 +1811,7 @@ Resume do_swap_venom_asm_rel_big[compose_rel]:
   (conj_tac >- (suspend "compose_spilled")) >>
   (* 2. ps_stack *)
   (conj_tac >- (suspend "compose_stack")) >>
-  (* 3. sa_fn_eom *)
+  (* 3. sa_spill_base *)
   (conj_tac >- (simp[foldl_free_fn_eom, spill_alloc_n_fn_eom])) >>
   (* 4. sa_next_offset *)
   suspend "compose_next_offset"

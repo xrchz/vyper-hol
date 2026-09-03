@@ -57,7 +57,7 @@ End
 Definition spill_op_wf_def:
   spill_op_wf ps (SOSpill off) =
     (off < dimword(:256) /\
-     ps.ps_alloc.sa_fn_eom <= off /\
+     ps.ps_alloc.sa_spill_base <= off /\
      (!op2 off2. FLOOKUP ps.ps_spilled op2 = SOME off2 ==>
                  off2 + 32 <= off \/ off + 32 <= off2)) /\
   spill_op_wf ps (SORestore off) =

@@ -313,7 +313,7 @@ QED
 
 (* ===== Entry state extraction =====
    When generate_fn_plan_aux visits a block, the entry plan state
-   has the same sa_fn_eom and monotonically larger sa_next_offset. *)
+   has the same sa_spill_base and monotonically larger sa_next_offset. *)
 
 Theorem fn_plan_aux_entry_state:
   (!liveness dfg cfg fn worklist visited ps ops visited' ps'.
@@ -327,7 +327,7 @@ Theorem fn_plan_aux_entry_state:
           SOME (block_ops, ps_after) /\
         ops_contain_at off (execute_plan ops)
           (execute_plan block_ops) /\
-        ps_lbl.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+        ps_lbl.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
         ps.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset) /\
   (!liveness dfg cfg fn ss sp succs visited ps ops visited' ps'.
     generate_succs_plan liveness dfg cfg fn ss sp succs visited ps =
@@ -340,7 +340,7 @@ Theorem fn_plan_aux_entry_state:
           SOME (block_ops, ps_after) /\
         ops_contain_at off (execute_plan ops)
           (execute_plan block_ops) /\
-        ps_lbl.ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom /\
+        ps_lbl.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
         ps.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset)
 Proof
   ho_match_mp_tac generate_fn_plan_aux_ind >> rpt conj_tac
@@ -402,7 +402,7 @@ Proof
            SOME (block_ops, ps_after) /\
          ops_contain_at off (execute_plan succ_ops)
            (execute_plan block_ops) /\
-         ps_lbl.ps_alloc.sa_fn_eom = ps1.ps_alloc.sa_fn_eom /\
+         ps_lbl.ps_alloc.sa_spill_base = ps1.ps_alloc.sa_spill_base /\
          ps1.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset`
            by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,
@@ -428,7 +428,7 @@ Proof
            SOME (block_ops, ps_after) /\
          ops_contain_at off (execute_plan rest_ops)
            (execute_plan block_ops) /\
-         ps_lbl.ps_alloc.sa_fn_eom = ps2.ps_alloc.sa_fn_eom /\
+         ps_lbl.ps_alloc.sa_spill_base = ps2.ps_alloc.sa_spill_base /\
          ps2.ps_alloc.sa_next_offset <= ps_lbl.ps_alloc.sa_next_offset`
            by metis_tac[] >>
       qexistsl_tac [`ps_lbl`, `block_ops`, `ps_after`,

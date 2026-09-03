@@ -76,11 +76,11 @@ Definition read_byte_def:
     if i < LENGTH mem then EL i mem else (0w : byte)
 End
 
-(* Memories agree outside the spill region [sa_fn_eom, sa_next_offset).
-   The spill allocator starts at sa_fn_eom and grows upward to
+(* Memories agree outside the spill region [sa_spill_base, sa_next_offset).
+   The spill allocator starts at sa_spill_base and grows upward to
    sa_next_offset. This range may contain active or freed spill data
    that differs between Venom and asm. Everywhere else must agree:
-   - below sa_fn_eom: user memory
+   - below sa_spill_base: user memory
    - at/above sa_next_offset: both zero or user-written
 
    NOTE: lengths may differ (asm memory may be longer due to spill
@@ -91,7 +91,7 @@ End
    memory pointer, which the compiler controls. *)
 Definition memory_rel_def:
   memory_rel (alloc : spill_alloc) venom_mem asm_mem ⇔
-    ∀i. ¬(alloc.sa_fn_eom ≤ i ∧ i < alloc.sa_next_offset) ⇒
+    ∀i. ¬(alloc.sa_spill_base ≤ i ∧ i < alloc.sa_next_offset) ⇒
       read_byte i venom_mem = read_byte i asm_mem
 End
 
@@ -105,7 +105,7 @@ End
    programs, it must be assumed. *)
 Definition step_mem_safe_def:
   step_mem_safe (alloc : spill_alloc) vs vs' ⇔
-    ∀i. alloc.sa_fn_eom ≤ i ∧ i < alloc.sa_next_offset ⇒
+    ∀i. alloc.sa_spill_base ≤ i ∧ i < alloc.sa_next_offset ⇒
       read_byte i vs.vs_memory = read_byte i vs'.vs_memory
 End
 
@@ -127,10 +127,10 @@ End
 
    Memory model:
    - plan_spill_rel: active spill slots have correct values
-   - memory_rel: memories agree outside [sa_fn_eom, sa_next_offset)
+   - memory_rel: memories agree outside [sa_spill_base, sa_next_offset)
    - step_mem_safe: Venom steps don't modify the spill region
 
-   The spill region boundary (sa_fn_eom) comes from the pipeline
+   The spill region boundary (sa_spill_base) comes from the pipeline
    (concretize_mem_loc sets it). step_mem_safe is a precondition
    on the input program / initial state.
 

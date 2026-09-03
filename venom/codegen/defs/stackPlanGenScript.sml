@@ -867,11 +867,11 @@ End
    ========================================================================= *)
 
 Definition generate_fn_plan_def:
-  generate_fn_plan fn fn_eom (lbl_ctr : num) =
+  generate_fn_plan fn spill_base (lbl_ctr : num) =
     let liveness = liveness_analyze fn in
     let dfg = dfg_build_function fn in
     let cfg = cfg_analyze fn in
-    let ps = (init_plan_state fn_eom) with ps_label_counter := lbl_ctr in
+    let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
     case fn_entry_label fn of
       NONE => SOME ([] : stack_op list, ps)
     | SOME lbl =>
@@ -881,11 +881,11 @@ Definition generate_fn_plan_def:
 End
 
 Definition generate_fn_plan_fuel_def:
-  generate_fn_plan_fuel fuel fn fn_eom (lbl_ctr : num) =
+  generate_fn_plan_fuel fuel fn spill_base (lbl_ctr : num) =
     let liveness = liveness_analyze_fuel fuel fn in
     let dfg = dfg_build_function fn in
     let cfg = cfg_analyze fn in
-    let ps = (init_plan_state fn_eom) with ps_label_counter := lbl_ctr in
+    let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
     case fn_entry_label fn of
       NONE => SOME ([] : stack_op list, ps)
     | SOME lbl =>
@@ -900,15 +900,15 @@ Definition revert_postamble_def:
 End
 
 Definition generate_context_plan_def:
-  generate_context_plan ctx fn_eom_map =
+  generate_context_plan ctx spill_base_map =
     let result =
       FOLDL (λacc fn.
         case acc of
           NONE => NONE
         | SOME (ops, lbl_ctr) =>
-          let eom = case FLOOKUP fn_eom_map fn.fn_name of
+          let spill_base = case FLOOKUP spill_base_map fn.fn_name of
             SOME v => v | NONE => 0 in
-          case generate_fn_plan fn eom lbl_ctr of
+          case generate_fn_plan fn spill_base lbl_ctr of
             NONE => NONE
           | SOME (fn_ops, ps) =>
               SOME (ops ++ fn_ops, ps.ps_label_counter))
@@ -919,15 +919,15 @@ Definition generate_context_plan_def:
 End
 
 Definition generate_context_plan_fuel_def:
-  generate_context_plan_fuel fuel ctx fn_eom_map =
+  generate_context_plan_fuel fuel ctx spill_base_map =
     let result =
       FOLDL (λacc fn.
         case acc of
           NONE => NONE
         | SOME (ops, lbl_ctr) =>
-          let eom = case FLOOKUP fn_eom_map fn.fn_name of
+          let spill_base = case FLOOKUP spill_base_map fn.fn_name of
             SOME v => v | NONE => 0 in
-          case generate_fn_plan_fuel fuel fn eom lbl_ctr of
+          case generate_fn_plan_fuel fuel fn spill_base lbl_ctr of
             NONE => NONE
           | SOME (fn_ops, ps) =>
               SOME (ops ++ fn_ops, ps.ps_label_counter))

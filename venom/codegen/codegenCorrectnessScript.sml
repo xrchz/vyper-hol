@@ -368,7 +368,7 @@ Theorem codegen_fn_correct:
             data_seg = SOME bytecode ∧
     (∀inst vs1 vs2 fuel'.
        step_inst fuel' ctx inst vs1 = OK vs2 ⇒
-       step_mem_safe <| sa_fn_eom := fn_eom;
+       step_mem_safe <| sa_spill_base := fn_eom;
                         sa_next_offset := spill_hwm;
                         sa_free_slots := [] |> vs1 vs2) ⇒
     ∃gas_needed.
@@ -468,7 +468,7 @@ Theorem codegen_correct:
     (∀fn inst vs1 vs2 fuel'.
        MEM fn ctx.ctx_functions ∧
        step_inst fuel' ctx inst vs1 = OK vs2 ⇒
-       step_mem_safe <| sa_fn_eom := 0;
+       step_mem_safe <| sa_spill_base := 0;
                         sa_next_offset := spill_hwm;
                         sa_free_slots := [] |> vs1 vs2) ⇒
     ∃gas_needed.

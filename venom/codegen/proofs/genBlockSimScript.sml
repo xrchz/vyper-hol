@@ -895,7 +895,7 @@ Theorem terminal_return_step[local]:
     venom_asm_terminal_rel vs st /\
     (* RETURN read range disjoint from spill region *)
     (!i. i < w2n sz_val ==>
-      ~(ps.ps_alloc.sa_fn_eom <= w2n off_val + i /\
+      ~(ps.ps_alloc.sa_spill_base <= w2n off_val + i /\
         w2n off_val + i < ps.ps_alloc.sa_next_offset)) ==>
     ?st'.
       asm_steps lo o2pc prog 1 st = AsmHalt st' /\
@@ -931,7 +931,7 @@ Theorem terminal_revert_step[local]:
     venom_asm_terminal_rel vs st /\
     (* REVERT read range disjoint from spill region *)
     (!i. i < w2n sz_val ==>
-      ~(ps.ps_alloc.sa_fn_eom <= w2n off_val + i /\
+      ~(ps.ps_alloc.sa_spill_base <= w2n off_val + i /\
         w2n off_val + i < ps.ps_alloc.sa_next_offset)) ==>
     ?st'.
       asm_steps lo o2pc prog 1 st = AsmRevert st' /\
@@ -1020,11 +1020,11 @@ QED
 Definition spill_alloc_wf_def:
   spill_alloc_wf (alloc : spill_alloc) spilled <=>
     (* Base: fn_eom <= next_offset *)
-    alloc.sa_fn_eom <= alloc.sa_next_offset /\
+    alloc.sa_spill_base <= alloc.sa_next_offset /\
     (* Active spill offsets are bounded and in [fn_eom, next_offset) *)
     (!op off. FLOOKUP spilled op = SOME off ==>
       off + 32 <= alloc.sa_next_offset /\
-      alloc.sa_fn_eom <= off /\
+      alloc.sa_spill_base <= off /\
       off < dimword(:256)) /\
     (* Active spill offsets are non-overlapping *)
     (!op1 off1 op2 off2.
@@ -1035,7 +1035,7 @@ Definition spill_alloc_wf_def:
     (* Free slots are bounded and in [fn_eom, next_offset) *)
     (!off. MEM off alloc.sa_free_slots ==>
       off + 32 <= alloc.sa_next_offset /\
-      alloc.sa_fn_eom <= off /\
+      alloc.sa_spill_base <= off /\
       off < dimword(:256)) /\
     (* Free slots disjoint from active spills *)
     (!off1 op off2.
@@ -1058,7 +1058,7 @@ Theorem alloc_spill_slot_wf[local]:
     spill_alloc_wf alloc spilled /\
     alloc_spill_slot alloc = (off, alloc') ==>
     off < dimword(:256) /\
-    alloc.sa_fn_eom <= off /\
+    alloc.sa_spill_base <= off /\
     (!op2 off2. FLOOKUP spilled op2 = SOME off2 ==>
                 off2 + 32 <= off \/ off + 32 <= off2)
 Proof
@@ -1091,10 +1091,10 @@ QED
 
 (* ===== apply_prefix_ops field preservation ===== *)
 
-(* sa_fn_eom is unchanged by any prefix op *)
+(* sa_spill_base is unchanged by any prefix op *)
 Theorem apply_prefix_op_fn_eom[local]:
   !lo op ps.
-    (apply_prefix_op lo op ps).ps_alloc.sa_fn_eom = ps.ps_alloc.sa_fn_eom
+    (apply_prefix_op lo op ps).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   rpt gen_tac >> Cases_on `op` >>
   simp[apply_prefix_op_def, apply_simple_op_def] >>
@@ -1103,8 +1103,8 @@ QED
 
 Theorem apply_prefix_ops_fn_eom[local]:
   !lo ops ps.
-    (apply_prefix_ops lo ops ps).ps_alloc.sa_fn_eom =
-    ps.ps_alloc.sa_fn_eom
+    (apply_prefix_ops lo ops ps).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
 Proof
   Induct_on `ops` >>
   simp[apply_prefix_ops_def, apply_prefix_op_fn_eom]
@@ -1153,7 +1153,7 @@ Theorem gen_inst_halt_sim:
       (inst.inst_opcode = RETURN \/ inst.inst_opcode = REVERT) /\
       eval_operand (EL 0 inst.inst_operands) vs = SOME off_v /\
       eval_operand (EL 1 inst.inst_operands) vs = SOME sz_v ==>
-      w2n off_v + w2n sz_v <= ps.ps_alloc.sa_fn_eom) /\
+      w2n off_v + w2n sz_v <= ps.ps_alloc.sa_spill_base) /\
     (* STOP: returndata already empty (Vyper STOP at end of void fns) *)
     (inst.inst_opcode = STOP ==> vs.vs_returndata = []) /\
     venom_asm_rel label_offsets ps vs as /\
@@ -1265,8 +1265,8 @@ Resume gen_inst_halt_sim[return]:
         qexists_tac `apply_prefix_ops label_offsets prefix_ops ps` >>
         first_assum ACCEPT_TAC)
     >- (rpt strip_tac >>
-        `(apply_prefix_ops label_offsets prefix_ops ps).ps_alloc.sa_fn_eom =
-         ps.ps_alloc.sa_fn_eom` by simp[apply_prefix_ops_fn_eom] >>
+        `(apply_prefix_ops label_offsets prefix_ops ps).ps_alloc.sa_spill_base =
+         ps.ps_alloc.sa_spill_base` by simp[apply_prefix_ops_fn_eom] >>
         decide_tac)
   )) >> strip_tac >>
   (* Compose prefix AsmOK + terminal AsmHalt *)
@@ -1399,7 +1399,7 @@ Theorem gen_inst_abort_sim:
       (inst.inst_opcode = RETURN \/ inst.inst_opcode = REVERT) /\
       eval_operand (EL 0 inst.inst_operands) vs = SOME off_v /\
       eval_operand (EL 1 inst.inst_operands) vs = SOME sz_v ==>
-      w2n off_v + w2n sz_v <= ps.ps_alloc.sa_fn_eom) /\
+      w2n off_v + w2n sz_v <= ps.ps_alloc.sa_spill_base) /\
     (* Non-spilled Var operands on the stack have depth <= 15.
        Dischargeable: invariant maintained by reduce_depth in input plan. *)
     (!op d. MEM op (compute_operands inst) /\
@@ -1519,8 +1519,8 @@ Resume gen_inst_abort_sim[revert]:
         qexists_tac `apply_prefix_ops label_offsets prefix_ops ps` >>
         first_assum ACCEPT_TAC)
     >- (rpt strip_tac >>
-        `(apply_prefix_ops label_offsets prefix_ops ps).ps_alloc.sa_fn_eom =
-         ps.ps_alloc.sa_fn_eom` by simp[apply_prefix_ops_fn_eom] >>
+        `(apply_prefix_ops label_offsets prefix_ops ps).ps_alloc.sa_spill_base =
+         ps.ps_alloc.sa_spill_base` by simp[apply_prefix_ops_fn_eom] >>
         decide_tac)
   )) >> strip_tac >>
   (* Compose prefix AsmOK + terminal AsmRevert *)

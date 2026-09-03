@@ -23,7 +23,7 @@ Datatype:
   spill_alloc = <|
     sa_free_slots : num list;
     sa_next_offset : num;
-    sa_fn_eom : num
+    sa_spill_base : num
   |>
 End
 
@@ -60,18 +60,18 @@ Definition free_spill_slot_def:
 End
 
 Definition init_spill_alloc_def:
-  init_spill_alloc fn_eom = <|
+  init_spill_alloc spill_base = <|
     sa_free_slots := [];
-    sa_next_offset := fn_eom;
-    sa_fn_eom := fn_eom
+    sa_next_offset := spill_base;
+    sa_spill_base := spill_base
   |>
 End
 
 Definition init_plan_state_def:
-  init_plan_state fn_eom = <|
+  init_plan_state spill_base = <|
     ps_stack := [];
     ps_spilled := FEMPTY;
-    ps_alloc := init_spill_alloc fn_eom;
+    ps_alloc := init_spill_alloc spill_base;
     ps_label_counter := 0
   |>
 End
