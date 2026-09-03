@@ -346,3 +346,94 @@ Theorem spill_base_block_224_observables:
 Proof
   EVAL_TAC
 QED
+
+
+Theorem spill_base_planner_control_eval:
+  fn_entry_label spill_base_spilling_fn = SOME "entry" /\
+  lookup_block "entry" spill_base_spilling_fn.fn_blocks =
+    SOME spill_base_entry_bb
+Proof
+  EVAL_TAC
+QED
+
+Theorem spill_base_fn_aux_160_eval:
+  generate_fn_plan_aux spill_base_spilling_live spill_base_spilling_dfg
+    spill_base_spilling_cfg spill_base_spilling_fn ["entry"] []
+    (init_plan_state 160) =
+  SOME (spill_base_block_ops 160, ["entry"], spill_base_after_consumer 160)
+Proof
+  simp[generate_fn_plan_aux_def, spill_base_planner_control_eval,
+       spill_base_block_160_eval, spill_base_spilling_entry_succ_eval]
+QED
+
+Theorem spill_base_fn_aux_fuel_224_eval:
+  !fuel.
+  generate_fn_plan_aux_fuel (SUC (SUC fuel)) spill_base_spilling_live
+    spill_base_spilling_dfg spill_base_spilling_cfg spill_base_spilling_fn
+    ["entry"] [] (init_plan_state 224) =
+  SOME (spill_base_block_ops 224, ["entry"], spill_base_after_consumer 224)
+Proof
+  gen_tac >>
+  simp[generate_fn_plan_aux_fuel_def, spill_base_planner_control_eval,
+       spill_base_block_224_eval, spill_base_spilling_entry_succ_eval]
+QED
+
+
+Theorem spill_base_fn_aux_fuel_100_224_eval:
+  generate_fn_plan_aux_fuel 100 spill_base_spilling_live
+    spill_base_spilling_dfg spill_base_spilling_cfg spill_base_spilling_fn
+    ["entry"] [] (init_plan_state 224) =
+  SOME (spill_base_block_ops 224, ["entry"], spill_base_after_consumer 224)
+Proof
+  mp_tac (Q.SPEC `98` spill_base_fn_aux_fuel_224_eval) >> simp[]
+QED
+
+Theorem init_plan_state_counter_zero:
+  (init_plan_state b with ps_label_counter := 0) = init_plan_state b
+Proof
+  simp[stackPlanTypesTheory.init_plan_state_def]
+QED
+
+Theorem spill_base_spilling_plan_exact:
+  generate_fn_plan spill_base_spilling_fn 160 0 =
+  SOME (spill_base_block_ops 160, spill_base_after_consumer 160)
+Proof
+  simp[generate_fn_plan_def, spill_base_spilling_live_eval,
+       spill_base_spilling_dfg_eval, spill_base_spilling_cfg_eval,
+       spill_base_planner_control_eval, spill_base_fn_aux_160_eval,
+       init_plan_state_counter_zero]
+QED
+
+Theorem spill_base_spilling_plan_fuel_exact:
+  generate_fn_plan_fuel 100 spill_base_spilling_fn 224 0 =
+  SOME (spill_base_block_ops 224, spill_base_after_consumer 224)
+Proof
+  simp[generate_fn_plan_fuel_def, spill_base_spilling_live_fuel_eval,
+       spill_base_spilling_dfg_eval, spill_base_spilling_cfg_eval,
+       spill_base_planner_control_eval, spill_base_fn_aux_fuel_100_224_eval,
+       init_plan_state_counter_zero]
+QED
+
+Theorem spill_base_spilling_plan_eval:
+  case generate_fn_plan spill_base_spilling_fn 160 0 of
+    NONE => F
+  | SOME (ops, ps) =>
+      EXISTS (\op. case op of SOSpill off => 160 <= off | _ => F) ops /\
+      ps.ps_alloc.sa_spill_base = 160 /\
+      160 < ps.ps_alloc.sa_next_offset
+Proof
+  simp[spill_base_spilling_plan_exact, spill_base_block_ops_def,
+       spill_base_producer_ops_def, spill_base_after_consumer_def]
+QED
+
+Theorem spill_base_spilling_plan_fuel_eval:
+  case generate_fn_plan_fuel 100 spill_base_spilling_fn 224 0 of
+    NONE => F
+  | SOME (ops, ps) =>
+      EXISTS (\op. case op of SOSpill off => 224 <= off | _ => F) ops /\
+      ps.ps_alloc.sa_spill_base = 224 /\
+      224 < ps.ps_alloc.sa_next_offset
+Proof
+  simp[spill_base_spilling_plan_fuel_exact, spill_base_block_ops_def,
+       spill_base_producer_ops_def, spill_base_after_consumer_def]
+QED
