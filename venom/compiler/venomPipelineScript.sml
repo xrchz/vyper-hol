@@ -38,8 +38,8 @@
 
 Theory venomPipeline
 Ancestors
-  (* configured checked driver and its structural boundary properties *)
-  venomPipelineDriverProps
+  (* configured checked driver/runner and their structural boundary properties *)
+  venomPipelineDriverProps venomPipelineRunnerProps
   phiTransform
   assignElimDefs
   rtaDefs
