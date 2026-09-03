@@ -82,4 +82,51 @@ Proof
   simp[]
 QED
 
+Theorem generate_context_regions_layout_core:
+  !gen.
+    (!fn base labels ops ps.
+       gen fn base labels = SOME (ops,ps) ==>
+       base <= ps.ps_alloc.sa_next_offset) ==>
+    !fns acc acc' static.
+      generate_context_regions gen fns acc = SOME acc' /\
+      context_region_acc_wf static acc ==>
+      context_region_acc_wf static acc' /\
+      acc.cpa_next_spill_base <= acc'.cpa_next_spill_base
+Proof
+  gen_tac >> strip_tac >>
+  Induct_on `fns`
+  >- simp[generate_context_regions_def] >>
+  rpt gen_tac >>
+  simp[generate_context_regions_def] >>
+  Cases_on `gen h acc.cpa_next_spill_base acc.cpa_label_counter`
+  >- simp[] >>
+  PairCases_on `x` >>
+  simp[] >>
+  IF_CASES_TAC >> simp[] >>
+  strip_tac >>
+  qpat_assum `!fn base labels ops ps. _`
+    (drule_then assume_tac) >>
+  `context_region_acc_wf static
+     (acc with <|
+       cpa_regions := SNOC
+         <|sr_fn_name := h.fn_name;
+           sr_spill_base := acc.cpa_next_spill_base;
+           sr_spill_end := x1.ps_alloc.sa_next_offset;
+           sr_plan := x0|>
+         acc.cpa_regions;
+       cpa_label_counter := x1.ps_label_counter;
+       cpa_next_spill_base := x1.ps_alloc.sa_next_offset;
+       cpa_peak_spill_end :=
+         if acc.cpa_next_spill_base < x1.ps_alloc.sa_next_offset then
+           MAX acc.cpa_peak_spill_end x1.ps_alloc.sa_next_offset
+         else acc.cpa_peak_spill_end
+     |>)` by
+    (irule context_region_acc_wf_step >> simp[]) >>
+  first_x_assum drule >>
+  disch_then (qspec_then `static` mp_tac) >>
+  (impl_tac >- gvs[]) >>
+  strip_tac >>
+  gvs[] >> decide_tac
+QED
+
 val _ = export_theory();
