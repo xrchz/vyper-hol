@@ -565,11 +565,11 @@ QED
 Theorem alloc_spill_slot_max_agree[local]:
   !al spilled off al'.
     alloc_spill_slot al = (off, al') /\
-    spill_alloc_wf al spilled ==>
+    spill_alloc_layout_wf al spilled ==>
     MAX al.sa_next_offset (off + 32) = al'.sa_next_offset
 Proof
   rpt strip_tac >>
-  fs[alloc_spill_slot_def, spill_alloc_wf_def] >>
+  fs[alloc_spill_slot_def, spill_alloc_layout_wf_def] >>
   Cases_on `al.sa_free_slots` >> gvs[]
   >- (
     (* empty case: MAX n (n+32) = n+32 *)
@@ -607,6 +607,12 @@ Proof
   simp[apply_prefix_ops_def] >>
   rpt strip_tac >> gvs[] >>
   fs[apply_prefix_op_restore_alloc]
+QED
+
+Theorem every_map_restore[local]:
+  !offsets. EVERY (\op. ?off. op = SORestore off) (MAP SORestore offsets)
+Proof
+  Induct >> simp[] >> metis_tac[]
 QED
 
 (* =========================================================================
@@ -727,6 +733,16 @@ Proof
   metis_tac[]
 QED
 
+
+(* SOSpill applies the same high-water MAX fold as the allocator interface. *)
+Theorem apply_spill_ops_next_offset[local]:
+  !offsets lo ps.
+    (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).
+      ps_alloc.sa_next_offset =
+    FOLDL MAX ps.ps_alloc.sa_next_offset (MAP (\off. off + 32) offsets)
+Proof
+  Induct >> simp[apply_prefix_ops_def, apply_prefix_op_def]
+QED
 (* =========================================================================
    prefix_spill_wf for spill ops via spill_alloc_wf invariant
    ========================================================================= *)
@@ -1679,6 +1695,91 @@ Proof
   irule spill_alloc_layout_wf_after_alloc >>
   qexists_tac `al0` >> simp[]
 QED
+
+(* Allocation offsets and allocator evolution depend only on item count. *)
+Theorem spill_alloc_n_length_cong[local]:
+  !xs ys offs al.
+    LENGTH xs = LENGTH ys ==>
+    spill_alloc_n offs al xs = spill_alloc_n offs al ys
+Proof
+  Induct >> Cases_on `ys` >> simp[spill_alloc_n_def] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `alloc_spill_slot al` >> simp[]
+QED
+
+(* Durable batch allocation with keys independent of the list used to drive
+   allocator iteration.  This matches do_swap, whose spills pop REVERSE items. *)
+Theorem spill_alloc_n_layout_wf_keys[local]:
+  !alloc_items keys al sp.
+    spill_alloc_layout_wf al sp /\
+    LENGTH keys = LENGTH alloc_items /\
+    ALL_DISTINCT keys /\
+    DISJOINT (set keys) (FDOM sp) ==>
+    spill_alloc_layout_wf
+      (SND (spill_alloc_n [] al alloc_items))
+      (sp |++ ZIP(keys, FST (spill_alloc_n [] al alloc_items)))
+Proof
+  rpt gen_tac >> strip_tac >>
+  `spill_alloc_n [] al keys = spill_alloc_n [] al alloc_items` by
+    metis_tac[spill_alloc_n_length_cong] >>
+  qspecl_then [`keys`, `[]`, `al`, `sp`, `[]`]
+    mp_tac spill_alloc_n_layout_wf >>
+  simp[FUPDATE_LIST_THM]
+QED
+
+
+(* Project the pairwise spilled-offset separation clause without unfolding the
+   full durable-layout invariant in large consumer goals. *)
+Theorem spill_alloc_layout_wf_spilled_separated[local]:
+  !al spilled.
+    spill_alloc_layout_wf al spilled ==>
+    !op1 off1 op2 off2.
+      FLOOKUP spilled op1 = SOME off1 /\
+      FLOOKUP spilled op2 = SOME off2 /\
+      op1 <> op2 ==>
+      off1 + 32 <= off2 \/ off2 + 32 <= off1
+Proof
+  rpt gen_tac >> rw[spill_alloc_layout_wf_def] >> metis_tac[]
+QED
+
+(* Initial offset accumulator does not affect allocator evolution. *)
+Theorem spill_alloc_n_snd_initial[local]:
+  !items offs1 offs2 al.
+    SND (spill_alloc_n offs1 al items) = SND (spill_alloc_n offs2 al items)
+Proof
+  Induct >> simp[spill_alloc_n_def] >>
+  rpt gen_tac >> Cases_on `alloc_spill_slot al` >> simp[]
+QED
+
+(* The MAX updates performed by SOSpill track the allocator high-water mark,
+   including free-slot reuse.  Temporary keys witness durable layout at each step. *)
+Theorem spill_alloc_n_foldl_max_next[local]:
+  !items (keys:operand list) al sp.
+    spill_alloc_layout_wf al sp /\
+    LENGTH keys = LENGTH items /\ ALL_DISTINCT keys /\
+    DISJOINT (set keys) (FDOM sp) ==>
+    FOLDL MAX al.sa_next_offset
+      (MAP (\off. off + 32) (FST (spill_alloc_n [] al items))) =
+    (SND (spill_alloc_n [] al items)).sa_next_offset
+Proof
+  Induct
+  >- (Cases_on `keys` >> simp[spill_alloc_n_def]) >>
+  rpt gen_tac >> Cases_on `keys` >- simp[] >> strip_tac >>
+  Cases_on `alloc_spill_slot al` >>
+  rename1 `alloc_spill_slot al = (off,al1)` >>
+  `MAX al.sa_next_offset (off + 32) = al1.sa_next_offset` by
+    metis_tac[alloc_spill_slot_max_agree] >>
+  `spill_alloc_layout_wf al1 (sp |+ (h',off))` by
+    (irule spill_alloc_layout_wf_after_alloc >> metis_tac[]) >>
+  first_x_assum (qspecl_then [`t`, `al1`, `sp |+ (h',off)`] mp_tac) >>
+  impl_tac
+  >- (gvs[ALL_DISTINCT, DISJOINT_INSERT] >>
+      fs[DISJOINT_DEF, EXTENSION] >> metis_tac[]) >>
+  simp[spill_alloc_n_def, spill_alloc_n_fst_cons] >> strip_tac >>
+  metis_tac[spill_alloc_n_snd_initial]
+QED
+
+
 
 (* Free matching offsets while deleting their temporary map keys. *)
 Theorem foldl_free_domsub_layout_wf[local]:
@@ -2746,7 +2847,7 @@ Proof
 QED
 
 (* ---------------------------------------------------------------
-   do_swap_apply_stack_align: apply_prefix_ops of do_swap ops
+   do_swap_apply_stack_align_layout: apply_prefix_ops of do_swap ops
    gives the same ps_stack as the direct do_swap computation.
    --------------------------------------------------------------- *)
 
@@ -2809,16 +2910,53 @@ QED
 
 Finalise apply_restore_ops_stack
 
+(* The matching restore sequence removes exactly the named temporary spills. *)
+Theorem apply_restore_ops_spilled[local]:
+  !items offsets lo ps.
+    LENGTH items = LENGTH offsets /\ ALL_DISTINCT items /\
+    (!k. k < LENGTH items ==>
+       FLOOKUP ps.ps_spilled (EL k items) = SOME (EL k offsets)) /\
+    (!op1 off1 op2 off2.
+       FLOOKUP ps.ps_spilled op1 = SOME off1 /\
+       FLOOKUP ps.ps_spilled op2 = SOME off2 /\ op1 <> op2 ==>
+       off1 + 32 <= off2 \/ off2 + 32 <= off1) ==>
+    (apply_prefix_ops initial_fmp lo (MAP SORestore offsets) ps).ps_spilled =
+      FOLDL (\sp item. sp \\ item) ps.ps_spilled items
+Proof
+  Induct
+  >- (Cases_on `offsets` >> simp[apply_prefix_ops_def]) >>
+  rpt gen_tac >> Cases_on `offsets` >- simp[] >> strip_tac >>
+  `FLOOKUP ps.ps_spilled h = SOME h'` by
+    (first_x_assum (qspec_then `0` mp_tac) >> simp[]) >>
+  `spill_lookup h' ps.ps_spilled = h` by
+    (simp[spill_lookup_def] >> irule spill_hilbert_unique >> simp[] >>
+     metis_tac[]) >>
+  simp[apply_prefix_ops_def, apply_prefix_op_def, LET_THM] >>
+  qabbrev_tac `ps2 = ps with <| ps_stack := SNOC h ps.ps_stack;
+                                  ps_spilled := ps.ps_spilled \\ h |>` >>
+  first_x_assum (qspecl_then [`t`, `lo`, `ps2`] mp_tac) >>
+  simp[Abbr `ps2`] >>
+  impl_tac
+  >- (gvs[ALL_DISTINCT] >>
+      conj_tac
+      >- (rpt strip_tac >> simp[DOMSUB_FLOOKUP_THM] >>
+          reverse conj_tac
+          >- (first_x_assum (qspec_then `SUC k` mp_tac) >> simp[]) >>
+          metis_tac[MEM_EL]) >>
+      rpt strip_tac >> gvs[DOMSUB_FLOOKUP_THM] >> metis_tac[]) >>
+  simp[stack_push_def]
+QED
+
+
 (* Main alignment theorem *)
-Theorem do_swap_apply_stack_align:
+Theorem do_swap_apply_stack_align_layout:
   !dist ps lo.
     dist < LENGTH ps.ps_stack /\
     (dist > 16 ==>
        ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
        DISJOINT (set (top_n (dist + 1) ps.ps_stack))
                 (FDOM ps.ps_spilled) /\
-       spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
-       ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256)) ==>
+       spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled) ==>
     (apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps).ps_stack =
     (SND (do_swap dist ps)).ps_stack
 Proof
@@ -2867,7 +3005,7 @@ Proof
   suspend "restore"
 QED
 
-Resume do_swap_apply_stack_align[restore]:
+Resume do_swap_apply_stack_align_layout[restore]:
   (* The items pushed by restore = MAP (λidx. EL idx (REVERSE items)) desired_rev *)
   (* which equals restored = MAP (λidx. EL idx items) desired by el_desired_reverse_items *)
   (* Use apply_restore_ops_stack with:
@@ -2972,7 +3110,7 @@ QED
 
 Finalise spilled_after_spill_separated
 
-Resume do_swap_apply_stack_align[all_distinct]:
+Resume do_swap_apply_stack_align_layout[all_distinct]:
   simp[Abbr `items_pushed`, Abbr `rev_items`] >>
   irule all_distinct_map_el >>
   simp[Abbr `desired_rev`, ALL_DISTINCT_REVERSE, LENGTH_REVERSE] >>
@@ -2983,7 +3121,7 @@ Resume do_swap_apply_stack_align[all_distinct]:
     simp[Abbr `desired`, EVERY_APPEND, EVERY_GENLIST, Abbr `chunk`]
 QED
 
-Resume do_swap_apply_stack_align[flookup]:
+Resume do_swap_apply_stack_align_layout[flookup]:
   rpt strip_tac >>
   simp[Abbr `items_pushed`, Abbr `restore_offsets`, EL_MAP,
        Abbr `rev_items`] >>
@@ -2994,7 +3132,7 @@ Resume do_swap_apply_stack_align[flookup]:
   simp[Abbr `desired_rev`, Abbr `desired`, Abbr `chunk`]
 QED
 
-Resume do_swap_apply_stack_align[items_eq]:
+Resume do_swap_apply_stack_align_layout[items_eq]:
   (* Cancel base_stack, then prove items_pushed = desired form *)
   simp[APPEND_11] >>
   `items_pushed = restored` suffices_by
@@ -3007,14 +3145,235 @@ Resume do_swap_apply_stack_align[items_eq]:
   simp[Abbr `desired`, Abbr `chunk`]
 QED
 
-Resume do_swap_apply_stack_align[separation]:
+Resume do_swap_apply_stack_align_layout[separation]:
   simp[Abbr `rev_items`] >>
-  match_mp_tac spilled_after_spill_separated >>
-  simp[Abbr `offsets`, Abbr `items`, Abbr `chunk`] >>
-  Q.EXISTS_TAC `ps.ps_alloc` >> simp[]
+  `spill_alloc_layout_wf
+     (SND (spill_alloc_n [] ps.ps_alloc items))
+     (ps.ps_spilled |++ ZIP(REVERSE items, offsets))` by (
+    qspecl_then [`items`, `REVERSE items`, `ps.ps_alloc`, `ps.ps_spilled`]
+      mp_tac spill_alloc_n_layout_wf_keys >>
+    simp[Abbr `offsets`, LENGTH_REVERSE, ALL_DISTINCT_REVERSE]) >>
+  fs[spill_alloc_layout_wf_def]
 QED
 
-Finalise do_swap_apply_stack_align
+Finalise do_swap_apply_stack_align_layout
+
+(* Compatibility wrapper for consumers that still carry fresh-allocation
+   readiness; the semantic alignment itself only needs durable layout. *)
+Theorem do_swap_apply_stack_align:
+  !dist ps lo.
+    dist < LENGTH ps.ps_stack /\
+    (dist > 16 ==>
+       ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+       DISJOINT (set (top_n (dist + 1) ps.ps_stack))
+                (FDOM ps.ps_spilled) /\
+       spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
+       ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256)) ==>
+    (apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps).ps_stack =
+    (SND (do_swap dist ps)).ps_stack
+Proof
+  rpt strip_tac >>
+  irule do_swap_apply_stack_align_layout >> simp[] >>
+  strip_tac >> first_x_assum drule >>
+  metis_tac[spill_alloc_wf_layout]
+QED
+
+
+(* Direct do_swap and prefix interpretation agree on exactly the fields
+   observed by venom_asm_rel. *)
+Theorem do_swap_apply_relevant_align_layout[local]:
+  !dist ps lo.
+    dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) ==>
+    let via = apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps;
+        direct = SND (do_swap dist ps)
+    in via.ps_stack = direct.ps_stack /\
+       via.ps_spilled = direct.ps_spilled /\
+       via.ps_alloc.sa_spill_base = direct.ps_alloc.sa_spill_base /\
+       via.ps_alloc.sa_next_offset = direct.ps_alloc.sa_next_offset
+Proof
+  rpt strip_tac >> simp[LET_THM] >>
+  Cases_on `dist <= 16`
+  >- (`apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps =
+        SND (do_swap dist ps)` by
+        (mp_tac (Q.SPECL [`dist`, `ps`, `FST (do_swap dist ps)`,
+                           `SND (do_swap dist ps)`] do_swap_align) >>
+         simp[]) >> simp[]) >>
+  `dist > 16` by decide_tac >>
+  suspend "deep"
+QED
+
+Resume do_swap_apply_relevant_align_layout[deep]:
+  conj_tac
+  >- (irule do_swap_apply_stack_align_layout >> simp[] >>
+      rpt strip_tac
+      >- (fs[top_n_def] >>
+          metis_tac[ALL_DISTINCT_APPEND, TAKE_DROP, ALL_DISTINCT_REVERSE]) >>
+      fs[DISJOINT_DEF, EXTENSION, top_n_def] >>
+      metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  qabbrev_tac `items = top_n (dist + 1) ps.ps_stack` >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] ps.ps_alloc items)` >>
+  qabbrev_tac `desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]` >>
+  qabbrev_tac `desired_rev = REVERSE desired` >>
+  qabbrev_tac `restore_offsets = MAP (\idx. EL idx offsets) desired_rev` >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+  `LENGTH offsets = dist + 1` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+  simp[LET_THM] >>
+  `top_n (dist + 1) ps.ps_stack = items` by simp[Abbr `items`] >>
+  simp[] >> strip_tac >>
+  qabbrev_tac `restore_items =
+    MAP (\idx. EL idx (REVERSE items)) desired_rev` >>
+  `LENGTH desired_rev = dist + 1` by
+    simp[Abbr `desired_rev`, Abbr `desired`, LENGTH_REVERSE, LENGTH_GENLIST] >>
+  `EVERY (\i. i < LENGTH items) desired_rev` by
+    simp[Abbr `desired_rev`, Abbr `desired`, EVERY_REVERSE,
+         EVERY_APPEND, EVERY_GENLIST] >>
+  `ALL_DISTINCT items` by
+    simp[Abbr `items`, top_n_def, ALL_DISTINCT_REVERSE, ALL_DISTINCT_TAKE] >>
+  `DISJOINT (set items) (FDOM ps.ps_spilled)` by
+    (qpat_x_assum `top_n _ _ = items` (fn th => REWRITE_TAC[GSYM th]) >>
+     fs[DISJOINT_DEF, EXTENSION, top_n_def] >>
+     metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  `ALL_DISTINCT desired_rev` by
+    (qspec_then `dist + 1` mp_tac desired_indices_all_distinct >>
+     simp[Abbr `desired_rev`, Abbr `desired`]) >>
+  `ALL_DISTINCT restore_items` by
+    (simp[Abbr `restore_items`] >> irule all_distinct_map_el >>
+     simp[ALL_DISTINCT_REVERSE] >> metis_tac[]) >>
+  `(apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
+     ps.ps_spilled |++ ZIP(REVERSE items, offsets)` by
+    (qspecl_then [`offsets`, `lo`, `ps`] mp_tac apply_spill_ops_spilled >>
+     `TAKE (LENGTH offsets) (REVERSE ps.ps_stack) = REVERSE items` by
+       simp[Abbr `items`, top_n_def, REVERSE_REVERSE] >>
+     simp[]) >>
+  `spill_alloc_layout_wf
+     (SND (spill_alloc_n [] ps.ps_alloc items))
+     (ps.ps_spilled |++ ZIP(REVERSE items, offsets))` by
+    (qspecl_then [`items`, `REVERSE items`, `ps.ps_alloc`, `ps.ps_spilled`]
+       mp_tac spill_alloc_n_layout_wf_keys >>
+     simp[Abbr `offsets`, LENGTH_REVERSE, ALL_DISTINCT_REVERSE]) >>
+  `!k. k < LENGTH restore_items ==>
+       FLOOKUP (ps.ps_spilled |++ ZIP(REVERSE items,offsets))
+         (EL k restore_items) = SOME (EL k restore_offsets)` by
+    (rpt strip_tac >>
+     `k < LENGTH desired_rev` by fs[Abbr `restore_items`] >>
+     simp[Abbr `restore_items`, Abbr `restore_offsets`, EL_MAP] >>
+     irule flookup_fupdate_list_el >> simp[ALL_DISTINCT_REVERSE] >>
+     fs[EVERY_EL] >> metis_tac[]) >>
+  `restore_items = MAP (\idx. EL idx items) desired` by
+    (rewrite_tac[LIST_EQ_REWRITE] >> conj_tac
+     >- simp[Abbr `restore_items`, Abbr `desired_rev`, Abbr `desired`] >>
+     rpt strip_tac >>
+     `x < LENGTH desired_rev` by fs[Abbr `restore_items`] >>
+     `x < LENGTH desired` by fs[Abbr `desired_rev`] >>
+     simp[Abbr `restore_items`, Abbr `desired_rev`, EL_MAP] >>
+     qpat_x_assum `Abbrev (desired = _)`
+       (SUBST1_TAC o REWRITE_RULE[markerTheory.Abbrev_def]) >>
+     sym_tac >>
+     qspecl_then [`items`, `x`] mp_tac el_desired_reverse_items >>
+     simp[]) >>
+  `set restore_items = set items` by
+    (ASM_REWRITE_TAC[] >>
+     qspecl_then [`dist + 1`, `items`] mp_tac set_desired_perm >>
+     simp[Abbr `desired`]) >>
+  `!op1 off1 op2 off2.
+      FLOOKUP (ps.ps_spilled |++ ZIP(REVERSE items,offsets)) op1 = SOME off1 /\
+      FLOOKUP (ps.ps_spilled |++ ZIP(REVERSE items,offsets)) op2 = SOME off2 /\
+      op1 <> op2 ==>
+      off1 + 32 <= off2 \/ off2 + 32 <= off1` by
+    (ho_match_mp_tac spill_alloc_layout_wf_spilled_separated >>
+     qexists `SND (spill_alloc_n [] ps.ps_alloc items)` >>
+     qpat_assum
+       `spill_alloc_layout_wf (SND (spill_alloc_n [] ps.ps_alloc items)) _`
+       ACCEPT_TAC) >>
+  `(apply_prefix_ops initial_fmp lo
+      (MAP SOSpill offsets ++ MAP SORestore restore_offsets) ps).ps_spilled =
+     ps.ps_spilled` by
+    (simp[apply_prefix_ops_append] >>
+     qspecl_then [`restore_items`, `restore_offsets`, `lo`,
+       `apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps`]
+       mp_tac apply_restore_ops_spilled >>
+     impl_tac
+     >- (rpt conj_tac
+         >- simp[Abbr `restore_items`, Abbr `restore_offsets`]
+         >- simp[]
+         >- (rpt strip_tac >> ASM_REWRITE_TAC[] >> metis_tac[]) >>
+         ho_match_mp_tac spill_alloc_layout_wf_spilled_separated >>
+         qexists `SND (spill_alloc_n [] ps.ps_alloc items)` >>
+         ASM_REWRITE_TAC[]) >>
+     disch_then SUBST1_TAC >>
+     ASM_REWRITE_TAC[] >>
+     irule foldl_domsub_cancel >>
+     simp[MAP_ZIP, LIST_TO_SET_REVERSE] >>
+     conj_tac >- metis_tac[] >> metis_tac[]) >>
+  simp[] >>
+  conj_tac
+  >- simp[apply_prefix_ops_spill_base, foldl_free_spill_base,
+          spill_alloc_n_spill_base] >>
+  simp[apply_prefix_ops_append, apply_prefix_ops_restore_next_offset,
+       apply_spill_ops_next_offset, foldl_free_next_offset] >>
+  qspecl_then [`items`, `items`, `ps.ps_alloc`, `ps.ps_spilled`]
+    mp_tac spill_alloc_n_foldl_max_next >>
+  simp[Abbr `offsets`] >> strip_tac >>
+  `(apply_prefix_ops initial_fmp lo (MAP SORestore restore_offsets)
+      (apply_prefix_ops initial_fmp lo
+        (MAP SOSpill (FST (spill_alloc_n [] ps.ps_alloc items))) ps)).
+      ps_alloc.sa_next_offset =
+    (apply_prefix_ops initial_fmp lo
+      (MAP SOSpill (FST (spill_alloc_n [] ps.ps_alloc items))) ps).
+      ps_alloc.sa_next_offset` by
+    (irule apply_prefix_ops_restore_next_offset >>
+     simp[every_map_restore]) >>
+  ASM_REWRITE_TAC[apply_spill_ops_next_offset]
+QED
+
+Finalise do_swap_apply_relevant_align_layout
+
+
+(* Durable semantic simulation for generated swaps.  Prefix execution may
+   differ from direct planning in allocator bookkeeping, so transfer only the
+   fields observed by venom_asm_rel. *)
+Theorem do_swap_venom_asm_rel_layout:
+  !dist ps ops ps' lo o2pc prog vs st.
+    do_swap dist ps = (ops,ps') /\
+    dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo ops ps /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
+            AsmOK st' /\
+          venom_asm_rel lo ps' vs st' /\
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
+Proof
+  rpt strip_tac >>
+  qspecl_then [`ops`, `initial_fmp`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
+    mp_tac mixed_prefix_venom_asm_rel >>
+  impl_tac
+  >- (rpt conj_tac
+      >- (qspecl_then [`dist`, `ps`, `lo`] mp_tac do_swap_wf_len >>
+          impl_tac >- ASM_REWRITE_TAC[] >>
+          ASM_REWRITE_TAC[LET_THM] >> BETA_TAC >> simp[])
+      >- ASM_REWRITE_TAC[]
+      >- metis_tac[do_swap_prefix_op]
+      >- ASM_REWRITE_TAC[] >>
+      ASM_REWRITE_TAC[]) >>
+  strip_tac >>
+  mp_tac (Q.SPECL [`dist`, `ps`, `lo`]
+    do_swap_apply_relevant_align_layout) >>
+  ASM_REWRITE_TAC[LET_THM] >> strip_tac >>
+  qexists_tac `st'` >> ASM_REWRITE_TAC[] >>
+  irule venom_asm_rel_ps_transfer >>
+  qexists `apply_prefix_ops initial_fmp lo ops ps` >>
+  ASM_REWRITE_TAC[] >> BETA_TAC >> metis_tac[]
+QED
 
 
 
