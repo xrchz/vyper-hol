@@ -215,6 +215,8 @@ QED
    gives generate_fn_plan fn fn_eom 0 and assembles the plan. *)
 Theorem codegen_single_fn_unfold[local]:
   !ctx fn fn_eom data_seg bytecode.
+    fn.fn_eom = SOME fn_eom /\
+    ctx.ctx_global_reserved = [] /\
     codegen (ctx with ctx_functions := [fn])
             (FEMPTY |+ (fn.fn_name, fn_eom))
             data_seg = SOME bytecode ==>
@@ -226,9 +228,14 @@ Proof
   rpt strip_tac >>
   fs[codegen_def] >>
   every_case_tac >> gvs[] >>
-  rename1 `generate_context_plan _ _ = SOME plan_ops` >>
-  fs[generate_context_plan_def, LET_THM, FOLDL, FLOOKUP_UPDATE] >>
-  every_case_tac >> gvs[]
+  fs[generate_context_plan_def, generate_context_plan_with_def,
+     max_live_eom_def, collect_fn_eoms_def, generate_context_regions_def,
+     finish_context_plan_def, context_plan_ops_def,
+     staticLayoutDefsTheory.reserved_intervals_wf_def,
+     staticLayoutDefsTheory.global_reserved_end_def, LET_THM] >>
+  every_case_tac >>
+  gvs[staticLayoutDefsTheory.reserved_intervals_wf_def,
+      staticLayoutDefsTheory.global_reserved_end_def]
 QED
 
 (* Prefix of a list is an asm_block_at position 0 *)
@@ -363,6 +370,8 @@ QED
 Theorem codegen_fn_correct:
   ∀fuel ctx fn fn_eom data_seg bytecode spill_hwm vs.
     codegen_ready_fn fn ∧
+    fn.fn_eom = SOME fn_eom ∧
+    ctx.ctx_global_reserved = [] ∧
     codegen (ctx with ctx_functions := [fn])
             (FEMPTY |+ (fn.fn_name, fn_eom))
             data_seg = SOME bytecode ∧
@@ -396,7 +405,7 @@ Theorem codegen_fn_correct:
 Proof
   rpt gen_tac >> strip_tac >>
   (* Unfold codegen to get generate_fn_plan *)
-  drule codegen_single_fn_unfold >> strip_tac >>
+  drule_all codegen_single_fn_unfold >> strip_tac >>
   rename1 `generate_fn_plan fn fn_eom 0 = SOME (fn_ops, ps_final)` >>
   (* Define the assembly program *)
   qabbrev_tac `prog = execute_plan (fn_ops ++ revert_postamble) ++
