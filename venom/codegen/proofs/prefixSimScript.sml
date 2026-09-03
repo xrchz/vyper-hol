@@ -21,8 +21,18 @@ Libs
 (* ===== Prefix op definition ===== *)
 
 Definition is_prefix_op_def:
-  is_prefix_op (SOEmit _) = F /\
-  is_prefix_op _ = T
+  is_prefix_op (SOPush op) = T /\
+  is_prefix_op (SOPop n) = T /\
+  is_prefix_op (SOSwap n) = T /\
+  is_prefix_op (SODup n) = T /\
+  is_prefix_op (SOPoke n op) = T /\
+  is_prefix_op (SOSpill off) = T /\
+  is_prefix_op (SORestore off) = T /\
+  is_prefix_op (SOEmit name) = F /\
+  is_prefix_op SOInitialFmp = T /\
+  is_prefix_op (SOLabel lbl) = T /\
+  is_prefix_op (SOPushLabel lbl) = T /\
+  is_prefix_op (SOPushOfst lbl off) = T
 End
 
 (* ===== Shared tactic infrastructure ===== *)
