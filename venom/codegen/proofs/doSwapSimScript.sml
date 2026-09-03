@@ -53,7 +53,7 @@ End
    Helpers: alloc_spill_slot basic properties
    ========================================================================= *)
 
-Theorem alloc_spill_slot_ge_fn_eom:
+Theorem alloc_spill_slot_ge_spill_base:
   !al off al'.
     alloc_spill_slot al = (off, al') /\
     al.sa_spill_base <= al.sa_next_offset /\
@@ -69,7 +69,7 @@ Proof
   fs[EVERY_MEM]
 QED
 
-Theorem alloc_spill_slot_fn_eom:
+Theorem alloc_spill_slot_spill_base:
   !al off al'.
     alloc_spill_slot al = (off, al') ==>
     al'.sa_spill_base = al.sa_spill_base
@@ -278,7 +278,7 @@ QED
    ========================================================================= *)
 
 (* sa_spill_base is unchanged by any prefix op *)
-Theorem apply_prefix_op_fn_eom[local]:
+Theorem apply_prefix_op_spill_base[local]:
   !lo op ps.
     (apply_prefix_op lo op ps).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
@@ -289,13 +289,13 @@ Proof
   TRY (Cases_on `o'` >> simp[apply_simple_op_def])
 QED
 
-Theorem apply_prefix_ops_fn_eom[local]:
+Theorem apply_prefix_ops_spill_base[local]:
   !lo ops ps.
     (apply_prefix_ops lo ops ps).ps_alloc.sa_spill_base =
     ps.ps_alloc.sa_spill_base
 Proof
   Induct_on `ops` >>
-  simp[apply_prefix_ops_def, apply_prefix_op_fn_eom]
+  simp[apply_prefix_ops_def, apply_prefix_op_spill_base]
 QED
 
 (* sa_next_offset only grows via SOSpill *)
@@ -392,7 +392,7 @@ QED
    spill_alloc_n basic properties
    ========================================================================= *)
 
-Theorem spill_alloc_n_fn_eom[local]:
+Theorem spill_alloc_n_spill_base[local]:
   !items offs0 al0.
     (SND (spill_alloc_n offs0 al0 items)).sa_spill_base = al0.sa_spill_base
 Proof
@@ -400,7 +400,7 @@ Proof
   rpt strip_tac >>
   Cases_on `alloc_spill_slot al0` >>
   simp[] >>
-  imp_res_tac alloc_spill_slot_fn_eom >> simp[]
+  imp_res_tac alloc_spill_slot_spill_base >> simp[]
 QED
 
 Theorem spill_alloc_n_offsets_length[local]:
@@ -462,7 +462,7 @@ Proof
 QED
 
 (* After applying n SOSpill ops, sa_spill_base unchanged *)
-(* (already follows from apply_prefix_ops_fn_eom) *)
+(* (already follows from apply_prefix_ops_spill_base) *)
 
 (* =========================================================================
    prefix_spill_wf decomposition (must come before spill_gen)
@@ -537,7 +537,7 @@ Proof
     fs[LENGTH]
   )
   (* Goal 3: fn_eom *)
-  >- (imp_res_tac alloc_spill_slot_fn_eom >> simp[])
+  >- (imp_res_tac alloc_spill_slot_spill_base >> simp[])
   (* Goal 4: spill_alloc_wf *)
   >- (
     simp[apply_prefix_ops_append, apply_prefix_ops_def,
@@ -553,7 +553,7 @@ Proof
     simp[prefix_spill_wf_append, prefix_spill_wf_def] >>
     irule spill_op_wf_from_alloc >>
     qexistsl_tac [`al0`, `r`] >>
-    simp[apply_prefix_ops_fn_eom] >>
+    simp[apply_prefix_ops_spill_base] >>
     imp_res_tac alloc_spill_slot_next_offset_upper >>
     fs[]
   )
@@ -1132,7 +1132,7 @@ Proof
   rename1 `alloc_spill_slot al0 = (off0, al1)` >>
   simp[] >>
   drule_all alloc_spill_slot_wf >> strip_tac >>
-  imp_res_tac alloc_spill_slot_fn_eom >>
+  imp_res_tac alloc_spill_slot_spill_base >>
   imp_res_tac alloc_spill_slot_next_offset_upper >>
   simp[spill_alloc_n_fst_cons, LET_THM] >>
   suspend "setup"
@@ -1374,7 +1374,7 @@ Proof
 QED
 
 (* FOLDL free_spill_slot preserves sa_spill_base *)
-Theorem foldl_free_fn_eom[local]:
+Theorem foldl_free_spill_base[local]:
   !offsets al.
     (FOLDL (\al off. free_spill_slot off al) al offsets).sa_spill_base =
       al.sa_spill_base
@@ -1806,15 +1806,15 @@ Resume do_swap_venom_asm_rel_big[compose_rel]:
         FOLDL (\sp item. sp \\ item) ps_mid.ps_spilled restored |>` >>
   simp[Abbr `ps_mid`] >>
   (* After simp[Abbr ps_mid], conjuncts are:
-     1. ps_spilled, 2. ps_stack, 3. fn_eom, 4. next_offset *)
+     1. ps_spilled, 2. ps_stack, 3. next_offset, 4. spill_base *)
   (* 1. ps_spilled: round-trip cancellation *)
   (conj_tac >- (suspend "compose_spilled")) >>
   (* 2. ps_stack *)
   (conj_tac >- (suspend "compose_stack")) >>
-  (* 3. sa_spill_base *)
-  (conj_tac >- (simp[foldl_free_fn_eom, spill_alloc_n_fn_eom])) >>
-  (* 4. sa_next_offset *)
-  suspend "compose_next_offset"
+  (* 3. sa_next_offset *)
+  (conj_tac >- (suspend "compose_next_offset")) >>
+  (* 4. sa_spill_base *)
+  simp[foldl_free_spill_base, spill_alloc_n_spill_base]
 QED
 
 Resume do_swap_venom_asm_rel_big[compose_stack]:

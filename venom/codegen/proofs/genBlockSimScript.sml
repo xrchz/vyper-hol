@@ -1092,7 +1092,7 @@ QED
 (* ===== apply_prefix_ops field preservation ===== *)
 
 (* sa_spill_base is unchanged by any prefix op *)
-Theorem apply_prefix_op_fn_eom[local]:
+Theorem apply_prefix_op_spill_base[local]:
   !lo op ps.
     (apply_prefix_op lo op ps).ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
@@ -1101,13 +1101,13 @@ Proof
   TRY (Cases_on `o'` >> simp[apply_simple_op_def])
 QED
 
-Theorem apply_prefix_ops_fn_eom[local]:
+Theorem apply_prefix_ops_spill_base[local]:
   !lo ops ps.
     (apply_prefix_ops lo ops ps).ps_alloc.sa_spill_base =
     ps.ps_alloc.sa_spill_base
 Proof
   Induct_on `ops` >>
-  simp[apply_prefix_ops_def, apply_prefix_op_fn_eom]
+  simp[apply_prefix_ops_def, apply_prefix_op_spill_base]
 QED
 
 (* ===== Per-instruction Halt simulation ===== *)
@@ -1266,7 +1266,7 @@ Resume gen_inst_halt_sim[return]:
         first_assum ACCEPT_TAC)
     >- (rpt strip_tac >>
         `(apply_prefix_ops label_offsets prefix_ops ps).ps_alloc.sa_spill_base =
-         ps.ps_alloc.sa_spill_base` by simp[apply_prefix_ops_fn_eom] >>
+         ps.ps_alloc.sa_spill_base` by simp[apply_prefix_ops_spill_base] >>
         decide_tac)
   )) >> strip_tac >>
   (* Compose prefix AsmOK + terminal AsmHalt *)
@@ -1520,7 +1520,7 @@ Resume gen_inst_abort_sim[revert]:
         first_assum ACCEPT_TAC)
     >- (rpt strip_tac >>
         `(apply_prefix_ops label_offsets prefix_ops ps).ps_alloc.sa_spill_base =
-         ps.ps_alloc.sa_spill_base` by simp[apply_prefix_ops_fn_eom] >>
+         ps.ps_alloc.sa_spill_base` by simp[apply_prefix_ops_spill_base] >>
         decide_tac)
   )) >> strip_tac >>
   (* Compose prefix AsmOK + terminal AsmRevert *)
@@ -2446,7 +2446,7 @@ Proof
     simp[] >> irule plan_spill_rel_remove_entry >> first_assum ACCEPT_TAC) >>
   conj_tac >- simp[release_dead_spills_def, LET_THM] >>
   conj_tac >- (simp[release_dead_spills_def, LET_THM] >> first_x_assum match_mp_tac >> simp[]) >>
-  simp[memory_rel_def, release_dead_spills_fn_eom, release_dead_spills_next_offset] >> metis_tac[memory_rel_def]
+  simp[memory_rel_def, release_dead_spills_spill_base, release_dead_spills_next_offset] >> metis_tac[memory_rel_def]
 QED
 
 (* Comprehensive per-instruction OK simulation.
