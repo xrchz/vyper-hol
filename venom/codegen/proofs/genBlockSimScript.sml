@@ -3142,12 +3142,108 @@ Resume gen_inst_ok_sim[initial_fmp]:
          `h::t = FRONT (h::t) ++ [LAST (h::t)]` by
            simp[APPEND_FRONT_LAST] >>
          metis_tac[prefix_spill_wf_prefix]) >>
-      FAIL_TAC "probe_initial_fmp_live_halting") >>
+      `venom_asm_rel lo
+         (ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack))
+         (update_var out vs.vs_initial_fmp vs) as'` by
+        (qpat_x_assum `venom_asm_rel lo (ps with ps_stack := SNOC _ _) _ _`
+           mp_tac >> simp[stack_push_def, stack_pop_def]) >>
+      `asm_block_at prog as'.as_pc (execute_plan initial_fmp opt_ops)` by
+        (qpat_x_assum `asm_block_at prog as.as_pc _` mp_tac >>
+         simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons] >>
+         ASM_REWRITE_TAC[]) >>
+      drule optimistic_swap_plan_postfix_sim >>
+      disch_then drule >> disch_then drule >> disch_then drule >>
+      disch_then drule >> strip_tac >>
+      first_x_assum (qspec_then `o2pc` strip_assume_tac) >>
+      `venom_asm_rel lo (release_dead_spills next_liveness ps9)
+         (update_var out vs.vs_initial_fmp vs) st'` by
+        (irule venom_asm_rel_release_dead_spills >> ASM_REWRITE_TAC[]) >>
+      qexistsl [`1 + LENGTH (execute_plan initial_fmp opt_ops)`, `st'`] >>
+      gvs[asm_steps_add, execute_plan_def, exec_stack_op_def]) >>
   Cases_on `MEM out next_liveness`
-  >- (gvs[initial_fmp_dead_popmany] >>
-      FAIL_TAC "probe_initial_fmp_live_nonhalting") >>
-  gvs[initial_fmp_dead_popmany] >>
-  FAIL_TAC "probe_initial_fmp_dead_nonhalting"
+  >- (gvs[initial_fmp_dead_popmany, popmany_plan_def] >>
+      pairarg_tac >> gvs[] >>
+      `generated_plan_state_wf base'
+         (ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+        (simp[stack_pop_def] >> irule generated_plan_state_wf_push >>
+         ASM_REWRITE_TAC[]) >>
+      qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`,
+        `initial_fmp`, `out`] mp_tac initial_fmp_emit_update_var_bridge >>
+      (impl_tac >-
+        (ASM_REWRITE_TAC[] >>
+         qpat_x_assum `asm_block_at _ _ (execute_plan _ _)` mp_tac >>
+         simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons])) >>
+      strip_tac >>
+      `prefix_spill_wf initial_fmp lo (FRONT opt_ops)
+         (ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+        (Cases_on `opt_ops`
+         >- simp[prefix_spill_wf_def] >>
+         qpat_x_assum `optimistic_swap_plan _ _ _ _ _ = _` mp_tac >>
+         simp[optimistic_swap_plan_def] >>
+         rpt (IF_CASES_TAC >> gvs[]) >>
+         CASE_TAC >> gvs[] >> strip_tac >>
+         `x < LENGTH
+            (stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+           metis_tac[stack_get_depth_bound] >>
+         `prefix_spill_wf initial_fmp lo (h::t)
+            (ps with ps_stack :=
+               stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+           (irule generated_do_swap_initial_fmp_front_transport >>
+            simp[SF SFY_ss] >>
+            qexistsl [`x`, `ps9`] >> ASM_REWRITE_TAC[] >>
+            qpat_x_assum `x < LENGTH (stack_push _ _)` mp_tac >>
+            simp[stack_push_def, stack_pop_def]) >>
+         `h::t = FRONT (h::t) ++ [LAST (h::t)]` by
+           simp[APPEND_FRONT_LAST] >>
+         metis_tac[prefix_spill_wf_prefix]) >>
+      `venom_asm_rel lo
+         (ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack))
+         (update_var out vs.vs_initial_fmp vs) as'` by
+        (qpat_x_assum `venom_asm_rel lo (ps with ps_stack := SNOC _ _) _ _`
+           mp_tac >> simp[stack_push_def, stack_pop_def]) >>
+      `asm_block_at prog as'.as_pc (execute_plan initial_fmp opt_ops)` by
+        (qpat_x_assum `asm_block_at prog as.as_pc _` mp_tac >>
+         simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons] >>
+         ASM_REWRITE_TAC[]) >>
+      drule optimistic_swap_plan_postfix_sim >>
+      disch_then drule >> disch_then drule >> disch_then drule >>
+      disch_then drule >> strip_tac >>
+      first_x_assum (qspec_then `o2pc` strip_assume_tac) >>
+      `venom_asm_rel lo (release_dead_spills next_liveness ps9)
+         (update_var out vs.vs_initial_fmp vs) st'` by
+        (irule venom_asm_rel_release_dead_spills >> ASM_REWRITE_TAC[]) >>
+      qexistsl [`1 + LENGTH (execute_plan initial_fmp opt_ops)`, `st'`] >>
+      gvs[asm_steps_add, execute_plan_def, exec_stack_op_def]) >>
+  gvs[initial_fmp_dead_popmany, stack_push_def, stack_pop_def] >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`,
+    `initial_fmp`, `out`] mp_tac initial_fmp_emit_update_var_bridge >>
+  (impl_tac >-
+    (ASM_REWRITE_TAC[] >>
+     qpat_x_assum `asm_block_at _ _ (execute_plan _ _)` mp_tac >>
+     simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons])) >>
+  strip_tac >>
+  `asm_block_at prog as'.as_pc (execute_plan initial_fmp [SOPop 1])` by
+    (qpat_x_assum `asm_block_at prog as.as_pc _` mp_tac >>
+     simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons] >>
+     ASM_REWRITE_TAC[]) >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `initial_fmp`, `next_liveness`,
+    `[SOPop 1]`,
+    `ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack)`,
+    `ps`, `release_dead_spills next_liveness ps`,
+    `update_var out vs.vs_initial_fmp vs`, `as'`]
+    mp_tac initial_fmp_generated_postfix_sim >>
+  impl_tac
+  >- (ASM_REWRITE_TAC[] >>
+      simp[prefix_wf_def, stack_op_wf_def, is_prefix_op_def,
+           prefix_spill_wf_def, spill_op_wf_def,
+           apply_prefix_ops_def, apply_prefix_op_def, apply_simple_op_def,
+           stack_push_def, stack_pop_def, SNOC_APPEND, TAKE_APPEND1,
+           plan_state_component_equality] >>
+      qpat_x_assum `venom_asm_rel lo (ps with ps_stack := SNOC _ _) _ _`
+        mp_tac >> simp[SNOC_APPEND]) >>
+  strip_tac >>
+  qexistsl [`1 + LENGTH (execute_plan initial_fmp [SOPop 1])`, `as''`] >>
+  gvs[asm_steps_add, execute_plan_def, exec_stack_op_def]
 QED
 
 Resume gen_inst_ok_sim[bump]:
