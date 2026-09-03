@@ -1033,6 +1033,28 @@ Proof
        init_plan_state_def, init_spill_alloc_def]
 QED
 
+Theorem do_swap_generated_plan_state_wf:
+  !base dist ps lo.
+  generated_plan_state_wf base ps /\ dist < LENGTH ps.ps_stack /\
+  prefix_spill_wf initial_fmp lo (FST (do_swap dist ps)) ps ==>
+  generated_plan_state_wf base (SND (do_swap dist ps))
+Proof
+  qx_gen_tac `spill_base` >> qx_gen_tac `dist` >>
+  qx_gen_tac `ps` >> qx_gen_tac `lo` >> strip_tac >>
+  fs[generated_plan_state_wf_def] >>
+  `plan_slots_bounded spill_base (SND (do_swap dist ps))` by (
+    qspecl_then [`spill_base`, `dist`, `ps`, `FST (do_swap dist ps)`,
+      `SND (do_swap dist ps)`] mp_tac do_swap_plan_slots_bounded >>
+    simp[]) >>
+  `doSwapSim$spill_alloc_layout_wf (SND (do_swap dist ps)).ps_alloc
+       (SND (do_swap dist ps)).ps_spilled /\
+   ALL_DISTINCT (SND (do_swap dist ps)).ps_stack /\
+   DISJOINT (set (SND (do_swap dist ps)).ps_stack)
+            (FDOM (SND (do_swap dist ps)).ps_spilled)` by (
+    irule doSwapSimTheory.do_swap_structural_layout_wf >> simp[]) >>
+  simp[generated_plan_state_wf_def]
+QED
+
 Theorem generated_plan_state_wf_free_active_separate[local]:
   !base ps op active free.
     generated_plan_state_wf base ps /\
