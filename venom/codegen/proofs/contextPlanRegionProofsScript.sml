@@ -201,4 +201,87 @@ Proof
   metis_tac[generate_fn_plan_fuel_alloc_mono]
 QED
 
+
+Theorem generate_context_regions_access_peak_bound:
+  !gen.
+    (!fn base labels ops ps.
+       gen fn base labels = SOME (ops,ps) ==>
+       base <= ps.ps_alloc.sa_next_offset) ==>
+    !fns acc acc' static.
+      generate_context_regions gen fns acc = SOME acc' /\
+      context_region_acc_wf static acc /\
+      EVERY
+        (\r. !off. region_spill_access r off ==>
+             r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+        acc.cpa_regions ==>
+      EVERY
+        (\r. !off. region_spill_access r off ==>
+             r.sr_spill_base <= off /\
+             off + 32 <= r.sr_spill_end /\
+             off + 32 <= acc'.cpa_peak_spill_end)
+        acc'.cpa_regions
+Proof
+  rpt strip_tac >>
+  drule_all generate_context_regions_layout_core >>
+  strip_tac >>
+  drule_all generate_context_regions_access_bounded >>
+  strip_tac >>
+  fs[context_region_acc_wf_def, EVERY_MEM] >>
+  rpt strip_tac >>
+  qpat_assum
+    `!r. MEM r acc'.cpa_regions ==>
+         !off. region_spill_access r off ==> _ /\ _`
+    (qspec_then `r` (drule_then
+      (qspec_then `off` (drule_then strip_assume_tac)))) >>
+  qpat_assum
+    `!r. MEM r acc'.cpa_regions ==>
+         r.sr_spill_base < r.sr_spill_end ==>
+         r.sr_spill_end <= acc'.cpa_peak_spill_end`
+    (qspec_then `r` (drule_then assume_tac)) >>
+  `r.sr_spill_base < r.sr_spill_end` by decide_tac >>
+  first_x_assum drule >>
+  decide_tac
+QED
+
+Theorem generate_context_regions_access_peak_regular:
+  !fns acc acc' static.
+    generate_context_regions generate_fn_plan fns acc = SOME acc' /\
+    context_region_acc_wf static acc /\
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      acc.cpa_regions ==>
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\
+           off + 32 <= r.sr_spill_end /\
+           off + 32 <= acc'.cpa_peak_spill_end)
+      acc'.cpa_regions
+Proof
+  rpt strip_tac >>
+  irule generate_context_regions_access_peak_bound >>
+  simp[] >>
+  metis_tac[generate_fn_plan_alloc_mono]
+QED
+
+Theorem generate_context_regions_access_peak_fuel:
+  !fuel fns acc acc' static.
+    generate_context_regions (generate_fn_plan_fuel fuel) fns acc = SOME acc' /\
+    context_region_acc_wf static acc /\
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end)
+      acc.cpa_regions ==>
+    EVERY
+      (\r. !off. region_spill_access r off ==>
+           r.sr_spill_base <= off /\
+           off + 32 <= r.sr_spill_end /\
+           off + 32 <= acc'.cpa_peak_spill_end)
+      acc'.cpa_regions
+Proof
+  rpt strip_tac >>
+  irule generate_context_regions_access_peak_bound >>
+  simp[] >>
+  metis_tac[generate_fn_plan_fuel_alloc_mono]
+QED
 val _ = export_theory();
