@@ -1386,6 +1386,79 @@ Proof
   simp[ALOOKUP_ALL_DISTINCT_EL, MAP_ZIP, LENGTH_ZIP, EL_ZIP]
 QED
 
+Theorem flookup_fupdate_list_disjoint[local]:
+  !keys offsets sp op off.
+    LENGTH keys = LENGTH offsets /\
+    DISJOINT (set keys) (FDOM sp) /\
+    FLOOKUP sp op = SOME off ==>
+    FLOOKUP (sp |++ ZIP(keys,offsets)) op = SOME off
+Proof
+  rpt strip_tac >>
+  simp[flookup_fupdate_list] >>
+  `op IN FDOM sp` by
+    (CCONTR_TAC >> fs[FLOOKUP_DEF]) >>
+  `~MEM op keys` by
+    (fs[DISJOINT_DEF, EXTENSION] >> metis_tac[]) >>
+  `ALOOKUP (REVERSE (ZIP(keys,offsets))) op = NONE` by
+    simp[ALOOKUP_NONE, MAP_REVERSE, MAP_ZIP] >>
+  simp[]
+QED
+
+Theorem prefix_spill_wf_map_spill_from_layout[local]:
+  !keys offsets lo ps al'.
+    LENGTH keys = LENGTH offsets /\
+    keys = TAKE (LENGTH offsets) (REVERSE ps.ps_stack) /\
+    ALL_DISTINCT keys /\
+    DISJOINT (set keys) (FDOM ps.ps_spilled) /\
+    EVERY (\off. off < dimword(:256)) offsets /\
+    al'.sa_spill_base = ps.ps_alloc.sa_spill_base /\
+    spill_alloc_layout_wf al' (ps.ps_spilled |++ ZIP(keys,offsets)) ==>
+    prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) ps
+Proof
+  rpt strip_tac >>
+  qspecl_then [`ZIP(keys,offsets)`, `lo`, `ps`]
+    mp_tac prefix_spill_wf_map_spill_pairs >>
+  simp[MAP_ZIP] >>
+  disch_then irule >>
+  conj_tac
+  >- (gen_tac >> strip_tac >>
+      `k < LENGTH keys` by decide_tac >>
+      `LENGTH (TAKE (LENGTH offsets) (REVERSE ps.ps_stack)) = LENGTH offsets` by
+        metis_tac[] >>
+      `EL k (ZIP(TAKE (LENGTH offsets) (REVERSE ps.ps_stack),offsets)) =
+         (EL k (TAKE (LENGTH offsets) (REVERSE ps.ps_stack)), EL k offsets)` by
+        (irule EL_ZIP >> simp[]) >>
+      ASM_REWRITE_TAC[] >>
+      conj_tac >- (fs[EVERY_EL] >> metis_tac[]) >>
+      `FLOOKUP (ps.ps_spilled |++ ZIP(keys,offsets)) (EL k keys) =
+         SOME (EL k offsets)` by metis_tac[flookup_fupdate_list_el] >>
+      conj_tac
+      >- (fs[spill_alloc_layout_wf_def] >> metis_tac[]) >>
+      conj_tac
+      >- (rpt gen_tac >> strip_tac >>
+          `FLOOKUP (ps.ps_spilled |++ ZIP(keys,offsets)) op2 = SOME off2` by
+            metis_tac[flookup_fupdate_list_disjoint] >>
+          `op2 <> EL k keys` by
+            (fs[DISJOINT_DEF, EXTENSION] >>
+             `op2 IN FDOM ps.ps_spilled` by (CCONTR_TAC >> fs[FLOOKUP_DEF]) >>
+             metis_tac[MEM_EL]) >>
+          fs[spill_alloc_layout_wf_def] >> metis_tac[]) >>
+      rpt strip_tac >>
+      `j < LENGTH keys` by decide_tac >>
+      `FLOOKUP (ps.ps_spilled |++ ZIP(keys,offsets)) (EL j keys) =
+         SOME (EL j offsets)` by metis_tac[flookup_fupdate_list_el] >>
+      `j <> k` by decide_tac >>
+      `EL j keys <> EL k keys` by metis_tac[ALL_DISTINCT_EL_IMP] >>
+      `EL j (ZIP(TAKE (LENGTH offsets) (REVERSE ps.ps_stack),offsets)) =
+         (EL j (TAKE (LENGTH offsets) (REVERSE ps.ps_stack)), EL j offsets)` by
+        (irule EL_ZIP >> simp[]) >>
+      ASM_REWRITE_TAC[] >>
+      fs[spill_alloc_layout_wf_def] >> metis_tac[]) >>
+  conj_tac >- metis_tac[] >>
+  Cases_on `LENGTH offsets <= LENGTH ps.ps_stack` >> simp[] >>
+  fs[LENGTH_TAKE_EQ, LENGTH_REVERSE]
+QED
+
 (* spill_alloc_n: wf preservation through the allocation FOLDL *)
 Theorem spill_alloc_n_wf[local]:
   !items offs0 al0 sp prev_items.
@@ -2462,6 +2535,129 @@ Proof
   gvs[REVERSE_APPEND, MAP_APPEND, apply_prefix_ops_append] >>
   PURE_ONCE_REWRITE_TAC[GSYM apply_prefix_ops_append] >>
   simp[] >> first_assum ACCEPT_TAC
+QED
+
+Theorem prefix_spill_wf_front_after_initial_prefix[local]:
+  !xs ys source initial_fmp lo.
+    ys <> [] /\
+    prefix_spill_wf initial_fmp lo (FRONT (SOInitialFmp::(xs ++ ys))) source ==>
+    prefix_spill_wf initial_fmp lo xs
+      (apply_prefix_op initial_fmp lo SOInitialFmp source)
+Proof
+  rpt strip_tac >>
+  `FRONT (xs ++ ys) = xs ++ FRONT ys` by
+    metis_tac[FRONT_APPEND_NOT_NIL] >>
+  `xs ++ ys <> []` by simp[] >>
+  qpat_x_assum `prefix_spill_wf _ _ (FRONT _) _` mp_tac >>
+  rewrite_tac[FRONT_DEF] >> ASM_REWRITE_TAC[] >>
+  strip_tac >>
+  qpat_x_assum `prefix_spill_wf _ _ (SOInitialFmp::_) _` mp_tac >>
+  simp[Once prefix_spill_wf_def, prefix_spill_wf_append]
+QED
+
+Theorem do_swap_initial_fmp_front_transport:
+  !dist source target ops target' initial_fmp lo.
+    do_swap dist target = (ops,target') /\
+    dist < LENGTH target.ps_stack /\
+    spill_alloc_layout_wf target.ps_alloc target.ps_spilled /\
+    ALL_DISTINCT target.ps_stack /\
+    DISJOINT (set target.ps_stack) (FDOM target.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo (FRONT (SOInitialFmp::ops)) source ==>
+    prefix_spill_wf initial_fmp lo ops target
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist = 0`
+  >- gvs[do_swap_def, prefix_spill_wf_def] >>
+  Cases_on `dist <= 16`
+  >- gvs[do_swap_def, prefix_spill_wf_def, spill_op_wf_def] >>
+  `dist > 16` by decide_tac >>
+  mp_tac (Q.SPECL [`dist`, `target`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[] >>
+  `prefix_spill_wf initial_fmp lo
+     (MAP SOSpill (FST (spill_alloc_n [] target.ps_alloc
+       (top_n (dist + 1) target.ps_stack))))
+     (apply_prefix_op initial_fmp lo SOInitialFmp source)` by
+    (irule prefix_spill_wf_front_after_initial_prefix >>
+     qexists `
+       [SORestore (HD (FST (spill_alloc_n [] target.ps_alloc
+          (top_n (dist + 1) target.ps_stack))))] ++
+       MAP SORestore
+         (MAP (\idx. EL idx (FST (spill_alloc_n [] target.ps_alloc
+            (top_n (dist + 1) target.ps_stack))))
+           (REVERSE (GENLIST (\i. i + 1) (dist - 1)))) ++
+       [SORestore (EL dist (FST (spill_alloc_n [] target.ps_alloc
+          (top_n (dist + 1) target.ps_stack))))]` >>
+     simp[APPEND_ASSOC]) >>
+  qabbrev_tac `items = top_n (dist + 1) target.ps_stack` >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] target.ps_alloc items)` >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets)
+     (apply_prefix_op initial_fmp lo SOInitialFmp source)` by
+    metis_tac[] >>
+  `EVERY (\off. off < dimword(:256)) offsets` by
+    metis_tac[prefix_spill_wf_map_spill_bounds] >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+  `LENGTH offsets = LENGTH items` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  `ALL_DISTINCT (REVERSE items)` by
+    simp[Abbr `items`, top_n_def, ALL_DISTINCT_REVERSE, ALL_DISTINCT_TAKE] >>
+  `DISJOINT (set (REVERSE items)) (FDOM target.ps_spilled)` by
+    (fs[DISJOINT_DEF, EXTENSION] >> gen_tac >>
+     qpat_x_assum `!x. ~MEM x target.ps_stack \/ _` (qspec_then `x` mp_tac) >>
+     simp[Abbr `items`, top_n_def] >> metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  `REVERSE items = TAKE (LENGTH offsets) (REVERSE target.ps_stack)` by
+    simp[Abbr `items`, top_n_def] >>
+  `spill_alloc_layout_wf
+     (SND (spill_alloc_n [] target.ps_alloc items))
+     (target.ps_spilled |++ ZIP(REVERSE items,offsets))` by
+    (qspecl_then [`items`, `REVERSE items`, `target.ps_alloc`,
+       `target.ps_spilled`] mp_tac spill_alloc_n_layout_wf_keys >>
+     simp[Abbr `offsets`]) >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) target` by
+    (irule prefix_spill_wf_map_spill_from_layout >>
+     conj_tac >- simp[] >>
+     qexists `SND (spill_alloc_n [] target.ps_alloc items)` >>
+     qexists `REVERSE items` >>
+     simp[spill_alloc_n_spill_base]) >>
+  `FST (spill_alloc_n [] target.ps_alloc
+      (top_n (dist + 1) target.ps_stack)) <> []` by
+    (Cases_on `FST (spill_alloc_n [] target.ps_alloc
+       (top_n (dist + 1) target.ps_stack))` >> gvs[] >> decide_tac) >>
+  mp_tac (Q.SPECL [`dist`, `target`, `lo`]
+    do_swap_deep_restore_prefix_spill_wf) >>
+  simp[Abbr `items`, Abbr `offsets`] >> strip_tac >>
+  `([SORestore (HD (FST (spill_alloc_n [] target.ps_alloc
+        (top_n (dist + 1) target.ps_stack))))] ++
+      MAP SORestore
+        (MAP (\idx. EL idx (FST (spill_alloc_n [] target.ps_alloc
+          (top_n (dist + 1) target.ps_stack))))
+          (REVERSE (GENLIST (\i. i + 1) (dist - 1)))) ++
+      [SORestore (EL dist (FST (spill_alloc_n [] target.ps_alloc
+        (top_n (dist + 1) target.ps_stack))))]) =
+     MAP SORestore
+       (MAP (\idx. EL idx (FST (spill_alloc_n [] target.ps_alloc
+         (top_n (dist + 1) target.ps_stack))))
+         (REVERSE ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0])))` by
+    simp[REVERSE_APPEND, MAP_APPEND] >>
+  `MAP SOSpill (FST (spill_alloc_n [] target.ps_alloc
+       (top_n (dist + 1) target.ps_stack))) ++
+     [SORestore (HD (FST (spill_alloc_n [] target.ps_alloc
+       (top_n (dist + 1) target.ps_stack))))] ++
+     MAP SORestore
+       (MAP (\idx. EL idx (FST (spill_alloc_n [] target.ps_alloc
+         (top_n (dist + 1) target.ps_stack))))
+         (REVERSE (GENLIST (\i. i + 1) (dist - 1)))) ++
+     [SORestore (EL dist (FST (spill_alloc_n [] target.ps_alloc
+       (top_n (dist + 1) target.ps_stack))))] =
+     MAP SOSpill (FST (spill_alloc_n [] target.ps_alloc
+       (top_n (dist + 1) target.ps_stack))) ++
+     MAP SORestore
+       (MAP (\idx. EL idx (FST (spill_alloc_n [] target.ps_alloc
+         (top_n (dist + 1) target.ps_stack))))
+         (REVERSE ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0])))` by
+    metis_tac[APPEND_ASSOC] >>
+  pop_assum (fn th => PURE_ONCE_REWRITE_TAC[th]) >>
+  simp[prefix_spill_wf_append]
 QED
 
 
