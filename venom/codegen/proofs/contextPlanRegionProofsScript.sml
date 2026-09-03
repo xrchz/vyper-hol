@@ -151,4 +151,54 @@ Proof
   simp[MAP_SNOC]
 QED
 
+Theorem generate_context_regions_layout_invariant:
+  !gen.
+    (!fn base labels ops ps.
+       gen fn base labels = SOME (ops,ps) ==>
+       base <= ps.ps_alloc.sa_next_offset) ==>
+    !fns acc acc' static.
+      generate_context_regions gen fns acc = SOME acc' /\
+      context_region_acc_wf static acc ==>
+      context_region_acc_wf static acc' /\
+      acc.cpa_next_spill_base <= acc'.cpa_next_spill_base /\
+      MAP (\r. r.sr_fn_name) acc'.cpa_regions =
+        MAP (\r. r.sr_fn_name) acc.cpa_regions ++
+        MAP (\fn. fn.fn_name) fns
+Proof
+  metis_tac[generate_context_regions_layout_core,
+            generate_context_regions_names]
+QED
+
+Theorem generate_context_regions_layout_regular:
+  !fns acc acc' static.
+    generate_context_regions generate_fn_plan fns acc = SOME acc' /\
+    context_region_acc_wf static acc ==>
+    context_region_acc_wf static acc' /\
+    acc.cpa_next_spill_base <= acc'.cpa_next_spill_base /\
+    MAP (\r. r.sr_fn_name) acc'.cpa_regions =
+      MAP (\r. r.sr_fn_name) acc.cpa_regions ++
+      MAP (\fn. fn.fn_name) fns
+Proof
+  rpt gen_tac >> strip_tac >>
+  irule generate_context_regions_layout_invariant >>
+  simp[] >>
+  metis_tac[generate_fn_plan_alloc_mono]
+QED
+
+Theorem generate_context_regions_layout_fuel:
+  !fuel fns acc acc' static.
+    generate_context_regions (generate_fn_plan_fuel fuel) fns acc = SOME acc' /\
+    context_region_acc_wf static acc ==>
+    context_region_acc_wf static acc' /\
+    acc.cpa_next_spill_base <= acc'.cpa_next_spill_base /\
+    MAP (\r. r.sr_fn_name) acc'.cpa_regions =
+      MAP (\r. r.sr_fn_name) acc.cpa_regions ++
+      MAP (\fn. fn.fn_name) fns
+Proof
+  rpt gen_tac >> strip_tac >>
+  irule generate_context_regions_layout_invariant >>
+  simp[] >>
+  metis_tac[generate_fn_plan_fuel_alloc_mono]
+QED
+
 val _ = export_theory();
