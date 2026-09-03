@@ -27,6 +27,7 @@ Definition stack_op_wf_def:
     (0 < k /\ k <= 16 /\ k < n, n) /\
   stack_op_wf lo (SOSpill off) n = (1 <= n, n - 1) /\
   stack_op_wf lo (SORestore off) n = (T, n + 1) /\
+  stack_op_wf lo SOInitialFmp n = (T, n + 1) /\
   stack_op_wf lo (SOEmit name) n = (F, n) /\
   stack_op_wf lo (SOLabel lbl) n = (T, n) /\
   stack_op_wf lo (SOPushLabel lbl) n =
@@ -194,11 +195,11 @@ Theorem stack_op_exec_ok:
     is_prefix_op op /\
     stack_op_wf lo op n = (T, n') /\
     LENGTH st.as_stack = n /\
-    asm_block_at prog st.as_pc (exec_stack_op op) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (exec_stack_op op)) st =
+    asm_block_at prog st.as_pc (exec_stack_op initial_fmp op) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (exec_stack_op initial_fmp op)) st =
             AsmOK st' /\
           LENGTH st'.as_stack = n' /\
-          st'.as_pc = st.as_pc + LENGTH (exec_stack_op op) /\
+          st'.as_pc = st.as_pc + LENGTH (exec_stack_op initial_fmp op) /\
           st'.as_accounts = st.as_accounts /\
           st'.as_transient = st.as_transient /\
           st'.as_returndata = st.as_returndata /\
@@ -262,12 +263,12 @@ Theorem prefix_sim:
     prefix_wf lo n ops /\
     EVERY is_prefix_op ops /\
     LENGTH st.as_stack = n /\
-    asm_block_at prog st.as_pc (FLAT (MAP exec_stack_op ops)) ==>
+    asm_block_at prog st.as_pc (FLAT (MAP (exec_stack_op initial_fmp) ops)) ==>
     ?st'. asm_steps lo o2pc prog
-            (LENGTH (FLAT (MAP exec_stack_op ops))) st =
+            (LENGTH (FLAT (MAP (exec_stack_op initial_fmp) ops))) st =
             AsmOK st' /\
           LENGTH st'.as_stack = prefix_end_len lo n ops /\
-          st'.as_pc = st.as_pc + LENGTH (FLAT (MAP exec_stack_op ops)) /\
+          st'.as_pc = st.as_pc + LENGTH (FLAT (MAP (exec_stack_op initial_fmp) ops)) /\
           st'.as_accounts = st.as_accounts /\
           st'.as_transient = st.as_transient /\
           st'.as_returndata = st.as_returndata /\
@@ -277,22 +278,22 @@ Proof
   rpt gen_tac >> strip_tac >>
   gvs[prefix_wf_def, prefix_end_len_def, EVERY_DEF] >>
   pairarg_tac >> gvs[] >>
-  `asm_block_at prog st.as_pc (exec_stack_op h) /\
-   asm_block_at prog (st.as_pc + LENGTH (exec_stack_op h))
-     (FLAT (MAP exec_stack_op ops))` by
+  `asm_block_at prog st.as_pc (exec_stack_op initial_fmp h) /\
+   asm_block_at prog (st.as_pc + LENGTH (exec_stack_op initial_fmp h))
+     (FLAT (MAP (exec_stack_op initial_fmp) ops))` by
     fs[asm_block_at_append, FLAT, MAP] >>
   qspecl_then [`lo`, `o2pc`, `prog`, `h`, `st`,
     `LENGTH st.as_stack`, `n'`] mp_tac stack_op_exec_ok >>
   simp[] >> strip_tac >>
   `asm_steps lo o2pc prog
-     (LENGTH (exec_stack_op h) +
-      LENGTH (FLAT (MAP exec_stack_op ops))) st =
+     (LENGTH (exec_stack_op initial_fmp h) +
+      LENGTH (FLAT (MAP (exec_stack_op initial_fmp) ops))) st =
    asm_steps lo o2pc prog
-     (LENGTH (FLAT (MAP exec_stack_op ops))) st'` by
+     (LENGTH (FLAT (MAP (exec_stack_op initial_fmp) ops))) st'` by
     (irule asm_steps_add_ok >> fs[]) >>
   first_x_assum (qspecl_then [`lo`, `o2pc`, `prog`, `st'`] mp_tac) >>
-  `LENGTH (exec_stack_op h) + st.as_pc =
-   st.as_pc + LENGTH (exec_stack_op h)` by simp[] >>
+  `LENGTH (exec_stack_op initial_fmp h) + st.as_pc =
+   st.as_pc + LENGTH (exec_stack_op initial_fmp h)` by simp[] >>
   fs[] >> strip_tac >>
   rename1 `AsmOK sfin` >>
   qexists_tac `sfin` >>

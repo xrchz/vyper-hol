@@ -173,7 +173,7 @@ QED
 Theorem exec_prefix_step_preserves:
   !op inst lo o2pc (st:asm_state) st'.
     is_prefix_op op /\
-    MEM inst (exec_stack_op op) /\
+    MEM inst (exec_stack_op initial_fmp op) /\
     asm_step lo o2pc inst st = AsmOK st' ==> ^side_fields
 Proof
   Cases_on `op`
@@ -189,6 +189,7 @@ Proof
   (* SOSpill-MSt *)  >- (gvs[] \\ metis_tac[prefix_mstore_preserves])
   (* SORestore-Push*)>- (gvs[] \\ metis_tac[prefix_push_preserves])
   (* SORestore-ML *) >- (gvs[] \\ metis_tac[prefix_mload_preserves])
+  (* SOInitialFmp *)  >- (gvs[] \\ metis_tac[prefix_push_preserves])
   (* SOLabel *)      >- metis_tac[prefix_label_preserves]
   (* SOPushLabel *)  >- metis_tac[prefix_pushlabel_preserves]
   (* SOPushOfst *)   >- metis_tac[prefix_pushofst_preserves]
