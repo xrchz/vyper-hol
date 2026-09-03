@@ -827,6 +827,92 @@ Proof
   ]
 QED
 
+Theorem prefix_spill_wf_map_spill_pairs[local]:
+  !pairs lo ps.
+    MAP FST pairs = TAKE (LENGTH pairs) (REVERSE ps.ps_stack) /\
+    LENGTH pairs <= LENGTH ps.ps_stack /\
+    ALL_DISTINCT (MAP FST pairs) /\
+    (!k. k < LENGTH pairs ==>
+       SND (EL k pairs) < dimword(:256) /\
+       ps.ps_alloc.sa_spill_base <= SND (EL k pairs) /\
+       (!op2 off2. FLOOKUP ps.ps_spilled op2 = SOME off2 ==>
+          off2 + 32 <= SND (EL k pairs) \/
+          SND (EL k pairs) + 32 <= off2) /\
+       (!j. j < k ==>
+          SND (EL j pairs) + 32 <= SND (EL k pairs) \/
+          SND (EL k pairs) + 32 <= SND (EL j pairs))) ==>
+    prefix_spill_wf initial_fmp lo (MAP SOSpill (MAP SND pairs)) ps
+Proof
+  Induct_on `pairs` >> rpt gen_tac >> strip_tac
+  >- simp[prefix_spill_wf_def]
+  >> Cases_on `h` >> rename1 `(item0,off0)` >> gvs[MAP] >>
+  simp[prefix_spill_wf_def] >>
+  `ps.ps_stack <> []` by (Cases_on `ps.ps_stack` >> fs[]) >>
+  `item0 = stack_peek 0 ps.ps_stack` by
+    (qspecl_then [`LENGTH (pairs:(operand#num) list)`, `ps.ps_stack`]
+       mp_tac take_reverse_decompose >>
+     simp[stack_peek_last] >> strip_tac >> gvs[]) >>
+  conj_tac
+  >- (simp[spill_op_wf_def] >>
+      qpat_x_assum `!k. k < SUC _ ==> _` (qspec_then `0` mp_tac) >>
+      simp[] >> metis_tac[]) >>
+  first_x_assum irule >>
+  simp[apply_prefix_op_def, stack_pop_def, FRONT_BY_TAKE] >>
+  conj_tac
+  >- (qspecl_then [`stack_peek 0 ps.ps_stack`, `off0`,
+        `pairs:(operand#num) list`, `ps.ps_alloc.sa_spill_base`,
+        `ps.ps_spilled`] mp_tac spill_offset_transfer >>
+      (impl_tac >- (gvs[] >> metis_tac[])) >>
+      strip_tac >> gvs[wordsTheory.dimword_def]) >>
+  conj_tac
+  >- (`ALL_DISTINCT (stack_peek 0 ps.ps_stack ::
+          MAP FST (pairs:(operand#num) list))` by metis_tac[] >>
+      fs[ALL_DISTINCT]) >>
+  qspecl_then [`LENGTH (pairs:(operand#num) list)`, `ps.ps_stack`]
+    mp_tac take_reverse_decompose >>
+  simp[] >> strip_tac >> gvs[FRONT_BY_TAKE]
+QED
+
+
+Theorem do_swap_spill_lookup_flookup[local]:
+  !off sp.
+    (?op. FLOOKUP sp op = SOME off) ==>
+    FLOOKUP sp (spill_lookup off sp) = SOME off
+Proof
+  simp[spill_lookup_def] >> metis_tac[SELECT_AX]
+QED
+
+Theorem prefix_spill_wf_map_restore_lookup[local]:
+  !items offsets lo ps.
+    LENGTH items = LENGTH offsets /\
+    ALL_DISTINCT items /\
+    ALL_DISTINCT offsets /\
+    (!k. k < LENGTH items ==>
+       FLOOKUP ps.ps_spilled (EL k items) = SOME (EL k offsets) /\
+       EL k offsets < dimword(:256)) ==>
+    prefix_spill_wf initial_fmp lo (MAP SORestore offsets) ps
+Proof
+  Induct_on `items` >> rpt gen_tac >> strip_tac
+  >- (Cases_on `offsets` >> fs[prefix_spill_wf_def]) >>
+  Cases_on `offsets` >> fs[] >>
+  `FLOOKUP ps.ps_spilled h = SOME h' /\ h' < dimword(:256)` by
+    (qpat_x_assum `!k. k < SUC _ ==> _` (qspec_then `0` mp_tac) >>
+     simp[wordsTheory.dimword_def]) >>
+  `FLOOKUP ps.ps_spilled (spill_lookup h' ps.ps_spilled) = SOME h'` by
+    (irule do_swap_spill_lookup_flookup >> metis_tac[]) >>
+  simp[prefix_spill_wf_def] >>
+  conj_tac
+  >- (simp[spill_op_wf_def] >> metis_tac[]) >>
+  first_x_assum irule >>
+  simp[apply_prefix_op_def, LET_THM] >>
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `!k. k < SUC _ ==> _` (qspec_then `SUC k` mp_tac) >>
+  simp[DOMSUB_FLOOKUP_THM, wordsTheory.dimword_def] >>
+  strip_tac >>
+  spose_not_then assume_tac >> gvs[] >>
+  `MEM (EL k t) t` by metis_tac[MEM_EL] >>
+  metis_tac[]
+QED
 Theorem spill_n_sim[local]:
   !pairs lo o2pc prog ps vs st.
     venom_asm_rel lo ps vs st /\
@@ -2390,6 +2476,264 @@ Theorem headroom_allocator_trajectory[local]:
 Proof
   simp[LET_THM, headroom_alloc_def, headroom_stack_def,
        headroom_slots_def, spill_alloc_n_def, alloc_spill_slot_def] >>
-  `32 <= dimword(:256)` by (EVAL_TAC >> simp[wordsTheory.dimword_def]) >>
+  `32 <= dimword(:256)` by
+    (simp[wordsTheory.dimword_def] >>
+     CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
   decide_tac
+QED
+
+
+Theorem headroom_offsets_all_distinct[local]:
+  ALL_DISTINCT (FST (spill_alloc_n [] headroom_alloc headroom_stack))
+Proof
+  mp_tac headroom_allocator_trajectory >>
+  simp[LET_THM] >> strip_tac >>
+  ASM_REWRITE_TAC[] >>
+  simp[headroom_slots_def, wordsTheory.dimword_def] >>
+  CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac
+QED
+
+
+
+
+Theorem headroom_offsets_symbolic[local]:
+  FST (spill_alloc_n [] headroom_alloc headroom_stack) =
+    GENLIST (\k. 32 * (16 - k)) 17 ++ [dimword(:256) - 32]
+Proof
+  mp_tac headroom_allocator_trajectory >>
+  simp[LET_THM] >> strip_tac >>
+  ASM_REWRITE_TAC[] >>
+  simp[headroom_slots_def]
+QED
+
+
+Theorem headroom_offset_formula_props[local]:
+  let offsets = GENLIST (\k. 32 * (16 - k)) 17 ++ [dimword(:256) - 32]
+  in !k. k < LENGTH offsets ==>
+       EL k offsets < dimword(:256) /\
+       (!j. j < k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)
+Proof
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  `576 <= dimword(:256)` by
+    (simp[wordsTheory.dimword_def] >>
+     CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
+  gen_tac >> strip_tac >>
+  `k < 18` by fs[LENGTH_APPEND, LENGTH_GENLIST] >>
+  Cases_on `k < 17`
+  >- (conj_tac
+      >- (ASM_SIMP_TAC pure_ss [EL_APPEND1, LENGTH_GENLIST, EL_GENLIST] >>
+          decide_tac) >>
+      rpt strip_tac >>
+      `j < 17` by decide_tac >>
+      ASM_SIMP_TAC pure_ss [EL_APPEND1, LENGTH_GENLIST, EL_GENLIST] >>
+      decide_tac) >>
+  `k = 17` by decide_tac >>
+  qpat_x_assum `k = 17` SUBST_ALL_TAC >>
+  `EL 17 (GENLIST (\k. 32 * (16 - k)) 17 ++ [dimword(:256) - 32]) =
+     dimword(:256) - 32` by
+    simp[EL_APPEND2] >>
+  conj_tac
+  >- (ASM_REWRITE_TAC[] >> decide_tac) >>
+  rpt strip_tac >>
+  `j < 17` by decide_tac >>
+  ASM_SIMP_TAC pure_ss
+    [EL_APPEND1, LENGTH_GENLIST, EL_GENLIST] >>
+  decide_tac
+QED
+
+
+Theorem headroom_spill_pairs_preconditions[local]:
+  let offsets = FST (spill_alloc_n [] headroom_alloc headroom_stack);
+      pairs = ZIP (REVERSE headroom_stack, offsets)
+  in
+    MAP FST pairs = TAKE (LENGTH pairs) (REVERSE headroom_ps.ps_stack) /\
+    LENGTH pairs <= LENGTH headroom_ps.ps_stack /\
+    ALL_DISTINCT (MAP FST pairs) /\
+    (!k. k < LENGTH pairs ==>
+       SND (EL k pairs) < dimword(:256) /\
+       headroom_ps.ps_alloc.sa_spill_base <= SND (EL k pairs) /\
+       (!op2 off2. FLOOKUP headroom_ps.ps_spilled op2 = SOME off2 ==>
+          off2 + 32 <= SND (EL k pairs) \/ SND (EL k pairs) + 32 <= off2) /\
+       (!j. j < k ==>
+          SND (EL j pairs) + 32 <= SND (EL k pairs) \/
+          SND (EL k pairs) + 32 <= SND (EL j pairs)))
+Proof
+  rewrite_tac[headroom_offsets_symbolic, LET_THM] >> BETA_TAC >>
+  qabbrev_tac
+    `offsets = GENLIST (\k. 32 * (16 - k)) 17 ++ [dimword(:256) - 32]` >>
+  `LENGTH offsets = 18` by simp[Abbr `offsets`] >>
+  `LENGTH (REVERSE headroom_stack) = LENGTH offsets` by
+    simp[headroom_stack_def] >>
+  `!k. k < LENGTH offsets ==>
+       EL k offsets < dimword(:256) /\
+       (!j. j < k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)` by
+    (mp_tac headroom_offset_formula_props >>
+     rewrite_tac[LET_THM] >> BETA_TAC >>
+     simp[Abbr `offsets`]) >>
+  conj_tac
+  >- simp[MAP_ZIP, headroom_ps_def, headroom_stack_def] >>
+  conj_tac
+  >- simp[LENGTH_ZIP, headroom_ps_def, headroom_stack_def] >>
+  conj_tac
+  >- simp[MAP_ZIP, headroom_ps_def, headroom_stack_def] >>
+  gen_tac >> strip_tac >>
+  `k < LENGTH offsets` by fs[LENGTH_ZIP] >>
+  qpat_x_assum `!k. k < LENGTH offsets ==> _`
+    (qspec_then `k` mp_tac) >>
+  (impl_tac >- simp[]) >> strip_tac >>
+  `EL k (ZIP (REVERSE headroom_stack,offsets)) =
+     (EL k (REVERSE headroom_stack), EL k offsets)` by
+    (irule EL_ZIP >> simp[]) >>
+  conj_tac
+  >- ASM_REWRITE_TAC[] >>
+  conj_tac
+  >- simp[headroom_ps_def, headroom_alloc_def, init_plan_state_def] >>
+  conj_tac
+  >- simp[headroom_ps_def, init_plan_state_def] >>
+  gen_tac >> strip_tac >>
+  `j < LENGTH offsets` by decide_tac >>
+  `EL j (ZIP (REVERSE headroom_stack,offsets)) =
+     (EL j (REVERSE headroom_stack), EL j offsets)` by
+    (irule EL_ZIP >> simp[]) >>
+  qpat_x_assum `!j. j < k ==> _` (qspec_then `j` mp_tac) >>
+  ASM_REWRITE_TAC[] >> simp[]
+QED
+
+Theorem headroom_restore_phase[local]:
+  let offsets = FST (spill_alloc_n [] headroom_alloc headroom_stack);
+      desired_rev = REVERSE ([17] ++ GENLIST (\i. i + 1) 16 ++ [0]);
+      post = apply_prefix_ops initial_fmp FEMPTY (MAP SOSpill offsets) headroom_ps
+  in prefix_spill_wf initial_fmp FEMPTY
+       (MAP SORestore (MAP (\idx. EL idx offsets) desired_rev)) post
+Proof
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] headroom_alloc headroom_stack)` >>
+  qabbrev_tac `desired_rev = REVERSE ([17] ++ GENLIST (\i. i + 1) 16 ++ [0])` >>
+  qabbrev_tac `items = MAP (\idx. EL idx (REVERSE headroom_stack)) desired_rev` >>
+  qabbrev_tac `restore_offsets = MAP (\idx. EL idx offsets) desired_rev` >>
+  qabbrev_tac `post = apply_prefix_ops initial_fmp FEMPTY (MAP SOSpill offsets) headroom_ps` >>
+  `LENGTH offsets = 18` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length, headroom_stack_def] >>
+  `LENGTH desired_rev = 18` by
+    simp[Abbr `desired_rev`] >>
+  `ALL_DISTINCT desired_rev` by
+    (simp[Abbr `desired_rev`] >>
+     irule desired_indices_all_distinct >> decide_tac) >>
+  `EVERY (\i. i < 18) desired_rev` by
+    (simp[EVERY_EL] >> rpt strip_tac >>
+     qspecl_then [`18`, `n`] mp_tac desired_rev_el_bound >>
+     simp[Abbr `desired_rev`]) >>
+  `ALL_DISTINCT items` by
+    (simp[Abbr `items`] >>
+     irule all_distinct_map_el >>
+     simp[headroom_stack_def, ALL_DISTINCT_REVERSE] >>
+     ASM_REWRITE_TAC[] >>
+     fs[EVERY_EL]) >>
+  `ALL_DISTINCT restore_offsets` by
+    (simp[Abbr `restore_offsets`] >>
+     irule all_distinct_map_el >>
+     simp[Abbr `offsets`, headroom_offsets_all_distinct] >>
+     fs[EVERY_EL]) >>
+  `post.ps_spilled = FEMPTY |++ ZIP (REVERSE headroom_stack,offsets)` by
+    (simp[Abbr `post`] >>
+     qspecl_then [`offsets`, `FEMPTY`, `headroom_ps`]
+       mp_tac apply_spill_ops_spilled >>
+     (impl_tac >- simp[headroom_ps_def, headroom_stack_def]) >>
+     strip_tac >> ASM_REWRITE_TAC[] >>
+     simp[headroom_ps_def, init_plan_state_def, headroom_stack_def]) >>
+  qspecl_then [`items`, `restore_offsets`, `FEMPTY`, `post`]
+    mp_tac prefix_spill_wf_map_restore_lookup >>
+  (impl_tac >-
+    (rpt conj_tac
+     >- simp[Abbr `items`, Abbr `restore_offsets`]
+     >- simp[]
+     >- simp[] >>
+     gen_tac >> strip_tac >>
+     `k < LENGTH desired_rev` by fs[Abbr `items`] >>
+     simp[Abbr `items`, Abbr `restore_offsets`, EL_MAP] >>
+     conj_tac
+     >- (ASM_REWRITE_TAC[] >>
+         irule flookup_fupdate_list_el >>
+         simp[headroom_stack_def, ALL_DISTINCT_REVERSE] >>
+         qspecl_then [`18`, `k`] mp_tac desired_rev_el_bound >>
+         simp[Abbr `desired_rev`]) >>
+     mp_tac headroom_offset_formula_props >>
+     rewrite_tac[LET_THM] >> BETA_TAC >>
+     simp[GSYM headroom_offsets_symbolic, Abbr `offsets`] >>
+     disch_then (qspec_then `EL k desired_rev` mp_tac) >>
+     impl_tac
+     >- (qspecl_then [`18`, `k`] mp_tac desired_rev_el_bound >>
+         simp[Abbr `desired_rev`]) >>
+     simp[])) >>
+  simp[Abbr `items`, Abbr `restore_offsets`, Abbr `post`]
+QED
+
+
+
+Theorem do_swap_headroom_witness_facts:
+  prefix_spill_wf initial_fmp FEMPTY (FST (do_swap 17 headroom_ps)) headroom_ps /\
+  spill_alloc_wf headroom_ps.ps_alloc headroom_ps.ps_spilled /\
+  (SND (do_swap 17 headroom_ps)).ps_alloc.sa_next_offset = dimword(:256)
+Proof
+  conj_tac
+  >- (qabbrev_tac `offsets = FST (spill_alloc_n [] headroom_alloc headroom_stack)` >>
+      qabbrev_tac `desired_rev = REVERSE ([17] ++ GENLIST (\i. i + 1) 16 ++ [0])` >>
+      `FST (do_swap 17 headroom_ps) =
+         MAP SOSpill offsets ++
+         MAP SORestore (MAP (\idx. EL idx offsets) desired_rev)` by
+        (mp_tac (Q.SPECL [`17`, `headroom_ps`] do_swap_big_decompose) >>
+         simp[LET_THM, headroom_ps_def, headroom_stack_def, top_n_def,
+              Abbr `offsets`, Abbr `desired_rev`]) >>
+      `offsets = REVERSE headroom_slots ++ [dimword(:256) - 32]` by
+        (mp_tac headroom_allocator_trajectory >>
+         simp[LET_THM, Abbr `offsets`]) >>
+      ASM_REWRITE_TAC[prefix_spill_wf_append] >>
+      conj_tac
+      >- (`MAP SND (ZIP (REVERSE headroom_stack,offsets)) = offsets` by
+            (irule (cj 2 MAP_ZIP) >>
+             simp[headroom_stack_def, Abbr `offsets`,
+                  spill_alloc_n_offsets_length]) >>
+          qspecl_then
+            [`ZIP (REVERSE headroom_stack,offsets)`, `FEMPTY`, `headroom_ps`]
+            mp_tac prefix_spill_wf_map_spill_pairs >>
+          (impl_tac >-
+            (mp_tac headroom_spill_pairs_preconditions >>
+             rewrite_tac[LET_THM] >> BETA_TAC >>
+             simp[Abbr `offsets`])) >>
+          ASM_REWRITE_TAC[]) >>
+      mp_tac headroom_restore_phase >>
+      rewrite_tac[LET_THM] >> BETA_TAC >>
+      simp[Abbr `offsets`, Abbr `desired_rev`])
+  >> conj_tac
+  >- (`32 <= dimword(:256)` by
+        (simp[wordsTheory.dimword_def] >>
+         CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
+      simp[headroom_ps_def, headroom_alloc_def, init_plan_state_def,
+           spill_alloc_wf_def] >>
+      `headroom_slots = GENLIST (\k. 32 * k) 17` by
+        simp[headroom_slots_def] >>
+      ASM_REWRITE_TAC[] >>
+      conj_tac
+      >- (gen_tac >> simp[MEM_GENLIST] >> decide_tac) >>
+      conj_tac
+      >- (simp[ALL_DISTINCT_GENLIST] >> decide_tac) >>
+      rpt gen_tac >> strip_tac >>
+      gvs[LENGTH_GENLIST] >>
+      ASM_SIMP_TAC pure_ss [EL_GENLIST] >>
+      decide_tac)
+  >> mp_tac (Q.SPECL [`17`, `headroom_ps`] do_swap_big_decompose) >>
+  (impl_tac >- simp[headroom_ps_def, headroom_stack_def]) >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
+  gvs[foldl_free_next_offset] >>
+  `headroom_ps.ps_alloc = headroom_alloc` by
+    simp[headroom_ps_def] >>
+  `top_n 18 headroom_ps.ps_stack = headroom_stack` by
+    simp[headroom_ps_def, top_n_def, headroom_stack_def] >>
+  ASM_REWRITE_TAC[] >>
+  mp_tac headroom_allocator_trajectory >>
+  simp[LET_THM]
 QED
