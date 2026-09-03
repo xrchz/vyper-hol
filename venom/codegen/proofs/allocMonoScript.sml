@@ -1174,3 +1174,22 @@ Proof
     strip_tac >> gvs[] >> decide_tac
   )
 QED
+
+
+(* Public boundary for function-plan allocation from an assigned spill base. *)
+Theorem generate_fn_plan_alloc_mono:
+  !fn spill_base lbl_ctr ops ps_final.
+    generate_fn_plan fn spill_base lbl_ctr = SOME (ops, ps_final) ==>
+    ps_final.ps_alloc.sa_spill_base = spill_base /\
+    spill_base <= ps_final.ps_alloc.sa_next_offset
+Proof
+  rpt gen_tac >>
+  Cases_on `fn_entry_label fn`
+  >- (simp[generate_fn_plan_def, init_plan_state_def, init_spill_alloc_def] >>
+      rpt strip_tac >> gvs[])
+  >> simp[generate_fn_plan_def] >>
+  every_case_tac >> gvs[] >>
+  strip_tac >> gvs[] >>
+  imp_res_tac (cj 1 fn_plan_aux_alloc_mono) >>
+  gvs[init_plan_state_def, init_spill_alloc_def]
+QED
