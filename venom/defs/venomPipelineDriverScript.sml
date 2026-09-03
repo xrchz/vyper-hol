@@ -1321,6 +1321,39 @@ Proof
   simp [task041_o1_fold, task041_walked_transaction_facts]
 QED
 
+
+Theorem task041_pruning_walked_transaction_facts:
+  ir_supply_covers_unit (init_ir_supply task041_pruning_unit)
+    task041_raw_unit /\
+  replace_unique_function "main" task041_sue_function
+    task041_raw_unit.cu_context.ctx_functions = SOME [task041_sue_function] /\
+  (task041_raw_unit with cu_context :=
+     task041_raw_unit.cu_context with ctx_functions := [task041_sue_function]) =
+    task041_walked_unit /\
+  apply_unit_label_map [] task041_walked_unit = SOME task041_walked_unit /\
+  unit_labels_wf task041_walked_unit /\
+  list_subset (unit_invoke_targets task041_walked_unit)
+    (unit_invoke_targets task041_raw_unit) /\
+  ir_supply_covers_unit task041_pruning_sue_supply task041_walked_unit /\
+  unit_global_inst_ids_distinct task041_walked_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_o1_function_transaction:
+  run_configured_fn_passes execute_configured_fn_pass task039_policy
+    o1_fn_passes "main" task041_raw_unit
+    (init_ir_supply task041_pruning_unit) =
+  SOME (task041_walked_unit,task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  pure_rewrite_tac [task041_pruning_walked_transaction_facts,
+                    task041_raw_structure_facts] >>
+  simp [task041_pruning_o1_fold,
+        task041_pruning_walked_transaction_facts]
+QED
+
 Theorem task041_pruning_supply_differs:
   init_ir_supply task041_pruning_unit <> init_ir_supply task041_raw_unit
 Proof
@@ -1399,6 +1432,19 @@ Proof
   simp [run_callee_first_def, run_named_fn_schedules_def,
         task041_pruning_reduces_to_raw, task041_o1_function_transaction]
 QED
+Theorem task041_pruning_o1_walk:
+  run_callee_first task039_policy o1_fn_passes
+    (fcg_postorder (fcg_analyze task041_pruning_unit.cu_context) "main")
+    (prune_unit_fcg_unreachable task041_pruning_unit
+      (fcg_analyze task041_pruning_unit.cu_context))
+    (init_ir_supply task041_pruning_unit) =
+  SOME (task041_walked_unit,task041_pruning_sue_supply)
+Proof
+  simp [run_callee_first_def, run_named_fn_schedules_def,
+        task041_pruning_reduces_to_raw,
+        task041_pruning_o1_function_transaction]
+QED
+
 
 
 Theorem task041_raw_unit_wf:
