@@ -51,6 +51,7 @@ Datatype:
   | SOSpill num                     (* spill TOS to memory offset *)
   | SORestore num                   (* restore from memory offset to TOS *)
   | SOEmit string                   (* EVM opcode name *)
+  | SOInitialFmp                    (* deferred context-wide initial FMP *)
   | SOLabel string                  (* JUMPDEST label *)
   | SOPushLabel string              (* push label address *)
   | SOPushOfst string num           (* push (label + offset) *)

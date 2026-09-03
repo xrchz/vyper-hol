@@ -107,6 +107,7 @@ Definition stack_op_in_spill_region_def:
     case op of
       SOSpill off => base <= off /\ off + 32 <= spill_end
     | SORestore off => base <= off /\ off + 32 <= spill_end
+    | SOInitialFmp => T
     | _ => T
 End
 
