@@ -12,7 +12,7 @@
 
 Theory stackPlanGen
 Ancestors
-  stackPlanOps livenessDefs cfgDefs venomWf passSharedDefs
+  stackPlanOps livenessDefs cfgDefs venomWf passSharedDefs staticLayoutDefs
   list relation pair pred_set arithmetic
 
 (* =========================================================================
@@ -899,40 +899,94 @@ Definition revert_postamble_def:
     [SOLabel "revert"; SOPush (Lit 0w); SOEmit "DUP1"; SOEmit "REVERT"]
 End
 
-Definition generate_context_plan_def:
-  generate_context_plan ctx spill_base_map =
-    let result =
-      FOLDL (λacc fn.
-        case acc of
-          NONE => NONE
-        | SOME (ops, lbl_ctr) =>
-          let spill_base = case FLOOKUP spill_base_map fn.fn_name of
-            SOME v => v | NONE => 0 in
-          case generate_fn_plan fn spill_base lbl_ctr of
-            NONE => NONE
-          | SOME (fn_ops, ps) =>
-              SOME (ops ++ fn_ops, ps.ps_label_counter))
-      (SOME ([] : stack_op list, 0)) ctx.ctx_functions in
-    case result of
+Definition collect_fn_eoms_def:
+  (collect_fn_eoms [] = SOME ([] : num list)) /\
+  (collect_fn_eoms (fn::fns) =
+    case fn.fn_eom of
       NONE => NONE
-    | SOME (all_ops, _) => SOME (all_ops ++ revert_postamble)
+    | SOME eom =>
+        case collect_fn_eoms fns of
+          NONE => NONE
+        | SOME eoms => SOME (eom::eoms))
+End
+
+Definition max_live_eom_def:
+  max_live_eom ctx =
+    if ~reserved_intervals_wf ctx.ctx_global_reserved then NONE else
+    case global_reserved_end ctx.ctx_global_reserved 0 of
+      NONE => NONE
+    | SOME global_end =>
+        OPTION_MAP (FOLDL MAX global_end)
+                   (collect_fn_eoms ctx.ctx_functions)
+End
+
+Definition generate_context_regions_def:
+  (generate_context_regions gen [] acc = SOME acc) /\
+  (generate_context_regions gen (fn::fns) acc =
+    let spill_base = acc.cpa_next_spill_base in
+    case gen fn spill_base acc.cpa_label_counter of
+      NONE => NONE
+    | SOME (fn_ops,ps) =>
+        let spill_end = ps.ps_alloc.sa_next_offset in
+        let region = <|
+          sr_fn_name := fn.fn_name;
+          sr_spill_base := spill_base;
+          sr_spill_end := spill_end;
+          sr_plan := fn_ops
+        |> in
+        let peak =
+          if spill_base < spill_end then
+            MAX acc.cpa_peak_spill_end spill_end
+          else acc.cpa_peak_spill_end in
+        generate_context_regions gen fns
+          (acc with <|
+            cpa_regions := SNOC region acc.cpa_regions;
+            cpa_label_counter := ps.ps_label_counter;
+            cpa_next_spill_base := spill_end;
+            cpa_peak_spill_end := peak
+          |>))
+End
+
+Definition finish_context_plan_def:
+  finish_context_plan max_eom acc = <|
+    cp_regions := acc.cpa_regions;
+    cp_max_static_eom := max_eom;
+    cp_peak_spill_end := acc.cpa_peak_spill_end;
+    cp_initial_fmp := ceil32
+      (MAX max_eom acc.cpa_peak_spill_end)
+  |>
+End
+
+Definition generate_context_plan_with_def:
+  generate_context_plan_with gen ctx =
+    case max_live_eom ctx of
+      NONE => NONE
+    | SOME max_eom =>
+        let init = <|
+          cpa_regions := [];
+          cpa_label_counter := 0;
+          cpa_next_spill_base := max_eom;
+          cpa_peak_spill_end := 0
+        |> in
+        case generate_context_regions gen ctx.ctx_functions init of
+          NONE => NONE
+        | SOME acc =>
+            let cp = finish_context_plan max_eom acc in
+            if cp.cp_initial_fmp < dimword (:256)
+            then SOME cp else NONE
+End
+
+Definition generate_context_plan_def:
+  generate_context_plan ctx =
+    generate_context_plan_with generate_fn_plan ctx
 End
 
 Definition generate_context_plan_fuel_def:
-  generate_context_plan_fuel fuel ctx spill_base_map =
-    let result =
-      FOLDL (λacc fn.
-        case acc of
-          NONE => NONE
-        | SOME (ops, lbl_ctr) =>
-          let spill_base = case FLOOKUP spill_base_map fn.fn_name of
-            SOME v => v | NONE => 0 in
-          case generate_fn_plan_fuel fuel fn spill_base lbl_ctr of
-            NONE => NONE
-          | SOME (fn_ops, ps) =>
-              SOME (ops ++ fn_ops, ps.ps_label_counter))
-      (SOME ([] : stack_op list, 0)) ctx.ctx_functions in
-    case result of
-      NONE => NONE
-    | SOME (all_ops, _) => SOME (all_ops ++ revert_postamble)
+  generate_context_plan_fuel fuel ctx =
+    generate_context_plan_with (generate_fn_plan_fuel fuel) ctx
+End
+
+Definition context_plan_ops_def:
+  context_plan_ops cp =
+    FLAT (MAP (\r. r.sr_plan) cp.cp_regions) ++ revert_postamble
 End
