@@ -12,7 +12,7 @@ Ancestors
   (* cfg *)
   cfgAnalysis
   (* fcg: public executable + postorder/correctness interface *)
-  fcgAnalysisProps
+  fcgAnalysis
   (* dataflow framework *)
   dataflowAnalysis
   (* liveness *)
