@@ -1803,7 +1803,7 @@ QED
 
 (* Project the pairwise spilled-offset separation clause without unfolding the
    full durable-layout invariant in large consumer goals. *)
-Theorem spill_alloc_layout_wf_spilled_separated[local]:
+Theorem spill_alloc_layout_wf_spilled_separated:
   !al spilled.
     spill_alloc_layout_wf al spilled ==>
     !op1 off1 op2 off2.
@@ -3377,7 +3377,7 @@ QED
 
 (* Direct do_swap and prefix interpretation agree on exactly the fields
    observed by venom_asm_rel. *)
-Theorem do_swap_apply_relevant_align_layout[local]:
+Theorem do_swap_apply_relevant_align_layout:
   !dist ps lo.
     dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
