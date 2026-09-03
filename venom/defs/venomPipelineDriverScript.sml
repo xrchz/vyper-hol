@@ -1304,6 +1304,51 @@ Proof
   EVAL_TAC
 QED
 
+Theorem task041_pruning_dret_execute:
+  execute_configured_fn_pass task039_policy
+    (CFP_Simple VP_DretDesugar) task041_raw_unit
+    (init_ir_supply task041_pruning_unit) (task041_raw_function "main" 1) =
+  SOME <|fpo_function := task041_raw_function "main" 1;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_pruning_unit|>
+Proof
+  simp [dret_desugar_function_identity, task041_raw_no_dret]
+QED
+
+Theorem task041_pruning_dret_guard_facts:
+  fn_pass_effects_hold VP_DretDesugar (task041_raw_function "main" 1)
+    <|fpo_function := task041_raw_function "main" 1;
+      fpo_label_map := [];
+      fpo_supply := init_ir_supply task041_pruning_unit|> /\
+  introduces_no_invoke_edges (task041_raw_function "main" 1)
+    (task041_raw_function "main" 1) /\
+  ir_supply_extends (init_ir_supply task041_pruning_unit)
+    (init_ir_supply task041_pruning_unit) /\
+  ir_supply_covers_fn (init_ir_supply task041_pruning_unit)
+    (task041_raw_function "main" 1) /\
+  ir_supply_covers_unit (init_ir_supply task041_pruning_unit)
+    task041_raw_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_schedule_fold:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    (CFP_Simple VP_DretDesugar :: o1_fn_passes) task041_raw_unit
+    (init_ir_supply task041_pruning_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  SIMP_TAC pure_ss [] >>
+  once_rewrite_tac [task041_pruning_dret_execute] >>
+  simp [fn_pass_tag_def, dret_desugar_function_identity,
+        task041_raw_no_dret, task041_pruning_dret_guard_facts,
+        task041_pruning_o1_fold]
+QED
+
 Definition task041_walked_unit_def:
   task041_walked_unit =
     task041_raw_unit with cu_context :=
@@ -1368,6 +1413,20 @@ Proof
   pure_rewrite_tac [task041_pruning_walked_transaction_facts,
                     task041_raw_structure_facts] >>
   simp [task041_pruning_o1_fold,
+        task041_pruning_walked_transaction_facts]
+QED
+
+Theorem task041_pruning_schedule_function_transaction:
+  run_configured_fn_passes execute_configured_fn_pass task039_policy
+    task041_pruning_spec.ps_fn_passes "main" task041_raw_unit
+    (init_ir_supply task041_pruning_unit) =
+  SOME (task041_walked_unit,task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  pure_rewrite_tac [task041_pruning_walked_transaction_facts,
+                    task041_raw_structure_facts] >>
+  simp [task041_pruning_spec_def, task041_pruning_schedule_fold,
         task041_pruning_walked_transaction_facts]
 QED
 
@@ -1460,6 +1519,19 @@ Proof
   simp [run_callee_first_def, run_named_fn_schedules_def,
         task041_pruning_reduces_to_raw,
         task041_pruning_o1_function_transaction]
+QED
+
+Theorem task041_pruning_schedule_walk:
+  run_callee_first task039_policy task041_pruning_spec.ps_fn_passes
+    (fcg_postorder (fcg_analyze task041_pruning_unit.cu_context) "main")
+    (prune_unit_fcg_unreachable task041_pruning_unit
+      (fcg_analyze task041_pruning_unit.cu_context))
+    (init_ir_supply task041_pruning_unit) =
+  SOME (task041_walked_unit,task041_pruning_sue_supply)
+Proof
+  simp [run_callee_first_def, run_named_fn_schedules_def,
+        task041_pruning_reduces_to_raw,
+        task041_pruning_schedule_function_transaction]
 QED
 
 
