@@ -20,7 +20,7 @@ Theory emitSim
 Ancestors
   codegenRel asmSem planExec stackPlanGen stackPlanTypes stackModel
   venomExecSemantics venomState venomInst
-  instSimHelpers stackOpSim blockSimHelpers
+  instSimHelpers stackOpSim blockSimHelpers asmToBytecodeProofs
   list rich_list finite_map
 Libs
   BasicProvers
@@ -113,6 +113,67 @@ Proof
   `w2n sz < dimword (:256)` by simp[wordsTheory.w2n_lt] >>
   `dimword (:256) - 32 < w2n sz` by decide_tac >>
   metis_tac[bump_round_mod_wrap_zero, ceil32_wrap_mod_zero]
+QED
+
+Theorem word_of_bytes_encode_num_bytes_256[local]:
+  !n. n < dimword (:256) ==>
+      word_of_bytes F (0w:bytes32) (REVERSE (encode_num_bytes n)) = n2w n
+Proof
+  rpt strip_tac >>
+  mp_tac (INST_TYPE [alpha |-> ``:256``]
+            asmToBytecodeProofsTheory.word_of_bytes_encode_roundtrip) >>
+  simp[dimindex_256, dividesTheory.divides_def] >>
+  disch_then (qspec_then `(n2w n):bytes32` mp_tac) >>
+  simp[wordsTheory.w2n_n2w]
+QED
+
+Theorem bump_emit_ops_asm_trace:
+  !initial_fmp lo o2pc prog as sz base_val rest.
+    asm_block_at prog as.as_pc (execute_plan initial_fmp bump_emit_ops) /\
+    as.as_stack = sz :: base_val :: rest ==>
+    asm_steps lo o2pc prog 8 as =
+      AsmOK
+        (as with <| as_stack := base_val + bump_round_word sz :: base_val :: rest;
+                    as_pc := as.as_pc + 8 |>)
+Proof
+  rpt strip_tac >>
+  fs[bump_emit_ops_def, execute_plan_def, exec_stack_op_def,
+     asm_block_at_cons] >>
+  `31 MOD dimword (:256) = 31` by
+    (irule arithmeticTheory.LESS_MOD >> simp[wordsTheory.dimword_def]) >>
+  `5 MOD dimword (:256) = 5` by
+    (irule arithmeticTheory.LESS_MOD >> simp[wordsTheory.dimword_def]) >>
+  `8 = SUC 7` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_next_def,
+       word_of_bytes_encode_num_bytes_256] >>
+  `7 = SUC 6` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_step_op_def,
+       asm_step_arith_def, asm_binop_def, asm_next_def] >>
+  `6 = SUC 5` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_next_def,
+       word_of_bytes_encode_num_bytes_256] >>
+  `5 = SUC 4` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_step_op_def,
+       asm_step_arith_def, asm_step_compare_def, asm_step_bitwise_def,
+       asm_binop_def, asm_next_def] >>
+  `4 = SUC 3` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_next_def,
+       word_of_bytes_encode_num_bytes_256] >>
+  `3 = SUC 2` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_step_op_def,
+       asm_step_arith_def, asm_step_compare_def, asm_step_bitwise_def,
+       asm_binop_def, asm_next_def] >>
+  `2 = SUC 1` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_step_def, asm_step_op_def,
+       asm_step_arith_def, asm_step_compare_def, asm_step_bitwise_def,
+       asm_step_memory_def, asm_step_control_def, asm_step_extcall_def,
+       asm_step_copy_def, asm_step_context_def, asm_dup_def, asm_next_def,
+       dup_table_def, dup_name_def, swap_table_def, log_table_def] >>
+  `1 = SUC 0` by decide_tac >> pop_assum SUBST1_TAC >>
+  simp[Once asm_steps_def, asm_steps_def, asm_step_def, asm_step_op_def,
+       asm_step_arith_def, asm_binop_def, asm_next_def,
+       bump_round_word_def, word_of_bytes_encode_num_bytes_256,
+       wordsTheory.dimword_def, wordsTheory.WORD_ADD_COMM]
 QED
 
 (* =========================================================================
