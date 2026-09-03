@@ -1,5 +1,5 @@
 (*
- * Venom IR Optimization Pipeline Definition
+ * Venom IR Optimization Pipeline Compatibility Rollup
  *
  * Upstream: vyperlang/vyper@a7f7bf133 (split algebraic/affine passes)
  *
@@ -38,7 +38,8 @@
 
 Theory venomPipeline
 Ancestors
-  venomPipelineDriver
+  (* configured checked driver and its structural boundary properties *)
+  venomPipelineDriverProps
   phiTransform
   assignElimDefs
   rtaDefs
