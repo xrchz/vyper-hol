@@ -71,4 +71,78 @@ Proof
   strip_tac >> gvs[]
 QED
 
+
+Theorem generate_context_plan_max_live_eom[local]:
+  generate_context_plan ctx = SOME cp ==>
+  max_live_eom ctx = SOME cp.cp_max_static_eom
+Proof
+  simp[generate_context_plan_def, generate_context_plan_with_def] >>
+  Cases_on `max_live_eom ctx`
+  >- simp[] >>
+  simp[] >>
+  Cases_on `generate_context_regions generate_fn_plan ctx.ctx_functions
+    <|cpa_regions := []; cpa_label_counter := 0;
+      cpa_next_spill_base := x; cpa_peak_spill_end := 0|>`
+  >- simp[] >>
+  simp[finish_context_plan_def] >>
+  strip_tac >> gvs[]
+QED
+
+Theorem spill_regions_static_disjoint:
+  generate_context_plan ctx = SOME cp /\
+  MEM fn ctx.ctx_functions /\ fn.fn_eom = SOME eom /\
+  MEM r cp.cp_regions ==>
+  eom <= r.sr_spill_base
+Proof
+  rpt strip_tac >>
+  drule generate_context_plan_max_live_eom >>
+  disch_then (fn th => assume_tac th) >>
+  drule_all max_live_eom_bound >>
+  drule generate_context_plan_layout_wf >>
+  simp[context_plan_layout_wf_def, EVERY_MEM] >>
+  metis_tac[arithmeticTheory.LESS_EQ_TRANS]
+QED
+
+Theorem spill_regions_global_disjoint:
+  generate_context_plan ctx = SOME cp /\
+  MEM ((pos : num),(sz : num)) ctx.ctx_global_reserved /\
+  MEM r cp.cp_regions ==>
+  pos + sz <= r.sr_spill_base
+Proof
+  rpt strip_tac >>
+  drule generate_context_plan_max_live_eom >>
+  disch_then (fn th => assume_tac th) >>
+  drule_all max_live_eom_global_bound >>
+  drule generate_context_plan_layout_wf >>
+  simp[context_plan_layout_wf_def, EVERY_MEM] >>
+  metis_tac[arithmeticTheory.LESS_EQ_TRANS]
+QED
+
+Theorem ordered_spill_regions_EL[local]:
+  !rs i j.
+    ordered_spill_regions rs /\ i < j /\ j < LENGTH rs ==>
+    (EL i rs).sr_spill_end <= (EL j rs).sr_spill_base
+Proof
+  Induct_on `rs`
+  >- simp[] >>
+  rpt gen_tac >>
+  Cases_on `i`
+  >- (Cases_on `j` >>
+      gvs[ordered_spill_regions_def, EVERY_MEM] >>
+      metis_tac[EL_MEM]) >>
+  Cases_on `j` >>
+  gvs[ordered_spill_regions_def]
+QED
+
+Theorem spill_regions_pairwise_disjoint:
+  generate_context_plan ctx = SOME cp /\
+  i < j /\ j < LENGTH cp.cp_regions ==>
+  (EL i cp.cp_regions).sr_spill_end <=
+  (EL j cp.cp_regions).sr_spill_base
+Proof
+  rpt strip_tac >>
+  drule generate_context_plan_layout_wf >>
+  simp[context_plan_layout_wf_def] >>
+  metis_tac[ordered_spill_regions_EL]
+QED
 val _ = export_theory();
