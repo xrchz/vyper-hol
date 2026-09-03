@@ -476,6 +476,33 @@ Proof
   strip_tac >> gvs[] >> decide_tac
 QED
 
+Theorem spill_plan_in_region_iff_ops_spill_bounded:
+  !base spill_end ops.
+    spill_plan_in_region base spill_end ops <=>
+    ops_spill_bounded base spill_end ops
+Proof
+  rpt gen_tac >>
+  pure_rewrite_tac [spill_plan_in_region_def, EVERY_MEM,
+                    ops_spill_bounded_def] >>
+  eq_tac
+  >- (strip_tac >> gen_tac >> disch_tac >>
+      qpat_x_assum `MEM (SOSpill off) ops \/ MEM (SORestore off) ops`
+        (DISJ_CASES_THEN assume_tac) >>
+      first_x_assum drule >>
+      simp[stack_op_in_spill_region_def]) >>
+  rpt strip_tac >> Cases_on `e` >>
+  gvs[stack_op_in_spill_region_def]
+QED
+
+Theorem spill_plan_in_region_region_access:
+  !r. spill_plan_in_region r.sr_spill_base r.sr_spill_end r.sr_plan ==>
+      !off. region_spill_access r off ==>
+        r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end
+Proof
+  simp[spill_plan_in_region_iff_ops_spill_bounded,
+       ops_spill_bounded_def, region_spill_access_def]
+QED
+
 
 
 
