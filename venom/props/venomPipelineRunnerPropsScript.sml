@@ -247,22 +247,16 @@ End
 Theorem run_configured_fn_pass_fold_first_step[local]:
   run_configured_fn_pass_fold execute_configured_fn_pass rpolicy
     (pass::passes) unit s fn labels = SOME result ==>
-  ?out.
-    execute_configured_fn_pass rpolicy pass unit s fn = SOME out /\
+  ?observed out.
+    unit_with_current_fn unit fn = SOME observed /\
+    execute_configured_fn_pass rpolicy pass observed s fn = SOME out /\
     fn_pass_effects_hold (fn_pass_tag pass) fn out /\
     run_configured_fn_pass_fold execute_configured_fn_pass rpolicy
       passes unit out.fpo_supply out.fpo_function
       (labels ++ out.fpo_label_map) = SOME result
 Proof
-  simp[venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
-  Cases_on `execute_configured_fn_pass rpolicy pass unit s fn` >> simp[] >>
-  Cases_on `x.fpo_function.fn_name = fn.fn_name /\
-            fn_pass_effects_hold (fn_pass_tag pass) fn x /\
-            introduces_no_invoke_edges fn x.fpo_function /\
-            ir_supply_extends s x.fpo_supply /\
-            ir_supply_covers_fn x.fpo_supply x.fpo_function /\
-            ir_supply_covers_unit x.fpo_supply unit` >> simp[] >>
-  metis_tac[]
+  simp[venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def,
+       AllCaseEqs()] >> metis_tac[]
 QED
 
 Theorem execute_configured_fn_pass_o1_suffix_structural[local]:
@@ -371,17 +365,21 @@ Proof
     (fn th => mp_tac (REWRITE_RULE [o1_fn_passes_def] th)) >>
   strip_tac >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_MakeSSA)
-             unit s fn = SOME out1` >>
+  rename [`unit_with_current_fn unit fn = SOME observed1`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_MakeSSA)
+             observed1 s fn = SOME out1`] >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_LowerDload)
-             unit out1.fpo_supply out1.fpo_function = SOME out2` >>
+  rename [`unit_with_current_fn unit out1.fpo_function = SOME observed2`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_LowerDload)
+             observed2 out1.fpo_supply out1.fpo_function = SOME out2`] >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_ConcretizeMemLoc)
-             unit out2.fpo_supply out2.fpo_function = SOME out3` >>
+  rename [`unit_with_current_fn unit out2.fpo_function = SOME observed3`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_ConcretizeMemLoc)
+             observed3 out2.fpo_supply out2.fpo_function = SOME out3`] >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_FmpLowering)
-             unit out3.fpo_supply out3.fpo_function = SOME out4` >>
+  rename [`unit_with_current_fn unit out3.fpo_function = SOME observed4`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_FmpLowering)
+             observed4 out3.fpo_supply out3.fpo_function = SOME out4`] >>
   `IS_SOME out3.fpo_function.fn_eom` by
     gvs[venomPassScheduleTheory.fn_pass_tag_def,
         venomPassDispatcherTheory.fn_pass_effects_hold_def,
@@ -398,46 +396,57 @@ Proof
         venomInstTheory.fn_static_layout_eq_def] >>
   `no_raw_fmp_ops out4.fpo_function` by
     (Cases_on
-       `fmp_lower_function unit.cu_context out3.fpo_supply out3.fpo_function` >>
+       `fmp_lower_function observed4.cu_context out3.fpo_supply
+          out3.fpo_function` >>
      gvs[] >> PairCases_on `x` >> gvs[] >>
      metis_tac[fmp_lower_function_success_no_raw]) >>
   `o1_fn_structural_output out4.fpo_function` by
     simp[o1_fn_structural_output_def] >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_MakeSSA)
-             unit out4.fpo_supply out4.fpo_function = SOME out5` >>
+  rename [`unit_with_current_fn unit out4.fpo_function = SOME observed5`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_MakeSSA)
+             observed5 out4.fpo_supply out4.fpo_function = SOME out5`] >>
   `o1_fn_structural_output out5.fpo_function` by
     (irule execute_configured_fn_pass_o1_suffix_structural >>
      qexistsl [`out4.fpo_function`,`rpolicy`,`out4.fpo_supply`,
-               `VP_MakeSSA`,`unit`] >> simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
+               `VP_MakeSSA`,`observed5`] >>
+     simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_SimplifyCFG)
-             unit out5.fpo_supply out5.fpo_function = SOME out6` >>
+  rename [`unit_with_current_fn unit out5.fpo_function = SOME observed6`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_SimplifyCFG)
+             observed6 out5.fpo_supply out5.fpo_function = SOME out6`] >>
   `o1_fn_structural_output out6.fpo_function` by
     (irule execute_configured_fn_pass_o1_suffix_structural >>
      qexistsl [`out5.fpo_function`,`rpolicy`,`out5.fpo_supply`,
-               `VP_SimplifyCFG`,`unit`] >> simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
+               `VP_SimplifyCFG`,`observed6`] >>
+     simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_SingleUseExpansion)
-             unit out6.fpo_supply out6.fpo_function = SOME out7` >>
+  rename [`unit_with_current_fn unit out6.fpo_function = SOME observed7`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_SingleUseExpansion)
+             observed7 out6.fpo_supply out6.fpo_function = SOME out7`] >>
   `o1_fn_structural_output out7.fpo_function` by
     (irule execute_configured_fn_pass_o1_suffix_structural >>
      qexistsl [`out6.fpo_function`,`rpolicy`,`out6.fpo_supply`,
-               `VP_SingleUseExpansion`,`unit`] >> simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
+               `VP_SingleUseExpansion`,`observed7`] >>
+     simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_DFT)
-             unit out7.fpo_supply out7.fpo_function = SOME out8` >>
+  rename [`unit_with_current_fn unit out7.fpo_function = SOME observed8`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_DFT)
+             observed8 out7.fpo_supply out7.fpo_function = SOME out8`] >>
   `o1_fn_structural_output out8.fpo_function` by
     (irule execute_configured_fn_pass_o1_suffix_structural >>
      qexistsl [`out7.fpo_function`,`rpolicy`,`out7.fpo_supply`,
-               `VP_DFT`,`unit`] >> simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
+               `VP_DFT`,`observed8`] >>
+     simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
   dxrule run_configured_fn_pass_fold_first_step >> strip_tac >>
-  rename1 `execute_configured_fn_pass rpolicy (CFP_Simple VP_CFGNormalization)
-             unit out8.fpo_supply out8.fpo_function = SOME out9` >>
+  rename [`unit_with_current_fn unit out8.fpo_function = SOME observed9`,
+          `execute_configured_fn_pass rpolicy (CFP_Simple VP_CFGNormalization)
+             observed9 out8.fpo_supply out8.fpo_function = SOME out9`] >>
   `o1_fn_structural_output out9.fpo_function` by
     (irule execute_configured_fn_pass_o1_suffix_structural >>
      qexistsl [`out8.fpo_function`,`rpolicy`,`out8.fpo_supply`,
-               `VP_CFGNormalization`,`unit`] >> simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
+               `VP_CFGNormalization`,`observed9`] >>
+     simp[venomPassScheduleTheory.fn_pass_tag_def]) >>
   gvs[venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def]
 QED
 

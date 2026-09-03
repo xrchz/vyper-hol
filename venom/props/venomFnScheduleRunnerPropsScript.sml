@@ -109,75 +109,74 @@ Proof
   qexists `h` >> simp[]
 QED
 
+Theorem unit_with_current_fn_lookup:
+  unit_with_current_fn unit fn = SOME observed ==>
+  lookup_unique_function fn.fn_name observed.cu_context.ctx_functions =
+    SOME fn
+Proof
+  simp[unit_with_current_fn_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >>
+  drule replace_unique_function_exactly_one >>
+  simp[lookup_unique_function_def]
+QED
+
+Theorem unit_with_current_fn_preserves_nonfunctions:
+  unit_with_current_fn unit fn = SOME observed ==>
+  observed.cu_data_segment = unit.cu_data_segment /\
+  observed.cu_context.ctx_entry = unit.cu_context.ctx_entry /\
+  observed.cu_context.ctx_global_reserved =
+    unit.cu_context.ctx_global_reserved
+Proof
+  simp[unit_with_current_fn_def, AllCaseEqs()] >>
+  strip_tac >> gvs[]
+QED
+
 Theorem run_configured_fn_pass_fold_first_effects:
   run_configured_fn_pass_fold runner rpolicy (pass::passes) unit s fn labels =
     SOME result ==>
-  ?out. runner rpolicy pass unit s fn = SOME out /\
-        fn_pass_effects_hold (fn_pass_tag pass) fn out
+  ?observed out.
+    unit_with_current_fn unit fn = SOME observed /\
+    runner rpolicy pass observed s fn = SOME out /\
+    fn_pass_effects_hold (fn_pass_tag pass) fn out
 Proof
-  simp[run_configured_fn_pass_fold_def] >>
-  Cases_on `runner rpolicy pass unit s fn` >> simp[] >>
-  Cases_on `x.fpo_function.fn_name = fn.fn_name /\
-            fn_pass_effects_hold (fn_pass_tag pass) fn x /\
-            introduces_no_invoke_edges fn x.fpo_function /\
-            ir_supply_extends s x.fpo_supply /\
-            ir_supply_covers_fn x.fpo_supply x.fpo_function /\
-            ir_supply_covers_unit x.fpo_supply unit` >> simp[] >>
-  metis_tac[]
+  simp[run_configured_fn_pass_fold_def, AllCaseEqs()] >> metis_tac[]
 QED
 
 Theorem run_configured_fn_pass_fold_first_invoke:
   run_configured_fn_pass_fold runner rpolicy (pass::passes) unit s fn labels =
     SOME result ==>
-  ?out. runner rpolicy pass unit s fn = SOME out /\
-        introduces_no_invoke_edges fn out.fpo_function
+  ?observed out.
+    unit_with_current_fn unit fn = SOME observed /\
+    runner rpolicy pass observed s fn = SOME out /\
+    introduces_no_invoke_edges fn out.fpo_function
 Proof
-  simp[run_configured_fn_pass_fold_def] >>
-  Cases_on `runner rpolicy pass unit s fn` >> simp[] >>
-  Cases_on `x.fpo_function.fn_name = fn.fn_name /\
-            fn_pass_effects_hold (fn_pass_tag pass) fn x /\
-            introduces_no_invoke_edges fn x.fpo_function /\
-            ir_supply_extends s x.fpo_supply /\
-            ir_supply_covers_fn x.fpo_supply x.fpo_function /\
-            ir_supply_covers_unit x.fpo_supply unit` >> simp[] >>
-  metis_tac[]
+  simp[run_configured_fn_pass_fold_def, AllCaseEqs()] >> metis_tac[]
 QED
 
 Theorem run_configured_fn_pass_fold_first_supply:
   run_configured_fn_pass_fold runner rpolicy (pass::passes) unit s fn labels =
     SOME result ==>
-  ?out. runner rpolicy pass unit s fn = SOME out /\
-        ir_supply_extends s out.fpo_supply /\
-        ir_supply_covers_fn out.fpo_supply out.fpo_function /\
-        ir_supply_covers_unit out.fpo_supply unit
+  ?observed out.
+    unit_with_current_fn unit fn = SOME observed /\
+    runner rpolicy pass observed s fn = SOME out /\
+    ir_supply_extends s out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply observed
 Proof
-  simp[run_configured_fn_pass_fold_def] >>
-  Cases_on `runner rpolicy pass unit s fn` >> simp[] >>
-  Cases_on `x.fpo_function.fn_name = fn.fn_name /\
-            fn_pass_effects_hold (fn_pass_tag pass) fn x /\
-            introduces_no_invoke_edges fn x.fpo_function /\
-            ir_supply_extends s x.fpo_supply /\
-            ir_supply_covers_fn x.fpo_supply x.fpo_function /\
-            ir_supply_covers_unit x.fpo_supply unit` >> simp[] >>
-  metis_tac[]
+  simp[run_configured_fn_pass_fold_def, AllCaseEqs()] >> metis_tac[]
 QED
+
 Theorem run_configured_fn_pass_fold_threads_current:
   run_configured_fn_pass_fold runner rpolicy (pass::passes) unit s fn labels =
     SOME result ==>
-  ?out. runner rpolicy pass unit s fn = SOME out /\
-        run_configured_fn_pass_fold runner rpolicy passes unit
-          out.fpo_supply out.fpo_function (labels ++ out.fpo_label_map) =
-          SOME result
+  ?observed out.
+    unit_with_current_fn unit fn = SOME observed /\
+    runner rpolicy pass observed s fn = SOME out /\
+    run_configured_fn_pass_fold runner rpolicy passes unit
+      out.fpo_supply out.fpo_function (labels ++ out.fpo_label_map) =
+      SOME result
 Proof
-  simp[run_configured_fn_pass_fold_def] >>
-  Cases_on `runner rpolicy pass unit s fn` >> simp[] >>
-  Cases_on `x.fpo_function.fn_name = fn.fn_name /\
-            fn_pass_effects_hold (fn_pass_tag pass) fn x /\
-            introduces_no_invoke_edges fn x.fpo_function /\
-            ir_supply_extends s x.fpo_supply /\
-            ir_supply_covers_fn x.fpo_supply x.fpo_function /\
-            ir_supply_covers_unit x.fpo_supply unit` >> simp[] >>
-  metis_tac[]
+  simp[run_configured_fn_pass_fold_def, AllCaseEqs()] >> metis_tac[]
 QED
 
 

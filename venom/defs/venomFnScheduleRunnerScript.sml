@@ -61,23 +61,36 @@ Definition unit_invoke_targets_def:
     FLAT (MAP fn_invoke_targets unit.cu_context.ctx_functions)
 End
 
+Definition unit_with_current_fn_def:
+  unit_with_current_fn unit fn =
+    case replace_unique_function fn.fn_name fn
+           unit.cu_context.ctx_functions of
+      NONE => NONE
+    | SOME fns =>
+        SOME (unit with cu_context :=
+          unit.cu_context with ctx_functions := fns)
+End
+
 Definition run_configured_fn_pass_fold_def:
   run_configured_fn_pass_fold runner rpolicy [] unit s current_fn label_map =
     SOME (current_fn,label_map,s) /\
   run_configured_fn_pass_fold runner rpolicy (pass::passes) unit s current_fn label_map =
-    case runner rpolicy pass unit s current_fn of
+    case unit_with_current_fn unit current_fn of
       NONE => NONE
-    | SOME out =>
-        if out.fpo_function.fn_name = current_fn.fn_name /\
-           fn_pass_effects_hold (fn_pass_tag pass) current_fn out /\
-           introduces_no_invoke_edges current_fn out.fpo_function /\
-           ir_supply_extends s out.fpo_supply /\
-           ir_supply_covers_fn out.fpo_supply out.fpo_function /\
-           ir_supply_covers_unit out.fpo_supply unit
-        then run_configured_fn_pass_fold runner rpolicy passes unit
-               out.fpo_supply out.fpo_function
-               (label_map ++ out.fpo_label_map)
-        else NONE
+    | SOME observed =>
+        case runner rpolicy pass observed s current_fn of
+          NONE => NONE
+        | SOME out =>
+            if out.fpo_function.fn_name = current_fn.fn_name /\
+               fn_pass_effects_hold (fn_pass_tag pass) current_fn out /\
+               introduces_no_invoke_edges current_fn out.fpo_function /\
+               ir_supply_extends s out.fpo_supply /\
+               ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+               ir_supply_covers_unit out.fpo_supply observed
+            then run_configured_fn_pass_fold runner rpolicy passes unit
+                   out.fpo_supply out.fpo_function
+                   (label_map ++ out.fpo_label_map)
+            else NONE
 End
 
 Definition run_configured_fn_passes_def:
