@@ -50,6 +50,48 @@ Definition spill_alloc_wf_def:
     al.sa_next_offset < dimword(:256)
 End
 
+(* Durable allocator layout safety.  Unlike [spill_alloc_wf], this predicate
+   does not assert readiness for another fresh allocation. *)
+Definition spill_alloc_layout_wf_def:
+  spill_alloc_layout_wf (al : spill_alloc) (spilled : (operand, num) fmap) <=>
+    al.sa_spill_base <= al.sa_next_offset /\
+    (!op off. FLOOKUP spilled op = SOME off ==>
+       al.sa_spill_base <= off /\ off + 32 <= al.sa_next_offset) /\
+    (!off. MEM off al.sa_free_slots ==>
+       al.sa_spill_base <= off /\ off + 32 <= al.sa_next_offset) /\
+    (!op1 off1 op2 off2.
+       FLOOKUP spilled op1 = SOME off1 /\
+       FLOOKUP spilled op2 = SOME off2 /\
+       op1 <> op2 ==>
+       off1 + 32 <= off2 \/ off2 + 32 <= off1) /\
+    ALL_DISTINCT al.sa_free_slots /\
+    (!i j. i < LENGTH al.sa_free_slots /\
+           j < LENGTH al.sa_free_slots /\ i <> j ==>
+       EL i al.sa_free_slots + 32 <= EL j al.sa_free_slots \/
+       EL j al.sa_free_slots + 32 <= EL i al.sa_free_slots) /\
+    (!op off1 off2.
+       FLOOKUP spilled op = SOME off1 /\
+       MEM off2 al.sa_free_slots ==>
+       off1 + 32 <= off2 \/ off2 + 32 <= off1)
+End
+
+Theorem spill_alloc_wf_iff_layout_ready:
+  !al spilled.
+    spill_alloc_wf al spilled <=>
+    spill_alloc_layout_wf al spilled /\
+    al.sa_next_offset < dimword(:256)
+Proof
+  simp[spill_alloc_wf_def, spill_alloc_layout_wf_def] >>
+  metis_tac[]
+QED
+
+Theorem spill_alloc_wf_layout:
+  !al spilled.
+    spill_alloc_wf al spilled ==> spill_alloc_layout_wf al spilled
+Proof
+  simp[spill_alloc_wf_iff_layout_ready]
+QED
+
 (* =========================================================================
    Helpers: alloc_spill_slot basic properties
    ========================================================================= *)
@@ -224,6 +266,43 @@ Proof
 QED
 
 
+(* One allocator step plus the matching map update preserves durable layout.
+   Concrete access validity (off < dimword) remains a call-site obligation. *)
+Theorem spill_alloc_layout_wf_after_spill:
+  !al spilled off al' op.
+    spill_alloc_layout_wf al spilled /\
+    al.sa_next_offset < dimword(:256) /\
+    alloc_spill_slot al = (off, al') ==>
+    spill_alloc_layout_wf al' (spilled |+ (op, off))
+Proof
+  rpt gen_tac >> strip_tac >>
+  `spill_alloc_wf al spilled` by
+    simp[spill_alloc_wf_iff_layout_ready] >>
+  drule_all alloc_spill_slot_wf >> strip_tac >>
+  fs[spill_alloc_layout_wf_def, alloc_spill_slot_def] >>
+  Cases_on `al.sa_free_slots` >> gvs[]
+  >- (fs[FLOOKUP_UPDATE, spill_alloc_layout_wf_def] >>
+      rpt conj_tac >> rpt gen_tac >>
+      every_case_tac >> rpt strip_tac >> gvs[] >>
+      res_tac >> decide_tac)
+  >> rename1 `h::t'` >>
+  simp[FLOOKUP_UPDATE, spill_alloc_layout_wf_def] >>
+  rpt conj_tac >> rpt gen_tac >>
+  every_case_tac >> rpt strip_tac >> gvs[MEM_FRONT, ALL_DISTINCT_FRONT] >>
+  TRY (res_tac >> decide_tac) >>
+  TRY decide_tac >>
+  TRY (imp_res_tac MEM_FRONT >> gvs[] >> res_tac >> decide_tac) >>
+  TRY (fs[EL_FRONT, LENGTH_FRONT] >>
+       qpat_x_assum `!i j. i < SUC _ /\ _ ==> _`
+         (qspecl_then [`i`, `j`] mp_tac) >>
+       simp[]) >>
+  imp_res_tac MEM_FRONT >> fs[] >>
+  qpat_x_assum `!op off1 off2. FLOOKUP _ _ = SOME _ /\ _ ==> _`
+    (qspecl_then [`op'`, `off1`, `off2`] mp_tac) >>
+  simp[]
+QED
+
+
 Theorem separated_slots_snoc[local]:
   !slots off.
     (!i j. i < LENGTH slots /\ j < LENGTH slots /\ i <> j ==>
@@ -260,6 +339,46 @@ Proof
   rpt gen_tac >> strip_tac >>
   fs[spill_alloc_wf_def] >>
   simp[spill_alloc_wf_def, free_spill_slot_def, ALL_DISTINCT_SNOC,
+       finite_mapTheory.DOMSUB_FLOOKUP_THM] >>
+  rpt conj_tac
+  >- metis_tac[]
+  >- metis_tac[]
+  >- metis_tac[]
+  >- (strip_tac >>
+      qpat_x_assum `!op' off1 off2. _`
+        (qspecl_then [`op`, `off`, `off`] mp_tac) >>
+      simp[] >> decide_tac)
+  >- (rpt gen_tac >> strip_tac >>
+      Cases_on `i = LENGTH al.sa_free_slots` >>
+      Cases_on `j = LENGTH al.sa_free_slots`
+      >- gvs[]
+      >- (`j < LENGTH al.sa_free_slots` by decide_tac >>
+          simp[listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC] >>
+          qpat_x_assum `!op' off1 off2. _`
+            (qspecl_then [`op`, `off`, `EL j al.sa_free_slots`] mp_tac) >>
+          simp[MEM_EL] >> metis_tac[])
+      >- (`i < LENGTH al.sa_free_slots` by decide_tac >>
+          simp[listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC] >>
+          qpat_x_assum `!op' off1 off2. _`
+            (qspecl_then [`op`, `off`, `EL i al.sa_free_slots`] mp_tac) >>
+          simp[MEM_EL] >> metis_tac[])
+      >> `i < LENGTH al.sa_free_slots /\ j < LENGTH al.sa_free_slots`
+           by decide_tac >>
+         simp[listTheory.EL_SNOC] >> metis_tac[])
+  >> rpt gen_tac >> strip_tac >> gvs[] >> metis_tac[]
+QED
+
+(* Returning an active slot preserves durable layout safety even when the
+   allocator is saturated and no further fresh allocation is ready. *)
+Theorem spill_alloc_layout_wf_after_free:
+  !al spilled op off.
+    spill_alloc_layout_wf al spilled /\
+    FLOOKUP spilled op = SOME off ==>
+    spill_alloc_layout_wf (free_spill_slot off al) (spilled \\ op)
+Proof
+  rpt gen_tac >> strip_tac >>
+  fs[spill_alloc_layout_wf_def] >>
+  simp[spill_alloc_layout_wf_def, free_spill_slot_def, ALL_DISTINCT_SNOC,
        finite_mapTheory.DOMSUB_FLOOKUP_THM] >>
   rpt conj_tac
   >- metis_tac[]
@@ -1536,6 +1655,19 @@ Proof
   simp[Once free_spill_slot_def]
 QED
 
+(* FOLDL free_spill_slot appends each returned slot in order. *)
+Theorem foldl_free_free_slots[local]:
+  !offsets al.
+    (FOLDL (\al off. free_spill_slot off al) al offsets).sa_free_slots =
+    al.sa_free_slots ++ offsets
+Proof
+  Induct >> rpt strip_tac >> simp[] >>
+  simp[Once free_spill_slot_def] >>
+  first_x_assum (qspec_then
+    `al with sa_free_slots := SNOC h al.sa_free_slots` mp_tac) >>
+  simp[SNOC_APPEND]
+QED
+
 (* FOLDL MAX over monotone increasing sequence *)
 Theorem foldl_max_genlist[local]:
   !(n:num) base.
@@ -2544,6 +2676,56 @@ Proof
 QED
 
 
+
+Theorem headroom_offset_layout_props[local]:
+  let offsets = FST (spill_alloc_n [] headroom_alloc headroom_stack)
+  in !k. k < LENGTH offsets ==>
+       EL k offsets + 32 <= dimword(:256) /\
+       (!j. j < k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)
+Proof
+  rewrite_tac[headroom_offsets_symbolic, LET_THM] >> BETA_TAC >>
+  `576 <= dimword(:256)` by
+    (simp[wordsTheory.dimword_def] >>
+     CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
+  gen_tac >> strip_tac >>
+  `k < 18` by fs[LENGTH_APPEND, LENGTH_GENLIST] >>
+  Cases_on `k < 17`
+  >- (conj_tac
+      >- (ASM_SIMP_TAC pure_ss [EL_APPEND1, LENGTH_GENLIST, EL_GENLIST] >>
+          decide_tac) >>
+      rpt strip_tac >>
+      `j < 17` by decide_tac >>
+      ASM_SIMP_TAC pure_ss [EL_APPEND1, LENGTH_GENLIST, EL_GENLIST] >>
+      decide_tac) >>
+  `k = 17` by decide_tac >>
+  qpat_x_assum `k = 17` SUBST_ALL_TAC >>
+  `EL 17 (GENLIST (\k. 32 * (16 - k)) 17 ++ [dimword(:256) - 32]) =
+     dimword(:256) - 32` by simp[EL_APPEND2] >>
+  conj_tac
+  >- (ASM_REWRITE_TAC[] >> decide_tac) >>
+  rpt strip_tac >>
+  `j < 17` by decide_tac >>
+  ASM_SIMP_TAC pure_ss [EL_APPEND1, LENGTH_GENLIST, EL_GENLIST] >>
+  decide_tac
+QED
+
+Theorem headroom_final_allocator[local]:
+  let res = spill_alloc_n [] headroom_alloc headroom_stack;
+      offsets = FST res;
+      alloc2 = FOLDL (\al off. free_spill_slot off al) (SND res) offsets
+  in alloc2.sa_free_slots = offsets /\
+     alloc2.sa_next_offset = dimword(:256) /\
+     alloc2.sa_spill_base = 0
+Proof
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  mp_tac headroom_allocator_trajectory >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
+  simp[foldl_free_free_slots, foldl_free_next_offset,
+       foldl_free_spill_base, spill_alloc_n_spill_base,
+       headroom_alloc_def]
+QED
 Theorem headroom_spill_pairs_preconditions[local]:
   let offsets = FST (spill_alloc_n [] headroom_alloc headroom_stack);
       pairs = ZIP (REVERSE headroom_stack, offsets)
@@ -2709,7 +2891,7 @@ Proof
       rewrite_tac[LET_THM] >> BETA_TAC >>
       simp[Abbr `offsets`, Abbr `desired_rev`])
   >> conj_tac
-  >- (`32 <= dimword(:256)` by
+  >- (`576 <= dimword(:256)` by
         (simp[wordsTheory.dimword_def] >>
          CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
       simp[headroom_ps_def, headroom_alloc_def, init_plan_state_def,
