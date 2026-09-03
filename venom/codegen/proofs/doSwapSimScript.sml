@@ -1648,6 +1648,102 @@ Proof
   fs[EXTENSION] >> metis_tac[]
 QED
 
+(* Durable layout preservation through a batch of temporary allocations. *)
+Theorem spill_alloc_n_layout_wf[local]:
+  !items offs0 al0 sp prev_items.
+    spill_alloc_layout_wf al0 (sp |++ ZIP(prev_items, offs0)) /\
+    LENGTH prev_items = LENGTH offs0 /\
+    ALL_DISTINCT (prev_items ++ items) ==>
+    spill_alloc_layout_wf
+      (SND (spill_alloc_n offs0 al0 items))
+      (sp |++ ZIP(prev_items ++ items,
+                  FST (spill_alloc_n offs0 al0 items)))
+Proof
+  Induct >- simp[spill_alloc_n_def] >>
+  simp[spill_alloc_n_def] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `alloc_spill_slot al0` >>
+  rename1 `alloc_spill_slot al0 = (off0, al1)` >>
+  simp[] >>
+  first_x_assum (qspecl_then [`SNOC off0 offs0`, `al1`, `sp`,
+    `prev_items ++ [h]`] mp_tac) >>
+  simp[LENGTH_SNOC] >>
+  CONV_TAC (RAND_CONV (ONCE_REWRITE_CONV[CONS_APPEND]
+    THENC REWRITE_CONV[APPEND_ASSOC])) >>
+  disch_then irule >>
+  conj_tac
+  >- (qpat_x_assum `ALL_DISTINCT _` mp_tac >>
+      REWRITE_TAC[APPEND, GSYM APPEND_ASSOC]) >>
+  PURE_REWRITE_TAC[SNOC_APPEND] >>
+  simp[GSYM ZIP_APPEND, FUPDATE_LIST_APPEND, FUPDATE_LIST_THM] >>
+  irule spill_alloc_layout_wf_after_alloc >>
+  qexists_tac `al0` >> simp[]
+QED
+
+(* Free matching offsets while deleting their temporary map keys. *)
+Theorem foldl_free_domsub_layout_wf[local]:
+  !items offsets al fm.
+    LENGTH items = LENGTH offsets /\ ALL_DISTINCT items /\
+    (!i. i < LENGTH items ==>
+         FLOOKUP fm (EL i items) = SOME (EL i offsets)) /\
+    spill_alloc_layout_wf al fm ==>
+    spill_alloc_layout_wf
+      (FOLDL (\a off. free_spill_slot off a) al offsets)
+      (FOLDL (\sp item. sp \\ item) fm items)
+Proof
+  Induct >- (Cases_on `offsets` >> simp[]) >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `offsets` >> gvs[] >>
+  rename1 `off::offs` >>
+  simp[] >>
+  `FLOOKUP fm off = SOME h'` by (
+    qpat_x_assum `!i. i < SUC _ ==> _` (qspec_then `0` mp_tac) >> simp[]) >>
+  `spill_alloc_layout_wf (free_spill_slot h' al) (fm \\ off)` by (
+    irule spill_alloc_layout_wf_after_free >> simp[]) >>
+  first_x_assum (qspecl_then [`t`, `free_spill_slot h' al`, `fm \\ off`] irule) >>
+  simp[] >>
+  rpt strip_tac >>
+  `EL i offs <> off` by metis_tac[MEM_EL] >>
+  simp[DOMSUB_FLOOKUP_THM] >>
+  qpat_x_assum `!j. j < SUC _ ==> _` (qspec_then `SUC i` mp_tac) >>
+  simp[]
+QED
+
+Theorem spill_alloc_n_free_layout_wf[local]:
+  !al spilled items.
+    spill_alloc_layout_wf al spilled /\ ALL_DISTINCT items /\
+    DISJOINT (set items) (FDOM spilled) ==>
+    let res = spill_alloc_n [] al items;
+        offsets = FST res;
+        alloc2 = FOLDL (\a off. free_spill_slot off a) (SND res) offsets
+    in spill_alloc_layout_wf alloc2 spilled
+Proof
+  rpt gen_tac >> strip_tac >> simp[LET_THM] >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] al items)` >>
+  qabbrev_tac `alloc1 = SND (spill_alloc_n [] al items)` >>
+  `LENGTH items = LENGTH offsets` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  `spill_alloc_layout_wf alloc1 (spilled |++ ZIP(items, offsets))` by (
+    qunabbrev_tac `alloc1` >> qunabbrev_tac `offsets` >>
+    qspecl_then [`items`, `[]`, `al`, `spilled`, `[]`]
+      mp_tac spill_alloc_n_layout_wf >> simp[FUPDATE_LIST_THM]) >>
+  `!i. i < LENGTH items ==>
+       FLOOKUP (spilled |++ ZIP(items, offsets)) (EL i items) =
+         SOME (EL i offsets)` by
+    metis_tac[flookup_fupdate_list_el] >>
+  `spill_alloc_layout_wf
+     (FOLDL (\a off. free_spill_slot off a) alloc1 offsets)
+     (FOLDL (\sp item. sp \\ item)
+       (spilled |++ ZIP(items, offsets)) items)` by (
+    irule foldl_free_domsub_layout_wf >> simp[]) >>
+  `FOLDL (\sp item. sp \\ item)
+      (spilled |++ ZIP(items, offsets)) items = spilled` by (
+    irule foldl_domsub_cancel >>
+    simp[MAP_ZIP]) >>
+  gvs[Abbr `alloc1`, Abbr `offsets`]
+QED
+
+
 (* ---------------------------------------------------------------
    Helpers for do_swap_venom_asm_rel_big
    --------------------------------------------------------------- *)
