@@ -1744,6 +1744,55 @@ Proof
 QED
 
 
+
+(* A valid stack swap is a transposition of two in-range positions. *)
+Theorem stack_swap_permutation[local]:
+  !dist stk.
+    0 < dist /\ dist < LENGTH stk /\ ALL_DISTINCT stk ==>
+    ALL_DISTINCT (stack_swap dist stk) /\
+    set (stack_swap dist stk) = set stk
+Proof
+  rpt strip_tac >>
+  `LENGTH stk - 1 < LENGTH stk /\
+   LENGTH stk - (dist + 1) < LENGTH stk` by decide_tac >>
+  `!i j. i < LENGTH stk /\ j < LENGTH stk /\ i <> j ==>
+      EL i stk <> EL j stk` by metis_tac[ALL_DISTINCT_EL_IMP] >>
+  simp[stack_swap_def]
+  >- (rw[EL_ALL_DISTINCT_EL_EQ] >>
+      rpt strip_tac >>
+      simp[EL_LUPDATE] >>
+      rpt IF_CASES_TAC >> gvs[] >> metis_tac[]) >>
+  `MEM (EL (LENGTH stk - 1) stk) stk /\
+   MEM (EL (LENGTH stk - (dist + 1)) stk) stk` by (
+    conj_tac
+    >- (simp[MEM_EL] >> qexists_tac `LENGTH stk - 1` >> simp[]) >>
+    simp[MEM_EL] >> qexists_tac `LENGTH stk - (dist + 1)` >> simp[]) >>
+  rw[EXTENSION] >> eq_tac >> strip_tac
+  >- (drule MEM_LUPDATE_E >> strip_tac >- gvs[] >>
+      drule MEM_LUPDATE_E >> strip_tac >> gvs[]) >>
+  Cases_on `x = EL (LENGTH stk - 1) stk`
+  >- simp[MEM_LUPDATE] >>
+  Cases_on `x = EL (LENGTH stk - (dist + 1)) stk`
+  >- (simp[MEM_LUPDATE] >>
+      qexists_tac `LENGTH stk - 1` >> simp[EL_LUPDATE] >> decide_tac) >>
+  qpat_x_assum `MEM x stk` mp_tac >> simp[MEM_EL] >>
+  disch_then (qx_choose_then `k` strip_assume_tac) >>
+  simp[MEM_LUPDATE] >>
+  qexists_tac `k` >> simp[EL_LUPDATE] >>
+  metis_tac[]
+QED
+
+Theorem top_n_suffix[local]:
+  !n stk. n <= LENGTH stk ==>
+    TAKE (LENGTH stk - n) stk ++ top_n n stk = stk
+Proof
+  rpt strip_tac >>
+  `top_n n stk = LASTN n stk` by simp[top_n_def, LASTN_def] >>
+  `TAKE (LENGTH stk - n) stk = BUTLASTN n stk` by
+    metis_tac[BUTLASTN_TAKE] >>
+  metis_tac[APPEND_BUTLASTN_LASTN]
+QED
+
 (* ---------------------------------------------------------------
    Helpers for do_swap_venom_asm_rel_big
    --------------------------------------------------------------- *)
@@ -2014,6 +2063,64 @@ Proof
   irule flookup_fupdate_list_el >>
   ASM_REWRITE_TAC[ALL_DISTINCT_REVERSE, LENGTH_REVERSE] >>
   simp[desired_rev_el_bound]
+QED
+
+
+Theorem do_swap_big_stack_permutation[local]:
+  !dist ps.
+    dist > 16 /\ dist < LENGTH ps.ps_stack /\ ALL_DISTINCT ps.ps_stack ==>
+    ALL_DISTINCT (SND (do_swap dist ps)).ps_stack /\
+    set (SND (do_swap dist ps)).ps_stack = set ps.ps_stack
+Proof
+  rpt strip_tac >>
+  qabbrev_tac `items = top_n (dist + 1) ps.ps_stack` >>
+  qabbrev_tac `desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]` >>
+  qabbrev_tac `base_stack = TAKE (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack` >>
+  qabbrev_tac `restored = MAP (\idx. EL idx items) desired` >>
+  `dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+  `ALL_DISTINCT items` by
+    simp[Abbr `items`, top_n_def, ALL_DISTINCT_REVERSE,
+         ALL_DISTINCT_TAKE] >>
+  `ALL_DISTINCT desired` by (
+    simp[Abbr `desired`, ALL_DISTINCT_APPEND, ALL_DISTINCT_GENLIST,
+         MEM_GENLIST] >> decide_tac) >>
+  `EVERY (\i. i < LENGTH items) desired` by
+    simp[Abbr `desired`, EVERY_APPEND, EVERY_GENLIST] >>
+  `ALL_DISTINCT restored` by (
+    simp[Abbr `restored`] >> irule all_distinct_map_el >> simp[]) >>
+  `set restored = set items` by (
+    simp[Abbr `restored`, Abbr `desired`] >>
+    qspecl_then [`dist + 1`, `items`] mp_tac set_desired_perm >>
+    simp[]) >>
+  `base_stack ++ items = ps.ps_stack` by
+    simp[Abbr `base_stack`, Abbr `items`, top_n_suffix] >>
+  `ALL_DISTINCT (base_stack ++ items)` by metis_tac[] >>
+  `set (base_stack ++ items) = set ps.ps_stack` by metis_tac[] >>
+  `ALL_DISTINCT (base_stack ++ restored) /\
+   set (base_stack ++ restored) = set ps.ps_stack` by (
+    fs[ALL_DISTINCT_APPEND] >>
+    metis_tac[]) >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >>
+  gvs[Abbr `base_stack`, Abbr `restored`, Abbr `items`, Abbr `desired`]
+QED
+
+Theorem do_swap_stack_permutation:
+  !dist ps. dist < LENGTH ps.ps_stack /\ ALL_DISTINCT ps.ps_stack ==>
+    ALL_DISTINCT (SND (do_swap dist ps)).ps_stack /\
+    set (SND (do_swap dist ps)).ps_stack = set ps.ps_stack
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist = 0`
+  >- ((conj_tac >- simp[do_swap_def]) >> simp[do_swap_def]) >>
+  Cases_on `dist <= 16`
+  >- (`ALL_DISTINCT (stack_swap dist ps.ps_stack) /\
+       set (stack_swap dist ps.ps_stack) = set ps.ps_stack` by (
+        irule stack_swap_permutation >> simp[]) >>
+      (conj_tac >- gvs[do_swap_def]) >> gvs[do_swap_def]) >>
+  irule do_swap_big_stack_permutation >> simp[] >> decide_tac
 QED
 
 (* ---------------------------------------------------------------
