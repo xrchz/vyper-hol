@@ -72,4 +72,14 @@ Proof
   gvs[] >> decide_tac
 QED
 
+Theorem spill_region_literal_name[simp,local]:
+  !name base spill_end ops.
+    ((<|sr_fn_name := name;
+        sr_spill_base := base;
+        sr_spill_end := spill_end;
+        sr_plan := ops|> : spill_region).sr_fn_name) = name
+Proof
+  simp[]
+QED
+
 val _ = export_theory();
