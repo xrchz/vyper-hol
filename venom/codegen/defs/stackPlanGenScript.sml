@@ -122,11 +122,24 @@ End
    Per-opcode emission logic.
    ========================================================================= *)
 
+Definition bump_round_word_def:
+  bump_round_word (sz:bytes32) =
+    word_lsl (word_lsr (sz + 31w) 5) 5
+End
+
+Definition bump_emit_ops_def:
+  bump_emit_ops =
+    [SOPush (Lit 31w); SOEmit "ADD";
+     SOPush (Lit 5w); SOEmit "SHR";
+     SOPush (Lit 5w); SOEmit "SHL";
+     SODup 2; SOEmit "ADD"]
+End
+
 Definition generate_emit_ops_def:
   generate_emit_ops inst log_topic_count ps =
     let opc = inst.inst_opcode in
     if opc = INITIAL_FMP then ([SOInitialFmp], ps)
-    else if opc = BUMP then ([SODup 2; SOEmit "ADD"], ps)
+    else if opc = BUMP then (bump_emit_ops, ps)
     else case venom_to_evm_name opc of
       SOME name => ([SOEmit name], ps)
     | NONE =>

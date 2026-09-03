@@ -26,6 +26,96 @@ Libs
   BasicProvers
 
 (* =========================================================================
+   Rounded BUMP boundary
+   ========================================================================= *)
+
+Theorem dimindex_256[local,simp]:
+  dimindex (:256) = 256
+Proof
+  CONV_TAC fcpLib.INDEX_CONV
+QED
+
+Theorem ceil32_div_mul[local]:
+  !n. ceil32 n = ((n + 31) DIV 32) * 32
+Proof
+  gen_tac >>
+  mp_tac (Q.SPEC `32` arithmeticTheory.DIVISION) >>
+  simp[] >> disch_then (qspec_then `n` strip_assume_tac) >>
+  Cases_on `n MOD 32 = 0`
+  >- (`n + 31 = n DIV 32 * 32 + 31` by decide_tac >>
+      simp[venomLayoutTheory.ceil32_def, arithmeticTheory.DIV_MULT]) >>
+  `0 < n MOD 32` by decide_tac >>
+  `n + 31 = (n DIV 32 + 1) * 32 + (n MOD 32 - 1)` by decide_tac >>
+  `n MOD 32 < 32` by (irule arithmeticTheory.MOD_LESS >> simp[]) >>
+  `n MOD 32 - 1 < 32` by decide_tac >>
+  `(n + 31) DIV 32 = n DIV 32 + 1` by
+    (once_rewrite_tac [ASSUME ``n + 31 = (n DIV 32 + 1) * 32 + (n MOD 32 - 1)``] >>
+     irule arithmeticTheory.DIV_MULT >> simp[]) >>
+  rw[venomLayoutTheory.ceil32_def] >>
+  decide_tac
+QED
+
+Theorem bump_round_mod_no_wrap[local]:
+  !n. n <= dimword (:256) - 32 ==>
+      32 * (((n + 31) MOD dimword (:256)) DIV 32) MOD dimword (:256) =
+      ceil32 n MOD dimword (:256)
+Proof
+  rpt strip_tac >>
+  `n + 31 < dimword (:256)` by
+    (gvs[wordsTheory.dimword_def] >> decide_tac) >>
+  simp[arithmeticTheory.LESS_MOD, ceil32_div_mul,
+       arithmeticTheory.MULT_COMM]
+QED
+
+Theorem bump_round_mod_wrap_zero[local]:
+  !n. dimword (:256) - 32 < n /\ n < dimword (:256) ==>
+      32 * (((n + 31) MOD dimword (:256)) DIV 32) MOD dimword (:256) = 0
+Proof
+  rpt strip_tac >>
+  `dimword (:256) <= n + 31` by
+    (gvs[wordsTheory.dimword_def] >> decide_tac) >>
+  `n + 31 - dimword (:256) < 32` by
+    (gvs[wordsTheory.dimword_def] >> decide_tac) >>
+  `n + 31 - dimword (:256) < dimword (:256)` by
+    (gvs[wordsTheory.dimword_def] >> decide_tac) >>
+  `n + 31 = 1 * dimword (:256) + (n + 31 - dimword (:256))` by
+    decide_tac >>
+  `(n + 31) MOD dimword (:256) = n + 31 - dimword (:256)` by
+    (irule arithmeticTheory.MOD_UNIQUE >>
+     qexists `1` >> simp[]) >>
+  simp[arithmeticTheory.LESS_DIV_EQ_ZERO]
+QED
+
+
+Theorem ceil32_wrap_mod_zero[local]:
+  !n. dimword (:256) - 32 < n /\ n < dimword (:256) ==>
+      ceil32 n MOD dimword (:256) = 0
+Proof
+  rpt strip_tac >>
+  `(n + 31) DIV 32 = dimword (:256) DIV 32` by
+    (rw[arithmeticTheory.DIV_EQ_X] >>
+     gvs[wordsTheory.dimword_def] >> decide_tac) >>
+  simp[ceil32_div_mul, wordsTheory.dimword_def]
+QED
+
+Theorem bump_round_word_correct:
+  !sz:bytes32. bump_round_word sz = n2w (ceil32 (w2n sz))
+Proof
+  gen_tac >>
+  PURE_REWRITE_TAC[bump_round_word_def] >>
+  qmatch_goalsub_abbrev_tac `word_lsl q 5` >>
+  `q = n2w (w2n q)` by simp[] >>
+  pop_assum SUBST1_TAC >>
+  simp[wordsTheory.word_lsl_n2w, wordsTheory.w2n_lsr,
+       wordsTheory.word_add_def, Abbr `q`] >>
+  Cases_on `w2n sz <= dimword (:256) - 32`
+  >- metis_tac[bump_round_mod_no_wrap] >>
+  `w2n sz < dimword (:256)` by simp[wordsTheory.w2n_lt] >>
+  `dimword (:256) - 32 < w2n sz` by decide_tac >>
+  metis_tac[bump_round_mod_wrap_zero, ceil32_wrap_mod_zero]
+QED
+
+(* =========================================================================
    Connection: eval_operand vs operand_val
    ========================================================================= *)
 
