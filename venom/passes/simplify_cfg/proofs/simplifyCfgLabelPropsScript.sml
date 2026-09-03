@@ -3694,25 +3694,24 @@ QED
 
 
 Definition simplify_cfg_single_ret_fn_def[local]:
-  simplify_cfg_single_ret_fn name lbl id =
-    mk_raw_function name
+  simplify_cfg_single_ret_fn template lbl id =
+    template with fn_blocks :=
       [<|bb_label := lbl;
          bb_instructions := [mk_inst id RET [Lit 0w] []]|>]
 End
 
 Theorem simplify_cfg_single_ret_facts[local]:
-  !name lbl id.
-    fn_entry_label (simplify_cfg_single_ret_fn name lbl id) = SOME lbl /\
-    lookup_block lbl (simplify_cfg_single_ret_fn name lbl id).fn_blocks =
+  !template lbl id.
+    fn_entry_label (simplify_cfg_single_ret_fn template lbl id) = SOME lbl /\
+    lookup_block lbl (simplify_cfg_single_ret_fn template lbl id).fn_blocks =
       SOME <|bb_label := lbl;
              bb_instructions := [mk_inst id RET [Lit 0w] []]|> /\
     bb_succs <|bb_label := lbl;
                bb_instructions := [mk_inst id RET [Lit 0w] []]|> = [] /\
-    fix_all_phis (simplify_cfg_single_ret_fn name lbl id) =
-      simplify_cfg_single_ret_fn name lbl id
+    fix_all_phis (simplify_cfg_single_ret_fn template lbl id) =
+      simplify_cfg_single_ret_fn template lbl id
 Proof
   simp [simplify_cfg_single_ret_fn_def,
-        venomInstTheory.mk_raw_function_def,
         venomInstTheory.mk_inst_def,
         venomInstTheory.fn_entry_label_def,
         venomInstTheory.entry_block_def,
@@ -3729,30 +3728,29 @@ Proof
 QED
 
 Theorem simplify_cfg_single_ret_reachable[local]:
-  !name lbl id. reachable (simplify_cfg_single_ret_fn name lbl id) lbl
+  !template lbl id. reachable (simplify_cfg_single_ret_fn template lbl id) lbl
 Proof
   simp [cfgTransformTheory.reachable_def,
         simplify_cfg_single_ret_facts, relationTheory.RTC_REFL]
 QED
 
 Theorem simplify_cfg_single_ret_remove_unreachable[local]:
-  !name lbl id.
-    remove_unreachable_blocks (simplify_cfg_single_ret_fn name lbl id) =
-      simplify_cfg_single_ret_fn name lbl id
+  !template lbl id.
+    remove_unreachable_blocks (simplify_cfg_single_ret_fn template lbl id) =
+      simplify_cfg_single_ret_fn template lbl id
 Proof
   rpt gen_tac >>
-  qspecl_then [`name`,`lbl`,`id`] assume_tac
+  qspecl_then [`template`,`lbl`,`id`] assume_tac
     simplify_cfg_single_ret_reachable >>
   pure_once_rewrite_tac [remove_unreachable_blocks_def] >>
   simp [simplify_cfg_single_ret_facts] >>
-  fs [simplify_cfg_single_ret_fn_def,
-      venomInstTheory.mk_raw_function_def]
+  fs [simplify_cfg_single_ret_fn_def]
 QED
 
 Theorem simplify_cfg_single_ret_collapse[local]:
-  !name lbl id.
-    collapse_dfs (simplify_cfg_single_ret_fn name lbl id) [] [] lbl =
-      (simplify_cfg_single_ret_fn name lbl id,[],[lbl])
+  !template lbl id.
+    collapse_dfs (simplify_cfg_single_ret_fn template lbl id) [] [] lbl =
+      (simplify_cfg_single_ret_fn template lbl id,[],[lbl])
 Proof
   rpt gen_tac >>
   pure_once_rewrite_tac [collapse_dfs_def] >>
@@ -3761,10 +3759,10 @@ Proof
 QED
 
 Theorem simplify_cfg_single_ret_round[local]:
-  !name lbl id.
+  !template lbl id.
     simplify_cfg_round_with_labels
-      (simplify_cfg_single_ret_fn name lbl id) =
-      (simplify_cfg_single_ret_fn name lbl id,[])
+      (simplify_cfg_single_ret_fn template lbl id) =
+      (simplify_cfg_single_ret_fn template lbl id,[])
 Proof
   rpt gen_tac >>
   pure_once_rewrite_tac [simplify_cfg_round_with_labels_def] >>
@@ -3774,22 +3772,39 @@ Proof
 QED
 
 Theorem simplify_cfg_single_ret_length[local]:
-  !name lbl id.
-    LENGTH (simplify_cfg_single_ret_fn name lbl id).fn_blocks = 1
+  !template lbl id.
+    LENGTH (simplify_cfg_single_ret_fn template lbl id).fn_blocks = 1
 Proof
-  simp [simplify_cfg_single_ret_fn_def,
-        venomInstTheory.mk_raw_function_def]
+  simp [simplify_cfg_single_ret_fn_def]
 QED
 
 Theorem simplify_cfg_single_ret_iter[local]:
-  !name lbl id.
+  !template lbl id.
     simplify_cfg_iter_with_labels (SUC 0)
-      (simplify_cfg_single_ret_fn name lbl id) =
-      (simplify_cfg_single_ret_fn name lbl id,[])
+      (simplify_cfg_single_ret_fn template lbl id) =
+      (simplify_cfg_single_ret_fn template lbl id,[])
 Proof
   rpt gen_tac >>
   pure_once_rewrite_tac [simplify_cfg_iter_with_labels_def] >>
   simp [simplify_cfg_single_ret_round]
+QED
+
+Theorem simplify_cfg_single_ret_updated_with_labels:
+  !template lbl id.
+    simplify_cfg_fn_with_labels
+      (template with fn_blocks :=
+        [<|bb_label := lbl;
+           bb_instructions := [mk_inst id RET [Lit 0w] []]|>]) =
+      (template with fn_blocks :=
+        [<|bb_label := lbl;
+           bb_instructions := [mk_inst id RET [Lit 0w] []]|>], [])
+Proof
+  rpt gen_tac >>
+  simp [GSYM simplify_cfg_single_ret_fn_def,
+        simplify_cfg_fn_with_labels_def,
+        simplify_cfg_single_ret_length] >>
+  qspecl_then [`template`,`lbl`,`id`] mp_tac simplify_cfg_single_ret_iter >>
+  simp []
 QED
 
 Theorem simplify_cfg_single_ret_with_labels:
@@ -3803,9 +3818,7 @@ Theorem simplify_cfg_single_ret_with_labels:
            bb_instructions := [mk_inst id RET [Lit 0w] []]|>], [])
 Proof
   rpt gen_tac >>
-  simp [GSYM simplify_cfg_single_ret_fn_def,
-        simplify_cfg_fn_with_labels_def,
-        simplify_cfg_single_ret_length] >>
-  qspecl_then [`name`,`lbl`,`id`] mp_tac simplify_cfg_single_ret_iter >>
-  simp []
+  qspecl_then [`mk_raw_function name []`,`lbl`,`id`] mp_tac
+    simplify_cfg_single_ret_updated_with_labels >>
+  simp [venomInstTheory.mk_raw_function_def]
 QED

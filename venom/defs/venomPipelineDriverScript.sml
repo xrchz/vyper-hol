@@ -236,11 +236,17 @@ Definition task041_raw_unit_def:
   |>
 End
 
+Definition task041_dead_function_def:
+  task041_dead_function =
+    mk_raw_function "unreachable"
+      [<|bb_label := "dead_entry";
+          bb_instructions := [mk_inst 0 RET [Lit 0w] []]|>]
+End
+
 Definition task041_pruning_unit_def:
   task041_pruning_unit = <|
     cu_context := mk_venom_context
-      [task041_raw_function "main" 1;
-       task041_raw_function "unreachable" 2] (SOME "main");
+      [task041_raw_function "main" 1; task041_dead_function] (SOME "main");
     cu_data_segment := []
   |>
 End
@@ -545,7 +551,7 @@ Proof
   EVAL_TAC >>
   simp [listTheory.REV_DEF, venomInstTheory.is_terminator_def,
         venomStateTheory.get_label_def] >>
-  EVAL_TAC
+  EVAL_TAC >> rpt strip_tac >> gvs []
 QED
 
 Theorem task041_fmp_states_result:
@@ -611,5 +617,941 @@ Proof
         fmpAnalysisDefsTheory.fmp_info_bottom_def]
 QED
 
-val _ = export_theory ();
+Definition task041_fmp_observation_def:
+  task041_fmp_observation =
+    task041_raw_unit with cu_context :=
+      task041_raw_unit.cu_context with ctx_functions := [task041_fmp_function]
+End
 
+Theorem task041_fmp_observation_result:
+  unit_with_current_fn task041_raw_unit task041_fmp_function =
+  SOME task041_fmp_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_make_ssa_result:
+  make_ssa_current_fn (init_ir_supply task041_raw_unit) task041_fmp_function =
+    (task041_fmp_function,init_ir_supply task041_raw_unit)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_after_concretize_result_any:
+  !s. fmp_lower_function task041_concretized_observation.cu_context s
+        task041_concretized_function = SOME (task041_fmp_function,s)
+Proof
+  gen_tac >>
+  rewrite_tac [fmpLowerDefsTheory.fmp_lower_function_def,
+               task041_fmp_analysis_result] >>
+  simp [fmpLowerDefsTheory.fmp_lower_function_with_info_def,
+        task041_fmp_info_valid, task041_fmp_lower_input,
+        task041_fmp_reclaim_result, task041_fmp_pre_seal_facts,
+        task041_fmp_checked_seal_result,
+        fmpAnalysisDefsTheory.fmp_info_bottom_def]
+QED
+
+Theorem task041_supply_preserving_pass_results:
+  (!s. make_ssa_current_fn s (task041_raw_function "main" 1) =
+       (task041_raw_function "main" 1,s)) /\
+  (!s. lower_dload_function_supply s (task041_raw_function "main" 1) =
+       (task041_raw_function "main" 1,s)) /\
+  (!s. make_ssa_current_fn s task041_fmp_function =
+       (task041_fmp_function,s))
+Proof
+  EVAL_TAC >> simp []
+QED
+
+Definition task041_sue_function_def:
+  task041_sue_function =
+    task041_fmp_function with fn_blocks :=
+      [<|bb_label := "entry";
+         bb_instructions :=
+           [mk_inst 2 ASSIGN [Lit 0w] ["formal_var_0"];
+            mk_inst 1 RET [Var "formal_var_0"] []]|>]
+End
+
+Definition task041_sue_supply_def:
+  task041_sue_supply =
+    init_ir_supply task041_raw_unit with <|
+      irs_next_inst := 3;
+      irs_next_var := 1;
+      irs_used_inst_ids := [2;1];
+      irs_used_vars := ["formal_var_0"]
+    |>
+End
+
+Definition task041_pruning_sue_supply_def:
+  task041_pruning_sue_supply =
+    init_ir_supply task041_pruning_unit with <|
+      irs_next_inst := 3;
+      irs_next_var := 1;
+      irs_used_inst_ids := [2;1;0];
+      irs_used_vars := ["formal_var_0"]
+    |>
+End
+
+Theorem task041_pruning_fmp_sue_result:
+  sue_expand_function_supply (init_ir_supply task041_pruning_unit)
+    task041_fmp_function =
+  (task041_sue_function,task041_pruning_sue_supply)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_sue_result:
+  sue_expand_function_supply (init_ir_supply task041_raw_unit)
+    task041_fmp_function = (task041_sue_function,task041_sue_supply)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_sue_dft_result:
+  dft_fn task041_sue_function = task041_sue_function
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_sue_cfg_norm_result:
+  cfg_norm_function_supply task041_sue_supply task041_sue_function =
+    (task041_sue_function,task041_sue_supply)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_function_blocks:
+  task041_fmp_function.fn_blocks =
+    [<|bb_label := "entry";
+       bb_instructions := [mk_inst 1 RET [Lit 0w] []]|>]
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_fmp_function_blocks_update:
+  (task041_fmp_function with fn_blocks :=
+    [<|bb_label := "entry";
+       bb_instructions := [mk_inst 1 RET [Lit 0w] []]|>]) =
+  task041_fmp_function
+Proof
+  EVAL_TAC
+QED
+Theorem task041_fmp_simplify_result:
+  simplify_cfg_fn_with_labels task041_fmp_function =
+    (task041_fmp_function,[])
+Proof
+  qspecl_then [`task041_fmp_function`,`"entry"`,`1`] mp_tac
+    simplify_cfg_single_ret_updated_with_labels >>
+  simp [task041_fmp_function_blocks_update]
+QED
+
+
+Definition task041_sue_observation_def:
+  task041_sue_observation =
+    task041_raw_unit with cu_context :=
+      task041_raw_unit.cu_context with ctx_functions := [task041_sue_function]
+End
+
+Theorem task041_sue_observation_result:
+  unit_with_current_fn task041_raw_unit task041_sue_function =
+  SOME task041_sue_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_make_ssa_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_MakeSSA)
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) =
+  SOME <|fpo_function := task041_raw_function "main" 1;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_make_ssa_result]
+QED
+
+Theorem task041_walk_lower_dload_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_LowerDload)
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) =
+  SOME <|fpo_function := task041_raw_function "main" 1;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_lower_dload_result]
+QED
+
+Theorem task041_raw_reserved:
+  task041_raw_unit.cu_context.ctx_global_reserved = []
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_concretize_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_ConcretizeMemLoc)
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) =
+  SOME <|fpo_function := task041_concretized_function;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_raw_reserved, task041_concretize_result]
+QED
+
+Theorem task041_walk_fmp_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_FmpLowering)
+    task041_concretized_observation (init_ir_supply task041_raw_unit)
+    task041_concretized_function =
+  SOME <|fpo_function := task041_fmp_function;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_fmp_after_concretize_result]
+QED
+
+Theorem task041_walk_second_make_ssa_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_MakeSSA)
+    task041_fmp_observation (init_ir_supply task041_raw_unit)
+    task041_fmp_function =
+  SOME <|fpo_function := task041_fmp_function;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_fmp_make_ssa_result]
+QED
+
+Theorem task041_walk_simplify_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_SimplifyCFG)
+    task041_fmp_observation (init_ir_supply task041_raw_unit)
+    task041_fmp_function =
+  SOME <|fpo_function := task041_fmp_function;
+         fpo_label_map := [];
+         fpo_supply := init_ir_supply task041_raw_unit|>
+Proof
+  simp [task041_fmp_simplify_result]
+QED
+
+Theorem task041_walk_sue_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_SingleUseExpansion)
+    task041_fmp_observation (init_ir_supply task041_raw_unit)
+    task041_fmp_function =
+  SOME <|fpo_function := task041_sue_function;
+         fpo_label_map := [];
+         fpo_supply := task041_sue_supply|>
+Proof
+  simp [task041_fmp_sue_result]
+QED
+
+Theorem task041_walk_dft_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_DFT)
+    task041_sue_observation task041_sue_supply task041_sue_function =
+  SOME <|fpo_function := task041_sue_function;
+         fpo_label_map := [];
+         fpo_supply := task041_sue_supply|>
+Proof
+  simp [task041_sue_dft_result]
+QED
+
+Theorem task041_walk_cfg_norm_execute:
+  execute_configured_fn_pass task039_policy (CFP_Simple VP_CFGNormalization)
+    task041_sue_observation task041_sue_supply task041_sue_function =
+  SOME <|fpo_function := task041_sue_function;
+         fpo_label_map := [];
+         fpo_supply := task041_sue_supply|>
+Proof
+  simp [task041_sue_cfg_norm_result]
+QED
+
+
+
+Theorem task041_walk_make_ssa_guard:
+  let out = <|fpo_function := task041_raw_function "main" 1;
+               fpo_label_map := [];
+               fpo_supply := init_ir_supply task041_raw_unit|> in
+    out.fpo_function.fn_name = (task041_raw_function "main" 1).fn_name /\
+    fn_pass_effects_hold VP_MakeSSA (task041_raw_function "main" 1) out /\
+    introduces_no_invoke_edges (task041_raw_function "main" 1) out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_raw_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_lower_dload_guard:
+  let out = <|fpo_function := task041_raw_function "main" 1;
+               fpo_label_map := [];
+               fpo_supply := init_ir_supply task041_raw_unit|> in
+    out.fpo_function.fn_name = (task041_raw_function "main" 1).fn_name /\
+    fn_pass_effects_hold VP_LowerDload (task041_raw_function "main" 1) out /\
+    introduces_no_invoke_edges (task041_raw_function "main" 1) out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_raw_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_concretize_guard:
+  let out = <|fpo_function := task041_concretized_function;
+               fpo_label_map := [];
+               fpo_supply := init_ir_supply task041_raw_unit|> in
+    out.fpo_function.fn_name = (task041_raw_function "main" 1).fn_name /\
+    fn_pass_effects_hold VP_ConcretizeMemLoc (task041_raw_function "main" 1) out /\
+    introduces_no_invoke_edges (task041_raw_function "main" 1) out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_raw_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_fmp_guard:
+  let out = <|fpo_function := task041_fmp_function;
+               fpo_label_map := [];
+               fpo_supply := init_ir_supply task041_raw_unit|> in
+    out.fpo_function.fn_name = task041_concretized_function.fn_name /\
+    fn_pass_effects_hold VP_FmpLowering task041_concretized_function out /\
+    introduces_no_invoke_edges task041_concretized_function out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_concretized_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_second_make_ssa_guard:
+  let out = <|fpo_function := task041_fmp_function;
+               fpo_label_map := [];
+               fpo_supply := init_ir_supply task041_raw_unit|> in
+    out.fpo_function.fn_name = task041_fmp_function.fn_name /\
+    fn_pass_effects_hold VP_MakeSSA task041_fmp_function out /\
+    introduces_no_invoke_edges task041_fmp_function out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_fmp_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_simplify_guard:
+  let out = <|fpo_function := task041_fmp_function;
+               fpo_label_map := [];
+               fpo_supply := init_ir_supply task041_raw_unit|> in
+    out.fpo_function.fn_name = task041_fmp_function.fn_name /\
+    fn_pass_effects_hold VP_SimplifyCFG task041_fmp_function out /\
+    introduces_no_invoke_edges task041_fmp_function out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_fmp_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_sue_guard:
+  let out = <|fpo_function := task041_sue_function;
+               fpo_label_map := [];
+               fpo_supply := task041_sue_supply|> in
+    out.fpo_function.fn_name = task041_fmp_function.fn_name /\
+    fn_pass_effects_hold VP_SingleUseExpansion task041_fmp_function out /\
+    introduces_no_invoke_edges task041_fmp_function out.fpo_function /\
+    ir_supply_extends (init_ir_supply task041_raw_unit) out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_fmp_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_dft_guard:
+  let out = <|fpo_function := task041_sue_function;
+               fpo_label_map := [];
+               fpo_supply := task041_sue_supply|> in
+    out.fpo_function.fn_name = task041_sue_function.fn_name /\
+    fn_pass_effects_hold VP_DFT task041_sue_function out /\
+    introduces_no_invoke_edges task041_sue_function out.fpo_function /\
+    ir_supply_extends task041_sue_supply out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_sue_observation
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walk_cfg_norm_guard:
+  let out = <|fpo_function := task041_sue_function;
+               fpo_label_map := [];
+               fpo_supply := task041_sue_supply|> in
+    out.fpo_function.fn_name = task041_sue_function.fn_name /\
+    fn_pass_effects_hold VP_CFGNormalization task041_sue_function out /\
+    introduces_no_invoke_edges task041_sue_function out.fpo_function /\
+    ir_supply_extends task041_sue_supply out.fpo_supply /\
+    ir_supply_covers_fn out.fpo_supply out.fpo_function /\
+    ir_supply_covers_unit out.fpo_supply task041_sue_observation
+Proof
+  EVAL_TAC
+QED
+
+
+Theorem task041_fold_cfg_norm:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_CFGNormalization] task041_raw_unit task041_sue_supply
+    task041_sue_function [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_sue_observation_result] >>
+  simp [task041_sue_cfg_norm_result, fn_pass_tag_def,
+        venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  mp_tac task041_walk_cfg_norm_guard >> simp []
+QED
+
+
+Theorem task041_fold_dft:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit task041_sue_supply task041_sue_function [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_sue_observation_result] >>
+  simp [task041_sue_dft_result, fn_pass_tag_def, task041_fold_cfg_norm] >>
+  mp_tac task041_walk_dft_guard >> simp []
+QED
+
+Theorem task041_fold_sue:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_SingleUseExpansion; CFP_Simple VP_DFT;
+     CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    task041_fmp_function [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_fmp_observation_result] >>
+  simp [task041_fmp_sue_result, fn_pass_tag_def, task041_fold_dft] >>
+  mp_tac task041_walk_sue_guard >> simp []
+QED
+
+Theorem task041_fold_simplify:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_SimplifyCFG; CFP_Simple VP_SingleUseExpansion;
+     CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    task041_fmp_function [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_fmp_observation_result] >>
+  simp [task041_fmp_simplify_result, fn_pass_tag_def, task041_fold_sue] >>
+  mp_tac task041_walk_simplify_guard >> simp []
+QED
+
+Theorem task041_fold_second_make_ssa:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_MakeSSA; CFP_Simple VP_SimplifyCFG;
+     CFP_Simple VP_SingleUseExpansion; CFP_Simple VP_DFT;
+     CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    task041_fmp_function [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_fmp_observation_result] >>
+  simp [task041_fmp_make_ssa_result, fn_pass_tag_def,
+        task041_fold_simplify] >>
+  mp_tac task041_walk_second_make_ssa_guard >> simp []
+QED
+
+Theorem task041_fold_fmp:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_FmpLowering; CFP_Simple VP_MakeSSA;
+     CFP_Simple VP_SimplifyCFG; CFP_Simple VP_SingleUseExpansion;
+     CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    task041_concretized_function [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [CONJUNCT1 task041_concretized_observation_result] >>
+  simp [task041_fmp_after_concretize_result, fn_pass_tag_def,
+        task041_fold_second_make_ssa] >>
+  mp_tac task041_walk_fmp_guard >> simp []
+QED
+
+Theorem task041_fold_concretize:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_ConcretizeMemLoc; CFP_Simple VP_FmpLowering;
+     CFP_Simple VP_MakeSSA; CFP_Simple VP_SimplifyCFG;
+     CFP_Simple VP_SingleUseExpansion; CFP_Simple VP_DFT;
+     CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  simp [task041_raw_reserved, task041_concretize_result, fn_pass_tag_def,
+        task041_fold_fmp] >>
+  mp_tac task041_walk_concretize_guard >> simp []
+QED
+
+Theorem task041_fold_lower_dload:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_LowerDload; CFP_Simple VP_ConcretizeMemLoc;
+     CFP_Simple VP_FmpLowering; CFP_Simple VP_MakeSSA;
+     CFP_Simple VP_SimplifyCFG; CFP_Simple VP_SingleUseExpansion;
+     CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  simp [task041_lower_dload_result, fn_pass_tag_def,
+        task041_fold_concretize] >>
+  mp_tac task041_walk_lower_dload_guard >> simp []
+QED
+
+Theorem task041_o1_fold:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    o1_fn_passes task041_raw_unit (init_ir_supply task041_raw_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_sue_supply)
+Proof
+  rewrite_tac [o1_fn_passes_def] >>
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  simp [task041_make_ssa_result, fn_pass_tag_def,
+        task041_fold_lower_dload] >>
+  mp_tac task041_walk_make_ssa_guard >> simp []
+QED
+
+
+
+Theorem task041_pruning_sue_cfg_norm_result:
+  cfg_norm_function_supply task041_pruning_sue_supply task041_sue_function =
+    (task041_sue_function,task041_pruning_sue_supply)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_cfg_norm:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_CFGNormalization] task041_raw_unit
+    task041_pruning_sue_supply task041_sue_function [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_sue_observation_result] >>
+  simp [task041_pruning_sue_cfg_norm_result, fn_pass_tag_def,
+        venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_dft:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit task041_pruning_sue_supply task041_sue_function [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_sue_observation_result] >>
+  simp [task041_sue_dft_result, fn_pass_tag_def,
+        task041_pruning_fold_cfg_norm] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_sue:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_SingleUseExpansion; CFP_Simple VP_DFT;
+     CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_pruning_unit)
+    task041_fmp_function [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_fmp_observation_result] >>
+  simp [task041_pruning_fmp_sue_result, fn_pass_tag_def,
+        task041_pruning_fold_dft] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_simplify:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_SimplifyCFG; CFP_Simple VP_SingleUseExpansion;
+     CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_pruning_unit)
+    task041_fmp_function [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_fmp_observation_result] >>
+  simp [task041_fmp_simplify_result, fn_pass_tag_def,
+        task041_pruning_fold_sue] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_second_make_ssa:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_MakeSSA; CFP_Simple VP_SimplifyCFG;
+     CFP_Simple VP_SingleUseExpansion; CFP_Simple VP_DFT;
+     CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_pruning_unit)
+    task041_fmp_function [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [task041_fmp_observation_result] >>
+  simp [cj 3 task041_supply_preserving_pass_results, fn_pass_tag_def,
+        task041_pruning_fold_simplify] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_fmp:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_FmpLowering; CFP_Simple VP_MakeSSA;
+     CFP_Simple VP_SimplifyCFG; CFP_Simple VP_SingleUseExpansion;
+     CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_pruning_unit)
+    task041_concretized_function [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [CONJUNCT1 task041_concretized_observation_result] >>
+  simp [task041_fmp_after_concretize_result_any, fn_pass_tag_def,
+        task041_pruning_fold_second_make_ssa] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_concretize:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_ConcretizeMemLoc; CFP_Simple VP_FmpLowering;
+     CFP_Simple VP_MakeSSA; CFP_Simple VP_SimplifyCFG;
+     CFP_Simple VP_SingleUseExpansion; CFP_Simple VP_DFT;
+     CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_pruning_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  simp [task041_raw_reserved, task041_concretize_result, fn_pass_tag_def,
+        task041_pruning_fold_fmp] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_fold_lower_dload:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    [CFP_Simple VP_LowerDload; CFP_Simple VP_ConcretizeMemLoc;
+     CFP_Simple VP_FmpLowering; CFP_Simple VP_MakeSSA;
+     CFP_Simple VP_SimplifyCFG; CFP_Simple VP_SingleUseExpansion;
+     CFP_Simple VP_DFT; CFP_Simple VP_CFGNormalization]
+    task041_raw_unit (init_ir_supply task041_pruning_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  simp [cj 2 task041_supply_preserving_pass_results, fn_pass_tag_def,
+        task041_pruning_fold_concretize] >>
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_o1_fold:
+  run_configured_fn_pass_fold execute_configured_fn_pass task039_policy
+    o1_fn_passes task041_raw_unit (init_ir_supply task041_pruning_unit)
+    (task041_raw_function "main" 1) [] =
+  SOME (task041_sue_function,[],task041_pruning_sue_supply)
+Proof
+  rewrite_tac [o1_fn_passes_def] >>
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def] >>
+  pure_once_rewrite_tac [cj 5 task041_raw_structure_facts] >>
+  simp [cj 1 task041_supply_preserving_pass_results, fn_pass_tag_def,
+        task041_pruning_fold_lower_dload] >>
+  EVAL_TAC
+QED
+
+Definition task041_walked_unit_def:
+  task041_walked_unit =
+    task041_raw_unit with cu_context :=
+      task041_raw_unit.cu_context with ctx_functions := [task041_sue_function]
+End
+
+Theorem task041_walked_transaction_facts:
+  replace_unique_function "main" task041_sue_function
+    task041_raw_unit.cu_context.ctx_functions = SOME [task041_sue_function] /\
+  (task041_raw_unit with cu_context :=
+     task041_raw_unit.cu_context with ctx_functions := [task041_sue_function]) =
+    task041_walked_unit /\
+  apply_unit_label_map [] task041_walked_unit = SOME task041_walked_unit /\
+  unit_labels_wf task041_walked_unit /\
+  list_subset (unit_invoke_targets task041_walked_unit)
+    (unit_invoke_targets task041_raw_unit) /\
+  ir_supply_covers_unit task041_sue_supply task041_walked_unit /\
+  unit_global_inst_ids_distinct task041_walked_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_o1_function_transaction:
+  run_configured_fn_passes execute_configured_fn_pass task039_policy
+    o1_fn_passes "main" task041_raw_unit (init_ir_supply task041_raw_unit) =
+  SOME (task041_walked_unit,task041_sue_supply)
+Proof
+  pure_once_rewrite_tac
+    [venomFnScheduleRunnerTheory.run_configured_fn_passes_def] >>
+  pure_rewrite_tac [task041_raw_transaction_facts,
+                    task041_raw_structure_facts] >>
+  simp [task041_o1_fold, task041_walked_transaction_facts]
+QED
+
+Theorem task041_pruning_supply_differs:
+  init_ir_supply task041_pruning_unit <> init_ir_supply task041_raw_unit
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_dead_simplify_result:
+  simplify_cfg_fn_with_labels task041_dead_function =
+    (task041_dead_function,[])
+Proof
+  simp [task041_dead_function_def, simplify_cfg_single_ret_with_labels]
+QED
+
+
+Theorem task041_pruning_structure_facts:
+  ctx_fn_names task041_pruning_unit.cu_context = ["main";"unreachable"] /\
+  lookup_unique_function "main"
+    task041_pruning_unit.cu_context.ctx_functions =
+      SOME (task041_raw_function "main" 1) /\
+  lookup_unique_function "unreachable"
+    task041_pruning_unit.cu_context.ctx_functions = SOME task041_dead_function /\
+  unit_with_current_fn task041_pruning_unit
+    (task041_raw_function "main" 1) = SOME task041_pruning_unit /\
+  unit_with_current_fn task041_pruning_unit task041_dead_function =
+    SOME task041_pruning_unit /\
+  apply_unit_label_map [] task041_pruning_unit = SOME task041_pruning_unit /\
+  list_subset (unit_invoke_targets task041_pruning_unit)
+    (unit_invoke_targets task041_pruning_unit)
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_pruning_transaction_facts:
+  ir_supply_covers_unit (init_ir_supply task041_pruning_unit)
+    task041_pruning_unit /\
+  ir_supply_extends (init_ir_supply task041_pruning_unit)
+    (init_ir_supply task041_pruning_unit) /\
+  ir_supply_covers_fn (init_ir_supply task041_pruning_unit)
+    (task041_raw_function "main" 1) /\
+  ir_supply_covers_fn (init_ir_supply task041_pruning_unit)
+    task041_dead_function /\
+  fn_pass_effects_hold VP_SimplifyCFG (task041_raw_function "main" 1)
+    <|fpo_function := task041_raw_function "main" 1;
+      fpo_label_map := [];
+      fpo_supply := init_ir_supply task041_pruning_unit|> /\
+  fn_pass_effects_hold VP_SimplifyCFG task041_dead_function
+    <|fpo_function := task041_dead_function;
+      fpo_label_map := [];
+      fpo_supply := init_ir_supply task041_pruning_unit|> /\
+  introduces_no_invoke_edges (task041_raw_function "main" 1)
+    (task041_raw_function "main" 1) /\
+  introduces_no_invoke_edges task041_dead_function task041_dead_function /\
+  unit_labels_wf task041_pruning_unit /\
+  unit_global_inst_ids_distinct task041_pruning_unit
+Proof
+  EVAL_TAC
+QED
+
+
+Theorem task041_pruning_reduces_to_raw:
+  prune_unit_fcg_unreachable task041_pruning_unit
+    (fcg_analyze task041_pruning_unit.cu_context) = task041_raw_unit /\
+  fcg_postorder (fcg_analyze task041_pruning_unit.cu_context) "main" = ["main"]
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_pruned_o1_walk:
+  run_callee_first task039_policy o1_fn_passes
+    (fcg_postorder (fcg_analyze task041_pruning_unit.cu_context) "main")
+    (prune_unit_fcg_unreachable task041_pruning_unit
+      (fcg_analyze task041_pruning_unit.cu_context))
+    (init_ir_supply task041_raw_unit) =
+  SOME (task041_walked_unit,task041_sue_supply)
+Proof
+  simp [run_callee_first_def, run_named_fn_schedules_def,
+        task041_pruning_reduces_to_raw, task041_o1_function_transaction]
+QED
+
+
+Theorem task041_raw_unit_wf:
+  unit_wf task041_raw_unit
+Proof
+  EVAL_TAC >>
+  simp [listTheory.REV_DEF, venomInstTheory.is_terminator_def,
+        venomStateTheory.get_label_def] >>
+  EVAL_TAC >> rpt strip_tac >> gvs []
+QED
+
+Theorem task041_walked_unit_wf:
+  unit_wf task041_walked_unit
+Proof
+  EVAL_TAC >>
+  simp [listTheory.REV_DEF, venomInstTheory.is_terminator_def,
+        venomStateTheory.get_label_def] >>
+  EVAL_TAC >> rpt strip_tac >> gvs [] >> Cases_on `i` >>
+  gvs [venomInstTheory.is_terminator_def] >> Cases_on `j` >>
+  gvs [venomInstTheory.is_terminator_def] >> Cases_on `n` >>
+  gvs [venomInstTheory.is_terminator_def]
+QED
+
+Theorem task041_raw_driver_facts:
+  unit_wf task041_raw_unit /\
+  raw_static_inputs_wf task041_raw_unit.cu_context /\
+  reachable_fcg_acyclic task041_raw_unit.cu_context
+    (fcg_analyze task041_raw_unit.cu_context) /\
+  task041_raw_unit.cu_context.ctx_entry = SOME "main" /\
+  prune_unit_fcg_unreachable task041_raw_unit
+    (fcg_analyze task041_raw_unit.cu_context) = task041_raw_unit /\
+  fcg_postorder (fcg_analyze task041_raw_unit.cu_context) "main" = ["main"]
+Proof
+  simp [task041_raw_unit_wf] >> EVAL_TAC >> rpt strip_tac >> gvs []
+QED
+
+Theorem task041_get_label_formal_var:
+  get_label (Var "formal_var_0") = NONE
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_walked_final_facts:
+  unit_wf task041_walked_unit /\
+  unit_labels_wf task041_walked_unit /\
+  context_target_safe task039_policy.rpol_target task041_walked_unit.cu_context /\
+  concretized_static_layouts_wf task041_walked_unit.cu_context /\
+  fmp_lowered_context_wf task041_walked_unit.cu_context /\
+  reachable_fcg_acyclic task041_walked_unit.cu_context
+    (fcg_analyze task041_walked_unit.cu_context) /\
+  codegen_ready task041_walked_unit.cu_context
+Proof
+  simp [task041_walked_unit_wf] >> EVAL_TAC >> rpt strip_tac >>
+  gvs [venomInstTheory.fn_insts_blocks_def,
+       callLayoutDefsTheory.canonical_entry_params_from_def,
+       callLayoutDefsTheory.no_param_insts_def,
+       listTheory.INDEX_FIND_def,
+       venomInstTheory.is_param_opcode_def,
+       venomInstTheory.is_terminator_def,
+       venomInstTheory.is_raw_fmp_opcode_def,
+       callLayoutDefsTheory.lowered_return_inst_layout_wf_def,
+       fmpWfDefsTheory.fmp_runner_inst_wf_def,
+       fmpWfDefsTheory.fmp_bump_consumer_wf_def,
+       fmpWfDefsTheory.fmp_invoke_consumer_wf_def,
+       fmpWfDefsTheory.fmp_return_consumer_wf_def,
+       fmpWfDefsTheory.invoke_layout_wf_def]
+  >~ [`i = 1`] >- (Cases_on `i` >> gvs [venomInstTheory.is_terminator_def])
+  >~ [`_ = PHI`] >-
+    (Cases_on `j` >> gvs [] >> Cases_on `i` >> gvs [] >>
+     Cases_on `n` >> gvs [])
+  >~ [`succ = "entry"`] >-
+    gvs [task041_get_label_formal_var, listTheory.REV_DEF]
+  >> TRY
+    (qexists `<|inst_id := 2; inst_opcode := ASSIGN;
+                inst_operands := [Lit 0w];
+                inst_outputs := ["formal_var_0"]|>` >>
+     simp [] >> conj_tac
+     >- (rpt strip_tac >> Cases_on `path` >> gvs []) >>
+     qexistsl [`0`,`1`] >> simp [] >> NO_TAC)
+  >> Cases_on `v = "formal_var_0"` >> simp []
+QED
+
+Theorem task041_o1_walk:
+  run_callee_first task039_policy o1_fn_passes
+    (fcg_postorder (fcg_analyze task041_raw_unit.cu_context) "main")
+    (prune_unit_fcg_unreachable task041_raw_unit
+      (fcg_analyze task041_raw_unit.cu_context))
+    (init_ir_supply task041_raw_unit) =
+  SOME (task041_walked_unit,task041_sue_supply)
+Proof
+  simp [run_callee_first_def, run_named_fn_schedules_def,
+        task041_raw_driver_facts, task041_o1_function_transaction]
+QED
+
+Theorem task041_o1_walk_closed:
+  run_callee_first task039_policy o1_fn_passes ["main"]
+    task041_raw_unit (init_ir_supply task041_raw_unit) =
+  SOME (task041_walked_unit,task041_sue_supply)
+Proof
+  simp [run_callee_first_def, run_named_fn_schedules_def,
+        task041_o1_function_transaction]
+QED
+
+Theorem task041_run_venom_pipeline_success:
+  run_venom_pipeline (K T) (K T) (K T) task039_policy o1_pipeline_spec
+    task041_raw_unit =
+  SOME <|po_unit := task041_walked_unit;
+         po_final_assembly := FAP_Optimize|>
+Proof
+  simp [run_venom_pipeline_def, task041_schedule_evaluations,
+        task041_raw_driver_facts, task041_pre_walk,
+        task041_o1_walk, task041_o1_walk_closed, o1_pipeline_spec_def,
+        run_pipeline_stages_def, task041_walked_final_facts]
+QED
+
+Theorem task041_o1_policy_result:
+  resolve_o1_policy (o1_policy prague_capabilities) = SOME task039_policy
+Proof
+  EVAL_TAC
+QED
+
+Theorem task041_o1_pipeline_success:
+  o1_pipeline (K T) (K T) (K T) prague_capabilities task041_raw_unit =
+  SOME <|po_unit := task041_walked_unit;
+         po_final_assembly := FAP_Optimize|>
+Proof
+  simp [o1_pipeline_def, task041_o1_policy_result,
+        task041_run_venom_pipeline_success]
+QED
+
+
+Theorem task041_success_validation:
+  let out = <|po_unit := task041_walked_unit;
+              po_final_assembly := FAP_Optimize|> in
+    o1_pipeline (K T) (K T) (K T) prague_capabilities task041_raw_unit =
+      SOME out /\
+    out.po_final_assembly = FAP_Optimize /\
+    unit_wf out.po_unit /\
+    fmp_lowered_context_wf out.po_unit.cu_context /\
+    codegen_ready out.po_unit.cu_context
+Proof
+  simp [task041_o1_pipeline_success, task041_walked_final_facts]
+QED
+
+Theorem task041_final_check_rejection:
+  run_venom_pipeline (K T) (K T) (K F) task039_policy o1_pipeline_spec
+    task041_raw_unit = NONE
+Proof
+  simp [run_venom_pipeline_def, task041_schedule_evaluations,
+        task041_raw_driver_facts, task041_pre_walk,
+        task041_o1_walk, task041_o1_walk_closed, o1_pipeline_spec_def,
+        run_pipeline_stages_def, task041_walked_final_facts]
+QED
+
+
+val _ = export_theory ();
