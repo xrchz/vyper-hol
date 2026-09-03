@@ -178,6 +178,38 @@ Proof
   simp[context_plan_layout_wf_def]
 QED
 
+Theorem generated_spill_access_full_bound:
+  generate_context_plan ctx = SOME cp /\
+  MEM r cp.cp_regions /\ region_spill_access r off ==>
+  r.sr_spill_base <= off /\
+  off + 32 <= r.sr_spill_end /\
+  off + 32 <= cp.cp_peak_spill_end /\
+  off + 32 <= cp.cp_initial_fmp
+Proof
+  rpt strip_tac >>
+  `r.sr_spill_base <= off /\
+   off + 32 <= r.sr_spill_end /\
+   off + 32 <= cp.cp_peak_spill_end` by
+    metis_tac[generated_spill_access_bound] >>
+  `cp.cp_peak_spill_end <= cp.cp_initial_fmp` by
+    metis_tac[generate_context_plan_peak_bound] >>
+  decide_tac
+QED
+
+Theorem generated_spill_access_local_alloc_bound:
+  generate_context_plan ctx = SOME cp /\
+  MEM r cp.cp_regions /\ region_spill_access r off ==>
+  let al = <|sa_spill_base := r.sr_spill_base;
+             sa_next_offset := r.sr_spill_end;
+             sa_free_slots := slots|> in
+    al.sa_spill_base <= off /\
+    off + 32 <= al.sa_next_offset /\
+    off + 32 <= cp.cp_peak_spill_end /\
+    off + 32 <= cp.cp_initial_fmp
+Proof
+  simp[LET_THM] >> metis_tac[generated_spill_access_full_bound]
+QED
+
 Theorem generate_context_plan_missing_eom:
   (?fn. MEM fn ctx.ctx_functions /\ fn.fn_eom = NONE) ==>
   generate_context_plan ctx = NONE
