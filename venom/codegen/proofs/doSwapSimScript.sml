@@ -2174,6 +2174,196 @@ Proof
 QED
 
 
+(* Helper: ps_spilled after applying a batch of generated spill operations. *)
+Theorem apply_spill_ops_spilled[local]:
+  !offsets lo ps.
+    LENGTH offsets <= LENGTH ps.ps_stack ==>
+    (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
+    ps.ps_spilled |++
+      ZIP (TAKE (LENGTH offsets) (REVERSE ps.ps_stack), offsets)
+Proof
+  Induct >>
+  simp[apply_prefix_ops_def, FUPDATE_LIST_THM] >>
+  rpt gen_tac >> strip_tac >>
+  PURE_REWRITE_TAC[apply_prefix_ops_def, apply_prefix_op_def,
+                   stack_pop_def] >>
+  qpat_x_assum `!lo ps. _` (qspecl_then [`lo`,
+    `ps with <| ps_stack := TAKE (LENGTH ps.ps_stack - 1) ps.ps_stack;
+                ps_spilled := ps.ps_spilled |+ (stack_peek 0 ps.ps_stack, h);
+                ps_alloc := ps.ps_alloc with sa_next_offset :=
+                  MAX ps.ps_alloc.sa_next_offset (h + 32) |>`] mp_tac) >>
+  simp[LENGTH_TAKE_EQ] >> strip_tac >>
+  `LENGTH ps.ps_stack - (LENGTH offsets + 1) <=
+   LENGTH ps.ps_stack - 1` by decide_tac >>
+  `ps.ps_stack <> []` by (Cases_on `ps.ps_stack` >> fs[]) >>
+  `TAKE (SUC (LENGTH offsets)) (REVERSE ps.ps_stack) =
+   LAST ps.ps_stack ::
+   TAKE (LENGTH offsets) (REVERSE (FRONT ps.ps_stack))` by (
+    match_mp_tac take_reverse_decompose >> simp[]) >>
+  simp[ZIP_def, FUPDATE_LIST_THM] >>
+  `stack_peek 0 ps.ps_stack = LAST ps.ps_stack` by
+    simp[stack_peek_last] >>
+  simp[] >>
+  `FRONT ps.ps_stack = TAKE (LENGTH ps.ps_stack - 1) ps.ps_stack` by
+    simp[FRONT_BY_TAKE] >>
+  simp[]
+QED
+
+Theorem prefix_spill_wf_map_spill_bounds[local]:
+  !offsets lo ps.
+    prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) ps ==>
+    EVERY (\off. off < dimword(:256)) offsets
+Proof
+  Induct >> simp[prefix_spill_wf_def, spill_op_wf_def] >>
+  rpt strip_tac >>
+  qpat_x_assum `!lo ps. _`
+    (qspecl_then [`lo`, `apply_prefix_op initial_fmp lo (SOSpill h) ps`] mp_tac) >>
+  simp[]
+QED
+
+
+Theorem do_swap_deep_restore_prefix_spill_wf[local]:
+  !dist ps lo.
+    dist > 16 /\ dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo
+      (MAP SOSpill (FST (spill_alloc_n [] ps.ps_alloc
+        (top_n (dist + 1) ps.ps_stack)))) ps ==>
+    prefix_spill_wf initial_fmp lo
+      (MAP SORestore
+        (MAP (\idx. EL idx (FST (spill_alloc_n [] ps.ps_alloc
+          (top_n (dist + 1) ps.ps_stack))))
+          (REVERSE ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]))))
+      (apply_prefix_ops initial_fmp lo
+        (MAP SOSpill (FST (spill_alloc_n [] ps.ps_alloc
+          (top_n (dist + 1) ps.ps_stack)))) ps)
+Proof
+  rpt strip_tac >>
+  qabbrev_tac `items = top_n (dist + 1) ps.ps_stack` >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] ps.ps_alloc items)` >>
+  qabbrev_tac `desired_rev =
+    REVERSE ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0])` >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+  `LENGTH offsets = LENGTH items` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  `LENGTH desired_rev = LENGTH items` by
+    simp[Abbr `desired_rev`, LENGTH_REVERSE, LENGTH_GENLIST] >>
+  `ALL_DISTINCT items` by
+    simp[Abbr `items`, top_n_def, ALL_DISTINCT_REVERSE, ALL_DISTINCT_TAKE] >>
+  `DISJOINT (set items) (FDOM ps.ps_spilled)` by (
+    fs[DISJOINT_DEF, EXTENSION] >> gen_tac >>
+    qpat_x_assum `!x. ~MEM x ps.ps_stack \/ _` (qspec_then `x` mp_tac) >>
+    simp[Abbr `items`, top_n_def] >> metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  `EVERY (\off. off < dimword(:256)) offsets` by
+    metis_tac[prefix_spill_wf_map_spill_bounds] >>
+  `EVERY (\i. i < LENGTH items) desired_rev` by
+    simp[Abbr `desired_rev`, EVERY_REVERSE, EVERY_APPEND, EVERY_GENLIST] >>
+  `ALL_DISTINCT desired_rev` by (
+    qspec_then `dist + 1` mp_tac desired_indices_all_distinct >>
+    simp[Abbr `desired_rev`]) >>
+  `spill_alloc_layout_wf
+     (SND (spill_alloc_n [] ps.ps_alloc items))
+     (ps.ps_spilled |++ ZIP(items, offsets))` by (
+    qspecl_then [`items`, `[]`, `ps.ps_alloc`, `ps.ps_spilled`, `[]`]
+      mp_tac spill_alloc_n_layout_wf >>
+    simp[FUPDATE_LIST_THM, Abbr `offsets`]) >>
+  `ALL_DISTINCT offsets` by (
+    rewrite_tac[EL_ALL_DISTINCT_EL_EQ] >>
+    rpt gen_tac >> strip_tac >> eq_tac
+    >- (strip_tac >>
+        Cases_on `n1 = n2` >- simp[] >>
+        `FLOOKUP (ps.ps_spilled |++ ZIP(items, offsets)) (EL n1 items) =
+           SOME (EL n1 offsets)` by
+          metis_tac[flookup_fupdate_list_el] >>
+        `FLOOKUP (ps.ps_spilled |++ ZIP(items, offsets)) (EL n2 items) =
+           SOME (EL n2 offsets)` by
+          metis_tac[flookup_fupdate_list_el] >>
+        `EL n1 items <> EL n2 items` by metis_tac[ALL_DISTINCT_EL_IMP] >>
+        fs[spill_alloc_layout_wf_def] >>
+        qpat_x_assum `!op1 off1 op2 off2. _`
+          (qspecl_then [`EL n1 items`, `EL n1 offsets`,
+                        `EL n2 items`, `EL n2 offsets`] mp_tac) >>
+        simp[] >> decide_tac) >>
+    simp[]) >>
+  `(apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
+     ps.ps_spilled |++ ZIP(REVERSE items, offsets)` by (
+    qspecl_then [`offsets`, `lo`, `ps`] mp_tac apply_spill_ops_spilled >>
+    `TAKE (LENGTH offsets) (REVERSE ps.ps_stack) = REVERSE items` by
+      simp[Abbr `items`, top_n_def, REVERSE_REVERSE] >>
+    simp[]) >>
+  qabbrev_tac `restore_items =
+    MAP (\idx. EL idx (REVERSE items)) desired_rev` >>
+  qabbrev_tac `restore_offsets = MAP (\idx. EL idx offsets) desired_rev` >>
+  qspecl_then [`restore_items`, `restore_offsets`, `lo`,
+    `apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps`]
+    mp_tac prefix_spill_wf_map_restore_lookup >>
+  (impl_tac >- (
+    conj_tac >- simp[Abbr `restore_items`, Abbr `restore_offsets`] >>
+    conj_tac
+    >- (simp[Abbr `restore_items`] >>
+        irule all_distinct_map_el >>
+        simp[ALL_DISTINCT_REVERSE] >> metis_tac[]) >>
+    conj_tac
+    >- (simp[Abbr `restore_offsets`] >>
+        irule all_distinct_map_el >> simp[] >> metis_tac[]) >>
+    rpt gen_tac >> strip_tac >>
+    `k < LENGTH desired_rev` by fs[Abbr `restore_items`] >>
+    simp[Abbr `restore_items`, Abbr `restore_offsets`, EL_MAP] >>
+    conj_tac
+    >- (ASM_REWRITE_TAC[] >>
+        irule flookup_fupdate_list_el >>
+        simp[ALL_DISTINCT_REVERSE] >>
+        fs[EVERY_EL] >> metis_tac[]) >>
+    fs[EVERY_EL] >> metis_tac[])) >>
+  simp[Abbr `restore_offsets`]
+QED
+
+Theorem do_swap_prefix_spill_wf_from_front:
+  !dist ps ops ps' lo.
+    do_swap dist ps = (ops,ps') /\
+    dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) ps ==>
+    prefix_spill_wf initial_fmp lo ops ps
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist = 0`
+  >- gvs[do_swap_def, prefix_spill_wf_def] >>
+  Cases_on `dist <= 16`
+  >- gvs[do_swap_def, prefix_spill_wf_def, spill_op_wf_def] >>
+  `dist > 16` by decide_tac >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[] >>
+  qpat_x_assum `prefix_spill_wf initial_fmp lo (FRONT _) ps` mp_tac >>
+  simp[FRONT_APPEND_NOT_NIL, prefix_spill_wf_append] >> strip_tac >>
+  mp_tac (Q.SPECL [`dist`, `ps`, `lo`]
+    do_swap_deep_restore_prefix_spill_wf) >>
+  simp[] >> strip_tac >>
+  simp[prefix_spill_wf_append] >>
+  qpat_x_assum
+    `prefix_spill_wf initial_fmp lo
+       (MAP SORestore _ ++ [SORestore _]) _` mp_tac >>
+  simp[prefix_spill_wf_append, apply_prefix_ops_append] >>
+  strip_tac >>
+  `dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+  `LENGTH (FST (spill_alloc_n [] ps.ps_alloc
+      (top_n (dist + 1) ps.ps_stack))) = dist + 1` by
+    simp[spill_alloc_n_offsets_length, top_n_def, LENGTH_TAKE] >>
+  `FST (spill_alloc_n [] ps.ps_alloc
+      (top_n (dist + 1) ps.ps_stack)) <> []` by (
+    Cases_on `FST (spill_alloc_n [] ps.ps_alloc
+      (top_n (dist + 1) ps.ps_stack))` >> gvs[] >> decide_tac) >>
+  gvs[REVERSE_APPEND, MAP_APPEND, apply_prefix_ops_append] >>
+  PURE_ONCE_REWRITE_TAC[GSYM apply_prefix_ops_append] >>
+  simp[] >> first_assum ACCEPT_TAC
+QED
+
+
 (* ---------------------------------------------------------------
    do_swap_venom_asm_rel_big: dist > 16 case
    --------------------------------------------------------------- *)
@@ -2560,38 +2750,6 @@ QED
    gives the same ps_stack as the direct do_swap computation.
    --------------------------------------------------------------- *)
 
-(* Helper: ps_spilled after applying spill ops *)
-Theorem apply_spill_ops_spilled[local]:
-  !offsets lo ps.
-    LENGTH offsets <= LENGTH ps.ps_stack ==>
-    (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
-    ps.ps_spilled |++
-      ZIP (TAKE (LENGTH offsets) (REVERSE ps.ps_stack), offsets)
-Proof
-  Induct >>
-  simp[apply_prefix_ops_def, FUPDATE_LIST_THM] >>
-  rpt gen_tac >> strip_tac >>
-  PURE_REWRITE_TAC[apply_prefix_ops_def, apply_prefix_op_def,
-                   stack_pop_def] >>
-  qpat_x_assum `!lo ps. _` (qspecl_then [`lo`,
-    `ps with <| ps_stack := TAKE (LENGTH ps.ps_stack - 1) ps.ps_stack;
-                ps_spilled := ps.ps_spilled |+ (stack_peek 0 ps.ps_stack, h);
-                ps_alloc := ps.ps_alloc with sa_next_offset :=
-                  MAX ps.ps_alloc.sa_next_offset (h + 32) |>`] mp_tac) >>
-  simp[LENGTH_TAKE_EQ] >> strip_tac >>
-  `ps.ps_stack <> []` by (Cases_on `ps.ps_stack` >> fs[]) >>
-  `TAKE (SUC (LENGTH offsets)) (REVERSE ps.ps_stack) =
-   LAST ps.ps_stack ::
-   TAKE (LENGTH offsets) (REVERSE (FRONT ps.ps_stack))` by (
-    match_mp_tac take_reverse_decompose >> simp[]) >>
-  simp[ZIP_def, FUPDATE_LIST_THM] >>
-  `stack_peek 0 ps.ps_stack = LAST ps.ps_stack` by
-    simp[stack_peek_last] >>
-  simp[] >>
-  `FRONT ps.ps_stack = TAKE (LENGTH ps.ps_stack - 1) ps.ps_stack` by
-    simp[FRONT_BY_TAKE] >>
-  simp[]
-QED
 
 (* Helper: ps_stack after applying restore ops.
    Requires a global separation condition: ALL pairs in ps_spilled
