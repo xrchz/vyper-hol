@@ -15,6 +15,77 @@ Ancestors
   codegenRel asmSem planExec planWf
   indexedLists list rich_list finite_map arithmetic
 
+
+(* Value-sensitive equality for planner stacks.  Reorder may replace an
+   operand by an operand_equiv alias without changing its runtime value. *)
+Definition plan_stack_sem_eq_def:
+  plan_stack_sem_eq lo vs (s1 : operand list) s2 <=>
+    LENGTH s1 = LENGTH s2 /\
+    !i. i < LENGTH s1 ==>
+      operand_val vs lo (EL i s1) = operand_val vs lo (EL i s2)
+End
+
+Theorem plan_stack_sem_eq_refl[simp]:
+  !lo vs s. plan_stack_sem_eq lo vs s s
+Proof
+  simp[plan_stack_sem_eq_def]
+QED
+
+Theorem plan_stack_sem_eq_trans:
+  !lo vs s1 s2 s3.
+    plan_stack_sem_eq lo vs s1 s2 /\
+    plan_stack_sem_eq lo vs s2 s3 ==>
+    plan_stack_sem_eq lo vs s1 s3
+Proof
+  simp[plan_stack_sem_eq_def] >> metis_tac[]
+QED
+
+Theorem plan_stack_sem_eq_map_values:
+  !lo vs s1 s2.
+    plan_stack_sem_eq lo vs s1 s2 ==>
+    MAP (operand_val vs lo) s1 = MAP (operand_val vs lo) s2
+Proof
+  rw[plan_stack_sem_eq_def, LIST_EQ_REWRITE] >>
+  `x < LENGTH s1` by decide_tac >>
+  simp[EL_MAP] >>
+  qpat_assum `!i. _` (qspec_then `x` mp_tac) >> simp[]
+QED
+
+Theorem plan_stack_sem_eq_lastn:
+  !lo vs s1 s2 n.
+    plan_stack_sem_eq lo vs s1 s2 ==>
+    MAP (operand_val vs lo) (LASTN n s1) =
+    MAP (operand_val vs lo) (LASTN n s2)
+Proof
+  rpt strip_tac >> drule plan_stack_sem_eq_map_values >>
+  simp[rich_listTheory.LASTN_def, MAP_REVERSE, MAP_TAKE]
+QED
+
+Theorem plan_stack_sem_eq_last:
+  !lo vs s1 s2.
+    plan_stack_sem_eq lo vs s1 s2 /\ s1 <> [] ==>
+    operand_val vs lo (LAST s1) = operand_val vs lo (LAST s2)
+Proof
+  rpt strip_tac >>
+  `s2 <> []` by (strip_tac >> gvs[plan_stack_sem_eq_def]) >>
+  drule plan_stack_sem_eq_lastn >>
+  disch_then (qspec_then `1` mp_tac) >>
+  simp[rich_listTheory.LASTN_1]
+QED
+
+Theorem plan_stack_sem_eq_poke:
+  !lo vs s1 s2 d op1 op2.
+    plan_stack_sem_eq lo vs s1 s2 /\
+    operand_val vs lo op1 = operand_val vs lo op2 ==>
+    plan_stack_sem_eq lo vs
+      (stack_poke d op1 s1) (stack_poke d op2 s2)
+Proof
+  rw[plan_stack_sem_eq_def, stack_poke_def] >>
+  simp[listTheory.LUPDATE_SEM] >>
+  rpt strip_tac >>
+  Cases_on `i = LENGTH s1 - 1 - d` >> simp[]
+QED
+
 (* =========================================================================
    Bridge: reorder_plan = plan_steps (reorder_one ...)
    ========================================================================= *)
