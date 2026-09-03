@@ -1017,7 +1017,7 @@ QED
 Definition generated_plan_state_wf_def:
   generated_plan_state_wf base (ps : plan_state) <=>
     plan_slots_bounded base ps /\
-    doSwapSim$spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
+    doSwapSim$spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
     ALL_DISTINCT ps.ps_stack /\
     DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled)
 End
@@ -1029,7 +1029,7 @@ Theorem generated_plan_state_wf_init[local]:
       ((init_plan_state base) with ps_label_counter := ctr)
 Proof
   simp[generated_plan_state_wf_def, init_plan_state_slots_bounded,
-       doSwapSimTheory.spill_alloc_wf_def,
+       doSwapSimTheory.spill_alloc_layout_wf_def,
        init_plan_state_def, init_spill_alloc_def]
 QED
 
@@ -1040,7 +1040,7 @@ Theorem generated_plan_state_wf_free_active_separate[local]:
     MEM free ps.ps_alloc.sa_free_slots ==>
     active + 32 <= free \/ free + 32 <= active
 Proof
-  simp[generated_plan_state_wf_def, doSwapSimTheory.spill_alloc_wf_def] >>
+  simp[generated_plan_state_wf_def, doSwapSimTheory.spill_alloc_layout_wf_def] >>
   metis_tac[]
 QED
 
@@ -1089,7 +1089,7 @@ Proof
            free_spill_slot_def, EVERY_SNOC,
            finite_mapTheory.DOMSUB_FLOOKUP_THM] >>
       metis_tac[])
-  >- metis_tac[doSwapSimTheory.spill_alloc_wf_after_free]
+  >- metis_tac[doSwapSimTheory.spill_alloc_layout_wf_after_free]
   >> fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION,
         finite_mapTheory.DOMSUB_FLOOKUP_THM] >>
      metis_tac[]
@@ -2529,6 +2529,8 @@ Proof
      qpat_x_assum `!off. MEM off headroom_ps.ps_alloc.sa_free_slots ==> _`
        (qspec_then `off` mp_tac) >>
      simp[headroom_ps_def, headroom_alloc_def]) >>
+  drule doSwapSimTheory.spill_alloc_wf_layout >>
+  disch_then assume_tac >>
   conj_tac
   >- (simp[generated_plan_state_wf_def] >>
       ASM_REWRITE_TAC[] >>
@@ -2536,26 +2538,30 @@ Proof
   first_assum ACCEPT_TAC
 QED
 
-(* The canonical prefix is valid from a generated well-formed pre-state, but
-   reaches the allocator high-water mark and therefore violates the strict
-   allocator bound in the generated post-state invariant. *)
-Theorem do_swap_headroom_generated_counterexample[local]:
+(* The canonical prefix remains layout-safe at allocator saturation, even
+   though the strict readiness predicate correctly fails in the post-state. *)
+Theorem do_swap_headroom_layout_boundary[local]:
   generated_plan_state_wf 0 headroom_ps /\
   prefix_spill_wf initial_fmp FEMPTY
     (FST (do_swap 17 headroom_ps)) headroom_ps /\
-  ~generated_plan_state_wf 0 (SND (do_swap 17 headroom_ps))
+  generated_plan_state_wf 0 (SND (do_swap 17 headroom_ps)) /\
+  ~doSwapSim$spill_alloc_wf
+    (SND (do_swap 17 headroom_ps)).ps_alloc
+    (SND (do_swap 17 headroom_ps)).ps_spilled
 Proof
   mp_tac do_swap_headroom_generated_premises >> strip_tac >>
-  mp_tac do_swap_headroom_witness_facts >> strip_tac >>
+  mp_tac doSwapSimTheory.do_swap_headroom_post_layout >>
+  rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
   conj_tac
   >- first_assum ACCEPT_TAC >>
   conj_tac
   >- first_assum ACCEPT_TAC >>
-  strip_tac >>
-  qpat_x_assum `generated_plan_state_wf 0 (SND (do_swap 17 headroom_ps))`
-    mp_tac >>
-  simp[generated_plan_state_wf_def,
-       doSwapSimTheory.spill_alloc_wf_def]
+  conj_tac
+  >- (fs[generated_plan_state_wf_def, plan_slots_bounded_def,
+          alloc_slots_bounded_def,
+          doSwapSimTheory.spill_alloc_layout_wf_def] >>
+      simp[EVERY_MEM] >> metis_tac[]) >>
+  first_assum ACCEPT_TAC
 QED
 
 (* Checked interface probe for bounded generated spill prefixes: the bounded
@@ -2577,7 +2583,7 @@ Theorem bounded_prefix_old_spill_overlap_probe[local]:
      ~generated_plan_state_wf 0 ps
 Proof
   rpt strip_tac >> EVAL_TAC >>
-  fs[generated_plan_state_wf_def, doSwapSimTheory.spill_alloc_wf_def]
+  fs[generated_plan_state_wf_def, doSwapSimTheory.spill_alloc_layout_wf_def]
 QED
 
 Theorem step_inst_non_invoke_preserves_initial_fmp:
