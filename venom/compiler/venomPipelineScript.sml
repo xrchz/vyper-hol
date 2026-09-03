@@ -38,6 +38,7 @@
 
 Theory venomPipeline
 Ancestors
+  venomPipelineDriver
   phiTransform
   assignElimDefs
   rtaDefs
