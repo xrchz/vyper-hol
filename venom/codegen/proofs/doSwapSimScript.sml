@@ -1920,7 +1920,7 @@ QED
 
 
 (* A valid stack swap is a transposition of two in-range positions. *)
-Theorem stack_swap_permutation[local]:
+Theorem stack_swap_permutation:
   !dist stk.
     0 < dist /\ dist < LENGTH stk /\ ALL_DISTINCT stk ==>
     ALL_DISTINCT (stack_swap dist stk) /\

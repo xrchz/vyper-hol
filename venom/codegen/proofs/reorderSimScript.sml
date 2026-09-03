@@ -472,6 +472,128 @@ Proof
   metis_tac[apply_ssr_indep]
 QED
 
+
+(* Durable direct-state invariant used by deep reorder operations. *)
+Theorem do_restore_structural_wf:
+  !op ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) ==>
+    spill_alloc_layout_wf (SND (do_restore op ps)).ps_alloc
+                          (SND (do_restore op ps)).ps_spilled /\
+    ALL_DISTINCT (SND (do_restore op ps)).ps_stack /\
+    DISJOINT (set (SND (do_restore op ps)).ps_stack)
+             (FDOM (SND (do_restore op ps)).ps_spilled)
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `FLOOKUP ps.ps_spilled op`
+  >- simp[do_restore_def]
+  >> rename1 `FLOOKUP ps.ps_spilled op = SOME off` >>
+  `spill_alloc_layout_wf (free_spill_slot off ps.ps_alloc)
+     (ps.ps_spilled \\ op)` by
+    metis_tac[spill_alloc_layout_wf_after_free] >>
+  `op IN FDOM ps.ps_spilled` by fs[flookup_thm] >>
+  `~MEM op ps.ps_stack` by (
+    fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >> metis_tac[]) >>
+  fs[do_restore_def, stack_push_def] >>
+  conj_tac >- simp[ALL_DISTINCT_SNOC] >>
+  fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION,
+     finite_mapTheory.FDOM_DOMSUB] >>
+  gen_tac >> Cases_on `x = op` >> simp[] >> metis_tac[]
+QED
+
+Theorem do_spill_tos_structural_wf[local]:
+  !ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    ps.ps_stack <> [] ==>
+    spill_alloc_layout_wf (SND (do_spill_tos ps)).ps_alloc
+                          (SND (do_spill_tos ps)).ps_spilled /\
+    ALL_DISTINCT (SND (do_spill_tos ps)).ps_stack /\
+    DISJOINT (set (SND (do_spill_tos ps)).ps_stack)
+             (FDOM (SND (do_spill_tos ps)).ps_spilled)
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[do_spill_tos_def, LET_THM] >> pairarg_tac >> simp[] >>
+  rename1 `alloc_spill_slot ps.ps_alloc = (off, al')` >>
+  `spill_alloc_layout_wf al'
+     (ps.ps_spilled |+ (stack_peek 0 ps.ps_stack, off))` by
+    metis_tac[spill_alloc_layout_wf_after_alloc] >>
+  simp[stack_pop_def, stack_peek_def] >>
+  conj_tac
+  >- simp[ALL_DISTINCT_TAKE] >>
+  conj_tac
+  >- (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+      metis_tac[MEM_TAKE]) >>
+  `TAKE (LENGTH ps.ps_stack - 1) ps.ps_stack = FRONT ps.ps_stack` by
+    simp[rich_listTheory.FRONT_BY_TAKE] >>
+  `EL (LENGTH ps.ps_stack - 1) ps.ps_stack = LAST ps.ps_stack` by
+    simp[LAST_EL, PRE_SUB1] >>
+  pop_assum SUBST1_TAC >>
+  qpat_x_assum `TAKE _ _ = FRONT _` SUBST1_TAC >>
+  irule MEM_FRONT_NOT_LAST >> simp[]
+QED
+
+Theorem do_spill_at_structural_wf:
+  !d ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    d < LENGTH ps.ps_stack ==>
+    spill_alloc_layout_wf (SND (do_spill_at d ps)).ps_alloc
+                          (SND (do_spill_at d ps)).ps_spilled /\
+    ALL_DISTINCT (SND (do_spill_at d ps)).ps_stack /\
+    DISJOINT (set (SND (do_spill_at d ps)).ps_stack)
+             (FDOM (SND (do_spill_at d ps)).ps_spilled)
+Proof
+  rpt gen_tac >> strip_tac >>
+  `ps.ps_stack <> []` by (strip_tac >> gvs[]) >>
+  Cases_on `d = 0`
+  >- (simp[do_spill_at_def] >> irule do_spill_tos_structural_wf >> simp[]) >>
+  simp[do_spill_at_def, LET_THM] >> pairarg_tac >> simp[] >>
+  qspecl_then [`ps with ps_stack := stack_swap d ps.ps_stack`]
+    mp_tac do_spill_tos_structural_wf >>
+  simp[] >> disch_then irule >>
+  `ALL_DISTINCT (stack_swap d ps.ps_stack) /\
+   set (stack_swap d ps.ps_stack) = set ps.ps_stack` by
+    (irule stack_swap_permutation >> simp[]) >>
+  simp[] >>
+  fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+  irule stack_swap_nonempty >> simp[]
+QED
+
+Theorem reduce_depth_plan_structural_wf:
+  !fuel target_ops target_op ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) ==>
+    spill_alloc_layout_wf
+      (SND (reduce_depth_plan fuel target_ops target_op ps)).ps_alloc
+      (SND (reduce_depth_plan fuel target_ops target_op ps)).ps_spilled /\
+    ALL_DISTINCT
+      (SND (reduce_depth_plan fuel target_ops target_op ps)).ps_stack /\
+    DISJOINT
+      (set (SND (reduce_depth_plan fuel target_ops target_op ps)).ps_stack)
+      (FDOM (SND (reduce_depth_plan fuel target_ops target_op ps)).ps_spilled)
+Proof
+  Induct >> simp[reduce_depth_plan_def, LET_THM] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `stack_get_depth target_op ps.ps_stack` >> simp[] >>
+  IF_CASES_TAC >> simp[] >>
+  Cases_on `select_spill_candidate ps.ps_stack target_ops x` >> simp[] >>
+  pairarg_tac >> simp[] >>
+  imp_res_tac stack_get_depth_bound >>
+  `1 <= LENGTH ps.ps_stack` by decide_tac >>
+  imp_res_tac select_spill_candidate_bound >>
+  `spill_alloc_layout_wf ps'.ps_alloc ps'.ps_spilled /\
+   ALL_DISTINCT ps'.ps_stack /\
+   DISJOINT (set ps'.ps_stack) (FDOM ps'.ps_spilled)` by (
+    qspecl_then [`x'`, `ps`] mp_tac do_spill_at_structural_wf >> simp[]) >>
+  first_x_assum (qspecl_then [`target_ops`, `target_op`, `ps'`] mp_tac) >>
+  simp[] >> strip_tac >> pairarg_tac >> gvs[]
+QED
+
 (* do_spill_at: apply_prefix_ops aligns with do_spill_at on stack+spilled *)
 Theorem do_spill_at_align[local]:
   !d ps lo.

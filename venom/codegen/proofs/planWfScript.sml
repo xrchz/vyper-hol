@@ -638,7 +638,7 @@ Proof
 QED
 
 (* select_spill_candidate returns a value ≤ 16 and < LENGTH stk *)
-Theorem select_spill_candidate_bound[local]:
+Theorem select_spill_candidate_bound:
   !stk forbidden target_dist cand.
     1 <= LENGTH stk ==>
     select_spill_candidate stk forbidden target_dist = SOME cand ==>
