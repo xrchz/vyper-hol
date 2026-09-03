@@ -35,6 +35,21 @@ Proof
   qexists `r` >> simp[] >> decide_tac
 QED
 
+Theorem generated_spill_access_context_boundary:
+  generate_context_plan ctx = SOME cp /\
+  MEM r cp.cp_regions /\
+  region_spill_access r off /\
+  off <= i /\ i < off + 32 ==>
+  (r.sr_spill_base <= off /\ off + 32 <= r.sr_spill_end) /\
+  context_spill_byte cp i
+Proof
+  rpt gen_tac >> strip_tac >>
+  conj_tac
+  >- (drule generate_context_plan_access_bounded >>
+      simp[listTheory.EVERY_MEM] >> metis_tac[])
+  >> metis_tac[generated_local_spill_byte_in_context]
+QED
+
 Theorem context_spill_step_safe_local:
   MEM r cp.cp_regions /\ context_spill_step_safe cp vs vs' ==>
   step_mem_safe
