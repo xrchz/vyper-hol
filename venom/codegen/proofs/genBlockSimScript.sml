@@ -2582,7 +2582,7 @@ Proof
   >- (fs[generated_plan_state_wf_def, plan_slots_bounded_def,
           alloc_slots_bounded_def,
           doSwapSimTheory.spill_alloc_layout_wf_def] >>
-      simp[EVERY_MEM] >> metis_tac[]) >>
+      simp[EVERY_MEM]) >>
   first_assum ACCEPT_TAC
 QED
 
@@ -2630,7 +2630,7 @@ Theorem gen_inst_ok_sim:
   !fuel ctx lo o2pc prog
    liveness dfg cfg fn inst next_liveness is_halting
    next_is_term bb_label base ps vs as ops ps'.
-    plan_slots_bounded base ps /\
+    generated_plan_state_wf base ps /\
     codegen_ready_fn fn /\
     (* Dischargeable at block level from codegen_ready_fn + MEM bb/inst *)
     inst_wf inst /\
@@ -2683,6 +2683,7 @@ Theorem gen_inst_ok_sim:
         as'.as_pc = as.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
+  `plan_slots_bounded base' ps` by fs[generated_plan_state_wf_def] >>
   (* Dispatch on generate_inst_plan cases *)
   qpat_x_assum `generate_inst_plan _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
   simp[Once generate_inst_plan_def, is_param_opcode_def] >>
@@ -2937,6 +2938,57 @@ Resume gen_inst_ok_sim[retpc_param]:
   >> fs[venom_asm_rel_def, update_var_def]
 QED
 
+
+(* Consumer-shaped simulation boundary for optimistic_swap_plan. *)
+Theorem optimistic_swap_plan_postfix_sim[local]:
+  !base dfg inst next_liveness next_is_term ps ops ps'
+   initial_fmp lo o2pc prog vs st.
+    generated_plan_state_wf base ps /\
+    optimistic_swap_plan dfg inst next_liveness next_is_term ps = (ops,ps') /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) ps /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st' /\
+      venom_asm_rel lo ps' vs st' /\
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops) /\
+      generated_plan_state_wf base ps'
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `optimistic_swap_plan _ _ _ _ _ = _` mp_tac >>
+  simp[optimistic_swap_plan_def] >>
+  rpt (IF_CASES_TAC >> simp[]) >>
+  TRY (strip_tac >> gvs[] >> qexists `st` >>
+       simp[execute_plan_def, asm_steps_def] >> NO_TAC) >>
+  CASE_TAC >> simp[] >> strip_tac >> gvs[]
+  >- (qexists `st` >> simp[execute_plan_def, asm_steps_def]) >>
+  `x < LENGTH ps.ps_stack` by metis_tac[stack_get_depth_bound] >>
+  `prefix_spill_wf initial_fmp lo ops ps` by
+    (fs[generated_plan_state_wf_def] >>
+     metis_tac[doSwapSimTheory.do_swap_prefix_spill_wf_from_front]) >>
+  `generated_plan_state_wf base' ps'` by
+    (qspecl_then [`base'`, `x`, `ps`, `lo`] mp_tac
+       do_swap_generated_plan_state_wf >>
+     ASM_REWRITE_TAC[]) >>
+  qspecl_then [`x`, `ps`, `ops`, `ps'`, `lo`, `o2pc`, `prog`, `vs`, `st`]
+    mp_tac doSwapSimTheory.do_swap_venom_asm_rel_layout >>
+  impl_tac
+  >- (fs[generated_plan_state_wf_def] >> ASM_REWRITE_TAC[]) >>
+  strip_tac >> qexists_tac `st'` >> ASM_REWRITE_TAC[] >> decide_tac
+QED
+
+Theorem generated_do_swap_initial_fmp_front_transport[local]:
+  !base dist source target ops target' initial_fmp lo.
+    generated_plan_state_wf base target /\
+    do_swap dist target = (ops,target') /\
+    dist < LENGTH target.ps_stack /\
+    prefix_spill_wf initial_fmp lo (FRONT (SOInitialFmp :: ops)) source ==>
+    prefix_spill_wf initial_fmp lo ops target
+Proof
+  rpt strip_tac >>
+  fs[generated_plan_state_wf_def] >>
+  metis_tac[doSwapSimTheory.do_swap_initial_fmp_front_transport]
+QED
 Theorem initial_fmp_dead_popmany[local]:
   !out ps.
     popmany_plan [Var out]
@@ -3031,7 +3083,71 @@ Resume gen_inst_ok_sim[initial_fmp]:
   qpat_x_assum `generate_regular_inst_plan _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
   simp[generate_regular_inst_plan_def, compute_operands_def,
        is_commutative_def, generate_emit_ops_def] >>
-  FAIL_TAC "probe_initial_fmp_simplified"
+  `?out. inst.inst_outputs = [out]` by (
+    Cases_on `inst.inst_outputs` >> fs[] >> Cases_on `t` >> fs[]) >>
+  gvs[] >> rpt strip_tac >>
+  `~MEM (Var out) ps.ps_stack` by (
+    qpat_x_assum `EVERY _ ps.ps_stack`
+      (fn th => assume_tac (REWRITE_RULE [EVERY_MEM] th)) >>
+    strip_tac >>
+    qpat_x_assum `!op. MEM op ps.ps_stack ==> _`
+      (qspec_then `Var out` mp_tac) >>
+    simp[]) >>
+  `Var out NOTIN FDOM ps.ps_spilled` by (
+    strip_tac >> qpat_x_assum `!op. op IN FDOM _ ==> _`
+      (qspec_then `Var out` mp_tac) >> simp[]) >>
+  Cases_on `is_halting`
+  >- (reverse (Cases_on `MEM out next_liveness`)
+      >- (gvs[initial_fmp_dead_popmany] >>
+          qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`,
+            `initial_fmp`, `out`] mp_tac initial_fmp_emit_update_var_bridge >>
+          (impl_tac >- ASM_REWRITE_TAC[]) >> strip_tac >>
+          qexistsl [`1`, `as'`] >> ASM_REWRITE_TAC[] >>
+          conj_tac
+          >- (irule venom_asm_rel_release_dead_spills >>
+              simp[stack_push_def, stack_pop_def]) >>
+          simp[execute_plan_def, exec_stack_op_def]) >>
+      gvs[initial_fmp_dead_popmany] >>
+      pairarg_tac >> gvs[] >>
+      `generated_plan_state_wf base'
+         (ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+        (simp[stack_pop_def] >> irule generated_plan_state_wf_push >>
+         ASM_REWRITE_TAC[]) >>
+      qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`,
+        `initial_fmp`, `out`] mp_tac initial_fmp_emit_update_var_bridge >>
+      (impl_tac >-
+        (ASM_REWRITE_TAC[] >>
+         qpat_x_assum `asm_block_at _ _ (execute_plan _ _)` mp_tac >>
+         simp[execute_plan_def, exec_stack_op_def, asm_block_at_cons])) >>
+      strip_tac >>
+      `prefix_spill_wf initial_fmp lo (FRONT opt_ops)
+         (ps with ps_stack := stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+        (Cases_on `opt_ops`
+         >- simp[prefix_spill_wf_def] >>
+         qpat_x_assum `optimistic_swap_plan _ _ _ _ _ = _` mp_tac >>
+         simp[optimistic_swap_plan_def] >>
+         rpt (IF_CASES_TAC >> gvs[]) >>
+         CASE_TAC >> gvs[] >> strip_tac >>
+         `x < LENGTH
+            (stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+           metis_tac[stack_get_depth_bound] >>
+         `prefix_spill_wf initial_fmp lo (h::t)
+            (ps with ps_stack :=
+               stack_push (Var out) (stack_pop 0 ps.ps_stack))` by
+           (irule generated_do_swap_initial_fmp_front_transport >>
+            simp[SF SFY_ss] >>
+            qexistsl [`x`, `ps9`] >> ASM_REWRITE_TAC[] >>
+            qpat_x_assum `x < LENGTH (stack_push _ _)` mp_tac >>
+            simp[stack_push_def, stack_pop_def]) >>
+         `h::t = FRONT (h::t) ++ [LAST (h::t)]` by
+           simp[APPEND_FRONT_LAST] >>
+         metis_tac[prefix_spill_wf_prefix]) >>
+      FAIL_TAC "probe_initial_fmp_live_halting") >>
+  Cases_on `MEM out next_liveness`
+  >- (gvs[initial_fmp_dead_popmany] >>
+      FAIL_TAC "probe_initial_fmp_live_nonhalting") >>
+  gvs[initial_fmp_dead_popmany] >>
+  FAIL_TAC "probe_initial_fmp_dead_nonhalting"
 QED
 
 Resume gen_inst_ok_sim[bump]:
