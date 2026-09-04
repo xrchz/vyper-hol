@@ -211,6 +211,17 @@ Proof
   simp[stack_get_unfixed_depth_def]
 QED
 
+Theorem stack_get_unfixed_depth_zero:
+  stack_get_depth op stk = SOME 0 ⇒
+  stack_get_unfixed_depth op f n stk = SOME 0
+Proof
+  strip_tac >> Cases_on `n ≤ f + 1`
+  >- simp[stack_get_unfixed_depth_def] >>
+  drule stack_get_depth_props >> strip_tac >>
+  Cases_on `LENGTH stk` >>
+  gvs[stack_get_unfixed_depth_def, FIND_thm, GENLIST_CONS]
+QED
+
 (* Get depth of first matching phi operand.
    Python: get_phi_depth iterates reversed stack.
    HOL4: returns SOME dist or NONE, 0 = TOS. *)

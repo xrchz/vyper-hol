@@ -250,8 +250,8 @@ QED
 (* ========== reduce_depth_plan ========== *)
 
 Theorem reduce_depth_plan_spill_base:
-  !fuel target_ops target_op ps ops ps'.
-    reduce_depth_plan fuel target_ops target_op ps = (ops, ps') ==>
+  !fuel target_ops target_op f target_len ps ops ps'.
+    reduce_depth_plan fuel target_ops target_op f target_len ps = (ops, ps') ==>
     ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
   Induct >> rpt gen_tac
@@ -264,8 +264,8 @@ Proof
 QED
 
 Theorem reduce_depth_plan_next_offset:
-  !fuel target_ops target_op ps ops ps'.
-    reduce_depth_plan fuel target_ops target_op ps = (ops, ps') ==>
+  !fuel target_ops target_op f target_len ps ops ps'.
+    reduce_depth_plan fuel target_ops target_op f target_len ps = (ops, ps') ==>
     ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset
 Proof
   Induct >> rpt gen_tac

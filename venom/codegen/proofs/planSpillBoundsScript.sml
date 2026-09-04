@@ -409,9 +409,9 @@ Proof
 QED
 
 Theorem reduce_depth_plan_slots_bounded:
-  !fuel target_ops target_op base ps ops ps'.
+  !fuel target_ops target_op f target_len base ps ops ps'.
     plan_slots_bounded base ps /\
-    reduce_depth_plan fuel target_ops target_op ps = (ops, ps') ==>
+    reduce_depth_plan fuel target_ops target_op f target_len ps = (ops, ps') ==>
     plan_slots_bounded base ps' /\
     ops_spill_bounded base ps'.ps_alloc.sa_next_offset ops
 Proof
@@ -421,21 +421,23 @@ Proof
   >> simp[reduce_depth_plan_def] >>
   every_case_tac >> gvs[] >> rpt strip_tac >> gnvs[]
   >- (Cases_on `do_spill_at x' ps` >>
-      Cases_on `reduce_depth_plan fuel target_ops target_op r` >> gvs[] >>
+      Cases_on `reduce_depth_plan fuel target_ops target_op f target_len r` >>
+      gvs[] >>
       imp_res_tac do_spill_at_slots_bounded >>
-      qpat_x_assum `!target_ops target_op base ps ops ps'. _`
-        (qspecl_then [`target_ops`, `target_op`, `base'`, `r`, `q'`, `ps'`]
-          mp_tac) >>
+      qpat_x_assum `!target_ops target_op f target_len base ps ops ps'. _`
+        (qspecl_then [`target_ops`, `target_op`, `f`, `target_len`,
+          `base'`, `r`, `q'`, `ps'`] mp_tac) >>
       (impl_tac >- simp[]) >> strip_tac >>
       imp_res_tac reduce_depth_plan_next_offset >>
       gvs[ops_spill_bounded_append] >>
       metis_tac[ops_spill_bounded_weaken])
   >> (Cases_on `do_spill_at x' ps` >>
-      Cases_on `reduce_depth_plan fuel target_ops target_op r` >> gvs[] >>
+      Cases_on `reduce_depth_plan fuel target_ops target_op f target_len r` >>
+      gvs[] >>
       imp_res_tac do_spill_at_slots_bounded >>
-      qpat_x_assum `!target_ops target_op base ps ops ps'. _`
-        (qspecl_then [`target_ops`, `target_op`, `base'`, `r`, `q'`, `ps'`]
-          mp_tac) >>
+      qpat_x_assum `!target_ops target_op f target_len base ps ops ps'. _`
+        (qspecl_then [`target_ops`, `target_op`, `f`, `target_len`,
+          `base'`, `r`, `q'`, `ps'`] mp_tac) >>
       (impl_tac >- simp[]) >> strip_tac >>
       imp_res_tac reduce_depth_plan_next_offset >>
       gvs[ops_spill_bounded_append] >>

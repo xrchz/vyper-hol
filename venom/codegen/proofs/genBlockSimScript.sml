@@ -1095,6 +1095,37 @@ Proof
   metis_tac[]
 QED
 
+Theorem generated_plan_state_wf_bump_outputs[local]:
+  !spill_base ps ptr_out next_out.
+    generated_plan_state_wf spill_base ps /\ ptr_out <> next_out /\
+    ~MEM (Var ptr_out) ps.ps_stack /\
+    ~MEM (Var next_out) ps.ps_stack /\
+    Var ptr_out NOTIN FDOM ps.ps_spilled /\
+    Var next_out NOTIN FDOM ps.ps_spilled ==>
+    generated_plan_state_wf spill_base
+      (ps with ps_stack :=
+         stack_push (Var next_out)
+           (stack_push (Var ptr_out) (stack_pop 2 ps.ps_stack)))
+Proof
+  rpt gen_tac >> strip_tac >>
+  `generated_plan_state_wf spill_base
+     (ps with ps_stack := stack_pop 2 ps.ps_stack)` by
+    (irule generated_plan_state_wf_pop >> simp[]) >>
+  `generated_plan_state_wf spill_base
+     (ps with ps_stack :=
+        stack_push (Var ptr_out) (stack_pop 2 ps.ps_stack))` by
+    (qspecl_then [`spill_base`,
+       `ps with ps_stack := stack_pop 2 ps.ps_stack`, `Var ptr_out`]
+       mp_tac generated_plan_state_wf_push >>
+     simp[stack_pop_def] >> metis_tac[rich_listTheory.MEM_TAKE]) >>
+  qspecl_then [`spill_base`,
+    `ps with ps_stack :=
+       stack_push (Var ptr_out) (stack_pop 2 ps.ps_stack)`, `Var next_out`]
+    mp_tac generated_plan_state_wf_push >>
+  simp[stack_push_def, stack_pop_def] >>
+  metis_tac[rich_listTheory.MEM_TAKE]
+QED
+
 Theorem generated_plan_state_wf_remove_free[local]:
   !base ps op off.
     generated_plan_state_wf base ps /\
@@ -2646,6 +2677,11 @@ Theorem gen_inst_ok_sim:
        Pipeline obligation from compute_label_offsets over full program. *)
     (!l. MEM (Label l) (compute_operands inst) ==>
          IS_SOME (FLOOKUP lo l)) /\
+    (* DFG alias soundness: planner-equivalent operands denote the same
+       runtime word under the current value state and label environment.
+       This is an explicit pipeline obligation for alias-only reorder steps. *)
+    (!op at. operand_equiv dfg op at ==>
+             operand_val vs lo op = operand_val vs lo at) /\
     (* SSA freshness: output variables not yet in plan state.
        Dischargeable from ssa_form + plan_state invariant
        (plan tracks defined vars, SSA ensures no redefinition). *)
@@ -3247,7 +3283,52 @@ Resume gen_inst_ok_sim[initial_fmp]:
 QED
 
 Resume gen_inst_ok_sim[bump]:
-  cheat
+  qpat_x_assum `inst_wf inst` mp_tac >>
+  simp[inst_wf_def] >> strip_tac >>
+  qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
+  simp[step_inst_non_invoke, step_inst_base_def] >>
+  qpat_x_assum `generate_regular_inst_plan _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
+  simp[generate_regular_inst_plan_def, compute_operands_def,
+       is_commutative_def, generate_emit_ops_def, bump_emit_ops_def] >>
+  Cases_on `inst.inst_operands` >> gvs[] >> Cases_on `t` >> gvs[] >>
+  Cases_on `inst.inst_outputs` >> gvs[] >> Cases_on `t` >> gvs[] >>
+  rpt strip_tac >>
+  rpt (pairarg_tac >> gvs[]) >>
+  `compute_operands inst = [h;h']` by
+    simp[compute_operands_def] >>
+  `prefix_wf lo (LENGTH ps.ps_stack) input_ops /\
+   prefix_end_len lo (LENGTH ps.ps_stack) input_ops = LENGTH ps1.ps_stack /\
+   prefix_wf lo (LENGTH ps1.ps_stack) reorder_ops /\
+   prefix_end_len lo (LENGTH ps1.ps_stack) reorder_ops = LENGTH ps4.ps_stack` by
+    (qspecl_then [`[h;h']`, `BUMP`, `next_liveness`, `ps`, `lo`]
+       mp_tac emit_input_plan_wf_len >>
+     (impl_tac >- simp[]) >>
+     (impl_tac >- (rpt strip_tac >>
+       qpat_assum `!l. MEM (Label l) _ ==> _`
+         (qspec_then `l` mp_tac) >>
+       qpat_assum `compute_operands inst = [h;h']`
+         (fn th => rewrite_tac[th]) >> simp[])) >> strip_tac >>
+     qspecl_then [`dfg`, `[h;h']`, `ps1`, `lo`] mp_tac
+       (CONV_RULE (DEPTH_CONV pairLib.GEN_BETA_CONV)
+          (REWRITE_RULE [LET_THM] reorder_plan_wf_len)) >>
+     (impl_tac >- gvs[]) >> gvs[]) >>
+  `prefix_wf lo (LENGTH ps.ps_stack) (input_ops ++ reorder_ops)` by
+    (irule prefix_wf_append >> gvs[]) >>
+  `EVERY is_prefix_op (input_ops ++ reorder_ops)` by
+    metis_tac[prefix_wf_every_prefix_op] >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`,
+    `input_ops ++ reorder_ops`,
+    `bump_emit_ops ++ pop_ops ++ opt_ops`] mp_tac prefix_sim >>
+  impl_tac
+  >- (ASM_REWRITE_TAC[] >>
+      conj_tac >- simp[bump_emit_ops_def] >>
+      qpat_x_assum `prefix_spill_wf initial_fmp _ _ _` mp_tac >>
+      simp[bump_emit_ops_def, FRONT_APPEND]) >>
+  strip_tac >>
+  qpat_x_assum `(case eval_operand h vs of _ => _) = OK vs'` mp_tac >>
+  Cases_on `eval_operand h vs` >> gvs[] >>
+  Cases_on `eval_operand h' vs` >> gvs[] >>
+  FAIL_TAC "probe_bump_values"
 QED
 
 Resume gen_inst_ok_sim[invoke]:
