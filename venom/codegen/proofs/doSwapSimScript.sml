@@ -658,6 +658,19 @@ Proof
   imp_res_tac alloc_spill_slot_spill_base >> simp[]
 QED
 
+Theorem spill_alloc_n_next_offset_mono[local]:
+  !items offs0 al0.
+    al0.sa_next_offset <=
+      (SND (spill_alloc_n offs0 al0 items)).sa_next_offset
+Proof
+  Induct >> simp[spill_alloc_n_def] >>
+  rpt gen_tac >> Cases_on `alloc_spill_slot al0` >> simp[] >>
+  `al0.sa_next_offset <= r.sa_next_offset` by
+    metis_tac[alloc_spill_slot_next_offset_mono] >>
+  first_x_assum (qspecl_then [`SNOC q offs0`, `r`] mp_tac) >>
+  decide_tac
+QED
+
 Theorem spill_alloc_n_offsets_length[local]:
   !items offs0 al0.
     LENGTH (FST (spill_alloc_n offs0 al0 items)) =
@@ -1854,6 +1867,47 @@ Proof
   rpt gen_tac >> rw[spill_alloc_layout_wf_def] >> metis_tac[]
 QED
 
+Theorem spill_alloc_layout_wf_free_bound[local]:
+  !al spilled off.
+    spill_alloc_layout_wf al spilled /\ MEM off al.sa_free_slots ==>
+    al.sa_spill_base <= off /\ off + 32 <= al.sa_next_offset
+Proof
+  simp[spill_alloc_layout_wf_def]
+QED
+
+Theorem spill_alloc_layout_wf_free_all_distinct[local]:
+  !al spilled.
+    spill_alloc_layout_wf al spilled ==>
+    ALL_DISTINCT al.sa_free_slots
+Proof
+  simp[spill_alloc_layout_wf_def]
+QED
+
+Theorem spill_alloc_layout_wf_durable_free_separated[local]:
+  !al spilled op durable temp.
+    spill_alloc_layout_wf al spilled /\
+    FLOOKUP spilled op = SOME durable /\
+    MEM temp al.sa_free_slots ==>
+    durable + 32 <= temp \/ temp + 32 <= durable
+Proof
+  simp[spill_alloc_layout_wf_def] >> metis_tac[]
+QED
+
+Theorem spill_alloc_layout_wf_free_separated[local]:
+  !al spilled x y.
+    spill_alloc_layout_wf al spilled /\
+    MEM x al.sa_free_slots /\ MEM y al.sa_free_slots /\ x <> y ==>
+    x + 32 <= y \/ y + 32 <= x
+Proof
+  rpt strip_tac >>
+  `?i. i < LENGTH al.sa_free_slots /\ EL i al.sa_free_slots = x` by
+    metis_tac[MEM_EL] >>
+  `?j. j < LENGTH al.sa_free_slots /\ EL j al.sa_free_slots = y` by
+    metis_tac[MEM_EL] >>
+  `i <> j` by (strip_tac >> gvs[]) >>
+  fs[spill_alloc_layout_wf_def] >> metis_tac[]
+QED
+
 (* Initial offset accumulator does not affect allocator evolution. *)
 Theorem spill_alloc_n_snd_initial[local]:
   !items offs1 offs2 al.
@@ -2007,6 +2061,49 @@ Proof
   qspecl_then [`al`, `spilled`, `keys`] mp_tac
     spill_alloc_n_free_layout_wf >>
   simp[]
+QED
+
+(* Occurrence-indexed allocator interface for deep swap simulation.  The
+   returned offsets depend only on the number of items, not their identities. *)
+Theorem spill_alloc_n_occurrence_offset_facts[local]:
+  !al spilled items.
+    spill_alloc_layout_wf al spilled /\
+    al.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
+    let offsets = FST (spill_alloc_n [] al items);
+        alloc1 = SND (spill_alloc_n [] al items);
+        alloc2 = FOLDL (\a off. free_spill_slot off a) alloc1 offsets
+    in
+      LENGTH offsets = LENGTH items /\
+      (!k. k < LENGTH offsets ==>
+        EL k offsets < dimword(:256) /\
+        al.sa_spill_base <= EL k offsets /\
+        (!op off. FLOOKUP spilled op = SOME off ==>
+          off + 32 <= EL k offsets \/ EL k offsets + 32 <= off) /\
+        (!j. j < k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)) /\
+      spill_alloc_layout_wf alloc2 spilled
+Proof
+  rpt gen_tac >> strip_tac >> simp[LET_THM] >>
+  `spill_alloc_wf al spilled` by
+    (simp[spill_alloc_wf_iff_layout_ready] >> decide_tac) >>
+  `?keys:operand list.
+      LENGTH keys = LENGTH items /\ ALL_DISTINCT keys /\
+      DISJOINT (set keys) (FDOM spilled)` by
+    (irule fresh_operand_list >> simp[]) >>
+  `spill_alloc_n [] al keys = spill_alloc_n [] al items` by
+    metis_tac[spill_alloc_n_length_cong] >>
+  conj_tac >- simp[spill_alloc_n_offsets_length] >>
+  conj_tac
+  >- (qspecl_then [`keys`, `al`, `spilled`] mp_tac
+        spill_alloc_n_offset_props >>
+      simp[LET_THM] >> strip_tac >>
+      gen_tac >> strip_tac >>
+      first_x_assum (qspec_then `k` mp_tac) >> simp[] >>
+      strip_tac >> metis_tac[]) >>
+  qspecl_then [`al`, `spilled`, `items`] mp_tac
+    spill_alloc_n_free_layout_wf_arbitrary >>
+  simp[LET_THM]
 QED
 
 
@@ -2382,10 +2479,12 @@ Theorem deep_swap_occurrence_offsets[local]:
   !dist items al sp.
     dist > 16 /\
     LENGTH items = dist + 1 /\
-    spill_alloc_wf al sp /\
-    al.sa_free_slots = [] /\
-    al.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
+    spill_alloc_layout_wf al sp /\
+    EVERY (\off. off < dimword(:256))
+      (FST (spill_alloc_n [] al items)) ==>
     let offsets = FST (spill_alloc_n [] al items) in
+    let alloc2 = FOLDL (\a off. free_spill_slot off a)
+      (SND (spill_alloc_n [] al items)) offsets in
     let desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0] in
       LENGTH offsets = LENGTH items /\
       ALL_DISTINCT offsets /\
@@ -2393,25 +2492,54 @@ Theorem deep_swap_occurrence_offsets[local]:
         al.sa_spill_base <= EL k offsets /\
         EL k offsets < dimword(:256) /\
         (!op off. FLOOKUP sp op = SOME off ==>
-          off + 32 <= EL k offsets) /\
+          off + 32 <= EL k offsets \/ EL k offsets + 32 <= off) /\
         (!j. j < LENGTH offsets /\ j <> k ==>
           EL j offsets + 32 <= EL k offsets \/
           EL k offsets + 32 <= EL j offsets)) /\
-      EVERY (\i. i < LENGTH offsets) (REVERSE desired)
+      EVERY (\i. i < LENGTH offsets) (REVERSE desired) /\
+      spill_alloc_layout_wf alloc2 sp
 Proof
-  rpt gen_tac >> strip_tac >>
-  simp[spill_alloc_n_offsets_val, LET_THM] >>
+  rpt gen_tac >> strip_tac >> PURE_REWRITE_TAC[LET_THM] >> BETA_TAC >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] al items)` >>
+  qabbrev_tac `alloc2 = FOLDL (\a off. free_spill_slot off a)
+    (SND (spill_alloc_n [] al items)) offsets` >>
+  `spill_alloc_layout_wf alloc2 sp` by
+    (qspecl_then [`al`, `sp`, `items`] mp_tac
+       spill_alloc_n_free_layout_wf_arbitrary >>
+     simp[LET_THM, Abbr `alloc2`, Abbr `offsets`]) >>
+  `alloc2.sa_free_slots =
+     (SND (spill_alloc_n [] al items)).sa_free_slots ++ offsets` by
+    simp[Abbr `alloc2`, foldl_free_free_slots] >>
+  `ALL_DISTINCT offsets` by
+    (drule spill_alloc_layout_wf_free_all_distinct >>
+     simp[] >> gvs[ALL_DISTINCT_APPEND]) >>
+  conj_tac >- simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  conj_tac >- first_assum ACCEPT_TAC >>
   conj_tac
-  >- (simp[ALL_DISTINCT_GENLIST] >> decide_tac) >>
-  conj_tac
-  >- (rpt strip_tac >>
-      qpat_assum `spill_alloc_wf al sp`
-        (strip_assume_tac o REWRITE_RULE[spill_alloc_wf_def]) >>
-      simp[EL_GENLIST] >>
-      TRY (qpat_x_assum `!op off. FLOOKUP sp op = SOME off ==> _`
-        (qspecl_then [`op`, `off`] mp_tac) >> simp[]) >>
-      decide_tac) >>
-  simp[EVERY_EL, desired_rev_el_bound]
+  >- (rpt gen_tac >> strip_tac >>
+      `MEM (EL k offsets) alloc2.sa_free_slots` by
+        (ASM_REWRITE_TAC[] >> simp[MEM_EL] >> metis_tac[]) >>
+      conj_tac
+      >- (qspecl_then [`alloc2`, `sp`, `EL k offsets`] mp_tac
+            spill_alloc_layout_wf_free_bound >>
+          simp[foldl_free_spill_base, spill_alloc_n_spill_base,
+               Abbr `alloc2`] >> metis_tac[]) >>
+      conj_tac
+      >- (fs[EVERY_EL, Abbr `offsets`] >> metis_tac[]) >>
+      conj_tac
+      >- (rpt strip_tac >>
+          irule spill_alloc_layout_wf_durable_free_separated >>
+          qexistsl [`alloc2`, `op`, `sp`] >> simp[]) >>
+      rpt gen_tac >> strip_tac >>
+      `EL j offsets <> EL k offsets` by
+        metis_tac[ALL_DISTINCT_EL_IMP] >>
+      irule spill_alloc_layout_wf_free_separated >>
+      conj_tac >- first_assum ACCEPT_TAC >>
+      qexistsl [`alloc2`, `sp`] >> simp[] >>
+      ASM_REWRITE_TAC[] >> simp[MEM_EL] >> metis_tac[]) >>
+  conj_tac >- simp[EVERY_EL, desired_rev_el_bound, Abbr `offsets`,
+                    spill_alloc_n_offsets_length] >>
+  first_assum ACCEPT_TAC
 QED
 
 (* Local raw SOSpill execution boundary.  Unlike spill_n_sim this theorem
@@ -3523,7 +3651,7 @@ Theorem plan_spill_rel_raw_fold[local]:
     plan_spill_rel lo vs spilled mem /\
     (!k op off. k < LENGTH offsets /\
        FLOOKUP spilled op = SOME off ==>
-       off + 32 <= EL k offsets) ==>
+       off + 32 <= EL k offsets \/ EL k offsets + 32 <= off) ==>
     plan_spill_rel lo vs spilled
       (FOLDL (\m p. mem_write32 (FST p) (SND p) m) mem
         (ZIP (offsets,vals)))
@@ -3704,10 +3832,9 @@ Theorem do_swap_venom_asm_rel_big[local]:
     do_swap dist ps = (ops, ps') /\
     dist > 16 /\
     dist < LENGTH ps.ps_stack /\
-    spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
-    ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256) /\
-    ps.ps_alloc.sa_free_slots = [] /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
     DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo ops ps /\
     venom_asm_rel lo ps vs st /\
     asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
     ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
@@ -3737,27 +3864,6 @@ Proof
     as_pc := spill_st.as_pc + 2 * LENGTH desired |>` >>
   `LENGTH items = dist + 1` by
     simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
-  `LENGTH offsets = LENGTH items /\
-   ALL_DISTINCT offsets /\
-   (!k. k < LENGTH offsets ==>
-      ps.ps_alloc.sa_spill_base <= EL k offsets /\
-      EL k offsets < dimword(:256) /\
-      (!op off. FLOOKUP ps.ps_spilled op = SOME off ==>
-        off + 32 <= EL k offsets) /\
-      (!j. j < LENGTH offsets /\ j <> k ==>
-        EL j offsets + 32 <= EL k offsets \/
-        EL k offsets + 32 <= EL j offsets)) /\
-   EVERY (\i. i < LENGTH offsets) (REVERSE desired)` by
-    (qspecl_then [`dist`, `items`, `ps.ps_alloc`, `ps.ps_spilled`]
-       mp_tac deep_swap_occurrence_offsets >>
-     simp[LET_THM, Abbr `offsets`, Abbr `desired`] >>
-     metis_tac[]) >>
-  `EVERY (\off. off < dimword(:256)) offsets` by
-    (simp[EVERY_EL] >> metis_tac[]) >>
-  `LENGTH desired = LENGTH items` by
-    simp[Abbr `desired`] >>
-  `EVERY (\i. i < LENGTH offsets) desired` by
-    fs[EVERY_REVERSE] >>
   `ops = MAP SOSpill offsets ++ MAP SORestore restore_offsets /\
    ps' = ps with <|
      ps_stack := TAKE (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack ++
@@ -3768,6 +3874,34 @@ Proof
      simp[LET_THM, Abbr `items`, Abbr `offsets`, Abbr `desired`,
           Abbr `restore_offsets`] >>
      metis_tac[]) >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) ps` by
+    (qpat_x_assum `prefix_spill_wf initial_fmp lo ops ps` mp_tac >>
+     simp[prefix_spill_wf_append]) >>
+  `EVERY (\off. off < dimword(:256)) offsets` by
+    metis_tac[prefix_spill_wf_map_spill_bounds] >>
+  `LENGTH offsets = LENGTH items /\
+   ALL_DISTINCT offsets /\
+   (!k. k < LENGTH offsets ==>
+      ps.ps_alloc.sa_spill_base <= EL k offsets /\
+      EL k offsets < dimword(:256) /\
+      (!op off. FLOOKUP ps.ps_spilled op = SOME off ==>
+        off + 32 <= EL k offsets \/ EL k offsets + 32 <= off) /\
+      (!j. j < LENGTH offsets /\ j <> k ==>
+        EL j offsets + 32 <= EL k offsets \/
+        EL k offsets + 32 <= EL j offsets)) /\
+   EVERY (\i. i < LENGTH offsets) (REVERSE desired) /\
+   spill_alloc_layout_wf
+     (FOLDL (\a off. free_spill_slot off a)
+       (SND (spill_alloc_n [] ps.ps_alloc items)) offsets)
+     ps.ps_spilled` by
+    (qspecl_then [`dist`, `items`, `ps.ps_alloc`, `ps.ps_spilled`]
+       mp_tac deep_swap_occurrence_offsets >>
+     simp[LET_THM, Abbr `offsets`, Abbr `desired`] >>
+     metis_tac[]) >>
+  `LENGTH desired = LENGTH items` by
+    simp[Abbr `desired`] >>
+  `EVERY (\i. i < LENGTH offsets) desired` by
+    fs[EVERY_REVERSE] >>
   `asm_block_at prog st.as_pc
      (execute_plan initial_fmp (MAP SOSpill offsets)) /\
    asm_block_at prog (st.as_pc + 2 * LENGTH offsets)
@@ -3823,18 +3957,20 @@ Proof
      simp[Abbr `restore_offsets`, Abbr `final_mem`, Abbr `final_st`,
           Abbr `spill_st`] >>
      decide_tac) >>
+  `spill_alloc_layout_wf ps'.ps_alloc ps.ps_spilled` by gvs[] >>
   `ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
-   ps'.ps_alloc.sa_next_offset =
-     ps.ps_alloc.sa_next_offset + 32 * LENGTH items` by
-    (gvs[foldl_free_spill_base, foldl_free_next_offset,
-         spill_alloc_n_spill_base, spill_alloc_n_next_offset_no_free]) >>
-  `offsets = GENLIST (\i. ps.ps_alloc.sa_next_offset + 32 * i)
-     (LENGTH items)` by
-    simp[Abbr `offsets`, spill_alloc_n_offsets_val] >>
+   ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset` by
+    (conj_tac
+     >- gvs[foldl_free_spill_base, spill_alloc_n_spill_base] >>
+     gvs[foldl_free_next_offset] >>
+     metis_tac[spill_alloc_n_next_offset_mono]) >>
+  `!off. MEM off offsets ==> MEM off ps'.ps_alloc.sa_free_slots` by
+    (rpt strip_tac >> gvs[foldl_free_free_slots] >> simp[]) >>
   `EVERY (\off. ps'.ps_alloc.sa_spill_base <= off /\
       off + 32 <= ps'.ps_alloc.sa_next_offset) offsets` by
-    (simp[EVERY_EL, EL_GENLIST] >> rpt strip_tac >>
-     fs[spill_alloc_wf_def] >> decide_tac) >>
+    (PURE_REWRITE_TAC[EVERY_MEM] >> rpt strip_tac >> BETA_TAC >>
+     qspecl_then [`ps'.ps_alloc`, `ps.ps_spilled`, `e`] mp_tac
+       spill_alloc_layout_wf_free_bound >> simp[]) >>
   `memory_rel ps'.ps_alloc vs.vs_memory st.as_memory` by
     (irule memory_rel_widen >>
      qexists_tac `ps.ps_alloc` >>
@@ -3901,28 +4037,21 @@ Proof
   decide_tac
 QED
 
-(* Combined do_swap simulation for all distances *)
-Theorem do_swap_venom_asm_rel:
+(* Combined do_swap simulation for all distances and arbitrary valid free slots. *)
+Theorem do_swap_venom_asm_rel_general:
   !dist ps ops ps' lo o2pc prog vs st.
-    do_swap dist ps = (ops, ps') /\
-    dist < LENGTH ps.ps_stack /\
-    (dist > 16 ==>
-       spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
-       ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256) /\
-       ps.ps_alloc.sa_free_slots = [] /\
-       DISJOINT (set (top_n (dist + 1) ps.ps_stack))
-                (FDOM ps.ps_spilled)) /\
-    venom_asm_rel lo ps vs st /\
+    do_swap dist ps = (ops,ps') /\ dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo ops ps /\ venom_asm_rel lo ps vs st /\
     asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
-            AsmOK st' /\
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st' /\
           venom_asm_rel lo ps' vs st' /\
           st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
   Cases_on `dist <= 16`
-  >- (irule do_swap_venom_asm_rel_small >> metis_tac[])
-  >>
+  >- (irule do_swap_venom_asm_rel_small >> metis_tac[]) >>
   `dist > 16` by decide_tac >>
   irule do_swap_venom_asm_rel_big >>
   metis_tac[]
