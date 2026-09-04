@@ -2677,6 +2677,169 @@ Proof
   irule raw_spill_fold_read_byte_outside >>
   conj_tac >- simp[] >> first_assum ACCEPT_TAC
 QED
+
+(* Raw SORestore execution; the memory expansion is exposed explicitly. *)
+Theorem raw_restore_asm_step_op_mload[local]:
+  !o2pc st. asm_step_op o2pc "MLOAD" st = asm_mload st
+Proof
+  simp[asm_step_op_def, asm_step_arith_def, asm_step_compare_def,
+       asm_step_bitwise_def, asm_step_memory_def]
+QED
+
+Theorem raw_restore_asm_steps[local]:
+  !lo o2pc prog off st.
+    off < dimword(:256) /\
+    asm_block_at prog st.as_pc
+      [AsmPush (encode_num_bytes off); AsmOp "MLOAD"] ==>
+    asm_steps lo o2pc prog 2 st =
+      AsmOK (st with <|
+        as_stack :=
+          word_of_bytes T (0w:bytes32)
+            (TAKE 32 (DROP off st.as_memory)) :: st.as_stack;
+        as_memory := asm_expand_memory (off + 32) st.as_memory;
+        as_pc := st.as_pc + 2 |>)
+Proof
+  rpt strip_tac >> fs[asm_block_at_def] >>
+  `EL st.as_pc prog = AsmPush (encode_num_bytes off)` by
+    (first_x_assum (qspec_then `0` mp_tac) >> simp[]) >>
+  `EL (st.as_pc + 1) prog = AsmOp "MLOAD"` by
+    (first_x_assum (qspec_then `1` mp_tac) >> simp[]) >>
+  SUBST1_TAC (DECIDE ``2 = SUC (SUC 0)``) >>
+  simp[Once asm_steps_def] >>
+  simp[asm_step_def, raw_spill_push_encode_num_roundtrip, asm_next_def] >>
+  SUBST1_TAC (DECIDE ``1 = SUC 0``) >>
+  simp[Once asm_steps_def] >>
+  simp[asm_step_def, raw_restore_asm_step_op_mload, asm_mload_def,
+       asm_next_def, asm_steps_def, word_of_bytes_take_drop_expand]
+QED
+
+Theorem raw_restore_map_reads_expand[local]:
+  !offsets n mem.
+    MAP (\off. word_of_bytes T (0w:bytes32)
+      (TAKE 32 (DROP off (asm_expand_memory n mem)))) offsets =
+    MAP (\off. word_of_bytes T (0w:bytes32)
+      (TAKE 32 (DROP off mem))) offsets
+Proof
+  Induct >> simp[word_of_bytes_take_drop_expand]
+QED
+
+Theorem raw_restore_bulk_steps[local]:
+  !restore_offsets lo o2pc prog st.
+    EVERY (\off. off < dimword(:256)) restore_offsets /\
+    asm_block_at prog st.as_pc
+      (execute_plan initial_fmp (MAP SORestore restore_offsets)) ==>
+    asm_steps lo o2pc prog (2 * LENGTH restore_offsets) st =
+      AsmOK (st with <|
+        as_stack :=
+          REVERSE (MAP (\off. word_of_bytes T (0w:bytes32)
+            (TAKE 32 (DROP off st.as_memory))) restore_offsets) ++ st.as_stack;
+        as_memory :=
+          FOLDL (\mem off. asm_expand_memory (off + 32) mem)
+            st.as_memory restore_offsets;
+        as_pc := st.as_pc + 2 * LENGTH restore_offsets |>)
+Proof
+  Induct >> rpt strip_tac
+  >- simp[execute_plan_def, asm_state_component_equality] >>
+  fs[execute_plan_def, exec_stack_op_def, asm_block_at_append,
+     asm_block_at_cons] >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `h`, `st`] mp_tac
+    raw_restore_asm_steps >>
+  (impl_tac >-
+    (simp[asm_block_at_def] >> rpt strip_tac >>
+     Cases_on `j` >> gvs[] >> Cases_on `n` >> gvs[])) >>
+  strip_tac >>
+  first_x_assum (qspecl_then [`lo`, `o2pc`, `prog`,
+    `st with <|
+      as_stack := word_of_bytes T (0w:bytes32)
+        (TAKE 32 (DROP h st.as_memory)) :: st.as_stack;
+      as_memory := asm_expand_memory (h + 32) st.as_memory;
+      as_pc := st.as_pc + 2 |> `] mp_tac) >>
+  simp[raw_restore_map_reads_expand] >> strip_tac >>
+  pure_once_rewrite_tac[DECIDE
+    ``2 * SUC (LENGTH restore_offsets) = 2 + 2 * LENGTH restore_offsets``] >>
+  pure_once_rewrite_tac[asm_steps_add] >>
+  gvs[asm_state_component_equality, APPEND_ASSOC]
+QED
+
+Theorem raw_restore_fold_read_byte[local]:
+  !offsets mem i.
+    read_byte i
+      (FOLDL (\m off. asm_expand_memory (off + 32) m) mem offsets) =
+    read_byte i mem
+Proof
+  Induct >> simp[read_byte_expand]
+QED
+
+Theorem raw_restore_indexed_steps[local]:
+  !offsets vals perm lo o2pc prog st.
+    LENGTH offsets = LENGTH vals /\
+    EVERY (\off. off < dimword(:256)) offsets /\
+    EVERY (\i. i < LENGTH offsets) perm /\
+    (!k. k < LENGTH offsets ==>
+      word_of_bytes T (0w:bytes32)
+        (TAKE 32 (DROP (EL k offsets) st.as_memory)) = EL k vals) /\
+    asm_block_at prog st.as_pc
+      (execute_plan initial_fmp
+        (MAP SORestore (MAP (\i. EL i offsets) perm))) ==>
+    asm_steps lo o2pc prog (2 * LENGTH perm) st =
+      AsmOK (st with <|
+        as_stack := REVERSE (MAP (\i. EL i vals) perm) ++ st.as_stack;
+        as_memory :=
+          FOLDL (\mem off. asm_expand_memory (off + 32) mem)
+            st.as_memory (MAP (\i. EL i offsets) perm);
+        as_pc := st.as_pc + 2 * LENGTH perm |>)
+Proof
+  rpt gen_tac >> strip_tac >>
+  `MAP (\off. word_of_bytes T (0w:bytes32)
+       (TAKE 32 (DROP off st.as_memory)))
+       (MAP (\i. EL i offsets) perm) =
+   MAP (\i. EL i vals) perm` by
+    (simp[LIST_EQ_REWRITE, EL_MAP] >> rpt strip_tac >>
+     fs[EVERY_EL] >>
+     first_x_assum (qspec_then `x` mp_tac) >> simp[EL_MAP]) >>
+  qpat_x_assum `MAP _ _ = MAP _ _` (fn th => rewrite_tac[GSYM th]) >>
+  qspecl_then [`MAP (\i. EL i offsets) perm`, `lo`, `o2pc`, `prog`, `st`]
+    mp_tac raw_restore_bulk_steps >>
+  simp[] >>
+  (impl_tac >-
+    (fs[EVERY_EL] >> simp[EVERY_EL, EL_MAP])) >>
+  simp[]
+QED
+
+Theorem raw_restore_reverse_map[local]:
+  !f (xs:'a list). REVERSE (MAP f xs) = MAP f (REVERSE xs)
+Proof
+  Induct_on `xs` >> simp[]
+QED
+
+Theorem raw_restore_reversed_perm_steps[local]:
+  !offsets vals desired lo o2pc prog st.
+    LENGTH offsets = LENGTH vals /\
+    EVERY (\off. off < dimword(:256)) offsets /\
+    EVERY (\i. i < LENGTH offsets) desired /\
+    (!k. k < LENGTH offsets ==>
+      word_of_bytes T (0w:bytes32)
+        (TAKE 32 (DROP (EL k offsets) st.as_memory)) = EL k vals) /\
+    asm_block_at prog st.as_pc
+      (execute_plan initial_fmp
+        (MAP SORestore (MAP (\i. EL i offsets) (REVERSE desired)))) ==>
+    asm_steps lo o2pc prog (2 * LENGTH desired) st =
+      AsmOK (st with <|
+        as_stack := MAP (\i. EL i vals) desired ++ st.as_stack;
+        as_memory :=
+          FOLDL (\mem off. asm_expand_memory (off + 32) mem)
+            st.as_memory (MAP (\i. EL i offsets) (REVERSE desired));
+        as_pc := st.as_pc + 2 * LENGTH desired |>)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qspecl_then [`offsets`, `vals`, `REVERSE desired`, `lo`, `o2pc`,
+    `prog`, `st`] mp_tac raw_restore_indexed_steps >>
+  (impl_tac >-
+    (rpt conj_tac >>
+     first_assum ACCEPT_TAC ORELSE
+     simp[EVERY_REVERSE])) >>
+  simp[raw_restore_reverse_map]
+QED
 (* EL at a desired-permuted index in items equals EL at the
    reverse-permuted index in REVERSE items. *)
 Theorem el_desired_reverse_items[local]:
