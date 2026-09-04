@@ -125,6 +125,19 @@ Definition plan_state_residual_wf_def:
           LIST_ELEM_COUNT op ps.ps_stack <= LIST_ELEM_COUNT op pending)
 End
 
+(* Fixed-zero residual resources without the pending-length obligation.  This
+   is stable across each input-emission step; length is supplied only when the
+   complete pending list is known. *)
+Definition residual_budget_wf_def:
+  residual_budget_wf base pending (ps : plan_state) <=>
+    plan_slots_bounded base ps /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    (!op. LIST_ELEM_COUNT op ps.ps_stack <=
+          SUC (LIST_ELEM_COUNT op pending)) /\
+    (!op. op IN FDOM ps.ps_spilled ==>
+          LIST_ELEM_COUNT op ps.ps_stack <= LIST_ELEM_COUNT op pending)
+End
+
 Theorem all_distinct_elem_count_le_one[local]:
   !(xs : 'a list) x.
     ALL_DISTINCT xs ==> LIST_ELEM_COUNT x xs <= 1
@@ -164,6 +177,34 @@ Proof
            (qspec_then `x` assume_tac) >>
          qspecl_then [`h`, `x`, `xs`] assume_tac elem_count_cons_mono >>
          decide_tac)
+QED
+
+Theorem residual_budget_wf_canonical:
+  !base pending ps.
+    plan_slots_bounded base ps /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) ==>
+    residual_budget_wf base pending ps
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[residual_budget_wf_def] >> conj_tac
+  >- (gen_tac >> drule all_distinct_elem_count_le_one >>
+      disch_then (qspec_then `op` assume_tac) >> decide_tac)
+  >> rpt strip_tac >>
+     `~MEM op ps.ps_stack` by
+       (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+        metis_tac[]) >>
+     fs[GSYM LIST_ELEM_COUNT_MEM]
+QED
+
+Theorem residual_budget_wf_to_residual:
+  !base pending ps.
+    residual_budget_wf base pending ps /\
+    LENGTH pending <= LENGTH ps.ps_stack ==>
+    plan_state_residual_wf base pending 0 ps
+Proof
+  simp[residual_budget_wf_def, plan_state_residual_wf_def]
 QED
 
 Theorem plan_state_residual_wf_canonical:
@@ -208,6 +249,154 @@ Theorem elem_count_append[local]:
 Proof
   gen_tac >> Induct >> simp[LIST_ELEM_COUNT_THM]
 QED
+
+Theorem residual_budget_wf_extend_pending[local]:
+  !base pending op ps.
+    residual_budget_wf base pending ps ==>
+    residual_budget_wf base (pending ++ [op]) ps
+Proof
+  simp[residual_budget_wf_def, elem_count_append] >>
+  rpt strip_tac
+  >- (qpat_assum `!x. LIST_ELEM_COUNT x ps.ps_stack <= SUC _`
+        (qspec_then `op'` mp_tac) >> decide_tac)
+  >> qpat_assum `!x. x IN FDOM ps.ps_spilled ==> _`
+       (qspec_then `op'` (drule_then assume_tac)) >> decide_tac
+QED
+
+Theorem elem_count_snoc[local]:
+  !x y (xs : 'a list).
+    LIST_ELEM_COUNT x (SNOC y xs) =
+    LIST_ELEM_COUNT x xs + LIST_ELEM_COUNT x [y]
+Proof
+  gen_tac >> gen_tac >> Induct >> simp[LIST_ELEM_COUNT_THM] >>
+  rpt gen_tac >> Cases_on `h = x` >> gvs[LIST_ELEM_COUNT_THM]
+QED
+
+Theorem residual_budget_wf_push[local]:
+  !base pending op ps.
+    residual_budget_wf base pending ps ==>
+    residual_budget_wf base (pending ++ [op])
+      (ps with ps_stack := stack_push op ps.ps_stack)
+Proof
+  simp[residual_budget_wf_def, stack_push_def, elem_count_append,
+       elem_count_snoc] >>
+  rpt strip_tac
+  >- (qpat_assum `!x. LIST_ELEM_COUNT x ps.ps_stack <= SUC _`
+        (qspec_then `op'` mp_tac) >> decide_tac)
+  >> qpat_assum `!x. x IN FDOM ps.ps_spilled ==> _`
+       (qspec_then `op'` (drule_then assume_tac)) >> decide_tac
+QED
+Theorem residual_budget_wf_restore[local]:
+  !base pending op ps ops ps'.
+    residual_budget_wf base pending ps /\
+    do_restore op ps = (ops, ps') ==>
+    residual_budget_wf base pending ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  rename1 `residual_budget_wf spill_base pending ps` >>
+  fs[residual_budget_wf_def] >>
+  `plan_slots_bounded spill_base ps'` by
+    imp_res_tac do_restore_slots_bounded >>
+  Cases_on `FLOOKUP ps.ps_spilled op`
+  >- gvs[do_restore_def]
+  >> rename1 `FLOOKUP ps.ps_spilled op = SOME off` >>
+     gvs[do_restore_def, residual_budget_wf_def, stack_push_def,
+         elem_count_snoc] >>
+     conj_tac
+     >- metis_tac[spill_alloc_layout_wf_after_free]
+     >> conj_tac
+     >- (gen_tac >> Cases_on `op' = op` >> gvs[LIST_ELEM_COUNT_THM]
+         >- (`op IN FDOM ps.ps_spilled` by fs[flookup_thm] >>
+             qpat_assum `!x. x IN FDOM ps.ps_spilled ==>
+               LIST_ELEM_COUNT x ps.ps_stack <= LIST_ELEM_COUNT x pending`
+               (qspec_then `op` (drule_then assume_tac)) >>
+             decide_tac)
+         >> qpat_assum `!x. LIST_ELEM_COUNT x ps.ps_stack <= SUC _`
+              (qspec_then `op'` assume_tac) >> decide_tac)
+     >> rpt strip_tac >>
+        qpat_assum `!x. x IN FDOM ps.ps_spilled ==> _`
+          (qspec_then `op'` (drule_then assume_tac)) >>
+        gvs[LIST_ELEM_COUNT_THM]
+QED
+
+Theorem residual_budget_wf_dup[local]:
+  !base pending op dist ps ops ps'.
+    residual_budget_wf base pending ps /\
+    stack_get_depth op ps.ps_stack = SOME dist /\
+    do_dup dist ps = (ops, ps') ==>
+    residual_budget_wf base (pending ++ [op]) ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  rename1 `residual_budget_wf spill_base pending ps` >>
+  `dist < LENGTH ps.ps_stack /\ stack_peek dist ps.ps_stack = op` by
+    metis_tac[stack_get_depth_props] >>
+  fs[residual_budget_wf_def] >>
+  `plan_slots_bounded spill_base ps'` by
+    imp_res_tac do_dup_slots_bounded >>
+  imp_res_tac do_dup_multiplicity_layout >>
+  gvs[residual_budget_wf_def, elem_count_append] >>
+  conj_tac
+  >- (gen_tac >> Cases_on `op = stack_peek dist ps.ps_stack`
+      >- (gvs[LIST_ELEM_COUNT_THM] >>
+          qpat_assum `!x. LIST_ELEM_COUNT x ps.ps_stack <= SUC _`
+            (qspec_then `stack_peek dist ps.ps_stack` mp_tac) >>
+          decide_tac)
+      >> simp[LIST_ELEM_COUNT_THM] >>
+         qpat_assum `!x. LIST_ELEM_COUNT x ps.ps_stack <= SUC _`
+           (qspec_then `op` mp_tac) >> decide_tac)
+  >> rpt strip_tac >> Cases_on `op = stack_peek dist ps.ps_stack`
+     >- (gvs[LIST_ELEM_COUNT_THM] >>
+         qpat_assum `!x. x IN FDOM ps.ps_spilled ==>
+           LIST_ELEM_COUNT x ps.ps_stack <= LIST_ELEM_COUNT x pending`
+           (qspec_then `stack_peek dist ps.ps_stack`
+             (drule_then assume_tac)) >> decide_tac)
+     >> simp[LIST_ELEM_COUNT_THM] >>
+        qpat_assum `!x. x IN FDOM ps.ps_spilled ==>
+          LIST_ELEM_COUNT x ps.ps_stack <= LIST_ELEM_COUNT x pending`
+          (qspec_then `op` (drule_then assume_tac)) >> decide_tac
+QED
+Theorem emit_one_input_residual_budget_wf:
+  !base pending opc nl op ps ops ps'.
+    residual_budget_wf base pending ps /\
+    emit_one_input opc nl op ps = (ops, ps') ==>
+    residual_budget_wf base (pending ++ [op]) ps'
+Proof
+  rpt gen_tac >> strip_tac >> Cases_on `op`
+  >- (gvs[emit_one_input_def, is_var_operand_def, LET_THM] >>
+      irule residual_budget_wf_push >> first_assum ACCEPT_TAC)
+  >- (rename1 `Var v` >>
+      Cases_on `FLOOKUP ps.ps_spilled (Var v)`
+      >- (gvs[emit_one_input_def, is_var_operand_def, LET_THM] >>
+          Cases_on `MEM v nl`
+          >- (gvs[] >>
+              Cases_on `stack_get_depth (Var v) ps.ps_stack`
+              >- (gvs[] >> irule residual_budget_wf_extend_pending >>
+                  first_assum ACCEPT_TAC)
+              >> rename1 `stack_get_depth _ _ = SOME dist` >>
+                 Cases_on `do_dup dist ps` >> gvs[] >>
+                 imp_res_tac residual_budget_wf_dup)
+          >> gvs[] >> irule residual_budget_wf_extend_pending >>
+             first_assum ACCEPT_TAC)
+      >> Cases_on `do_restore (Var v) ps` >>
+         rename1 `do_restore (Var v) ps = (restore_ops, ps1)` >>
+         `residual_budget_wf base' pending ps1` by
+           imp_res_tac residual_budget_wf_restore >>
+         gvs[emit_one_input_def, is_var_operand_def, LET_THM] >>
+         Cases_on `MEM v nl`
+         >- (gvs[] >> Cases_on `stack_get_depth (Var v) ps1.ps_stack`
+             >- (gvs[] >> irule residual_budget_wf_extend_pending >>
+                 first_assum ACCEPT_TAC)
+             >> rename1 `stack_get_depth _ _ = SOME dist` >>
+                Cases_on `do_dup dist ps1` >> gvs[] >>
+                imp_res_tac residual_budget_wf_dup)
+         >> gvs[] >> irule residual_budget_wf_extend_pending >>
+            first_assum ACCEPT_TAC)
+  >> gvs[emit_one_input_def, is_var_operand_def, LET_THM] >>
+     Cases_on `opc = INVOKE` >> gvs[] >>
+     irule residual_budget_wf_push >> first_assum ACCEPT_TAC
+QED
+
+
 
 Theorem elem_count_from_append[local]:
   !(full : 'a list) prefix suffix.
