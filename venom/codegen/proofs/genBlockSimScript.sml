@@ -3441,6 +3441,26 @@ Proof
       >> first_assum ACCEPT_TAC)
   >> simp[]
 QED
+
+Theorem bump_emit_input_plan_residual_budget_wf[local]:
+  generated_plan_state_wf spill_base ps /\
+  emit_input_plan BUMP [h;h'] nl ps = (iops,ps1) ==>
+  residual_budget_wf spill_base [h;h'] ps1
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+  simp[emit_input_plan_two] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  strip_tac >> gvs[] >>
+  `residual_budget_wf spill_base [] ps` by
+    (irule residual_budget_wf_canonical >>
+     fs[generated_plan_state_wf_def]) >>
+  `residual_budget_wf spill_base [h] ps1'` by
+    (drule emit_one_input_residual_budget_wf >>
+     disch_then drule >> simp[]) >>
+  drule emit_one_input_residual_budget_wf >>
+  disch_then drule >> simp[]
+QED
 Theorem bump_emit_input_plan_residual_wf[local]:
   generated_plan_state_wf spill_base ps /\
   emit_input_plan BUMP [h;h'] nl ps = (iops,ps1) /\
@@ -3462,6 +3482,91 @@ Proof
     (drule emit_one_input_residual_budget_wf >>
      disch_then drule >> simp[]) >>
   irule residual_budget_wf_to_residual >> simp[]
+QED
+
+Theorem bump_reorder_postpop_generated_wf[local]:
+  generated_plan_state_wf spill_base ps /\
+  emit_input_plan BUMP [h;h'] nl ps = (iops,ps1) /\
+  (!op. LIST_ELEM_COUNT op [h;h'] <=
+        LIST_ELEM_COUNT op ps1.ps_stack) /\
+  2 <= LENGTH ps1.ps_stack /\
+  reorder_plan dfg [h;h'] ps1 = (rops,ps4) ==>
+  ps4.ps_stack = stack_pop 2 ps4.ps_stack ++ [h;h'] /\
+  generated_plan_state_wf spill_base
+    (ps4 with ps_stack := stack_pop 2 ps4.ps_stack)
+Proof
+  rpt strip_tac >>
+  `residual_budget_wf spill_base [h;h'] ps1` by
+    metis_tac[bump_emit_input_plan_residual_budget_wf] >>
+  qpat_x_assum `reorder_plan _ _ _ = _` mp_tac >>
+  simp[reorder_plan_def, indexedListsTheory.MAPi_def,
+       indexedListsTheory.MAPi_ACC_def, LET_THM] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  `plan_state_residual_wf spill_base [h;h'] 0 ps1` by
+    (irule residual_budget_wf_to_residual >> simp[]) >>
+  `?d0. stack_get_unfixed_depth h 1 2 ps1.ps_stack = SOME d0` by
+    (qspecl_then [`spill_base`, `[h;h']`, `0`, `ps1`]
+       mp_tac materialised_pending_next_on_stack >> simp[]) >>
+  rename1 `stack_get_unfixed_depth h 1 2 ps1.ps_stack = SOME d0` >>
+  `residual_budget_wf spill_base [h;h'] ps' /\
+   2 <= LENGTH ps'.ps_stack` by
+    (qspecl_then [`dfg`, `[h;h']`, `0`, `h`, `ps1`, `ops`, `ps'`,
+       `spill_base`] mp_tac reorder_one_residual_budget_wf >> simp[]) >>
+  `!op. LIST_ELEM_COUNT op [h;h'] <=
+        LIST_ELEM_COUNT op ps'.ps_stack` by
+    (gen_tac >> Cases_on `MEM op [h;h']`
+     >- (qspecl_then [`dfg`, `[h;h']`, `0`, `h`, `ps1`, `ops`, `ps'`,
+           `spill_base`, `d0`] mp_tac reorder_one_materialised_counts >>
+         simp[] >> disch_then (qspec_then `op` mp_tac) >> strip_tac >>
+         qpat_assum `!x. LIST_ELEM_COUNT x [h; h'] <= _`
+           (qspec_then `op` assume_tac) >>
+         qpat_x_assum `MEM op [h; h']` mp_tac >> simp[] >> metis_tac[])
+     >> `LIST_ELEM_COUNT op [h;h'] = 0` by
+          (Cases_on `h = op` >> Cases_on `h' = op` >>
+           gvs[LIST_ELEM_COUNT_THM]) >> decide_tac) >>
+  `stack_peek 1 ps'.ps_stack = h` by
+    (qspecl_then [`dfg`, `[h;h']`, `0`, `h`, `ps1`, `ops`, `ps'`]
+       mp_tac reorder_one_places >> simp[]) >>
+  `plan_state_residual_wf spill_base [h;h'] 0 ps'` by
+    (irule residual_budget_wf_to_residual >> simp[]) >>
+  `plan_state_residual_wf spill_base [h;h'] 1 ps'` by
+    (qspecl_then [`spill_base`, `[h;h']`, `0`, `ps'`]
+       mp_tac plan_state_residual_wf_fix_next >> simp[]) >>
+  `?d1. stack_get_unfixed_depth h' 0 2 ps'.ps_stack = SOME d1` by
+    (qspecl_then [`spill_base`, `[h;h']`, `1`, `ps'`]
+       mp_tac materialised_pending_next_on_stack >> simp[]) >>
+  rename1 `stack_get_unfixed_depth h' 0 2 ps'.ps_stack = SOME d1` >>
+  `residual_budget_wf spill_base [h;h'] ps'' /\
+   2 <= LENGTH ps''.ps_stack` by
+    (qspecl_then [`dfg`, `[h;h']`, `1`, `h'`, `ps'`, `step_ops`, `ps''`,
+       `spill_base`] mp_tac reorder_one_residual_budget_wf >> simp[]) >>
+  `stack_peek 0 ps''.ps_stack = h'` by
+    (qspecl_then [`dfg`, `[h;h']`, `1`, `h'`, `ps'`, `step_ops`, `ps''`]
+       mp_tac reorder_one_places >> simp[]) >>
+  `stack_peek 1 ps''.ps_stack = h` by
+    (qspecl_then [`dfg`, `[h;h']`, `1`, `h'`, `ps'`, `step_ops`, `ps''`,
+       `0`, `d1`] mp_tac reorder_one_preserves_fixed >> simp[]) >>
+  `plan_state_residual_wf spill_base [h;h'] 0 ps''` by
+    (irule residual_budget_wf_to_residual >> simp[]) >>
+  `plan_state_residual_wf spill_base [h;h'] 1 ps''` by
+    (qspecl_then [`spill_base`, `[h;h']`, `0`, `ps''`]
+       mp_tac plan_state_residual_wf_fix_next >> simp[]) >>
+  `plan_state_residual_wf spill_base [h;h'] 2 ps''` by
+    (qspecl_then [`spill_base`, `[h;h']`, `1`, `ps''`]
+       mp_tac plan_state_residual_wf_fix_next >> simp[]) >>
+  `ps''.ps_stack =
+     stack_pop (LENGTH [h;h']) ps''.ps_stack ++ [h;h']` by
+    (irule fixed_suffix_decompose >> simp[] >>
+     gen_tac >> strip_tac >>
+     `i = 0 \/ i = 1` by decide_tac >> gvs[]) >>
+  `plan_slots_bounded spill_base
+       (ps'' with ps_stack := stack_pop 2 ps''.ps_stack) /\
+   spill_alloc_layout_wf ps''.ps_alloc ps''.ps_spilled /\
+   ALL_DISTINCT (stack_pop 2 ps''.ps_stack) /\
+   DISJOINT (set (stack_pop 2 ps''.ps_stack)) (FDOM ps''.ps_spilled)` by
+    (qspecl_then [`spill_base`, `[h;h']`, `ps''`]
+       mp_tac plan_state_residual_wf_pop >> simp[]) >>
+  gvs[generated_plan_state_wf_def]
 QED
 Resume gen_inst_ok_sim[bump]:
   qpat_x_assum `inst_wf inst` mp_tac >>
