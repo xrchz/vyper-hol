@@ -308,6 +308,56 @@ Proof
   fs[]
 QED
 
+(* A generated swap places the old TOS value at its requested depth. *)
+Theorem do_swap_peek_dist[local]:
+  !dist ps.
+    dist < LENGTH ps.ps_stack ==>
+    stack_peek dist (SND (do_swap dist ps)).ps_stack =
+      stack_peek 0 ps.ps_stack
+Proof
+  rpt strip_tac >>
+  Cases_on `dist = 0`
+  >- simp[do_swap_def] >>
+  Cases_on `dist <= 16`
+  >- simp[do_swap_def, stack_peek_def, stack_swap_def, LET_THM,
+          EL_LUPDATE] >>
+  qspecl_then [`dist`, `ps`] mp_tac do_swap_deep_stack >>
+  simp[] >> strip_tac >>
+  simp[stack_peek_def, top_n_def, LENGTH_TAKE, EL_APPEND_EQN,
+       GSYM rich_listTheory.LASTN_def, rich_listTheory.LASTN_DROP] >>
+  once_rewrite_tac[GSYM (cj 1 EL)] >>
+  simp[EL_DROP]
+QED
+
+(* Updating one in-range depth leaves every other in-range depth unchanged. *)
+Theorem stack_poke_peek_other[local]:
+  !stk d k op.
+    d < LENGTH stk /\ k < LENGTH stk /\ k <> d ==>
+    stack_peek k (stack_poke d op stk) = stack_peek k stk
+Proof
+  rpt strip_tac >>
+  simp[stack_peek_def, stack_poke_def, LENGTH_LUPDATE, EL_LUPDATE] >>
+  `LENGTH stk - 1 - k <> LENGTH stk - 1 - d` by decide_tac >>
+  simp[]
+QED
+
+(* A shallow generated swap changes only TOS and its requested depth. *)
+Theorem do_swap_peek_other[local]:
+  !dist k ps.
+    dist <= 16 /\ dist < LENGTH ps.ps_stack /\ k < LENGTH ps.ps_stack /\
+    k <> 0 /\ k <> dist ==>
+    stack_peek k (SND (do_swap dist ps)).ps_stack = stack_peek k ps.ps_stack
+Proof
+  rpt strip_tac >>
+  Cases_on `dist = 0` >- simp[do_swap_def] >>
+  simp[do_swap_def, stack_peek_def, stack_swap_def, LET_THM,
+       LENGTH_LUPDATE, EL_LUPDATE] >>
+  `LENGTH ps.ps_stack - 1 - k <> PRE (LENGTH ps.ps_stack)` by decide_tac >>
+  `LENGTH ps.ps_stack - 1 - k <>
+   LENGTH ps.ps_stack - (dist + 1)` by decide_tac >>
+  simp[]
+QED
+
 (* =========================================================================
    Single-operand reorder puts operand at TOS
 
@@ -1125,6 +1175,7 @@ Proof
           (restore_ops ++ reduce_ops) ps)`, `ps3`]
       mp_tac apply_prefix_ops_ext_stack_spilled >> simp[]) >>
   gvs[LET_THM] >>
+
   qpat_x_assum
     `(apply_prefix_ops initial_fmp lo swap2_ops
        (apply_prefix_ops initial_fmp lo swap1_ops
@@ -1132,6 +1183,176 @@ Proof
            (restore_ops ++ reduce_ops) ps))).ps_stack = ps'.ps_stack`
     mp_tac >>
   simp[apply_prefix_ops_append]
+QED
+
+
+Theorem reorder_place_phase_places[local]:
+  !dfg op dist final_dist ps.
+    stack_get_depth op ps.ps_stack = SOME dist /\
+    final_dist < LENGTH ps.ps_stack ==>
+    let (_,ps') =
+      if dist = final_dist then ([] : stack_op list,ps)
+      else
+        let at_target = stack_peek final_dist ps.ps_stack in
+        if operand_equiv dfg op at_target then
+          ([],ps with ps_stack :=
+             stack_poke final_dist op
+               (stack_poke dist at_target ps.ps_stack))
+        else
+          let (s1,ps1) = do_swap dist ps in
+          let (s2,ps2) = do_swap final_dist ps1 in
+          (s1 ++ s2,ps2)
+    in stack_peek final_dist ps'.ps_stack = op
+Proof
+  rpt strip_tac >> simp[LET_THM] >>
+  Cases_on `dist = final_dist` >> simp[]
+  >- (imp_res_tac stack_get_depth_el >>
+      qpat_x_assum `dist = final_dist` SUBST_ALL_TAC >>
+      pure_rewrite_tac[stack_peek_def] >>
+      first_assum ACCEPT_TAC) >>
+  Cases_on `operand_equiv dfg op (stack_peek final_dist ps.ps_stack)` >> simp[]
+  >- simp[stack_peek_def, stack_poke_def, EL_LUPDATE] >>
+  pairarg_tac >> simp[] >> pairarg_tac >> simp[] >>
+  `stack_peek 0 ps1.ps_stack = op` by (
+    Cases_on `dist = 0`
+    >- (gvs[do_swap_def] >>
+        imp_res_tac stack_get_depth_el >>
+        simp[stack_peek_def]) >>
+    imp_res_tac stack_get_depth_bound >>
+    qspecl_then [`dist`, `ps`, `op`] mp_tac do_swap_last >>
+    (impl_tac >- simp[]) >> strip_tac >>
+    `ps1.ps_stack <> []` by gvs[] >>
+    `stack_peek 0 ps1.ps_stack = LAST ps1.ps_stack` by (
+      Cases_on `ps1.ps_stack` >> gvs[stack_peek_def, LAST_EL]) >>
+    gvs[]) >>
+  qspecl_then [`dist`, `ps`] mp_tac do_swap_length >>
+  (impl_tac >- metis_tac[stack_get_depth_bound]) >> strip_tac >>
+  `LENGTH ps1.ps_stack = LENGTH ps.ps_stack` by gvs[] >>
+  qspecl_then [`final_dist`, `ps1`] mp_tac do_swap_peek_dist >>
+  (impl_tac >- simp[]) >> strip_tac >>
+  qpat_x_assum `(\(s1,ps1). _) (do_swap dist ps) = (_,ps')` mp_tac >>
+  asm_rewrite_tac[] >>
+  Cases_on `do_swap final_dist ps1` >> simp[] >> strip_tac >> gvs[]
+QED
+
+(* Once all swaps are shallow, placement preserves any distinct fixed depth. *)
+Theorem reorder_place_phase_preserves[local]:
+  !dfg op dist final_dist k ps.
+    stack_get_depth op ps.ps_stack = SOME dist /\
+    dist <= 16 /\ final_dist <= 16 /\
+    final_dist < LENGTH ps.ps_stack /\ k < LENGTH ps.ps_stack /\
+    k <> 0 /\ k <> dist /\ k <> final_dist ==>
+    let (_,ps') =
+      if dist = final_dist then ([] : stack_op list,ps)
+      else
+        let at_target = stack_peek final_dist ps.ps_stack in
+        if operand_equiv dfg op at_target then
+          ([],ps with ps_stack :=
+             stack_poke final_dist op
+               (stack_poke dist at_target ps.ps_stack))
+        else
+          let (s1,ps1) = do_swap dist ps in
+          let (s2,ps2) = do_swap final_dist ps1 in
+          (s1 ++ s2,ps2)
+    in stack_peek k ps'.ps_stack = stack_peek k ps.ps_stack
+Proof
+  rpt strip_tac >> simp[LET_THM] >>
+  Cases_on `dist = final_dist` >> simp[] >>
+  Cases_on `operand_equiv dfg op (stack_peek final_dist ps.ps_stack)` >> simp[]
+  >- (imp_res_tac stack_get_depth_bound >>
+      `stack_peek k
+         (stack_poke dist (stack_peek final_dist ps.ps_stack) ps.ps_stack) =
+       stack_peek k ps.ps_stack` by
+        (irule stack_poke_peek_other >> simp[]) >>
+      `stack_peek k
+         (stack_poke final_dist op
+           (stack_poke dist (stack_peek final_dist ps.ps_stack) ps.ps_stack)) =
+       stack_peek k
+         (stack_poke dist (stack_peek final_dist ps.ps_stack) ps.ps_stack)` by
+        (irule stack_poke_peek_other >> simp[stack_poke_def]) >>
+      metis_tac[]) >>
+  pairarg_tac >> simp[] >> pairarg_tac >> simp[] >>
+  qspecl_then [`dist`, `k`, `ps`] mp_tac do_swap_peek_other >>
+  (impl_tac >- metis_tac[stack_get_depth_bound]) >> strip_tac >>
+  qspecl_then [`dist`, `ps`] mp_tac do_swap_length >>
+  (impl_tac >- metis_tac[stack_get_depth_bound]) >> strip_tac >>
+  qspecl_then [`final_dist`, `k`, `ps1`] mp_tac do_swap_peek_other >>
+  (impl_tac >- gvs[]) >> strip_tac >>
+  qpat_x_assum `(\(s1,ps1). _) (do_swap dist ps) = (_,ps')` mp_tac >>
+  asm_rewrite_tac[] >>
+  Cases_on `do_swap final_dist ps1` >> simp[] >> strip_tac >> gvs[]
+QED
+(* A successful reorder step places its requested operand at its indexed
+   target depth in the formal planner stack. *)
+Theorem reorder_one_places:
+  !dfg target_ops idx op ps ops ps'.
+    idx < LENGTH target_ops /\
+    MEM op target_ops /\
+    LENGTH target_ops <= LENGTH ps.ps_stack /\
+    LENGTH target_ops <= 16 /\
+    ((?d. stack_get_depth op ps.ps_stack = SOME d) \/
+     (stack_get_depth op ps.ps_stack = NONE /\
+      IS_SOME (FLOOKUP ps.ps_spilled op))) /\
+    reorder_one dfg target_ops idx op ps = (ops,ps') ==>
+    stack_peek (LENGTH target_ops - 1 - idx) ps'.ps_stack = op
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `reorder_one _ _ _ _ _ = _` mp_tac >>
+  simp[reorder_one_def, LET_THM]
+  >- (rename1 `stack_get_depth op ps.ps_stack = SOME d` >>
+      imp_res_tac stack_get_depth_bound >>
+      Cases_on `d > 16` >> simp[]
+      >- (pairarg_tac >> simp[] >>
+          rename1 `reduce_depth_plan (LENGTH ps.ps_stack) target_ops op ps =
+                   (reduce_ops,ps2)` >>
+          `?dist'. stack_get_depth op ps2.ps_stack = SOME dist'` by (
+            qspecl_then [`LENGTH ps.ps_stack`, `target_ops`, `op`, `ps`, `d`]
+              mp_tac (REWRITE_RULE [LET_THM] reduce_depth_plan_dist_ge) >>
+            simp[] >> metis_tac[]) >>
+          rename1 `stack_get_depth op ps2.ps_stack = SOME dist'` >>
+          `LENGTH target_ops <= LENGTH ps2.ps_stack` by (
+            qspecl_then [`LENGTH ps.ps_stack`, `target_ops`, `op`, `ps`,
+                         `reduce_ops`, `ps2`]
+              mp_tac reduce_depth_plan_length_floor >> simp[] >> decide_tac) >>
+          `LENGTH target_ops - (idx + 1) < LENGTH ps2.ps_stack` by decide_tac >>
+          strip_tac >>
+          qspecl_then [`dfg`, `op`, `dist'`,
+            `LENGTH target_ops - (idx + 1)`, `ps2`]
+            mp_tac reorder_place_phase_places >> simp[] >> strip_tac >>
+          Cases_on `dist' = LENGTH target_ops - (idx + 1)` >> gvs[] >>
+          Cases_on `operand_equiv dfg op
+            (stack_peek (LENGTH target_ops - (idx + 1)) ps2.ps_stack)` >> gvs[] >>
+          pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >>
+          Cases_on `do_swap (LENGTH target_ops - (idx + 1)) ps1` >> gvs[])
+      >> strip_tac >>
+      qspecl_then [`dfg`, `op`, `d`,
+        `LENGTH target_ops - (idx + 1)`, `ps`]
+        mp_tac reorder_place_phase_places >>
+      simp[] >>
+      `LENGTH target_ops - (idx + 1) < LENGTH ps.ps_stack` by decide_tac >>
+      simp[]) >>
+  Cases_on `FLOOKUP ps.ps_spilled op`
+  >- fs[] >>
+  rename1 `FLOOKUP ps.ps_spilled op = SOME off` >>
+  simp[do_restore_def, stack_push_def, stack_get_depth_def,
+       REVERSE_SNOC, stack_find_def] >>
+  qabbrev_tac
+    `psr = ps with <|ps_stack := SNOC op ps.ps_stack;
+                     ps_spilled := ps.ps_spilled \\ op;
+                     ps_alloc := free_spill_slot off ps.ps_alloc|>` >>
+  `stack_get_depth op psr.ps_stack = SOME 0` by
+    simp[Abbr `psr`, stack_get_depth_def, REVERSE_SNOC, stack_find_def] >>
+  `LENGTH target_ops - (idx + 1) < LENGTH psr.ps_stack` by
+    (simp[Abbr `psr`] >> decide_tac) >>
+  strip_tac >>
+  qspecl_then [`dfg`, `op`, `0`, `LENGTH target_ops - (idx + 1)`, `psr`]
+    mp_tac reorder_place_phase_places >> simp[] >> strip_tac >>
+  Cases_on `LENGTH target_ops <= idx + 1` >> gvs[] >>
+  Cases_on `operand_equiv dfg op
+    (stack_peek (LENGTH target_ops - (idx + 1)) psr.ps_stack)` >>
+  gvs[Abbr `psr`] >>
+  pairarg_tac >> gvs[] >> pairarg_tac >> gvs[] >>
+  Cases_on `do_swap (LENGTH target_ops - (idx + 1)) ps1` >> gvs[]
 QED
 
 (* =========================================================================
