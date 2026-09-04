@@ -538,6 +538,36 @@ Proof
      >> metis_tac[]
 QED
 
+Theorem do_spill_at_inventory_count[local]:
+  !d ps spill_ops ps'.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    d < LENGTH ps.ps_stack /\ d <= 16 /\
+    stack_peek d ps.ps_stack NOTIN FDOM ps.ps_spilled /\
+    do_spill_at d ps = (spill_ops,ps') ==>
+    !x.
+      LIST_ELEM_COUNT x ps'.ps_stack +
+        (if x IN FDOM ps'.ps_spilled then 1 else 0) =
+      LIST_ELEM_COUNT x ps.ps_stack +
+        (if x IN FDOM ps.ps_spilled then 1 else 0)
+Proof
+  rpt strip_tac >>
+  qspecl_then [`d`, `ps`, `spill_ops`, `ps'`] mp_tac
+    do_spill_at_multiplicity_layout >>
+  ASM_REWRITE_TAC[] >> strip_tac >>
+  rename1 `ps'.ps_spilled = ps.ps_spilled |+ (spilled_op,off)` >>
+  Cases_on `x = spilled_op`
+  >- (gvs[finite_mapTheory.FDOM_FUPDATE] >>
+      qpat_assum `!y. LIST_ELEM_COUNT y ps'.ps_stack + _ = _`
+        (qspec_then `spilled_op`
+          (fn th => MATCH_ACCEPT_TAC
+            (SIMP_RULE (srw_ss()) [LIST_ELEM_COUNT_THM] th))))
+  >> gvs[finite_mapTheory.FDOM_FUPDATE] >>
+     qpat_assum `!y. LIST_ELEM_COUNT y ps'.ps_stack + _ = _`
+       (qspec_then `x` assume_tac) >>
+     `LIST_ELEM_COUNT x [spilled_op] = 0` by
+       simp[LIST_ELEM_COUNT_THM] >>
+     decide_tac
+QED
 Theorem residual_budget_wf_do_spill_at[local]:
   !base pending d ps ops ps'.
     residual_budget_wf base pending ps /\
