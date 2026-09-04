@@ -692,7 +692,8 @@ Proof
     qspecl_then [`x'`, `ps`] mp_tac do_spill_at_structural_wf >> simp[]) >>
   first_x_assum
     (qspecl_then [`target_ops`, `target_op`, `f`, `target_len`, `ps'`] mp_tac) >>
-  simp[] >> strip_tac >> pairarg_tac >> gvs[]
+  simp[] >> strip_tac >> pairarg_tac >>
+  Cases_on `x <= 16` >> gvs[]
 QED
 
 
@@ -776,7 +777,7 @@ Proof
   first_x_assum
     (qspecl_then [`target_ops`, `target_op`, `f`, `target_len`, `ps1`,
                   `rest_ops`, `ps'`] mp_tac) >>
-  simp[] >> decide_tac
+  simp[] >> Cases_on `x <= 16` >> gvs[] >> decide_tac
 QED
 
 Theorem reorder_one_structural_wf:
@@ -922,6 +923,8 @@ Proof
   rename1 `do_spill_at _ ps = (spill_ops, ps1)` >> simp[] >>
   Cases_on `reduce_depth_plan fuel target_ops target_op f target_len ps1` >>
   rename1 `reduce_depth_plan _ _ _ _ _ _ = (rest_ops, ps2)` >>
+  Cases_on `x <= 16`
+  >- simp[] >>
   simp[EVERY_APPEND] >> conj_tac
   >- (`spill_ops = FST (do_spill_at x' ps)` by simp[] >>
       metis_tac[do_spill_at_only_swap_spill]) >>
@@ -956,6 +959,8 @@ Proof
   first_x_assum (qspecl_then
     [`target_ops`, `target_op`, `f`, `target_len`, `ps1`, `lo`] mp_tac) >>
   simp[LET_THM] >> strip_tac >>
+  Cases_on `dist <= 16`
+  >- simp[apply_prefix_ops_def] >>
   suspend "step"
 QED
 
@@ -979,7 +984,7 @@ Resume reduce_depth_plan_align[step]:
   qspecl_then [`rest_ops`, `lo`,
     `apply_prefix_ops initial_fmp lo spill_ops ps`, `ps1`]
     mp_tac apply_ssr_ops_indep >>
-  simp[]
+  simp[apply_prefix_ops_append]
 QED
 
 Finalise reduce_depth_plan_align;
