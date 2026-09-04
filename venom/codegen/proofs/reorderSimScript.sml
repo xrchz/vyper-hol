@@ -9,7 +9,7 @@
 
 Theory reorderSim
 Ancestors
-  foldlSim doSwapSim spillSim instSimHelpers strongPrefixSim
+  foldlSim doSwapSim spillSim instSimHelpers strongPrefixSim planSpillBounds dfgDefs
   stackOpSim mixedPrefixSim planAlign
   stackPlanGen stackPlanOps stackPlanTypes stackModel
   codegenRel asmSem planExec planWf
@@ -1580,3 +1580,78 @@ Resume reorder_single_op_val_on_tos_deep[deep_swap]:
 QED
 
 Finalise reorder_single_op_val_on_tos_deep
+
+
+(* Checked counterexample probe for fixed-region preservation across a deep
+   later reorder step.  Remove after strategist review. *)
+Theorem probe_reorder_plan_prior_target_not_preserved:
+  stack_peek 1
+    (SND (reorder_plan dfg_empty [Var "18"; Var "0"]
+      ((init_plan_state 0) with
+       ps_stack := GENLIST (\i. Var (num_to_dec_string i)) 20))).ps_stack <>
+  Var "18"
+Proof
+  EVAL_TAC
+QED
+
+
+(* BUMP-context diagnostic: dead repeated variables are not duplicated by
+   input emission, and reorder moves the sole occurrence rather than creating
+   the two required stack operands.  Remove after strategist review. *)
+Theorem probe_bump_duplicate_dead_input_reorder:
+  let ps0 = (init_plan_state 0) with
+              ps_stack := [Var "x"; Var "y"] in
+  let (input_ops,ps1) = emit_input_plan BUMP [Var "x"; Var "x"] [] ps0 in
+  let (reorder_ops,ps2) = reorder_plan dfg_empty [Var "x"; Var "x"] ps1 in
+    input_ops = [] /\
+    ps1.ps_stack = [Var "x"; Var "y"] /\
+    reorder_ops = [SOSwap 1] /\
+    ps2.ps_stack = [Var "y"; Var "x"] /\
+    (apply_prefix_ops initial_fmp FEMPTY (input_ops ++ reorder_ops) ps0).ps_stack =
+      [Var "y"; Var "x"]
+Proof
+  EVAL_TAC
+QED
+
+
+(* The diagnostic state satisfies the planner-side structural and length
+   premises used by gen_inst_ok_sim. *)
+Theorem probe_bump_duplicate_planner_premises:
+  let ps0 = (init_plan_state 0) with
+              ps_stack := [Var "x"; Var "y"] in
+  let (_,ps1) = emit_input_plan BUMP [Var "x"; Var "x"] [] ps0 in
+    plan_slots_bounded (0:num) ps0 /\
+    spill_alloc_layout_wf ps0.ps_alloc ps0.ps_spilled /\
+    ALL_DISTINCT ps0.ps_stack /\
+    DISJOINT (set ps0.ps_stack) (FDOM ps0.ps_spilled) /\
+    LENGTH [Var "x"; Var "x"] <= LENGTH ps1.ps_stack
+Proof
+  simp[plan_slots_bounded_def, alloc_slots_bounded_def,
+       spill_alloc_layout_wf_def, init_plan_state_def, init_spill_alloc_def] >>
+  EVAL_TAC
+QED
+
+(* With unequal variable values, the missing duplicate is semantically
+   observable at the required second-from-top BUMP operand position. *)
+Theorem probe_bump_duplicate_semantic_failure:
+  let ps0 = (init_plan_state 0) with
+              ps_stack := [Var "x"; Var "y"] in
+  let (_,ps1) = emit_input_plan BUMP [Var "x"; Var "x"] [] ps0 in
+  let (_,ps2) = reorder_plan dfg_empty [Var "x"; Var "x"] ps1 in
+  let vs0 = (init_venom_state "entry") with
+              vs_vars := FEMPTY |+ ("x",1w) |+ ("y",2w) in
+    operand_val vs0 FEMPTY (stack_peek 1 ps2.ps_stack) = SOME 2w /\
+    operand_val vs0 FEMPTY (Var "x") = SOME 1w
+Proof
+  EVAL_TAC
+QED
+
+Theorem probe_dfg_empty_alias_sound:
+  !vs lo op at.
+    operand_equiv dfg_empty op at ==>
+    operand_val vs lo op = operand_val vs lo at
+Proof
+  rpt strip_tac >>
+  Cases_on `op` >> Cases_on `at` >>
+  gvs[operand_equiv_def, normalize_operand_def, dfg_empty_def]
+QED
