@@ -2,13 +2,18 @@
 
 Theory task049Validation
 Ancestors
-  planExec asmSem venomWf
+  planExec asmSem venomWf codegenRel
 Libs
   BasicProvers wordsLib
 
 Definition task049_bump_inst_def:
   task049_bump_inst sz =
     mk_inst 49 BUMP [Lit 0w; Lit sz] ["ptr"; "next"]
+End
+
+Definition task049_duplicate_bump_inst_def:
+  task049_duplicate_bump_inst sz =
+    mk_inst 49 BUMP [Lit 0w; Lit sz] ["x"; "x"]
 End
 
 Definition task049_bump_plan_state_def:
@@ -40,6 +45,27 @@ Theorem task049_bump_source_traces:
           (update_var "ptr" 0w (init_venom_state "entry")))
 Proof
   EVAL_TAC >> simp[]
+QED
+
+Theorem task049_duplicate_bump_source_trace:
+  step_inst_base (task049_duplicate_bump_inst 1w)
+    (init_venom_state "entry") =
+  OK (update_var "x" 32w
+        (update_var "x" 0w (init_venom_state "entry")))
+Proof
+  EVAL_TAC >> simp[]
+QED
+
+Theorem task049_duplicate_bump_stack_mismatch:
+  !vs.
+    ~plan_stack_rel FEMPTY
+      (update_var "x" 32w (update_var "x" 0w vs))
+      [Var "x"; Var "x"] [(32w:bytes32); 0w]
+Proof
+  gen_tac >>
+  simp[plan_stack_rel_def, operand_val_def,
+       venomStateTheory.update_var_def] >>
+  qexists `1` >> EVAL_TAC
 QED
 
 Theorem task049_bump_generated_trace:
