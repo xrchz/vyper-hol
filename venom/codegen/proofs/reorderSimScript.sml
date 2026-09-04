@@ -105,6 +105,182 @@ Proof
   Cases_on `i = LENGTH s1 - 1 - d` >> simp[]
 QED
 
+
+(* A planner state may temporarily contain duplicate pending operands in the
+   protected top window.  Everything below that window remains canonical;
+   filtering pending operands also exposes that all other duplication and
+   stack/spill overlap is forbidden.  [fixed] records the target positions
+   already established by reorder_plan. *)
+Definition plan_state_residual_wf_def:
+  plan_state_residual_wf base pending fixed (ps : plan_state) <=>
+    plan_slots_bounded base ps /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    LENGTH pending <= LENGTH ps.ps_stack /\
+    fixed <= LENGTH pending /\
+    ALL_DISTINCT (stack_pop (LENGTH pending) ps.ps_stack) /\
+    DISJOINT (set (stack_pop (LENGTH pending) ps.ps_stack))
+             (FDOM ps.ps_spilled) /\
+    ALL_DISTINCT (FILTER (\op. ~MEM op pending) ps.ps_stack) /\
+    DISJOINT (set (FILTER (\op. ~MEM op pending) ps.ps_stack))
+             (FDOM ps.ps_spilled) /\
+    (!i. i < fixed ==>
+       stack_peek (LENGTH pending - 1 - i) ps.ps_stack = EL i pending)
+End
+
+Theorem all_distinct_filter[local]:
+  !(P : 'a -> bool) xs.
+    ALL_DISTINCT xs ==> ALL_DISTINCT (FILTER P xs)
+Proof
+  gen_tac >> Induct >> simp[] >> rpt strip_tac >>
+  Cases_on `P h` >> gvs[MEM_FILTER]
+QED
+
+Theorem plan_state_residual_wf_canonical:
+  !base pending ps.
+    plan_slots_bounded base ps /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT ps.ps_stack /\
+    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    LENGTH pending <= LENGTH ps.ps_stack ==>
+    plan_state_residual_wf base pending 0 ps
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[plan_state_residual_wf_def, stack_pop_def] >>
+  rpt conj_tac
+  >- metis_tac[ALL_DISTINCT_TAKE]
+  >- (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+      metis_tac[rich_listTheory.MEM_TAKE])
+  >- metis_tac[all_distinct_filter]
+  >> fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION,
+        listTheory.MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem plan_state_residual_wf_fix_next:
+  !base pending fixed ps.
+    plan_state_residual_wf base pending fixed ps /\
+    fixed < LENGTH pending /\
+    stack_peek (LENGTH pending - 1 - fixed) ps.ps_stack =
+      EL fixed pending ==>
+    plan_state_residual_wf base pending (SUC fixed) ps
+Proof
+  simp[plan_state_residual_wf_def] >> rpt strip_tac >>
+  Cases_on `i = fixed` >> gvs[] >>
+  first_x_assum irule >> decide_tac
+QED
+
+
+Theorem take_lupdate_outside[local]:
+  !n i x (l : 'a list).
+    n <= i ==> TAKE n (LUPDATE x i l) = TAKE n l
+Proof
+  Induct_on `l` >> rpt gen_tac >>
+  Cases_on `n` >> Cases_on `i` >> simp[LUPDATE_def]
+QED
+
+Theorem filter_lupdate_excluded_mem[local]:
+  !(P : 'a -> bool) l i x y.
+    ~P x /\ MEM y (FILTER P (LUPDATE x i l)) ==>
+    MEM y (FILTER P l)
+Proof
+  rpt gen_tac >> simp[MEM_FILTER] >> strip_tac >>
+  drule MEM_LUPDATE_E >> metis_tac[]
+QED
+
+Theorem filter_lupdate_excluded_distinct[local]:
+  !(P : 'a -> bool) l i x.
+    ~P x /\ ALL_DISTINCT (FILTER P l) ==>
+    ALL_DISTINCT (FILTER P (LUPDATE x i l))
+Proof
+  gen_tac >> Induct >> rpt gen_tac >>
+  Cases_on `i` >> simp[LUPDATE_def] >> rpt strip_tac
+  >- (Cases_on `P h` >> gvs[])
+  >> Cases_on `P h` >> gvs[] >>
+     metis_tac[filter_lupdate_excluded_mem]
+QED
+
+Theorem plan_state_residual_wf_protected_poke:
+  !base pending ps dist op.
+    plan_state_residual_wf base pending 0 ps /\
+    dist < LENGTH pending /\ MEM op pending ==>
+    plan_state_residual_wf base pending 0
+      (ps with ps_stack := stack_poke dist op ps.ps_stack)
+Proof
+  rpt gen_tac >> strip_tac >>
+  fs[plan_state_residual_wf_def] >>
+  simp[plan_state_residual_wf_def, stack_poke_def, stack_pop_def] >>
+  `LENGTH ps.ps_stack - LENGTH pending <=
+   LENGTH ps.ps_stack - (dist + 1)` by decide_tac >>
+  `TAKE (LENGTH ps.ps_stack - LENGTH pending)
+      (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack) =
+   TAKE (LENGTH ps.ps_stack - LENGTH pending) ps.ps_stack` by
+    metis_tac[take_lupdate_outside] >>
+  `ALL_DISTINCT
+     (FILTER (\x. ~MEM x pending)
+       (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack))` by
+    (irule filter_lupdate_excluded_distinct >> simp[]) >>
+  `DISJOINT
+     (set (FILTER (\x. ~MEM x pending)
+       (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack)))
+     (FDOM ps.ps_spilled)` by
+    (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+     gen_tac >>
+     Cases_on `MEM x
+       (FILTER (\x. ~MEM x pending)
+         (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack))`
+     >- (`MEM x (FILTER (\x. ~MEM x pending) ps.ps_stack)` by
+           (qspecl_then [`\z. ~MEM z pending`, `ps.ps_stack`,
+              `LENGTH ps.ps_stack - (dist + 1)`, `op`, `x`]
+              mp_tac filter_lupdate_excluded_mem >> simp[]) >>
+         first_x_assum (qspec_then `x` mp_tac) >> simp[])
+     >> simp[]) >>
+  fs[stack_pop_def]
+QED
+
+Theorem plan_state_residual_wf_pop:
+  !base pending ps.
+    plan_state_residual_wf base pending (LENGTH pending) ps ==>
+    plan_slots_bounded base
+      (ps with ps_stack := stack_pop (LENGTH pending) ps.ps_stack) /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT (stack_pop (LENGTH pending) ps.ps_stack) /\
+    DISJOINT (set (stack_pop (LENGTH pending) ps.ps_stack))
+             (FDOM ps.ps_spilled)
+Proof
+  simp[plan_state_residual_wf_def]
+QED
+
+(* Concrete interface probes: duplicates are confined to the protected window. *)
+Theorem plan_state_residual_wf_duplicate_probe:
+  let ps = (init_plan_state 0) with
+             ps_stack := [Var "core_x"; Var "core_y";
+                          Var "pending"; Var "pending"] in
+    plan_state_residual_wf 0 [Var "pending"; Var "pending"] 2 ps
+Proof
+  EVAL_TAC >> simp[pred_setTheory.DISJOINT_DEF] >>
+  rpt strip_tac >>
+  `i = 0 \/ i = 1` by decide_tac >> gvs[]
+QED
+
+Theorem plan_state_residual_wf_distinct_probe:
+  let ps = (init_plan_state 0) with
+             ps_stack := [Var "core_x"; Var "core_y";
+                          Var "left"; Var "right"] in
+    plan_state_residual_wf 0 [Var "left"; Var "right"] 2 ps
+Proof
+  EVAL_TAC >> simp[pred_setTheory.DISJOINT_DEF] >>
+  rpt strip_tac >>
+  `i = 0 \/ i = 1` by decide_tac >> gvs[]
+QED
+
+Theorem plan_state_residual_wf_rejects_core_duplicate:
+  let ps = (init_plan_state 0) with
+             ps_stack := [Var "core"; Var "core";
+                          Var "pending"; Var "pending"] in
+    ~plan_state_residual_wf 0 [Var "pending"; Var "pending"] 2 ps
+Proof
+  EVAL_TAC
+QED
+
 (* =========================================================================
    Bridge: reorder_plan = plan_steps (reorder_one ...)
    ========================================================================= *)
