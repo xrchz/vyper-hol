@@ -746,6 +746,349 @@ Proof
 QED
 
 
+Theorem do_dup_spilled_unchanged[local]:
+  !(ps : plan_state) dist.
+    (SND (do_dup dist ps)).ps_spilled = ps.ps_spilled
+Proof
+  gen_tac >> gen_tac >> Cases_on `dist <= 15` >>
+  simp[do_dup_def, LET_THM] >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem do_dup_inventory_count[local]:
+  !(ps : plan_state) dist x.
+    dist < LENGTH ps.ps_stack ==>
+    LIST_ELEM_COUNT x (SND (do_dup dist ps)).ps_stack +
+      (if x IN FDOM (SND (do_dup dist ps)).ps_spilled then 1 else 0) =
+    LIST_ELEM_COUNT x ps.ps_stack +
+      (if x IN FDOM ps.ps_spilled then 1 else 0) +
+      (if x = stack_peek dist ps.ps_stack then 1 else 0)
+Proof
+  rpt strip_tac >> drule_then assume_tac do_dup_stack_exact >>
+  simp[do_dup_spilled_unchanged, elem_count_append, LIST_ELEM_COUNT_THM] >>
+  Cases_on `x = stack_peek dist ps.ps_stack` >>
+  simp[LIST_ELEM_COUNT_DEF]
+QED
+
+Theorem do_restore_inventory_count[local]:
+  !(ps : plan_state) op off x.
+    FLOOKUP ps.ps_spilled op = SOME off ==>
+    LIST_ELEM_COUNT x (SND (do_restore op ps)).ps_stack +
+      (if x IN FDOM (SND (do_restore op ps)).ps_spilled then 1 else 0) =
+    LIST_ELEM_COUNT x ps.ps_stack +
+      (if x IN FDOM ps.ps_spilled then 1 else 0)
+Proof
+  rpt strip_tac >>
+  simp[do_restore_def, stack_push_def, elem_count_snoc,
+       LIST_ELEM_COUNT_THM] >>
+  Cases_on `x = op` >> gvs[flookup_thm, LIST_ELEM_COUNT_DEF]
+QED
+
+Theorem stack_get_depth_push_inventory[local]:
+  !op stk. stack_get_depth op (stack_push op stk) = SOME 0
+Proof
+  rw[stack_get_depth_def, stack_push_def, REVERSE_SNOC, stack_find_def]
+QED
+
+Theorem stack_get_depth_restore_inventory[local]:
+  !(ps : plan_state) op off.
+    FLOOKUP ps.ps_spilled op = SOME off ==>
+    stack_get_depth op (SND (do_restore op ps)).ps_stack = SOME 0
+Proof
+  simp[do_restore_def, stack_get_depth_push_inventory]
+QED
+
+Theorem emit_one_input_inventory_mono_aux[local]:
+  !opc nl op (ps : plan_state) x.
+    LIST_ELEM_COUNT x ps.ps_stack +
+      (if x IN FDOM ps.ps_spilled then 1 else 0) <=
+    LIST_ELEM_COUNT x (SND (emit_one_input opc nl op ps)).ps_stack +
+      (if x IN FDOM (SND (emit_one_input opc nl op ps)).ps_spilled
+       then 1 else 0)
+Proof
+  rpt gen_tac >> Cases_on `op`
+  >- simp[emit_one_input_def, is_var_operand_def, LET_THM, stack_push_def,
+           elem_count_snoc, LIST_ELEM_COUNT_THM]
+  >- (rename1 `Var v` >> Cases_on `FLOOKUP ps.ps_spilled (Var v)`
+      >- (simp[emit_one_input_def, is_var_operand_def, LET_THM] >>
+          Cases_on `MEM v nl` >> simp[]
+          >- (Cases_on `stack_get_depth (Var v) ps.ps_stack` >> simp[] >>
+              rename1 `stack_get_depth _ _ = SOME dist` >>
+              `dist < LENGTH ps.ps_stack /\
+               stack_peek dist ps.ps_stack = Var v` by
+                metis_tac[stack_get_depth_props] >>
+              qspecl_then [`ps`, `dist`, `x`] (drule_then assume_tac)
+                do_dup_inventory_count >>
+              qpat_assum
+                `!y. LIST_ELEM_COUNT y (SND (do_dup dist ps)).ps_stack + _ = _`
+                (qspec_then `x` assume_tac) >>
+              CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+              simp[] >> decide_tac)
+          >> simp[])
+      >> rename1 `FLOOKUP ps.ps_spilled (Var v) = SOME off` >>
+         Cases_on `do_restore (Var v) ps` >>
+         rename1 `do_restore (Var v) ps = (restore_ops, psr)` >>
+         qspecl_then [`ps`, `Var v`, `off`] mp_tac
+           stack_get_depth_restore_inventory >> simp[] >> strip_tac >>
+         `0 < LENGTH psr.ps_stack /\ stack_peek 0 psr.ps_stack = Var v` by
+           metis_tac[stack_get_depth_props] >>
+         qspecl_then [`ps`, `Var v`, `off`, `x`] mp_tac
+           do_restore_inventory_count >> simp[] >> strip_tac >>
+         Cases_on `MEM v nl`
+         >- (qspecl_then [`psr`, `0`, `x`] (drule_then assume_tac)
+               do_dup_inventory_count >>
+             qpat_assum
+               `!y. LIST_ELEM_COUNT y (SND (do_dup 0 psr)).ps_stack + _ = _`
+               (qspec_then `x` assume_tac) >>
+             Cases_on `do_dup 0 psr` >>
+             gvs[emit_one_input_def, is_var_operand_def, LET_THM] >>
+             decide_tac)
+         >> simp[emit_one_input_def, is_var_operand_def, LET_THM])
+  >> Cases_on `opc = INVOKE` >>
+     gvs[emit_one_input_def, is_var_operand_def, LET_THM, stack_push_def,
+         elem_count_snoc, LIST_ELEM_COUNT_THM] >> decide_tac
+QED
+
+Theorem stack_peek_eq_EL_REVERSE_inventory[local]:
+  !stk d. d < LENGTH stk ==>
+    stack_peek d stk = EL d (REVERSE stk)
+Proof
+  rpt strip_tac >> simp[stack_peek_def, EL_REVERSE] >>
+  `PRE (LENGTH stk - d) = LENGTH stk - 1 - d` by decide_tac >> simp[]
+QED
+
+Theorem stack_get_depth_exists_inventory[local]:
+  !op stk. MEM op stk ==> ?d. stack_get_depth op stk = SOME d
+Proof
+  rpt strip_tac >> Cases_on `stack_get_depth op stk` >> simp[] >>
+  fs[stack_get_depth_NONE, MEM_EL] >>
+  `LENGTH stk - 1 - n < LENGTH stk` by decide_tac >>
+  `stack_peek (LENGTH stk - 1 - n) stk = op` by
+    (`LENGTH stk - 1 - (LENGTH stk - 1 - n) = n` by decide_tac >>
+     SIMP_TAC std_ss [stack_peek_def] >>
+     qpat_assum `LENGTH stk - 1 - (LENGTH stk - 1 - n) = n`
+       (fn th => rewrite_tac[th]) >>
+     qpat_assum `op = EL n stk` (ACCEPT_TAC o SYM)) >>
+  metis_tac[]
+QED
+
+Theorem elem_count_mem_pos_inventory[local]:
+  !op stk. MEM op stk ==> 1 <= LIST_ELEM_COUNT op stk
+Proof
+  rpt strip_tac >> drule (iffRL LIST_ELEM_COUNT_MEM) >> decide_tac
+QED
+
+Theorem covered_operand_inventory[local]:
+  !op (ps : plan_state).
+    (MEM op ps.ps_stack \/ op IN FDOM ps.ps_spilled) ==>
+    1 <= LIST_ELEM_COUNT op ps.ps_stack +
+         (if op IN FDOM ps.ps_spilled then 1 else 0)
+Proof
+  rpt strip_tac
+  >- (drule elem_count_mem_pos_inventory >> decide_tac)
+  >> simp[]
+QED
+Theorem emit_one_input_inventory_inc[local]:
+  !opc nl op (ps : plan_state).
+    (~is_var_operand op \/
+     ?v. op = Var v /\ MEM v nl /\
+         (MEM op ps.ps_stack \/ op IN FDOM ps.ps_spilled)) ==>
+    LIST_ELEM_COUNT op ps.ps_stack +
+      (if op IN FDOM ps.ps_spilled then 1 else 0) + 1 <=
+    LIST_ELEM_COUNT op (SND (emit_one_input opc nl op ps)).ps_stack +
+      (if op IN FDOM (SND (emit_one_input opc nl op ps)).ps_spilled
+       then 1 else 0)
+Proof
+  rpt gen_tac >> Cases_on `op`
+  >- simp[emit_one_input_def, is_var_operand_def, LET_THM, stack_push_def,
+           elem_count_snoc, LIST_ELEM_COUNT_THM]
+  >- (rename1 `Var v` >> simp[is_var_operand_def] >> disch_then assume_tac >>
+      Cases_on `FLOOKUP ps.ps_spilled (Var v)`
+      >- (`MEM (Var v) ps.ps_stack` by
+            metis_tac[flookup_thm] >>
+          drule stack_get_depth_exists_inventory >> strip_tac >>
+          rename1 `stack_get_depth (Var v) ps.ps_stack = SOME dist` >>
+          `dist < LENGTH ps.ps_stack /\
+           stack_peek dist ps.ps_stack = Var v` by
+            metis_tac[stack_get_depth_props] >>
+          qspecl_then [`ps`, `dist`, `Var v`] (drule_then assume_tac)
+            do_dup_inventory_count >>
+          qpat_assum
+            `!z. LIST_ELEM_COUNT (Var z) (SND (do_dup dist ps)).ps_stack + _ = _`
+            (qspec_then `v` assume_tac) >>
+          Cases_on `do_dup dist ps` >>
+          gvs[emit_one_input_def, is_var_operand_def, LET_THM] >> decide_tac)
+      >> rename1 `FLOOKUP ps.ps_spilled (Var v) = SOME off` >>
+         Cases_on `do_restore (Var v) ps` >>
+         rename1 `do_restore (Var v) ps = (restore_ops, psr)` >>
+         qspecl_then [`ps`, `Var v`, `off`] mp_tac
+           stack_get_depth_restore_inventory >> simp[] >> strip_tac >>
+         `0 < LENGTH psr.ps_stack /\ stack_peek 0 psr.ps_stack = Var v` by
+           metis_tac[stack_get_depth_props] >>
+         qspecl_then [`ps`, `Var v`, `off`, `Var v`] mp_tac
+           do_restore_inventory_count >> simp[] >> strip_tac >>
+         qspecl_then [`psr`, `0`, `Var v`] (drule_then assume_tac)
+           do_dup_inventory_count >>
+         qpat_assum
+           `!z. LIST_ELEM_COUNT (Var z) (SND (do_dup 0 psr)).ps_stack + _ = _`
+           (qspec_then `v` assume_tac) >>
+         Cases_on `do_dup 0 psr` >>
+         gvs[emit_one_input_def, is_var_operand_def, LET_THM] >> decide_tac)
+  >> Cases_on `opc = INVOKE` >>
+     gvs[emit_one_input_def, is_var_operand_def, LET_THM, stack_push_def,
+         elem_count_snoc, LIST_ELEM_COUNT_THM] >> decide_tac
+QED
+Theorem inventory_available_chain[local]:
+  !(a : num) b c. 1 <= a /\ a <= b /\ b <= c ==> 1 <= c
+Proof
+  rpt strip_tac >> decide_tac
+QED
+
+Theorem inventory_increment_chain[local]:
+  !(a : num) b c. a + 1 <= b /\ b <= c ==> 1 <= c
+Proof
+  rpt strip_tac >> decide_tac
+QED
+
+Theorem inventory_double_from_available[local]:
+  !(a : num) b c. 1 <= a /\ a + 1 <= b /\ b <= c ==> 2 <= c
+Proof
+  rpt strip_tac >> decide_tac
+QED
+
+Theorem inventory_double_increment[local]:
+  !(a : num) b c. a + 1 <= b /\ b + 1 <= c ==> 2 <= c
+Proof
+  rpt strip_tac >> decide_tac
+QED
+
+Theorem inventory_double_offset_chain[local]:
+  !(a : num) b c. a + 2 <= b /\ b <= c ==> 2 <= c
+Proof
+  rpt strip_tac >> decide_tac
+QED
+
+Theorem inventory_offset_le_transport[local]:
+  !(a : num) x i k b.
+    a = x + i /\ x + (i + k) <= b ==>
+    a + k <= b
+Proof
+  rpt strip_tac >> decide_tac
+QED
+
+Theorem emit_input_plan_two_pending_inventory:
+  !opc h h' nl ps iops ps1.
+    (!op. MEM op [h;h'] /\ is_var_operand op ==>
+          MEM op ps.ps_stack \/ op IN FDOM ps.ps_spilled) /\
+    emit_input_plan opc [h;h'] nl ps = (iops,ps1) ==>
+    pending_inventory_wf [h;h'] ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+  simp[emit_input_plan_two] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  simp[pending_inventory_wf_def] >> gen_tac >>
+  `LIST_ELEM_COUNT op ps.ps_stack +
+     (if op IN FDOM ps.ps_spilled then 1 else 0) <=
+   LIST_ELEM_COUNT op ps1'.ps_stack +
+     (if op IN FDOM ps1'.ps_spilled then 1 else 0)` by
+    (qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`, `op`] mp_tac
+       emit_one_input_inventory_mono_aux >> simp[]) >>
+  `LIST_ELEM_COUNT op ps1'.ps_stack +
+     (if op IN FDOM ps1'.ps_spilled then 1 else 0) <=
+   LIST_ELEM_COUNT op ps1.ps_stack +
+     (if op IN FDOM ps1.ps_spilled then 1 else 0)` by
+    (qspecl_then [`opc`, `nl`, `h'`, `ps1'`, `op`] mp_tac
+       emit_one_input_inventory_mono_aux >> simp[]) >>
+  `is_var_operand h ==>
+   1 <= LIST_ELEM_COUNT h ps.ps_stack +
+        (if h IN FDOM ps.ps_spilled then 1 else 0)` by
+    (strip_tac >> irule covered_operand_inventory >>
+     qpat_assum `!x. _` (qspec_then `h` mp_tac) >> simp[]) >>
+  `is_var_operand h' ==>
+   1 <= LIST_ELEM_COUNT h' ps.ps_stack +
+        (if h' IN FDOM ps.ps_spilled then 1 else 0)` by
+    (strip_tac >> irule covered_operand_inventory >>
+     qpat_assum `!x. _` (qspec_then `h'` mp_tac) >> simp[]) >>
+  `(~is_var_operand h \/ h = h') ==>
+   LIST_ELEM_COUNT h ps.ps_stack +
+     (if h IN FDOM ps.ps_spilled then 1 else 0) + 1 <=
+   LIST_ELEM_COUNT h ps1'.ps_stack +
+     (if h IN FDOM ps1'.ps_spilled then 1 else 0)` by
+    (strip_tac >>
+     qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`] mp_tac
+       emit_one_input_inventory_inc >> simp[] >>
+     Cases_on `h` >>
+     gvs[is_var_operand_def, operand_vars_def, operand_var_def]) >>
+  `~is_var_operand h' ==>
+   LIST_ELEM_COUNT h' ps1'.ps_stack +
+     (if h' IN FDOM ps1'.ps_spilled then 1 else 0) + 1 <=
+   LIST_ELEM_COUNT h' ps1.ps_stack +
+     (if h' IN FDOM ps1.ps_spilled then 1 else 0)` by
+    (strip_tac >>
+     qspecl_then [`opc`, `nl`, `h'`, `ps1'`] mp_tac
+       emit_one_input_inventory_inc >> simp[]) >>
+  qabbrev_tac `A = LIST_ELEM_COUNT op ps.ps_stack +
+    (if op IN FDOM ps.ps_spilled then 1 else 0)` >>
+  qabbrev_tac `B = LIST_ELEM_COUNT op ps1'.ps_stack +
+    (if op IN FDOM ps1'.ps_spilled then 1 else 0)` >>
+  qabbrev_tac `C = LIST_ELEM_COUNT op ps1.ps_stack +
+    (if op IN FDOM ps1.ps_spilled then 1 else 0)` >>
+  Cases_on `op = h` >> Cases_on `op = h'` >>
+  gvs[LIST_ELEM_COUNT_THM] >>
+  Cases_on `is_var_operand h` >> Cases_on `is_var_operand h'` >>
+  gvs[]
+  >- (`A + 1 <= B` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `A`]) >>
+      irule inventory_double_from_available >>
+      goal_assum $ drule_at Any >> simp[])
+  >- (`A + 1 <= B` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `A`]) >>
+      irule inventory_double_from_available >>
+      goal_assum $ drule_at Any >> simp[])
+  >- (`A + 1 <= B` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `A`]) >>
+      `B + 1 <= C` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `B`]) >>
+      decide_tac)
+  >- (`A + 1 <= B` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `A`]) >>
+      `B + 1 <= C` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `B`]) >>
+      decide_tac)
+  >- (`A + 1 <= B` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `A`]) >>
+      decide_tac)
+  >- (`A + 1 <= B` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `A`]) >>
+      decide_tac)
+  >- (`B + 1 <= C` by
+        (irule inventory_offset_le_transport >>
+         goal_assum $ drule_at Any >>
+         simp[Abbr `B`]) >>
+      decide_tac)
+  >> `B + 1 <= C` by
+       (irule inventory_offset_le_transport >>
+        goal_assum $ drule_at Any >>
+        simp[Abbr `B`]) >>
+     decide_tac
+QED
+
 
 Theorem elem_count_from_append[local]:
   !(full : 'a list) prefix suffix.
