@@ -86,6 +86,35 @@ Proof
   res_tac
 QED
 
+
+Theorem all_distinct_flat_map_member[local]:
+  !f xs x.
+    ALL_DISTINCT (FLAT (MAP f xs)) /\ MEM x xs ==>
+    ALL_DISTINCT (f x)
+Proof
+  gen_tac >> Induct >> simp[ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
+Theorem codegen_ready_inst_outputs_distinct:
+  !fn inst.
+    codegen_ready_fn fn /\ MEM inst (fn_insts fn) ==>
+    ALL_DISTINCT inst.inst_outputs
+Proof
+  rpt strip_tac >>
+  fs[codegen_ready_fn_def, ssa_form_def] >>
+  metis_tac[all_distinct_flat_map_member]
+QED
+
+Theorem codegen_ready_bump_outputs_distinct:
+  !fn inst ptr_out next_out.
+    codegen_ready_fn fn /\ MEM inst (fn_insts fn) /\
+    inst.inst_outputs = [ptr_out; next_out] ==>
+    ptr_out <> next_out
+Proof
+  rpt strip_tac >>
+  drule_all codegen_ready_inst_outputs_distinct >>
+  gvs[]
+QED
 (* ===== Plan decomposition for terminal opcodes ===== *)
 
 (* When venom_to_evm_name maps to SOME name and outputs = [],
@@ -97,8 +126,10 @@ Theorem generate_emit_ops_some_name[local]:
     venom_to_evm_name inst.inst_opcode = SOME name ==>
     generate_emit_ops inst ltc ps = ([SOEmit name], ps)
 Proof
-  rpt gen_tac >> Cases_on `inst.inst_opcode` >>
-  simp[venom_to_evm_name_def, generate_emit_ops_def]
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode = INITIAL_FMP` >> gvs[venom_to_evm_name_def] >>
+  Cases_on `inst.inst_opcode = BUMP` >> gvs[venom_to_evm_name_def] >>
+  simp[generate_emit_ops_def, LET_THM]
 QED
 
 Theorem regular_plan_emit_decompose:
@@ -2238,7 +2269,8 @@ Resume gen_inst_abort_sim[hd_zero]:
     qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
     rewrite_tac[emit_input_plan_def, LET_THM] >>
     CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
-    simp[]) >>
+    `operand_vars [] = []` by EVAL_TAC >>
+    simp[] >> metis_tac[pairTheory.PAIR]) >>
   (* prefix_spill_wf initial_fmp for input_ops *)
   `prefix_spill_wf initial_fmp label_offsets input_ops ps` by (
     match_mp_tac prefix_spill_wf_prefix >>
@@ -2663,6 +2695,7 @@ Theorem gen_inst_ok_sim:
    next_is_term bb_label base ps vs as ops ps'.
     generated_plan_state_wf base ps /\
     codegen_ready_fn fn /\
+    MEM inst (fn_insts fn) /\
     (* Dischargeable at block level from codegen_ready_fn + MEM bb/inst *)
     inst_wf inst /\
     (* EVM compatibility: DUP depth limit. Dischargeable from evm_compatible
@@ -3282,6 +3315,84 @@ Resume gen_inst_ok_sim[initial_fmp]:
   gvs[asm_steps_add, execute_plan_def, exec_stack_op_def]
 QED
 
+(* The generated-state invariant cannot be propagated through BUMP input
+   preparation when both operands are the same: the planner intentionally
+   materialises two copies for the two consumed stack positions. *)
+Theorem bump_duplicate_postprefix_not_generated_wf[local]:
+  let ps0 = (init_plan_state 0) with
+              ps_stack := [Var "x"; Var "y"] in
+  let (_,ps1) = emit_input_plan BUMP [Var "x"; Var "x"] [] ps0 in
+  let (_,ps2) = reorder_plan dfg_empty [Var "x"; Var "x"] ps1 in
+    ~generated_plan_state_wf 0 ps2
+Proof
+  EVAL_TAC
+QED
+
+Theorem bump_duplicate_postprefix_generated_wf_after_pop_probe[local]:
+  let ps0 = (init_plan_state 0) with
+              ps_stack := [Var "x"; Var "y"] in
+  let (_,ps1) = emit_input_plan BUMP [Var "x"; Var "x"] [] ps0 in
+  let (_,ps2) = reorder_plan dfg_empty [Var "x"; Var "x"] ps1 in
+    generated_plan_state_wf 0
+      (ps2 with ps_stack := stack_pop 2 ps2.ps_stack)
+Proof
+  EVAL_TAC >> SET_TAC[]
+QED
+
+Theorem bump_postprefix_after_pop_needs_length_counterexample[local]:
+  let ps = init_plan_state 0 in
+  let (_,ps1) = emit_input_plan BUMP [Var "x"; Var "y"] [] ps in
+  let (_,ps4) = reorder_plan dfg_empty [Var "x"; Var "y"] ps1 in
+    generated_plan_state_wf 0 ps /\
+    ~(2 <= LENGTH ps4.ps_stack /\
+      generated_plan_state_wf 0
+        (ps4 with ps_stack := stack_pop 2 ps4.ps_stack))
+Proof
+  EVAL_TAC >> SET_TAC[]
+QED
+
+
+Theorem bump_emit_input_plan_residual_wf_positive_probe[local]:
+  let ps0 = (init_plan_state 0) with
+              ps_stack := [Var "x"; Var "y"] in
+  let (_,psa) = do_spill_tos ps0 in
+  let (_,ps) = do_spill_tos psa in
+  let (_,ps1) =
+        emit_input_plan BUMP [Var "x"; Var "y"] ["x"; "y"] ps in
+    generated_plan_state_wf 0 ps /\
+    2 <= LENGTH ps1.ps_stack /\
+    plan_state_residual_wf 0 [Var "x"; Var "y"] 0 ps1
+Proof
+  EVAL_TAC >> simp[] >> rpt strip_tac >> gvs[AllCaseEqs()] >>
+  TRY (rename [`i < 2`, `j < 2`] >>
+       `i = 0 \/ i = 1` by decide_tac >>
+       `j = 0 \/ j = 1` by decide_tac >> gvs[]) >>
+  Cases_on `op = Var "x"` >> gvs[] >>
+  Cases_on `op = Var "y"` >> gvs[]
+QED
+
+Theorem bump_emit_input_plan_residual_wf[local]:
+  generated_plan_state_wf spill_base ps /\
+  emit_input_plan BUMP [h;h'] nl ps = (iops,ps1) /\
+  2 <= LENGTH ps1.ps_stack ==>
+  plan_state_residual_wf spill_base [h;h'] 0 ps1
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+  simp[emit_input_plan_two] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  strip_tac >> gvs[] >>
+  `residual_budget_wf spill_base [] ps` by
+    (irule residual_budget_wf_canonical >>
+     fs[generated_plan_state_wf_def]) >>
+  `residual_budget_wf spill_base [h] ps1'` by
+    (drule emit_one_input_residual_budget_wf >>
+     disch_then drule >> simp[]) >>
+  `residual_budget_wf spill_base [h; h'] ps1` by
+    (drule emit_one_input_residual_budget_wf >>
+     disch_then drule >> simp[]) >>
+  irule residual_budget_wf_to_residual >> simp[]
+QED
 Resume gen_inst_ok_sim[bump]:
   qpat_x_assum `inst_wf inst` mp_tac >>
   simp[inst_wf_def] >> strip_tac >>

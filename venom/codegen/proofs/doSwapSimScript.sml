@@ -19,7 +19,7 @@ Ancestors
   stackPlanOps stackPlanTypes stackModel
   asmSem planExec
   finite_map alist pred_set
-  list rich_list arithmetic
+  list rich_list arithmetic sorting
 Libs BasicProvers
 
 (* =========================================================================
@@ -2389,6 +2389,219 @@ Proof
   rpt strip_tac >>
   simp[EL_REVERSE, el_desired_list, el_reverse_desired_list] >>
   rpt IF_CASES_TAC >> gvs[] >> simp[PRE_SUB1]
+QED
+
+(* The deep-swap index schedule is a rotation of every index exactly once. *)
+Theorem desired_perm_indices[local]:
+  !(n:num).
+    n >= 2 ==>
+    PERM ([n - 1] ++ GENLIST (\i. i + 1) (n - 2) ++ [0])
+         (GENLIST I n)
+Proof
+  rpt strip_tac >>
+  `ALL_DISTINCT
+     ([n - 1] ++ GENLIST (\i. i + 1) (n - 2) ++ [0])` by
+    simp[ALL_DISTINCT_APPEND, ALL_DISTINCT_GENLIST, MEM_GENLIST] >>
+  `ALL_DISTINCT (GENLIST I n)` by
+    simp[ALL_DISTINCT_GENLIST, combinTheory.I_THM] >>
+  irule PERM_ALL_DISTINCT >> simp[] >> gen_tac >>
+  `MEM x ([n - 1] ++ GENLIST (\i. i + 1) (n - 2) ++ [0]) <=>
+   x IN count n` by
+    metis_tac[set_desired_eq] >>
+  gvs[MEM_GENLIST, IN_COUNT, combinTheory.I_THM]
+QED
+
+
+Theorem lupdate_take_drop[local]:
+  !(xs:'a list) k v.
+    k < LENGTH xs ==>
+    LUPDATE v k xs = TAKE k xs ++ v :: DROP (SUC k) xs
+Proof
+  rw[LIST_EQ_REWRITE] >>
+  simp[EL_LUPDATE, EL_APPEND_EQN, EL_TAKE, EL_DROP] >>
+  rw[] >> gvs[EL_DROP] >>
+  Cases_on `x - k` >> gvs[EL_DROP] >>
+  `x = n + SUC k` by decide_tac >> simp[]
+QED
+(* Updating two in-range positions with each other's old values is a genuine
+   permutation even when the list contains duplicates. *)
+
+Theorem filter_eq_rotate[local]:
+  !(xs:'a list) a.
+    a :: FILTER ($= a) xs = FILTER ($= a) xs ++ [a]
+Proof
+  Induct >> simp[] >> rpt gen_tac >> Cases_on `a = h` >> gvs[]
+QED
+
+Theorem perm_replace_extract[local]:
+  !(xs:'a list) k v.
+    k < LENGTH xs ==>
+    PERM (EL k xs :: LUPDATE v k xs) (v :: xs)
+Proof
+  rpt strip_tac >>
+  qabbrev_tac `a = EL k xs` >>
+  qabbrev_tac `pre = TAKE k xs` >>
+  qabbrev_tac `suf = DROP (SUC k) xs` >>
+  `LUPDATE v k xs = pre ++ v :: suf` by
+    simp[Abbr `pre`, Abbr `suf`, lupdate_take_drop] >>
+  `xs = pre ++ [a] ++ suf` by
+    simp[Abbr `a`, Abbr `pre`, Abbr `suf`, TAKE_DROP_SUC] >>
+  qpat_x_assum `LUPDATE v k xs = _` (fn th => rewrite_tac[th]) >>
+  qpat_x_assum `xs = _` (fn th => once_rewrite_tac[th]) >>
+  simp[PERM_DEF, FILTER_APPEND_DISTRIB] >> gen_tac >>
+  Cases_on `x = a` >> Cases_on `x = v` >>
+  gvs[APPEND_ASSOC, filter_eq_rotate]
+QED
+Theorem lupdate_exchange_perm[local]:
+  !(xs:'a list) i j.
+    i < LENGTH xs /\ j < LENGTH xs ==>
+    PERM (LUPDATE (EL i xs) j (LUPDATE (EL j xs) i xs)) xs
+Proof
+  rpt gen_tac >> strip_tac >>
+  `EL j (LUPDATE (EL j xs) i xs) = EL j xs` by
+    simp[EL_LUPDATE] >>
+  `PERM
+     (EL j xs :: LUPDATE (EL i xs) j (LUPDATE (EL j xs) i xs))
+     (EL i xs :: LUPDATE (EL j xs) i xs)` by
+    (qspecl_then [`LUPDATE (EL j xs) i xs`, `j`, `EL i xs`]
+       mp_tac perm_replace_extract >> simp[]) >>
+  `PERM (EL i xs :: LUPDATE (EL j xs) i xs) (EL j xs :: xs)` by
+    simp[perm_replace_extract] >>
+  metis_tac[PERM_TRANS, PERM_CONS_IFF]
+QED
+
+Theorem stack_poke_exchange_multiplicity:
+  !(stk : operand list) d1 d2 x.
+    d1 < LENGTH stk /\ d2 < LENGTH stk ==>
+    LIST_ELEM_COUNT x
+      (stack_poke d2 (stack_peek d1 stk)
+        (stack_poke d1 (stack_peek d2 stk) stk)) =
+    LIST_ELEM_COUNT x stk
+Proof
+  rpt strip_tac >>
+  `PERM
+     (stack_poke d2 (stack_peek d1 stk)
+       (stack_poke d1 (stack_peek d2 stk) stk)) stk` by
+    (simp[stack_poke_def, stack_peek_def] >>
+     irule lupdate_exchange_perm >> simp[]) >>
+  fs[PERM_DEF] >>
+  first_x_assum (qspec_then `x` mp_tac) >>
+  simp[LIST_ELEM_COUNT_DEF, FILTER_EQ, EQ_SYM_EQ] >>
+  strip_tac >>
+  `((\y. x = y) : operand -> bool) = ($= x)` by
+    simp[FUN_EQ_THM, EQ_SYM_EQ] >>
+  gvs[]
+QED
+
+Theorem desired_values_perm[local]:
+  !(items:'a list).
+    LENGTH items >= 2 ==>
+    PERM
+      (MAP (\idx. EL idx items)
+        ([LENGTH items - 1] ++
+         GENLIST (\i. i + 1) (LENGTH items - 2) ++ [0]))
+      items
+Proof
+  rpt strip_tac >>
+  `PERM
+     (MAP (\idx. EL idx items)
+       ([LENGTH items - 1] ++
+        GENLIST (\i. i + 1) (LENGTH items - 2) ++ [0]))
+     (MAP (\idx. EL idx items) (GENLIST I (LENGTH items)))` by
+    (irule PERM_MAP >> simp[desired_perm_indices]) >>
+  gvs[MAP_GENLIST, combinTheory.I_THM, combinTheory.o_DEF, GENLIST_ID]
+QED
+
+
+Theorem do_swap_stack_perm:
+  !dist ps.
+    dist < LENGTH ps.ps_stack ==>
+    PERM (SND (do_swap dist ps)).ps_stack ps.ps_stack
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist = 0` >- simp[do_swap_def] >>
+  Cases_on `dist <= 16`
+  >- (simp[do_swap_def, stack_swap_def] >>
+      irule lupdate_exchange_perm >> simp[] >> decide_tac)
+  >> `dist > 16 /\ dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+     mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+     simp[LET_THM] >> strip_tac >>
+     `LENGTH (top_n (dist + 1) ps.ps_stack) = dist + 1` by
+       simp[top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+     `PERM
+       (MAP (\idx. EL idx (top_n (dist + 1) ps.ps_stack))
+         ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]))
+       (top_n (dist + 1) ps.ps_stack)` by
+       (qspec_then `top_n (dist + 1) ps.ps_stack` mp_tac
+          desired_values_perm >> simp[]) >>
+     `TAKE (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack ++
+        top_n (dist + 1) ps.ps_stack = ps.ps_stack` by
+       metis_tac[top_n_suffix] >>
+     gvs[] >>
+     qpat_assum `_ ++ top_n (dist + 1) ps.ps_stack = ps.ps_stack`
+       (fn th => once_rewrite_tac[GSYM th]) >>
+     irule PERM_CONG >> simp[]
+QED
+
+Theorem do_swap_multiplicity:
+  !dist ps x.
+    dist < LENGTH ps.ps_stack ==>
+    LIST_ELEM_COUNT x (SND (do_swap dist ps)).ps_stack =
+    LIST_ELEM_COUNT x ps.ps_stack
+Proof
+  rpt strip_tac >> drule do_swap_stack_perm >>
+  simp[PERM_DEF] >> strip_tac >>
+  first_x_assum (qspec_then `x` assume_tac) >>
+  simp[LIST_ELEM_COUNT_DEF] >>
+  qpat_x_assum `FILTER ($= x) _ = _` mp_tac >>
+  simp[FILTER_EQ, EQ_SYM_EQ] >> strip_tac >>
+  `(\x'. x = x') = ($= x)` by simp[FUN_EQ_THM, EQ_SYM_EQ] >>
+  gvs[]
+QED
+
+Theorem do_swap_layout_wf:
+  !dist ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    dist < LENGTH ps.ps_stack ==>
+    (SND (do_swap dist ps)).ps_spilled = ps.ps_spilled /\
+    spill_alloc_layout_wf (SND (do_swap dist ps)).ps_alloc
+                          (SND (do_swap dist ps)).ps_spilled
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist = 0` >- simp[do_swap_def] >>
+  Cases_on `dist <= 16` >- simp[do_swap_def] >>
+  `dist > 16 /\ dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+  `spill_alloc_layout_wf
+     (FOLDL (\a off. free_spill_slot off a)
+       (SND (spill_alloc_n [] ps.ps_alloc
+         (top_n (dist + 1) ps.ps_stack)))
+       (FST (spill_alloc_n [] ps.ps_alloc
+         (top_n (dist + 1) ps.ps_stack))))
+     ps.ps_spilled` by
+    (drule_then
+       (qspec_then `top_n (dist + 1) ps.ps_stack` mp_tac)
+       spill_alloc_n_free_layout_wf_arbitrary >>
+     simp[LET_THM]) >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[]
+QED
+
+Theorem do_swap_multiplicity_layout:
+  !dist ps ops ps'.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    dist < LENGTH ps.ps_stack /\
+    do_swap dist ps = (ops, ps') ==>
+    ps'.ps_spilled = ps.ps_spilled /\
+    spill_alloc_layout_wf ps'.ps_alloc ps'.ps_spilled /\
+    (!x. LIST_ELEM_COUNT x ps'.ps_stack =
+         LIST_ELEM_COUNT x ps.ps_stack)
+Proof
+  rpt gen_tac >> strip_tac >>
+  `ps' = SND (do_swap dist ps)` by
+    (Cases_on `do_swap dist ps` >> gvs[]) >>
+  qpat_x_assum `ps' = _` SUBST_ALL_TAC >>
+  drule_all do_swap_layout_wf >> strip_tac >>
+  simp[] >> gen_tac >> simp[do_swap_multiplicity]
 QED
 
 (* The k-th restored item's FLOOKUP in the spill map gives the k-th
