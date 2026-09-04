@@ -1053,6 +1053,38 @@ Definition generated_plan_state_wf_def:
     DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled)
 End
 
+Theorem reorder_plan_two_residual_pop_generated_wf_counterexample[local]:
+  ?dfg h h' ps ops ps' base.
+    pending_inventory_wf [h;h'] ps /\
+    plan_state_residual_wf base [h;h'] 0 ps /\
+    reorder_plan dfg [h;h'] ps = (ops,ps') /\
+    ~generated_plan_state_wf base
+      (ps' with ps_stack := stack_pop 2 ps'.ps_stack)
+Proof
+  qexists `ARB` >>
+  qexists `Var "h"` >>
+  qexists `Var "hp"` >>
+  qexists `SND (do_spill_tos
+    ((init_plan_state 0) with
+      ps_stack := [Var "h"; Var "h"; Var "x"; Var "hp"]))` >>
+  qexists `FST (reorder_plan ARB [Var "h"; Var "hp"]
+    (SND (do_spill_tos
+      ((init_plan_state 0) with
+        ps_stack := [Var "h"; Var "h"; Var "x"; Var "hp"]))))` >>
+  qexists `SND (reorder_plan ARB [Var "h"; Var "hp"]
+    (SND (do_spill_tos
+      ((init_plan_state 0) with
+        ps_stack := [Var "h"; Var "h"; Var "x"; Var "hp"]))))` >>
+  qexists `0` >>
+  EVAL_TAC >>
+  simp[pending_inventory_wf_def, plan_state_residual_wf_def,
+       generated_plan_state_wf_def, plan_slots_bounded_def,
+       alloc_slots_bounded_def, spill_alloc_layout_wf_def] >>
+  rpt strip_tac >>
+  Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
+  rpt IF_CASES_TAC >> gvs[]
+QED
+
 Theorem generated_plan_state_wf_init[local]:
   !base ctr.
     base < dimword(:256) ==>
