@@ -3774,8 +3774,10 @@ Theorem do_swap_apply_relevant_align_layout:
   !dist ps lo.
     dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
-    ALL_DISTINCT ps.ps_stack /\
-    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) ==>
+    (dist > 16 ==>
+       ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+       DISJOINT (set (top_n (dist + 1) ps.ps_stack))
+                (FDOM ps.ps_spilled)) ==>
     let via = apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps;
         direct = SND (do_swap dist ps)
     in via.ps_stack = direct.ps_stack /\
@@ -3796,12 +3798,7 @@ QED
 
 Resume do_swap_apply_relevant_align_layout[deep]:
   conj_tac
-  >- (irule do_swap_apply_stack_align_layout >> simp[] >>
-      rpt strip_tac
-      >- (fs[top_n_def] >>
-          metis_tac[ALL_DISTINCT_APPEND, TAKE_DROP, ALL_DISTINCT_REVERSE]) >>
-      fs[DISJOINT_DEF, EXTENSION, top_n_def] >>
-      metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  >- (irule do_swap_apply_stack_align_layout >> simp[]) >>
   qabbrev_tac `items = top_n (dist + 1) ps.ps_stack` >>
   qabbrev_tac `offsets = FST (spill_alloc_n [] ps.ps_alloc items)` >>
   qabbrev_tac `desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]` >>
@@ -3822,12 +3819,8 @@ Resume do_swap_apply_relevant_align_layout[deep]:
   `EVERY (\i. i < LENGTH items) desired_rev` by
     simp[Abbr `desired_rev`, Abbr `desired`, EVERY_REVERSE,
          EVERY_APPEND, EVERY_GENLIST] >>
-  `ALL_DISTINCT items` by
-    simp[Abbr `items`, top_n_def, ALL_DISTINCT_REVERSE, ALL_DISTINCT_TAKE] >>
-  `DISJOINT (set items) (FDOM ps.ps_spilled)` by
-    (qpat_x_assum `top_n _ _ = items` (fn th => REWRITE_TAC[GSYM th]) >>
-     fs[DISJOINT_DEF, EXTENSION, top_n_def] >>
-     metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  `ALL_DISTINCT items /\ DISJOINT (set items) (FDOM ps.ps_spilled)` by
+    (qpat_assum `dist > 16 ==> _` mp_tac >> simp[Abbr `items`]) >>
   `ALL_DISTINCT desired_rev` by
     (qspec_then `dist + 1` mp_tac desired_indices_all_distinct >>
      simp[Abbr `desired_rev`, Abbr `desired`]) >>
@@ -3955,6 +3948,14 @@ Proof
       >- ASM_REWRITE_TAC[] >>
       ASM_REWRITE_TAC[]) >>
   strip_tac >>
+  `dist > 16 ==>
+     ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+     DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled)` by
+    (strip_tac >> conj_tac
+     >- (fs[top_n_def] >>
+         metis_tac[ALL_DISTINCT_APPEND, TAKE_DROP, ALL_DISTINCT_REVERSE]) >>
+     fs[DISJOINT_DEF, EXTENSION, top_n_def] >>
+     metis_tac[MEM_TAKE, MEM_REVERSE]) >>
   mp_tac (Q.SPECL [`dist`, `ps`, `lo`]
     do_swap_apply_relevant_align_layout) >>
   ASM_REWRITE_TAC[LET_THM] >> strip_tac >>
