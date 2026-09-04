@@ -3517,6 +3517,183 @@ Proof
   simp[prefix_spill_wf_append]
 QED
 
+Theorem plan_spill_rel_raw_fold[local]:
+  !offsets vals lo vs spilled mem.
+    LENGTH offsets = LENGTH vals /\
+    plan_spill_rel lo vs spilled mem /\
+    (!k op off. k < LENGTH offsets /\
+       FLOOKUP spilled op = SOME off ==>
+       off + 32 <= EL k offsets) ==>
+    plan_spill_rel lo vs spilled
+      (FOLDL (\m p. mem_write32 (FST p) (SND p) m) mem
+        (ZIP (offsets,vals)))
+Proof
+  Induct >> Cases_on `vals` >> simp[] >> rpt strip_tac >>
+  `plan_spill_rel lo vs spilled (mem_write32 h' h mem)` by
+    (irule plan_spill_rel_write_disjoint >> simp[] >>
+     rpt strip_tac >>
+     qpat_x_assum `!k op off. _` (qspecl_then [`0`, `op`, `off2`] mp_tac) >>
+     simp[] >> metis_tac[]) >>
+  first_x_assum (qspecl_then [`t`, `lo`, `vs`, `spilled`,
+    `mem_write32 h' h mem`] irule) >>
+  simp[] >> rpt strip_tac >>
+  qpat_x_assum `!k op off. _`
+    (qspecl_then [`SUC k`, `op`, `off`] mp_tac) >>
+  simp[]
+QED
+
+Theorem plan_spill_rel_expand_fold[local]:
+  !offsets lo vs spilled mem.
+    plan_spill_rel lo vs spilled mem ==>
+    plan_spill_rel lo vs spilled
+      (FOLDL (\m off. asm_expand_memory (off + 32) m) mem offsets)
+Proof
+  Induct >> simp[] >> rpt strip_tac >>
+  first_x_assum irule >>
+  irule plan_spill_rel_expand >> first_assum ACCEPT_TAC
+QED
+Theorem memory_rel_widen[local]:
+  !old_alloc new_alloc vm mem.
+    memory_rel old_alloc vm mem /\
+    new_alloc.sa_spill_base = old_alloc.sa_spill_base /\
+    old_alloc.sa_next_offset <= new_alloc.sa_next_offset ==>
+    memory_rel new_alloc vm mem
+Proof
+  rw[memory_rel_def] >>
+  first_x_assum irule >> decide_tac
+QED
+
+Theorem memory_rel_write_fold[local]:
+  !offsets vals alloc vm mem.
+    LENGTH offsets = LENGTH vals /\
+    memory_rel alloc vm mem /\
+    EVERY (\off. alloc.sa_spill_base <= off /\
+      off + 32 <= alloc.sa_next_offset) offsets ==>
+    memory_rel alloc vm
+      (FOLDL (\m p. mem_write32 (FST p) (SND p) m) mem
+        (ZIP (offsets,vals)))
+Proof
+  Induct >> Cases_on `vals` >> simp[] >> rpt strip_tac >>
+  first_x_assum (qspecl_then [`t`, `alloc`, `vm`,
+    `mem_write32 h' h mem`] irule) >>
+  simp[] >>
+  irule memory_rel_mem_write32 >> simp[]
+QED
+
+Theorem memory_rel_expand_fold[local]:
+  !offsets alloc vm mem.
+    memory_rel alloc vm mem ==>
+    memory_rel alloc vm
+      (FOLDL (\m off. asm_expand_memory (off + 32) m) mem offsets)
+Proof
+  Induct >> simp[] >> rpt strip_tac >>
+  first_x_assum irule >>
+  irule memory_rel_expand >> first_assum ACCEPT_TAC
+QED
+
+Theorem el_reverse_desired_items[local]:
+  !(items:'a list) k.
+    LENGTH items >= 2 /\ k < LENGTH items ==>
+    EL (EL k (REVERSE
+      ([LENGTH items - 1] ++ GENLIST (\i. i + 1)
+        (LENGTH items - 2) ++ [0]))) items =
+    EL (EL k
+      ([LENGTH items - 1] ++ GENLIST (\i. i + 1)
+        (LENGTH items - 2) ++ [0])) (REVERSE items)
+Proof
+  rpt strip_tac >>
+  simp[EL_REVERSE, el_desired_list, el_reverse_desired_list, PRE_SUB1] >>
+  rpt IF_CASES_TAC >> gvs[] >> simp[PRE_SUB1]
+QED
+
+Theorem reverse_desired_values[local]:
+  !(items:'a list) dist.
+    LENGTH items = dist + 1 /\ dist > 0 ==>
+    REVERSE (MAP (\i. EL i items)
+      ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0])) =
+    MAP (\i. EL i (REVERSE items))
+      ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0])
+Proof
+  rpt strip_tac >>
+  rewrite_tac[raw_restore_reverse_map] >>
+  SIMP_TAC pure_ss [LIST_EQ_REWRITE, LENGTH_MAP, LENGTH_REVERSE] >>
+  (conj_tac >- REFL_TAC) >>
+  rpt strip_tac >>
+  ASM_SIMP_TAC pure_ss [EL_MAP, LENGTH_REVERSE] >>
+  qspecl_then [`items`, `x`] mp_tac el_reverse_desired_items >>
+  (impl_tac >- (gvs[LENGTH_APPEND] >> decide_tac)) >>
+  simp[]
+QED
+
+Theorem el_reverse_take_suffix[local]:
+  !(xs:'a list) n i.
+    n <= i /\ i < LENGTH xs ==>
+    EL (i - n) (REVERSE (TAKE (LENGTH xs - n) xs)) =
+    EL i (REVERSE xs)
+Proof
+  rpt strip_tac >>
+  simp[EL_REVERSE, EL_TAKE, LENGTH_TAKE] >>
+  AP_TERM_TAC >> decide_tac
+QED
+
+Theorem plan_stack_rel_deep_swap_raw[local]:
+  !dist lo vs ps_stk as_stk items desired vals.
+    plan_stack_rel lo vs ps_stk as_stk /\
+    dist > 0 /\
+    dist < LENGTH ps_stk /\
+    items = top_n (dist + 1) ps_stk /\
+    desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0] /\
+    vals = TAKE (dist + 1) as_stk /\
+    (!k. k < dist + 1 ==>
+      operand_val vs lo (EL k (REVERSE items)) = SOME (EL k vals)) ==>
+    plan_stack_rel lo vs
+      (TAKE (LENGTH ps_stk - (dist + 1)) ps_stk ++
+       MAP (\i. EL i items) desired)
+      (MAP (\i. EL i vals) desired ++ DROP (dist + 1) as_stk)
+Proof
+  rpt strip_tac >>
+  `LENGTH ps_stk = LENGTH as_stk` by
+    metis_tac[plan_stack_rel_length] >>
+  `LENGTH items = dist + 1` by
+    (gvs[top_n_def] >> decide_tac) >>
+  `LENGTH desired = dist + 1` by
+    (gvs[LENGTH_APPEND] >> decide_tac) >>
+  `LENGTH vals = dist + 1` by simp[] >>
+  `REVERSE (MAP (\i. EL i items) desired) =
+   MAP (\i. EL i (REVERSE items)) desired` by
+    (qpat_x_assum `desired = _` SUBST1_TAC >>
+     irule reverse_desired_values >> simp[]) >>
+  PURE_REWRITE_TAC[plan_stack_rel_def] >>
+  conj_tac
+  >- simp[LENGTH_APPEND] >>
+  rpt strip_tac >>
+  once_rewrite_tac[REVERSE_APPEND] >>
+  qpat_x_assum `REVERSE (MAP _ _) = _` (fn th => rewrite_tac[th]) >>
+  Cases_on `i < dist + 1`
+  >- (simp[EL_APPEND_EQN, EL_MAP] >>
+      qpat_x_assum `!k. k < dist + 1 ==> _`
+        (qspec_then `EL i desired` mp_tac) >>
+      (impl_tac >-
+        (qspecl_then [`dist + 1`, `i`] mp_tac desired_el_bound >>
+         (impl_tac >- decide_tac) >> gvs[])) >>
+      simp[]) >>
+  simp[EL_APPEND_EQN, EL_MAP] >>
+  `i < LENGTH ps_stk` by
+    (gvs[LENGTH_APPEND] >> decide_tac) >>
+  qpat_assum `LENGTH ps_stk = LENGTH as_stk`
+    (fn th => once_rewrite_tac[GSYM th]) >>
+  qspecl_then [`ps_stk`, `dist + 1`, `i`] mp_tac
+    el_reverse_take_suffix >>
+  (impl_tac >- decide_tac) >>
+  disch_then (fn th => rewrite_tac[th]) >>
+  simp[EL_DROP] >>
+  qspecl_then [`lo`, `vs`, `ps_stk`, `as_stk`, `i`] mp_tac
+    plan_stack_rel_el >>
+  (impl_tac >- simp[]) >>
+  simp[]
+QED
+
+
 
 (* ---------------------------------------------------------------
    do_swap_venom_asm_rel_big: dist > 16 case
@@ -3530,7 +3707,6 @@ Theorem do_swap_venom_asm_rel_big[local]:
     spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
     ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256) /\
     ps.ps_alloc.sa_free_slots = [] /\
-    ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
     DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     venom_asm_rel lo ps vs st /\
     asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
@@ -3540,336 +3716,190 @@ Theorem do_swap_venom_asm_rel_big[local]:
           st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt strip_tac >>
-  (* Abbreviations *)
   qabbrev_tac `items = top_n (dist + 1) ps.ps_stack` >>
   qabbrev_tac `offsets = FST (spill_alloc_n [] ps.ps_alloc items)` >>
   qabbrev_tac `desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]` >>
-  qabbrev_tac `desired_rev = REVERSE desired` >>
-  qabbrev_tac `restore_offsets = MAP (\idx. EL idx offsets) desired_rev` >>
-  qabbrev_tac `restored = MAP (\idx. EL idx items) desired` >>
-  (* Key length fact *)
-  `LENGTH items = dist + 1`
-    suffices_by (strip_tac >> suspend "main") >>
-  simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE]
-QED
-
-Resume do_swap_venom_asm_rel_big[main]:
-  (* Get decomposition from do_swap_big_decompose *)
-  mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
-  simp[LET_THM] >>
-  `top_n (dist + 1) ps.ps_stack = items` suffices_by (
-    strip_tac >> simp[] >> strip_tac >>
-    (* Now: ops = MAP SOSpill offsets ++ MAP SORestore restore_offsets
-       and ps' has the decomposed form *)
-    suspend "spill_phase"
-  ) >>
-  simp[Abbr `items`]
-QED
-
-Resume do_swap_venom_asm_rel_big[spill_phase]:
-  (* Apply spill_n_sim with pairs = ZIP(REVERSE items, offsets) *)
-  qspecl_then [`ZIP(REVERSE items, offsets)`, `lo`, `o2pc`, `prog`,
-    `ps`, `vs`, `st`] mp_tac spill_n_sim >>
-  (impl_tac >- (
-    suspend "spill_precond"
-  )) >>
-  strip_tac >>
-  suspend "restore_phase"
-QED
-
-Resume do_swap_venom_asm_rel_big[spill_precond]:
-  (* Preconditions for spill_n_sim *)
-  `LENGTH offsets = dist + 1`
-    suffices_by (strip_tac >> suspend "spill_precond2") >>
-  simp[Abbr `offsets`, spill_alloc_n_offsets_length]
-QED
-
-Resume do_swap_venom_asm_rel_big[spill_precond2]:
-  simp[] >>
-  rpt conj_tac
-  >| [
-    (* 1. MAP FST pairs = TAKE (dist+1) (REVERSE ps.ps_stack) *)
-    simp[MAP_ZIP, LENGTH_REVERSE, Abbr `items`, top_n_def, REVERSE_REVERSE],
-    (* 2. ALL_DISTINCT (MAP FST pairs) *)
-    simp[MAP_ZIP, LENGTH_REVERSE, ALL_DISTINCT_REVERSE],
-    (* 3. offset properties *)
-    suspend "offset_props",
-    (* 4. asm_block_at for spill phase *)
-    qpat_x_assum `asm_block_at prog st.as_pc (execute_plan initial_fmp _)` mp_tac >>
-    simp[execute_plan_append, asm_block_at_append] >>
-    simp[MAP_ZIP, LENGTH_REVERSE]
-  ]
-QED
-
-Resume do_swap_venom_asm_rel_big[offset_props]:
-  rpt gen_tac >> strip_tac >>
-  simp[EL_ZIP, LENGTH_REVERSE, Abbr `offsets`] >>
-  qspecl_then [`items`, `ps.ps_alloc`, `ps.ps_spilled`]
-    mp_tac spill_alloc_n_offset_props >>
-  gvs[LET_THM, spill_alloc_n_offsets_length] >>
-  disch_then (qspec_then `k` mp_tac) >>
-  simp[] >> metis_tac[]
-QED
-
-Resume do_swap_venom_asm_rel_big[restore_phase]:
-  (* Intermediate plan state after spill *)
-  qabbrev_tac `ps_mid =
-    ps with <| ps_stack :=
-      TAKE (LENGTH ps.ps_stack - LENGTH (ZIP (REVERSE items,offsets)))
-           ps.ps_stack;
-      ps_spilled := ps.ps_spilled |++ ZIP (REVERSE items,offsets);
-      ps_alloc := ps.ps_alloc with sa_next_offset :=
-        FOLDL MAX ps.ps_alloc.sa_next_offset
-              (MAP (\p. SND p + 32) (ZIP (REVERSE items,offsets))) |>` >>
-  (* Apply restore_n_sim *)
-  qspecl_then [`restored`, `restore_offsets`, `lo`, `o2pc`, `prog`,
-    `ps_mid`, `vs`, `st'`] mp_tac restore_n_sim >>
-  (impl_tac >- (
-    suspend "restore_precond"
-  )) >>
-  strip_tac >>
-  suspend "compose"
-QED
-
-Resume do_swap_venom_asm_rel_big[restore_precond]:
-  simp[Abbr `ps_mid`] >>
-  `LENGTH desired = dist + 1`
-    suffices_by (strip_tac >> suspend "restore_precond2") >>
-  simp[Abbr `desired`, LENGTH_GENLIST]
-QED
-
-Resume do_swap_venom_asm_rel_big[restore_precond2]:
-  `LENGTH desired_rev = dist + 1`
-    suffices_by (strip_tac >> suspend "restore_precond3") >>
-  simp[Abbr `desired_rev`, LENGTH_REVERSE]
-QED
-
-Resume do_swap_venom_asm_rel_big[restore_precond3]:
-  (* 4 conjuncts: LENGTH, ALL_DISTINCT, FLOOKUP/bound, asm_block_at *)
-  conj_tac >- (simp[Abbr `restored`, Abbr `restore_offsets`]) >>
-  conj_tac >- (suspend "all_distinct") >>
-  conj_tac >- (suspend "flookup_bound") >>
-  suspend "asm_block_at_restore"
-QED
-
-Resume do_swap_venom_asm_rel_big[all_distinct]:
-  simp[Abbr `restored`] >>
-  irule all_distinct_map_el >>
-  simp[Abbr `desired`, EVERY_GENLIST, EVERY_APPEND,
-       ALL_DISTINCT_GENLIST, ALL_DISTINCT_REVERSE, ALL_DISTINCT_APPEND,
-       MEM_GENLIST]
-QED
-
-(* All spill offsets are < dimword(:256) — EVERY form *)
-Theorem spill_offsets_every_bound[local]:
-  !items al sp.
-    spill_alloc_wf al sp /\
-    al.sa_next_offset + 32 * LENGTH items < dimword(:256) /\
-    al.sa_free_slots = [] /\
-    ALL_DISTINCT items /\
-    DISJOINT (set items) (FDOM sp) ==>
-    EVERY (\off. off < dimword(:256)) (FST (spill_alloc_n [] al items))
-Proof
-  rpt strip_tac >> simp[EVERY_EL] >> rpt strip_tac >>
-  qspecl_then [`items`, `al`, `sp`] mp_tac spill_alloc_n_offset_props >>
-  simp[LET_THM, spill_alloc_n_offsets_length] >>
-  disch_then (qspec_then `n` mp_tac) >>
-  fs[spill_alloc_n_offsets_length]
-QED
-
-(* Every element of a permuted sublist is bounded if every element of
-   the original is bounded *)
-Theorem every_el_map_index_bound[local]:
-  !offsets perm k (bound:num).
-    EVERY (\idx. idx < LENGTH offsets) perm /\
-    EVERY (\off. off < bound) offsets /\
-    k < LENGTH perm ==>
-    EL k (MAP (\idx. EL idx offsets) perm) < bound
-Proof
-  rpt strip_tac >> simp[EL_MAP] >> fs[EVERY_EL]
-QED
-
-Resume do_swap_venom_asm_rel_big[flookup_bound]:
-  rpt gen_tac >> strip_tac >>
-  (conj_tac >- (suspend "flookup_eq")) >>
-  simp[Abbr `restore_offsets`, Abbr `desired_rev`] >>
-  match_mp_tac every_el_map_index_bound >>
-  simp[Abbr `offsets`, Abbr `restored`, LENGTH_REVERSE] >>
-  (conj_tac >- (
-    simp[EVERY_EL, Abbr `desired`, el_desired_list,
-         spill_alloc_n_offsets_length] >>
-    rpt strip_tac >> rpt IF_CASES_TAC >> simp[]
-  )) >>
-  (conj_tac >- (
-    match_mp_tac (SIMP_RULE (srw_ss()) [] spill_offsets_every_bound) >>
-    qexists_tac `ps.ps_spilled` >> gvs[]
-  )) >>
-  fs[LENGTH_MAP, LENGTH_REVERSE, spill_alloc_n_offsets_length]
-QED
-
-Resume do_swap_venom_asm_rel_big[flookup_eq]:
-  fs[Abbr `restored`, Abbr `restore_offsets`,
-     Abbr `desired_rev`, LENGTH_REVERSE, LENGTH_MAP, EL_MAP] >>
-  irule flookup_restore_offset >>
-  simp[Abbr `desired`, Abbr `offsets`, spill_alloc_n_offsets_length]
-QED
-
-Resume do_swap_venom_asm_rel_big[asm_block_at_restore]:
-  qpat_x_assum `asm_block_at prog _ (execute_plan initial_fmp _)` mp_tac >>
-  simp[execute_plan_append, asm_block_at_append,
-       execute_plan_map_spill_length, MAP_ZIP, LENGTH_REVERSE,
-       Abbr `offsets`, spill_alloc_n_offsets_length]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose]:
-  (* Chain spill steps + restore steps via asm_steps_compose_ok *)
-  qexists_tac `st''` >>
-  (* Split into 3: asm_steps, venom_asm_rel, as_pc *)
-  (conj_tac >- (suspend "compose_steps")) >>
-  (conj_tac >- (suspend "compose_rel")) >>
-  suspend "compose_pc"
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_steps]:
-  (* Rewrite LENGTH(execute_plan initial_fmp ops) to match assumption step counts *)
-  qpat_x_assum `asm_steps _ _ _ (2 * LENGTH (ZIP _)) st = _`
-    (fn th1 =>
-     qpat_x_assum `asm_steps _ _ _ (2 * LENGTH restored) st' = _`
-       (fn th2 =>
-        mp_tac (MATCH_MP (GEN_ALL asm_steps_compose_ok)
-                         (CONJ th1 th2)))) >>
-  simp[execute_plan_spill_restore_length, MAP_ZIP, LENGTH_REVERSE,
-       Abbr `restore_offsets`, LENGTH_MAP, Abbr `desired_rev`,
-       LENGTH_REVERSE, LENGTH_ZIP, Abbr `restored`, Abbr `offsets`,
-       spill_alloc_n_offsets_length, arithmeticTheory.MIN_DEF]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_rel]:
-  irule venom_asm_rel_ps_transfer >>
-  qexists_tac
-    `ps_mid with <| ps_stack := ps_mid.ps_stack ++ restored;
-      ps_spilled :=
-        FOLDL (\sp item. sp \\ item) ps_mid.ps_spilled restored |>` >>
-  simp[Abbr `ps_mid`] >>
-  (* After simp[Abbr ps_mid], conjuncts are:
-     1. ps_spilled, 2. ps_stack, 3. next_offset, 4. spill_base *)
-  (* 1. ps_spilled: round-trip cancellation *)
-  (conj_tac >- (suspend "compose_spilled")) >>
-  (* 2. ps_stack *)
-  (conj_tac >- (suspend "compose_stack")) >>
-  (* 3. sa_next_offset *)
-  (conj_tac >- (suspend "compose_next_offset")) >>
-  (* 4. sa_spill_base *)
-  simp[foldl_free_spill_base, spill_alloc_n_spill_base]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_stack]:
-  simp[Abbr `restored`, Abbr `desired`, Abbr `offsets`,
-       spill_alloc_n_offsets_length, arithmeticTheory.MIN_DEF,
-       MAP_APPEND, MAP_MAP_o, combinTheory.o_DEF]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_spilled]:
-  match_mp_tac (GSYM foldl_domsub_cancel) >>
-  (* Goal: set restored = set (MAP FST (ZIP(REVERSE items, offsets))) /\
-           DISJOINT (set restored) (FDOM ps.ps_spilled) *)
-  (conj_tac >- (suspend "compose_set_eq")) >>
-  suspend "compose_disjoint"
-QED
-
-(*
-  set_desired_perm specialized to dist+1.
-  _dist: set items = set (MAP ...) — for rewriting assumptions/goals containing set items
-  _dist_fwd: set (MAP ...) = set items — for rewriting goals containing set (MAP ...)
-  Precondition: LENGTH items = dist + 1 /\ dist >= 1
-*)
-val set_desired_perm_dist = GSYM set_desired_perm
-  |> Q.SPECL [`dist + 1`, `items`]
-  |> REWRITE_RULE[DECIDE ``((d:num) + 1 >= 2) = (d >= 1)``,
-                  DECIDE ``(d:num) + 1 - 1 = d``,
-                  DECIDE ``(d:num) + 1 - 2 = d - 1``]
-  |> CONV_RULE (LAND_CONV (LAND_CONV (REWR_CONV EQ_SYM_EQ)));
-val set_desired_perm_dist_fwd = set_desired_perm
-  |> Q.SPECL [`dist + 1`, `items`]
-  |> REWRITE_RULE[DECIDE ``((d:num) + 1 >= 2) = (d >= 1)``,
-                  DECIDE ``(d:num) + 1 - 1 = d``,
-                  DECIDE ``(d:num) + 1 - 2 = d - 1``,
-                  DECIDE ``((d:num) + 1 = n) = (n = d + 1)``];
-
-Resume do_swap_venom_asm_rel_big[compose_set_eq]:
-  simp[MAP_ZIP, LENGTH_REVERSE, Abbr `offsets`,
-       spill_alloc_n_offsets_length, Abbr `restored`] >>
-  simp[LIST_TO_SET_REVERSE] >>
-  qpat_x_assum `Abbrev (desired = _)`
-    (SUBST1_TAC o REWRITE_RULE[markerTheory.Abbrev_def]) >>
-  simp[Once set_desired_perm_dist]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_disjoint]:
-  qpat_x_assum `Abbrev (restored = _)`
-    (SUBST1_TAC o REWRITE_RULE[markerTheory.Abbrev_def]) >>
-  qpat_x_assum `Abbrev (desired = _)`
-    (SUBST1_TAC o REWRITE_RULE[markerTheory.Abbrev_def]) >>
-  qpat_x_assum `DISJOINT (set items) _` mp_tac >>
-  qpat_x_assum `dist > 16` (fn gt16 =>
-    qpat_x_assum `LENGTH items = _` (fn len_eq =>
-      REWRITE_TAC[MATCH_MP set_desired_perm_dist_fwd
-        (CONJ len_eq (MATCH_MP (DECIDE ``(d:num) > 16 ==> d >= 1``) gt16))]
-    ))
-QED
-
-Theorem map_snd_plus_zip[local]:
-  !l1 (l2:num list).
-    LENGTH l1 = LENGTH l2 ==>
-    MAP (\p. SND p + 32) (ZIP (l1,l2)) = MAP (\x. x + 32) l2
-Proof
-  Induct >> simp[] >> Cases_on `l2` >> simp[]
-QED
-
-(*
-  Direct: FOLDL MAX base (MAP SND+32 (ZIP(REVERSE items, spill offsets))) = base + 32*n.
-  Uses spill_alloc_n_offsets_val to rewrite offsets, then MAP_GENLIST + foldl_max_genlist.
-*)
-Theorem spill_foldl_max_eq[local]:
-  !items (al:spill_alloc).
-    al.sa_free_slots = [] ==>
-    FOLDL MAX al.sa_next_offset
-      (MAP (\p. SND p + 32)
-        (ZIP (REVERSE items, FST (spill_alloc_n [] al items)))) =
-    al.sa_next_offset + 32 * LENGTH items
-Proof
-  rpt strip_tac >>
-  simp[spill_alloc_n_offsets_val, map_snd_plus_zip,
-       LENGTH_REVERSE, LENGTH_GENLIST] >>
-  simp[MAP_GENLIST, combinTheory.o_DEF] >>
-  SUBGOAL_THEN ``GENLIST (\i. 32 * i + (al.sa_next_offset + 32))
-                   (LENGTH (items:'a list)) =
-                 GENLIST (\i. al.sa_next_offset + 32 * (i + 1))
-                   (LENGTH items)``
-    (fn th => REWRITE_TAC[th]) THENL [
-    simp[LIST_EQ_REWRITE, EL_GENLIST], ALL_TAC] >>
-  simp[foldl_max_genlist]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_next_offset]:
-  simp[foldl_free_next_offset, Abbr `offsets`] >>
-  qpat_x_assum `ps.ps_alloc.sa_free_slots = []`
-    (fn th =>
-      REWRITE_TAC[MATCH_MP spill_alloc_n_next_offset_no_free th,
-                  MATCH_MP spill_foldl_max_eq th]) >>
-  simp[]
-QED
-
-Resume do_swap_venom_asm_rel_big[compose_pc]:
-  simp[execute_plan_spill_restore_length, LENGTH_MAP, LENGTH_ZIP,
-       LENGTH_REVERSE, spill_alloc_n_offsets_length] >>
-  simp[Abbr `restored`, Abbr `restore_offsets`, Abbr `desired_rev`,
-       Abbr `desired`, Abbr `offsets`, LENGTH_MAP, LENGTH_REVERSE,
-       LENGTH_GENLIST, spill_alloc_n_offsets_length] >>
+  qabbrev_tac `restore_offsets = MAP (\i. EL i offsets) (REVERSE desired)` >>
+  qabbrev_tac `vals = TAKE (LENGTH offsets) st.as_stack` >>
+  qabbrev_tac `spill_mem =
+    FOLDL (\mem p. mem_write32 (FST p) (SND p) mem) st.as_memory
+      (ZIP (offsets,vals))` >>
+  qabbrev_tac `spill_st = st with <|
+    as_stack := DROP (LENGTH offsets) st.as_stack;
+    as_memory := spill_mem;
+    as_pc := st.as_pc + 2 * LENGTH offsets |>` >>
+  qabbrev_tac `final_mem =
+    FOLDL (\mem off. asm_expand_memory (off + 32) mem)
+      spill_mem restore_offsets` >>
+  qabbrev_tac `final_st = spill_st with <|
+    as_stack := MAP (\i. EL i vals) desired ++ spill_st.as_stack;
+    as_memory := final_mem;
+    as_pc := spill_st.as_pc + 2 * LENGTH desired |>` >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+  `LENGTH offsets = LENGTH items /\
+   ALL_DISTINCT offsets /\
+   (!k. k < LENGTH offsets ==>
+      ps.ps_alloc.sa_spill_base <= EL k offsets /\
+      EL k offsets < dimword(:256) /\
+      (!op off. FLOOKUP ps.ps_spilled op = SOME off ==>
+        off + 32 <= EL k offsets) /\
+      (!j. j < LENGTH offsets /\ j <> k ==>
+        EL j offsets + 32 <= EL k offsets \/
+        EL k offsets + 32 <= EL j offsets)) /\
+   EVERY (\i. i < LENGTH offsets) (REVERSE desired)` by
+    (qspecl_then [`dist`, `items`, `ps.ps_alloc`, `ps.ps_spilled`]
+       mp_tac deep_swap_occurrence_offsets >>
+     simp[LET_THM, Abbr `offsets`, Abbr `desired`] >>
+     metis_tac[]) >>
+  `EVERY (\off. off < dimword(:256)) offsets` by
+    (simp[EVERY_EL] >> metis_tac[]) >>
+  `LENGTH desired = LENGTH items` by
+    simp[Abbr `desired`] >>
+  `EVERY (\i. i < LENGTH offsets) desired` by
+    fs[EVERY_REVERSE] >>
+  `ops = MAP SOSpill offsets ++ MAP SORestore restore_offsets /\
+   ps' = ps with <|
+     ps_stack := TAKE (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack ++
+       MAP (\i. EL i items) desired;
+     ps_alloc := FOLDL (\al off. free_spill_slot off al)
+       (SND (spill_alloc_n [] ps.ps_alloc items)) offsets |>` by
+    (mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+     simp[LET_THM, Abbr `items`, Abbr `offsets`, Abbr `desired`,
+          Abbr `restore_offsets`] >>
+     metis_tac[]) >>
+  `asm_block_at prog st.as_pc
+     (execute_plan initial_fmp (MAP SOSpill offsets)) /\
+   asm_block_at prog (st.as_pc + 2 * LENGTH offsets)
+     (execute_plan initial_fmp (MAP SORestore restore_offsets))` by
+    (qpat_x_assum `asm_block_at prog st.as_pc (execute_plan initial_fmp ops)`
+       mp_tac >>
+     simp[execute_plan_append, asm_block_at_append,
+          execute_plan_map_spill_length] >>
+     metis_tac[]) >>
+  `asm_steps lo o2pc prog (2 * LENGTH offsets) st = AsmOK spill_st /\
+   (!k. k < LENGTH offsets ==>
+      operand_val vs lo (EL k (REVERSE items)) = SOME
+        (word_of_bytes T (0w:bytes32)
+          (TAKE 32 (DROP (EL k offsets) spill_mem)))) /\
+   (!i. EVERY (\off. ~(off <= i /\ i < off + 32)) offsets ==>
+      read_byte i spill_mem = read_byte i st.as_memory)` by
+    (qspecl_then [`offsets`, `items`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
+       mp_tac raw_spill_venom_occurrence_sim >>
+     simp[LET_THM, Abbr `vals`, Abbr `spill_mem`, Abbr `spill_st`] >>
+     metis_tac[]) >>
+  `LENGTH offsets <= LENGTH st.as_stack` by
+    (fs[venom_asm_rel_def, plan_stack_rel_def] >> decide_tac) >>
+  `!k. k < LENGTH offsets ==>
+     word_of_bytes T (0w:bytes32)
+       (TAKE 32 (DROP (EL k offsets) spill_mem)) = EL k vals` by
+    (rpt strip_tac >>
+     simp[Abbr `spill_mem`] >>
+     irule raw_spill_fold_read_occurrence >>
+     simp[Abbr `vals`] >>
+     metis_tac[]) >>
+  `plan_spill_rel lo vs ps.ps_spilled spill_mem` by
+    (qspecl_then [`offsets`, `vals`, `lo`, `vs`, `ps.ps_spilled`,
+       `st.as_memory`] mp_tac plan_spill_rel_raw_fold >>
+     (impl_tac >-
+       (simp[Abbr `vals`, LENGTH_TAKE] >>
+        fs[venom_asm_rel_def] >> metis_tac[])) >>
+     simp[Abbr `spill_mem`]) >>
+  `plan_spill_rel lo vs ps.ps_spilled final_mem` by
+    (simp[Abbr `final_mem`] >> irule plan_spill_rel_expand_fold >>
+     first_assum ACCEPT_TAC) >>
+  `asm_steps lo o2pc prog (2 * LENGTH desired) spill_st = AsmOK final_st` by
+    (qspecl_then [`offsets`, `vals`, `desired`, `lo`, `o2pc`, `prog`, `spill_st`]
+       mp_tac raw_restore_reversed_perm_steps >>
+     (impl_tac >-
+       (rpt conj_tac
+        >- (simp[Abbr `vals`, LENGTH_TAKE] >> decide_tac)
+        >- first_assum ACCEPT_TAC
+        >- first_assum ACCEPT_TAC
+        >- (simp[Abbr `spill_st`] >> first_assum ACCEPT_TAC)
+        >- (simp[Abbr `spill_st`] >>
+            qpat_x_assum `asm_block_at prog (st.as_pc + 2 * LENGTH offsets) _`
+              mp_tac >> simp[]))) >>
+     simp[Abbr `restore_offsets`, Abbr `final_mem`, Abbr `final_st`,
+          Abbr `spill_st`] >>
+     decide_tac) >>
+  `ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base /\
+   ps'.ps_alloc.sa_next_offset =
+     ps.ps_alloc.sa_next_offset + 32 * LENGTH items` by
+    (gvs[foldl_free_spill_base, foldl_free_next_offset,
+         spill_alloc_n_spill_base, spill_alloc_n_next_offset_no_free]) >>
+  `offsets = GENLIST (\i. ps.ps_alloc.sa_next_offset + 32 * i)
+     (LENGTH items)` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_val] >>
+  `EVERY (\off. ps'.ps_alloc.sa_spill_base <= off /\
+      off + 32 <= ps'.ps_alloc.sa_next_offset) offsets` by
+    (simp[EVERY_EL, EL_GENLIST] >> rpt strip_tac >>
+     fs[spill_alloc_wf_def] >> decide_tac) >>
+  `memory_rel ps'.ps_alloc vs.vs_memory st.as_memory` by
+    (irule memory_rel_widen >>
+     qexists_tac `ps.ps_alloc` >>
+     fs[venom_asm_rel_def] >> decide_tac) >>
+  `memory_rel ps'.ps_alloc vs.vs_memory spill_mem` by
+    (qspecl_then [`offsets`, `vals`, `ps'.ps_alloc`, `vs.vs_memory`,
+       `st.as_memory`] mp_tac memory_rel_write_fold >>
+     (impl_tac >-
+       (rpt conj_tac
+        >- (simp[Abbr `vals`, LENGTH_TAKE] >> decide_tac)
+        >- first_assum ACCEPT_TAC
+        >- first_assum ACCEPT_TAC)) >>
+     simp[Abbr `spill_mem`]) >>
+  `memory_rel ps'.ps_alloc vs.vs_memory final_mem` by
+    (qspecl_then [`restore_offsets`, `ps'.ps_alloc`, `vs.vs_memory`,
+       `spill_mem`] mp_tac memory_rel_expand_fold >>
+     (impl_tac >- first_assum ACCEPT_TAC) >>
+     simp[Abbr `final_mem`]) >>
+  qexists_tac `final_st` >>
+  conj_tac
+  >- (qpat_x_assum `asm_steps lo o2pc prog (2 * LENGTH offsets) st = _`
+        (fn spill_th =>
+          qpat_x_assum `asm_steps lo o2pc prog (2 * LENGTH desired) spill_st = _`
+            (fn restore_th =>
+              mp_tac (MATCH_MP (GEN_ALL asm_steps_compose_ok)
+                (CONJ spill_th restore_th)))) >>
+      simp[execute_plan_spill_restore_length, Abbr `restore_offsets`] >>
+      decide_tac) >>
+  conj_tac
+  >- (`plan_stack_rel lo vs ps'.ps_stack final_st.as_stack` by
+        (qspecl_then [`dist`, `lo`, `vs`, `ps.ps_stack`, `st.as_stack`,
+           `items`, `desired`, `vals`] mp_tac
+           plan_stack_rel_deep_swap_raw >>
+         (impl_tac >-
+           (rpt conj_tac
+            >- (fs[venom_asm_rel_def] >> first_assum ACCEPT_TAC)
+            >- decide_tac
+            >- first_assum ACCEPT_TAC
+            >- simp[Abbr `items`]
+            >- simp[Abbr `desired`]
+            >- (simp[Abbr `vals`] >> decide_tac) >>
+            rpt strip_tac >>
+            simp[Abbr `vals`] >>
+            metis_tac[])) >>
+         simp[Abbr `final_st`, Abbr `spill_st`] >>
+         metis_tac[]) >>
+      `ps'.ps_spilled = ps.ps_spilled` by gvs[] >>
+      `final_st.as_memory = final_mem` by
+        simp[Abbr `final_st`, Abbr `spill_st`] >>
+      PURE_REWRITE_TAC[venom_asm_rel_def] >>
+      rpt conj_tac
+      >- first_assum ACCEPT_TAC
+      >- (qpat_assum `ps'.ps_spilled = ps.ps_spilled`
+            (fn th => rewrite_tac[th]) >>
+          qpat_assum `final_st.as_memory = final_mem`
+            (fn th => rewrite_tac[th]) >>
+          first_assum ACCEPT_TAC)
+      >- (qpat_assum `final_st.as_memory = final_mem`
+            (fn th => rewrite_tac[th]) >>
+          first_assum ACCEPT_TAC) >>
+      fs[venom_asm_rel_def, Abbr `final_st`, Abbr `spill_st`]) >>
+  simp[Abbr `final_st`, Abbr `spill_st`, Abbr `restore_offsets`,
+       execute_plan_spill_restore_length] >>
   decide_tac
 QED
-
-Finalise do_swap_venom_asm_rel_big;
 
 (* Combined do_swap simulation for all distances *)
 Theorem do_swap_venom_asm_rel:
