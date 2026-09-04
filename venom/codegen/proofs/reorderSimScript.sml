@@ -106,33 +106,64 @@ Proof
 QED
 
 
-(* A planner state may temporarily contain duplicate pending operands in the
-   protected top window.  Everything below that window remains canonical;
-   filtering pending operands also exposes that all other duplication and
-   stack/spill overlap is forbidden.  [fixed] records the target positions
-   already established by reorder_plan. *)
+(* Input preparation and reorder may temporarily duplicate pending operands
+   anywhere in the stack.  Each logical pending occurrence licenses one extra
+   stack occurrence in addition to at most one canonical retained copy.  An
+   operand still owned by the spill map has no canonical stack allowance.
+   [fixed] records target positions already established by reorder_plan. *)
 Definition plan_state_residual_wf_def:
   plan_state_residual_wf base pending fixed (ps : plan_state) <=>
     plan_slots_bounded base ps /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
     LENGTH pending <= LENGTH ps.ps_stack /\
     fixed <= LENGTH pending /\
-    ALL_DISTINCT (stack_pop (LENGTH pending) ps.ps_stack) /\
-    DISJOINT (set (stack_pop (LENGTH pending) ps.ps_stack))
-             (FDOM ps.ps_spilled) /\
-    ALL_DISTINCT (FILTER (\op. ~MEM op pending) ps.ps_stack) /\
-    DISJOINT (set (FILTER (\op. ~MEM op pending) ps.ps_stack))
-             (FDOM ps.ps_spilled) /\
     (!i. i < fixed ==>
-       stack_peek (LENGTH pending - 1 - i) ps.ps_stack = EL i pending)
+       stack_peek (LENGTH pending - 1 - i) ps.ps_stack = EL i pending) /\
+    (!op. LIST_ELEM_COUNT op ps.ps_stack <=
+          SUC (LIST_ELEM_COUNT op pending)) /\
+    (!op. op IN FDOM ps.ps_spilled ==>
+          LIST_ELEM_COUNT op ps.ps_stack <= LIST_ELEM_COUNT op pending)
 End
 
-Theorem all_distinct_filter[local]:
-  !(P : 'a -> bool) xs.
-    ALL_DISTINCT xs ==> ALL_DISTINCT (FILTER P xs)
+Theorem all_distinct_elem_count_le_one[local]:
+  !(xs : 'a list) x.
+    ALL_DISTINCT xs ==> LIST_ELEM_COUNT x xs <= 1
 Proof
-  gen_tac >> Induct >> simp[] >> rpt strip_tac >>
-  Cases_on `P h` >> gvs[MEM_FILTER]
+  Induct >> simp[LIST_ELEM_COUNT_THM] >> rpt strip_tac >>
+  Cases_on `h = x` >> gvs[LIST_ELEM_COUNT_THM]
+  >- (`~(LIST_ELEM_COUNT h xs > 0)` by
+        metis_tac[LIST_ELEM_COUNT_MEM] >> decide_tac)
+  >> first_x_assum (qspec_then `x` mp_tac) >> simp[]
+QED
+
+Theorem elem_count_cons_mono[local]:
+  !(h : 'a) x xs.
+    LIST_ELEM_COUNT x xs <= LIST_ELEM_COUNT x (h::xs)
+Proof
+  rpt gen_tac >> Cases_on `h = x` >> simp[LIST_ELEM_COUNT_THM]
+QED
+
+Theorem elem_count_le_one_all_distinct[local]:
+  !(xs : 'a list).
+    (!x. LIST_ELEM_COUNT x xs <= 1) ==> ALL_DISTINCT xs
+Proof
+  Induct
+  >- simp[]
+  >- (gen_tac >> disch_tac >> simp[] >> conj_tac
+      >- (`LIST_ELEM_COUNT h xs = 0` by
+            (Cases_on `FILTER (\x. x = h) xs`
+             >- simp[LIST_ELEM_COUNT_DEF]
+             >> qpat_assum `!x. LIST_ELEM_COUNT x (h::xs) <= 1`
+                  (qspec_then `h` assume_tac) >>
+                fs[LIST_ELEM_COUNT_DEF] >>
+                qpat_x_assum `SUC (LENGTH (FILTER (\x. x = h) xs)) <= 1`
+                  mp_tac >> ASM_REWRITE_TAC[] >> simp[]) >>
+          fs[GSYM LIST_ELEM_COUNT_MEM])
+      >> first_x_assum irule >> gen_tac >>
+         qpat_assum `!x. LIST_ELEM_COUNT x (h::xs) <= 1`
+           (qspec_then `x` assume_tac) >>
+         qspecl_then [`h`, `x`, `xs`] assume_tac elem_count_cons_mono >>
+         decide_tac)
 QED
 
 Theorem plan_state_residual_wf_canonical:
@@ -145,14 +176,15 @@ Theorem plan_state_residual_wf_canonical:
     plan_state_residual_wf base pending 0 ps
 Proof
   rpt gen_tac >> strip_tac >>
-  simp[plan_state_residual_wf_def, stack_pop_def] >>
-  rpt conj_tac
-  >- metis_tac[ALL_DISTINCT_TAKE]
-  >- (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
-      metis_tac[rich_listTheory.MEM_TAKE])
-  >- metis_tac[all_distinct_filter]
-  >> fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION,
-        listTheory.MEM_FILTER] >> metis_tac[]
+  simp[plan_state_residual_wf_def] >> conj_tac
+  >- (gen_tac >>
+      drule all_distinct_elem_count_le_one >>
+      disch_then (qspec_then `op` assume_tac) >> decide_tac)
+  >> rpt strip_tac >>
+     `~MEM op ps.ps_stack` by
+       (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+        metis_tac[]) >>
+     fs[GSYM LIST_ELEM_COUNT_MEM]
 QED
 
 Theorem plan_state_residual_wf_fix_next:
@@ -169,71 +201,36 @@ Proof
 QED
 
 
-Theorem take_lupdate_outside[local]:
-  !n i x (l : 'a list).
-    n <= i ==> TAKE n (LUPDATE x i l) = TAKE n l
+Theorem elem_count_append[local]:
+  !x (xs : 'a list) ys.
+    LIST_ELEM_COUNT x (xs ++ ys) =
+    LIST_ELEM_COUNT x xs + LIST_ELEM_COUNT x ys
 Proof
-  Induct_on `l` >> rpt gen_tac >>
-  Cases_on `n` >> Cases_on `i` >> simp[LUPDATE_def]
+  gen_tac >> Induct >> simp[LIST_ELEM_COUNT_THM]
 QED
 
-Theorem filter_lupdate_excluded_mem[local]:
-  !(P : 'a -> bool) l i x y.
-    ~P x /\ MEM y (FILTER P (LUPDATE x i l)) ==>
-    MEM y (FILTER P l)
+Theorem elem_count_from_append[local]:
+  !(full : 'a list) prefix suffix.
+    full = prefix ++ suffix ==>
+    !x. LIST_ELEM_COUNT x full =
+        LIST_ELEM_COUNT x prefix + LIST_ELEM_COUNT x suffix
 Proof
-  rpt gen_tac >> simp[MEM_FILTER] >> strip_tac >>
-  drule MEM_LUPDATE_E >> metis_tac[]
+  rpt strip_tac >> gvs[elem_count_append]
 QED
-
-Theorem filter_lupdate_excluded_distinct[local]:
-  !(P : 'a -> bool) l i x.
-    ~P x /\ ALL_DISTINCT (FILTER P l) ==>
-    ALL_DISTINCT (FILTER P (LUPDATE x i l))
-Proof
-  gen_tac >> Induct >> rpt gen_tac >>
-  Cases_on `i` >> simp[LUPDATE_def] >> rpt strip_tac
-  >- (Cases_on `P h` >> gvs[])
-  >> Cases_on `P h` >> gvs[] >>
-     metis_tac[filter_lupdate_excluded_mem]
-QED
-
-Theorem plan_state_residual_wf_protected_poke:
-  !base pending ps dist op.
-    plan_state_residual_wf base pending 0 ps /\
-    dist < LENGTH pending /\ MEM op pending ==>
-    plan_state_residual_wf base pending 0
-      (ps with ps_stack := stack_poke dist op ps.ps_stack)
+Theorem fixed_suffix_decompose[local]:
+  !(stack : 'a list) pending.
+    LENGTH pending <= LENGTH stack /\
+    (!i. i < LENGTH pending ==>
+       stack_peek (LENGTH pending - 1 - i) stack = EL i pending) ==>
+    stack = stack_pop (LENGTH pending) stack ++ pending
 Proof
   rpt gen_tac >> strip_tac >>
-  fs[plan_state_residual_wf_def] >>
-  simp[plan_state_residual_wf_def, stack_poke_def, stack_pop_def] >>
-  `LENGTH ps.ps_stack - LENGTH pending <=
-   LENGTH ps.ps_stack - (dist + 1)` by decide_tac >>
-  `TAKE (LENGTH ps.ps_stack - LENGTH pending)
-      (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack) =
-   TAKE (LENGTH ps.ps_stack - LENGTH pending) ps.ps_stack` by
-    metis_tac[take_lupdate_outside] >>
-  `ALL_DISTINCT
-     (FILTER (\x. ~MEM x pending)
-       (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack))` by
-    (irule filter_lupdate_excluded_distinct >> simp[]) >>
-  `DISJOINT
-     (set (FILTER (\x. ~MEM x pending)
-       (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack)))
-     (FDOM ps.ps_spilled)` by
-    (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
-     gen_tac >>
-     Cases_on `MEM x
-       (FILTER (\x. ~MEM x pending)
-         (LUPDATE op (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack))`
-     >- (`MEM x (FILTER (\x. ~MEM x pending) ps.ps_stack)` by
-           (qspecl_then [`\z. ~MEM z pending`, `ps.ps_stack`,
-              `LENGTH ps.ps_stack - (dist + 1)`, `op`, `x`]
-              mp_tac filter_lupdate_excluded_mem >> simp[]) >>
-         first_x_assum (qspec_then `x` mp_tac) >> simp[])
-     >> simp[]) >>
-  fs[stack_pop_def]
+  `DROP (LENGTH stack - LENGTH pending) stack = pending` by
+    (irule LIST_EQ >> simp[LENGTH_DROP] >> rpt strip_tac >>
+     first_x_assum (qspec_then `x` mp_tac) >>
+     simp[stack_peek_def, EL_DROP] >> decide_tac) >>
+  simp[stack_pop_def] >>
+  metis_tac[TAKE_DROP]
 QED
 
 Theorem plan_state_residual_wf_pop:
@@ -246,19 +243,42 @@ Theorem plan_state_residual_wf_pop:
     DISJOINT (set (stack_pop (LENGTH pending) ps.ps_stack))
              (FDOM ps.ps_spilled)
 Proof
-  simp[plan_state_residual_wf_def]
+  rpt gen_tac >> simp[plan_state_residual_wf_def] >> strip_tac >>
+  `ps.ps_stack = stack_pop (LENGTH pending) ps.ps_stack ++ pending` by
+    (irule fixed_suffix_decompose >> simp[]) >>
+  drule elem_count_from_append >> disch_then assume_tac >>
+  conj_tac
+  >- (irule elem_count_le_one_all_distinct >> gen_tac >>
+      qpat_assum
+        `!op. LIST_ELEM_COUNT op ps.ps_stack <=
+              SUC (LIST_ELEM_COUNT op pending)`
+        (qspec_then `x` assume_tac) >>
+      qpat_assum
+        `!x. LIST_ELEM_COUNT x ps.ps_stack = _`
+        (qspec_then `x` assume_tac) >>
+      decide_tac)
+  >> fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+     gen_tac >>
+     Cases_on `x IN FDOM ps.ps_spilled` >> simp[] >>
+     qpat_assum `!op. op IN FDOM ps.ps_spilled ==> _`
+       (qspec_then `x` (drule_then assume_tac)) >>
+     simp[GSYM LIST_ELEM_COUNT_MEM] >> decide_tac
 QED
 
-(* Concrete interface probes: duplicates are confined to the protected window. *)
+(* Concrete probes for multiplicity budgets and fixed-suffix elimination. *)
 Theorem plan_state_residual_wf_duplicate_probe:
   let ps = (init_plan_state 0) with
              ps_stack := [Var "core_x"; Var "core_y";
                           Var "pending"; Var "pending"] in
     plan_state_residual_wf 0 [Var "pending"; Var "pending"] 2 ps
 Proof
-  EVAL_TAC >> simp[pred_setTheory.DISJOINT_DEF] >>
-  rpt strip_tac >>
-  `i = 0 \/ i = 1` by decide_tac >> gvs[]
+  EVAL_TAC >> simp[] >> conj_tac
+  >- (rpt strip_tac >>
+      `i = 0 \/ i = 1` by decide_tac >> gvs[])
+  >> gen_tac >>
+     Cases_on `Var "core_x" = op` >> gvs[] >>
+     Cases_on `Var "core_y" = op` >> gvs[] >>
+     Cases_on `Var "pending" = op` >> gvs[]
 QED
 
 Theorem plan_state_residual_wf_distinct_probe:
@@ -267,9 +287,14 @@ Theorem plan_state_residual_wf_distinct_probe:
                           Var "left"; Var "right"] in
     plan_state_residual_wf 0 [Var "left"; Var "right"] 2 ps
 Proof
-  EVAL_TAC >> simp[pred_setTheory.DISJOINT_DEF] >>
-  rpt strip_tac >>
-  `i = 0 \/ i = 1` by decide_tac >> gvs[]
+  EVAL_TAC >> simp[] >> conj_tac
+  >- (rpt strip_tac >>
+      `i = 0 \/ i = 1` by decide_tac >> gvs[])
+  >> gen_tac >>
+     Cases_on `Var "core_x" = op` >> gvs[] >>
+     Cases_on `Var "core_y" = op` >> gvs[] >>
+     Cases_on `Var "left" = op` >> gvs[] >>
+     Cases_on `Var "right" = op` >> gvs[]
 QED
 
 Theorem plan_state_residual_wf_rejects_core_duplicate:
@@ -278,7 +303,9 @@ Theorem plan_state_residual_wf_rejects_core_duplicate:
                           Var "pending"; Var "pending"] in
     ~plan_state_residual_wf 0 [Var "pending"; Var "pending"] 2 ps
 Proof
-  EVAL_TAC
+  EVAL_TAC >> strip_tac >>
+  qpat_x_assum `!op. LENGTH _ <= _`
+    (qspec_then `Var "core"` mp_tac) >> simp[]
 QED
 
 (* =========================================================================
