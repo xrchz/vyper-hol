@@ -2376,6 +2376,44 @@ Proof
   rpt strip_tac >> simp[el_reverse_desired_list]
 QED
 
+(* Occurrence-indexed temporary offsets for a deep swap.  This interface is
+   deliberately independent of operand equality. *)
+Theorem deep_swap_occurrence_offsets[local]:
+  !dist items al sp.
+    dist > 16 /\
+    LENGTH items = dist + 1 /\
+    spill_alloc_wf al sp /\
+    al.sa_free_slots = [] /\
+    al.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
+    let offsets = FST (spill_alloc_n [] al items) in
+    let desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0] in
+      LENGTH offsets = LENGTH items /\
+      ALL_DISTINCT offsets /\
+      (!k. k < LENGTH offsets ==>
+        al.sa_spill_base <= EL k offsets /\
+        EL k offsets < dimword(:256) /\
+        (!op off. FLOOKUP sp op = SOME off ==>
+          off + 32 <= EL k offsets) /\
+        (!j. j < LENGTH offsets /\ j <> k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)) /\
+      EVERY (\i. i < LENGTH offsets) (REVERSE desired)
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[spill_alloc_n_offsets_val, LET_THM] >>
+  conj_tac
+  >- (simp[ALL_DISTINCT_GENLIST] >> decide_tac) >>
+  conj_tac
+  >- (rpt strip_tac >>
+      qpat_assum `spill_alloc_wf al sp`
+        (strip_assume_tac o REWRITE_RULE[spill_alloc_wf_def]) >>
+      simp[EL_GENLIST] >>
+      TRY (qpat_x_assum `!op off. FLOOKUP sp op = SOME off ==> _`
+        (qspecl_then [`op`, `off`] mp_tac) >> simp[]) >>
+      decide_tac) >>
+  simp[EVERY_EL, desired_rev_el_bound]
+QED
+
 (* EL at a desired-permuted index in items equals EL at the
    reverse-permuted index in REVERSE items. *)
 Theorem el_desired_reverse_items[local]:
