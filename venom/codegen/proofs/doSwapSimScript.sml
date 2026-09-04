@@ -1696,6 +1696,45 @@ Proof
   gvs[plan_state_component_equality, MAP_MAP_o, combinTheory.o_DEF]
 QED
 
+(* Structural decomposition of the deep duplication branch. *)
+Theorem do_dup_big_decompose[local]:
+  !dist ps.
+    dist > 15 /\ dist < LENGTH ps.ps_stack ==>
+    let items = top_n (dist + 1) ps.ps_stack;
+        offsets = FST (spill_alloc_n [] ps.ps_alloc items);
+        alloc1 = SND (spill_alloc_n [] ps.ps_alloc items);
+        desired = GENLIST I (dist + 1) ++ [0];
+        base_stack = TAKE (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack;
+        restored = MAP (\idx. EL idx items) desired;
+        alloc2 = FOLDL (\al off. free_spill_slot off al) alloc1 offsets
+    in
+      do_dup dist ps =
+        (MAP SOSpill offsets ++
+           MAP (\idx. SORestore (EL idx offsets)) (REVERSE desired),
+         ps with <| ps_stack := base_stack ++ restored;
+                    ps_alloc := alloc2 |>)
+Proof
+  rpt strip_tac >>
+  simp[LET_THM, do_dup_def] >>
+  qabbrev_tac `fres = FOLDL
+    (\(ops,offs,al) item.
+       (\(off,al2). (ops ++ [SOSpill off], SNOC off offs, al2))
+         (alloc_spill_slot al))
+    ([],[],ps.ps_alloc) (top_n (dist + 1) ps.ps_stack)` >>
+  PairCases_on `fres` >> fs[] >>
+  qspecl_then [`top_n (dist+1) ps.ps_stack`, `[]`,
+               `[]`, `ps.ps_alloc`]
+    mp_tac spill_foldl_snd_eq >>
+  fs[] >> strip_tac >>
+  qspecl_then [`top_n (dist+1) ps.ps_stack`, `[]`,
+               `[]`, `ps.ps_alloc`]
+    mp_tac spill_foldl_ops_eq_map >>
+  simp[] >> fs[] >> strip_tac >>
+  Cases_on `spill_alloc_n [] ps.ps_alloc
+    (top_n (dist + 1) ps.ps_stack)` >>
+  gvs[plan_state_component_equality, MAP_MAP_o, combinTheory.o_DEF]
+QED
+
 (* FOLDL DOMSUB removes all listed keys from a map's domain *)
 Theorem fdom_foldl_domsub[local]:
   !keys fm. FDOM (FOLDL (\sp k. sp \\ k) fm keys) = FDOM fm DIFF set keys
@@ -2018,6 +2057,94 @@ Proof
   `TAKE (LENGTH stk - n) stk = BUTLASTN n stk` by
     metis_tac[BUTLASTN_TAKE] >>
   metis_tac[APPEND_BUTLASTN_LASTN]
+QED
+
+(* Duplication appends exactly the selected operand, including in the deep
+   spill/restore implementation. *)
+Theorem do_dup_stack_exact:
+  !dist ps.
+    dist < LENGTH ps.ps_stack ==>
+    (SND (do_dup dist ps)).ps_stack =
+      ps.ps_stack ++ [stack_peek dist ps.ps_stack]
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist <= 15`
+  >- simp[do_dup_def, stack_dup_def] >>
+  `dist > 15 /\ dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_dup_big_decompose) >>
+  simp[LET_THM] >> strip_tac >>
+  `LENGTH (top_n (dist + 1) ps.ps_stack) = dist + 1` by
+    simp[top_n_def, LENGTH_REVERSE, LENGTH_TAKE] >>
+  `MAP (\idx. EL idx (top_n (dist + 1) ps.ps_stack))
+       (GENLIST I (dist + 1)) = top_n (dist + 1) ps.ps_stack` by
+    (simp[MAP_GENLIST, combinTheory.I_THM] >>
+     metis_tac[GENLIST_ID]) >>
+  `ps.ps_stack <> []` by (Cases_on `ps.ps_stack` >> fs[]) >>
+  `EL 0 (top_n (dist + 1) ps.ps_stack) =
+     stack_peek dist ps.ps_stack` by
+    (`TAKE (dist + 1) (REVERSE ps.ps_stack) <> []` by
+       simp[LENGTH_TAKE] >>
+     simp[top_n_def, stack_peek_def, HD_REVERSE, LAST_EL, EL_TAKE,
+          EL_REVERSE, PRE_SUB1]) >>
+  `TAKE (LENGTH ps.ps_stack - (dist + 1)) ps.ps_stack ++
+     top_n (dist + 1) ps.ps_stack = ps.ps_stack` by
+    metis_tac[top_n_suffix] >>
+  gvs[MAP_APPEND]
+QED
+
+(* Duplication preserves the spill map and its durable allocator layout. *)
+Theorem do_dup_layout_wf:
+  !dist ps.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    dist < LENGTH ps.ps_stack ==>
+    (SND (do_dup dist ps)).ps_spilled = ps.ps_spilled /\
+    spill_alloc_layout_wf (SND (do_dup dist ps)).ps_alloc
+                          (SND (do_dup dist ps)).ps_spilled
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist <= 15`
+  >- simp[do_dup_def] >>
+  `dist > 15 /\ dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+  `spill_alloc_layout_wf
+     (FOLDL (\a off. free_spill_slot off a)
+       (SND (spill_alloc_n [] ps.ps_alloc
+         (top_n (dist + 1) ps.ps_stack)))
+       (FST (spill_alloc_n [] ps.ps_alloc
+         (top_n (dist + 1) ps.ps_stack))))
+     ps.ps_spilled` by
+    (drule_then
+       (qspec_then `top_n (dist + 1) ps.ps_stack` mp_tac)
+       spill_alloc_n_free_layout_wf_arbitrary >>
+     simp[LET_THM]) >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_dup_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[]
+QED
+
+(* Consumer boundary: exact multiplicity, unchanged spill ownership, and
+   preserved layout, with no distinctness premise on the stack. *)
+Theorem do_dup_multiplicity_layout:
+  !dist ps ops ps'.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    dist < LENGTH ps.ps_stack /\
+    do_dup dist ps = (ops, ps') ==>
+    ps'.ps_spilled = ps.ps_spilled /\
+    spill_alloc_layout_wf ps'.ps_alloc ps'.ps_spilled /\
+    (!x. LIST_ELEM_COUNT x ps'.ps_stack =
+         LIST_ELEM_COUNT x ps.ps_stack +
+           (if x = stack_peek dist ps.ps_stack then 1 else 0))
+Proof
+  rpt gen_tac >> strip_tac >>
+  `ps' = SND (do_dup dist ps)` by
+    (Cases_on `do_dup dist ps` >> gvs[]) >>
+  qpat_x_assum `ps' = _` SUBST_ALL_TAC >>
+  drule_all do_dup_layout_wf >> strip_tac >>
+  conj_tac >- simp[] >>
+  conj_tac >- simp[] >>
+  gen_tac >>
+  drule do_dup_stack_exact >>
+  disch_then (fn th => rewrite_tac[th]) >>
+  simp[LIST_ELEM_COUNT_DEF, FILTER_APPEND] >>
+  Cases_on `x = stack_peek dist ps.ps_stack` >> simp[]
 QED
 
 (* ---------------------------------------------------------------
