@@ -2414,6 +2414,269 @@ Proof
   simp[EVERY_EL, desired_rev_el_bound]
 QED
 
+(* Local raw SOSpill execution boundary.  Unlike spill_n_sim this theorem
+   mentions only the assembly stack and memory, so duplicate operands are
+   irrelevant. *)
+Theorem raw_spill_dimindex_256[local]:
+  dimindex(:256) = 256
+Proof
+  CONV_TAC (LHS_CONV fcpLib.INDEX_CONV) >> REFL_TAC
+QED
+
+Theorem raw_spill_push_encode_num_roundtrip[local]:
+  n < dimword(:256) ==>
+  word_of_bytes F (0w:bytes32)
+    (REVERSE (encode_num_bytes n)) = n2w n
+Proof
+  strip_tac >>
+  qspec_then `n2w n : bytes32` mp_tac
+    asmToBytecodeProofsTheory.word_of_bytes_encode_roundtrip >>
+  (impl_tac >- simp[raw_spill_dimindex_256, dividesTheory.divides_def]) >>
+  simp[wordsTheory.w2n_n2w]
+QED
+Theorem raw_spill_asm_step_op_mstore[local]:
+  !o2pc st. asm_step_op o2pc "MSTORE" st = asm_mstore st
+Proof
+  simp[asm_step_op_def, asm_step_arith_def, asm_step_compare_def,
+       asm_step_bitwise_def, asm_step_memory_def]
+QED
+
+Theorem raw_spill_asm_steps[local]:
+  !lo o2pc prog off st.
+    off < dimword(:256) /\
+    LENGTH st.as_stack >= 1 /\
+    asm_block_at prog st.as_pc
+      [AsmPush (encode_num_bytes off); AsmOp "MSTORE"] ==>
+    asm_steps lo o2pc prog 2 st =
+      AsmOK (st with <|
+        as_stack := TL st.as_stack;
+        as_memory := mem_write32 off (HD st.as_stack) st.as_memory;
+        as_pc := st.as_pc + 2 |>)
+Proof
+  rpt strip_tac >>
+  Cases_on `st.as_stack` >> gvs[] >>
+  fs[asm_block_at_def] >>
+  `EL st.as_pc prog = AsmPush (encode_num_bytes off)` by
+    (first_x_assum (qspec_then `0` mp_tac) >> simp[]) >>
+  `EL (st.as_pc + 1) prog = AsmOp "MSTORE"` by
+    (first_x_assum (qspec_then `1` mp_tac) >> simp[]) >>
+  SUBST1_TAC (DECIDE ``2 = SUC (SUC 0)``) >>
+  simp[Once asm_steps_def] >>
+  simp[asm_step_def, raw_spill_push_encode_num_roundtrip, asm_next_def] >>
+  SUBST1_TAC (DECIDE ``1 = SUC 0``) >>
+  simp[Once asm_steps_def] >>
+  simp[asm_step_def, raw_spill_asm_step_op_mstore, asm_mstore_def,
+       asm_next_def, asm_steps_def, mem_write32_def]
+QED
+
+Theorem raw_spill_bulk_steps[local]:
+  !offsets lo o2pc prog st.
+    LENGTH offsets <= LENGTH st.as_stack /\
+    EVERY (\off. off < dimword(:256)) offsets /\
+    asm_block_at prog st.as_pc
+      (execute_plan initial_fmp (MAP SOSpill offsets)) ==>
+    asm_steps lo o2pc prog (2 * LENGTH offsets) st =
+      AsmOK (st with <|
+        as_stack := DROP (LENGTH offsets) st.as_stack;
+        as_memory :=
+          FOLDL (\mem p. mem_write32 (FST p) (SND p) mem) st.as_memory
+            (ZIP (offsets, TAKE (LENGTH offsets) st.as_stack));
+        as_pc := st.as_pc + 2 * LENGTH offsets |>)
+Proof
+  Induct >> rpt strip_tac
+  >- simp[execute_plan_def, asm_state_component_equality] >>
+  fs[execute_plan_def, exec_stack_op_def, asm_block_at_append,
+     asm_block_at_cons] >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `h`, `st`] mp_tac
+    raw_spill_asm_steps >>
+  (impl_tac >-
+    (Cases_on `st.as_stack` >> gvs[] >>
+     simp[asm_block_at_def] >> rpt strip_tac >>
+     Cases_on `j` >> gvs[] >> Cases_on `n` >> gvs[])) >>
+  strip_tac >>
+  simp[asm_steps_add] >>
+  first_x_assum (qspecl_then [`lo`, `o2pc`, `prog`,
+    `st with <|
+      as_stack := TL st.as_stack;
+      as_memory := mem_write32 h (HD st.as_stack) st.as_memory;
+      as_pc := st.as_pc + 2 |> `] mp_tac) >>
+  simp[] >>
+  Cases_on `st.as_stack` >> gvs[] >>
+  strip_tac >>
+  pure_once_rewrite_tac[DECIDE
+    ``2 * SUC (LENGTH offsets) = 2 + 2 * LENGTH offsets``] >>
+  pure_once_rewrite_tac[asm_steps_add] >>
+  gvs[asm_state_component_equality]
+QED
+
+Theorem raw_spill_fold_read_disjoint[local]:
+  !offsets vals target mem.
+    LENGTH offsets = LENGTH vals /\
+    EVERY (\off. target + 32 <= off \/ off + 32 <= target) offsets ==>
+    word_of_bytes T (0w:bytes32)
+      (TAKE 32 (DROP target
+        (FOLDL (\m p. mem_write32 (FST p) (SND p) m) mem
+          (ZIP (offsets,vals))))) =
+    word_of_bytes T (0w:bytes32) (TAKE 32 (DROP target mem))
+Proof
+  Induct >> Cases_on `vals` >> simp[] >> rpt strip_tac >>
+  irule mem_write32_read32_disjoint >> simp[]
+QED
+
+Theorem raw_spill_fold_read_occurrence[local]:
+  !offsets vals mem k.
+    LENGTH offsets = LENGTH vals /\
+    k < LENGTH offsets /\
+    (!i j. i < LENGTH offsets /\ j < LENGTH offsets /\ i <> j ==>
+      EL i offsets + 32 <= EL j offsets \/
+      EL j offsets + 32 <= EL i offsets) ==>
+    word_of_bytes T (0w:bytes32)
+      (TAKE 32 (DROP (EL k offsets)
+        (FOLDL (\m p. mem_write32 (FST p) (SND p) m) mem
+          (ZIP (offsets,vals))))) = EL k vals
+Proof
+  Induct >> Cases_on `vals` >> simp[] >> rpt strip_tac >>
+  Cases_on `k` >> gvs[]
+  >- (qspecl_then [`offsets`, `t`, `h'`,
+        `mem_write32 h' h mem`] mp_tac raw_spill_fold_read_disjoint >>
+      (impl_tac >-
+        (simp[EVERY_EL] >> rpt strip_tac >>
+         first_x_assum (qspecl_then [`0`, `SUC n`] mp_tac) >> simp[])) >>
+      strip_tac >>
+      pop_assum (fn th => rewrite_tac[th]) >>
+      simp[mem_write32_read_same]) >>
+  first_x_assum (qspecl_then
+    [`t`, `mem_write32 h' h mem`, `n`] mp_tac) >>
+  (impl_tac >-
+    (simp[] >> rpt strip_tac >>
+     first_x_assum (qspecl_then [`SUC i`, `SUC j`] mp_tac) >> simp[])) >>
+  simp[]
+QED
+
+Theorem raw_spill_fold_read_byte_outside[local]:
+  !offsets vals mem i.
+    LENGTH offsets = LENGTH vals /\
+    EVERY (\off. ~(off <= i /\ i < off + 32)) offsets ==>
+    read_byte i
+      (FOLDL (\m p. mem_write32 (FST p) (SND p) m) mem
+        (ZIP (offsets,vals))) = read_byte i mem
+Proof
+  Induct >> Cases_on `vals` >> simp[] >> rpt strip_tac >>
+  simp[read_byte_mem_write32_outside]
+QED
+
+Theorem raw_spill_occurrence_sim[local]:
+  !offsets vals lo o2pc prog st.
+    LENGTH offsets = LENGTH vals /\
+    LENGTH offsets <= LENGTH st.as_stack /\
+    vals = TAKE (LENGTH offsets) st.as_stack /\
+    EVERY (\off. off < dimword(:256)) offsets /\
+    (!i j. i < LENGTH offsets /\ j < LENGTH offsets /\ i <> j ==>
+      EL i offsets + 32 <= EL j offsets \/
+      EL j offsets + 32 <= EL i offsets) /\
+    asm_block_at prog st.as_pc
+      (execute_plan initial_fmp (MAP SOSpill offsets)) ==>
+    let final_mem =
+      FOLDL (\mem p. mem_write32 (FST p) (SND p) mem) st.as_memory
+        (ZIP (offsets,vals))
+    in
+      asm_steps lo o2pc prog (2 * LENGTH offsets) st =
+        AsmOK (st with <|
+          as_stack := DROP (LENGTH offsets) st.as_stack;
+          as_memory := final_mem;
+          as_pc := st.as_pc + 2 * LENGTH offsets |>) /\
+      (!k. k < LENGTH offsets ==>
+        word_of_bytes T (0w:bytes32)
+          (TAKE 32 (DROP (EL k offsets) final_mem)) = EL k vals) /\
+      (!i. EVERY (\off. ~(off <= i /\ i < off + 32)) offsets ==>
+        read_byte i final_mem = read_byte i st.as_memory)
+Proof
+  rpt gen_tac >> strip_tac >> PURE_REWRITE_TAC[LET_THM] >> BETA_TAC >>
+  conj_tac
+  >- (qpat_x_assum `vals = _` (fn th => rewrite_tac[th]) >>
+      irule raw_spill_bulk_steps >> simp[] >>
+      qexists_tac `initial_fmp` >> simp[]) >>
+  conj_tac
+  >- (rpt strip_tac >> irule raw_spill_fold_read_occurrence >>
+      conj_tac >- first_assum ACCEPT_TAC >>
+      conj_tac >- first_assum ACCEPT_TAC >>
+      first_assum ACCEPT_TAC) >>
+  rpt strip_tac >>
+  irule raw_spill_fold_read_byte_outside >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  first_assum ACCEPT_TAC
+QED
+
+Theorem plan_stack_rel_top_n_occurrence[local]:
+  !lo vs ps_stk as_stk items n k.
+    plan_stack_rel lo vs ps_stk as_stk /\
+    items = top_n n ps_stk /\
+    n <= LENGTH ps_stk /\ k < n ==>
+    operand_val vs lo (EL k (REVERSE items)) = SOME (EL k as_stk)
+Proof
+  rpt strip_tac >>
+  qspecl_then [`lo`, `vs`, `ps_stk`, `as_stk`, `k`] mp_tac
+    plan_stack_rel_el >>
+  (impl_tac >- (conj_tac >- first_assum ACCEPT_TAC >> decide_tac)) >>
+  simp[top_n_def, EL_TAKE]
+QED
+
+Theorem raw_spill_venom_occurrence_sim[local]:
+  !offsets items lo o2pc prog ps vs st.
+    venom_asm_rel lo ps vs st /\
+    items = top_n (LENGTH offsets) ps.ps_stack /\
+    LENGTH offsets <= LENGTH ps.ps_stack /\
+    EVERY (\off. off < dimword(:256)) offsets /\
+    (!i j. i < LENGTH offsets /\ j < LENGTH offsets /\ i <> j ==>
+      EL i offsets + 32 <= EL j offsets \/
+      EL j offsets + 32 <= EL i offsets) /\
+    asm_block_at prog st.as_pc
+      (execute_plan initial_fmp (MAP SOSpill offsets)) ==>
+    let vals = TAKE (LENGTH offsets) st.as_stack;
+        final_mem =
+          FOLDL (\mem p. mem_write32 (FST p) (SND p) mem) st.as_memory
+            (ZIP (offsets,vals))
+    in
+      asm_steps lo o2pc prog (2 * LENGTH offsets) st =
+        AsmOK (st with <|
+          as_stack := DROP (LENGTH offsets) st.as_stack;
+          as_memory := final_mem;
+          as_pc := st.as_pc + 2 * LENGTH offsets |>) /\
+      (!k. k < LENGTH offsets ==>
+        operand_val vs lo (EL k (REVERSE items)) = SOME
+          (word_of_bytes T (0w:bytes32)
+            (TAKE 32 (DROP (EL k offsets) final_mem)))) /\
+      (!i. EVERY (\off. ~(off <= i /\ i < off + 32)) offsets ==>
+        read_byte i final_mem = read_byte i st.as_memory)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_assum `venom_asm_rel _ _ _ _`
+    (strip_assume_tac o REWRITE_RULE[venom_asm_rel_def]) >>
+  imp_res_tac plan_stack_rel_length >>
+  PURE_REWRITE_TAC[LET_THM] >> BETA_TAC >>
+  conj_tac
+  >- (irule raw_spill_bulk_steps >> simp[] >>
+      qexists_tac `initial_fmp` >> simp[]) >>
+  conj_tac
+  >- (rpt strip_tac >>
+      `word_of_bytes T (0w:bytes32)
+         (TAKE 32 (DROP (EL k offsets)
+           (FOLDL (\mem p. mem_write32 (FST p) (SND p) mem) st.as_memory
+             (ZIP (offsets,TAKE (LENGTH offsets) st.as_stack))))) =
+       EL k (TAKE (LENGTH offsets) st.as_stack)` by
+        (irule raw_spill_fold_read_occurrence >>
+         conj_tac >- simp[] >>
+         conj_tac >- first_assum ACCEPT_TAC >>
+         simp[LENGTH_TAKE] >> decide_tac) >>
+      qspecl_then [`lo`, `vs`, `ps.ps_stack`, `st.as_stack`, `items`,
+        `LENGTH offsets`, `k`] mp_tac plan_stack_rel_top_n_occurrence >>
+      (impl_tac >-
+        (rpt conj_tac >> first_assum ACCEPT_TAC)) >>
+      simp[EL_TAKE]) >>
+  rpt strip_tac >>
+  irule raw_spill_fold_read_byte_outside >>
+  conj_tac >- simp[] >> first_assum ACCEPT_TAC
+QED
 (* EL at a desired-permuted index in items equals EL at the
    reverse-permuted index in REVERSE items. *)
 Theorem el_desired_reverse_items[local]:
