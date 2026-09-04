@@ -3833,7 +3833,6 @@ Theorem do_swap_venom_asm_rel_big[local]:
     dist > 16 /\
     dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
-    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     prefix_spill_wf initial_fmp lo ops ps /\
     venom_asm_rel lo ps vs st /\
     asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
@@ -4042,7 +4041,6 @@ Theorem do_swap_venom_asm_rel_general:
   !dist ps ops ps' lo o2pc prog vs st.
     do_swap dist ps = (ops,ps') /\ dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
-    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     prefix_spill_wf initial_fmp lo ops ps /\ venom_asm_rel lo ps vs st /\
     asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
     ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st' /\

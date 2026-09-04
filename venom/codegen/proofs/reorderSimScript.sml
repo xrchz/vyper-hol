@@ -70,6 +70,22 @@ Proof
   gvs[EL_REVERSE]
 QED
 
+Theorem venom_asm_rel_sem_stack_transport:
+  !lo psA psB vs as.
+    venom_asm_rel lo psA vs as /\
+    plan_stack_sem_eq lo vs psA.ps_stack psB.ps_stack /\
+    psB.ps_spilled = psA.ps_spilled /\
+    psB.ps_alloc.sa_spill_base = psA.ps_alloc.sa_spill_base /\
+    psB.ps_alloc.sa_next_offset = psA.ps_alloc.sa_next_offset ==>
+    venom_asm_rel lo psB vs as
+Proof
+  rpt strip_tac >>
+  fs[venom_asm_rel_def] >>
+  conj_tac
+  >- (irule plan_stack_rel_sem_eq >> metis_tac[]) >>
+  fs[memory_rel_def] >> first_assum ACCEPT_TAC
+QED
+
 Theorem plan_stack_sem_eq_lastn:
   !lo vs s1 s2 n.
     plan_stack_sem_eq lo vs s1 s2 ==>
@@ -1475,6 +1491,26 @@ Proof
      Cases_on `Var "core_y" = op` >> gvs[] >>
      Cases_on `Var "left" = op` >> gvs[] >>
      Cases_on `Var "right" = op` >> gvs[]
+QED
+
+(* The post-input residual/count interface does not imply the stack/spill-key
+   disjointness required by [do_swap_venom_asm_rel_general]: a literal can be
+   both materialised for BUMP and retain an older spilled copy. *)
+Theorem probe_two_input_interface_allows_spilled_pending_literal[local]:
+  let ps0 = (init_plan_state 0) with ps_stack := [Var "deep"; Lit 7w] in
+  let (_,ps) = do_spill_tos ps0 in
+  let (_,ps1) = emit_input_plan BUMP [Lit 7w; Var "deep"] [] ps in
+    plan_state_residual_wf 0 [Lit 7w; Var "deep"] 0 ps1 /\
+    (!op. LIST_ELEM_COUNT op [Lit 7w; Var "deep"] <=
+          LIST_ELEM_COUNT op ps1.ps_stack) /\
+    Lit 7w IN FDOM ps1.ps_spilled /\
+    MEM (Lit 7w) ps1.ps_stack /\
+    ~DISJOINT (set ps1.ps_stack) (FDOM ps1.ps_spilled)
+Proof
+  EVAL_TAC >>
+  simp[spill_alloc_layout_wf_def] >>
+  conj_tac >> gen_tac >> Cases_on `op` >>
+  simp[LIST_ELEM_COUNT_THM] >> rpt IF_CASES_TAC >> gvs[]
 QED
 
 Theorem plan_state_residual_wf_rejects_core_duplicate:
