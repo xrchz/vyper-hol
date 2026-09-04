@@ -1173,6 +1173,153 @@ Proof
      decide_tac
 QED
 
+Theorem emit_one_input_var_not_spilled[local]:
+  !opc nl op ps.
+    is_var_operand op ==>
+    op NOTIN FDOM (SND (emit_one_input opc nl op ps)).ps_spilled
+Proof
+  rpt gen_tac >> Cases_on `op` >>
+  simp[is_var_operand_def, emit_one_input_def, LET_THM]
+  >> rename1 `Var v` >>
+     Cases_on `FLOOKUP ps.ps_spilled (Var v)` >> simp[]
+  >- (Cases_on `MEM v nl` >> simp[] >>
+      Cases_on `stack_get_depth (Var v) ps.ps_stack` >>
+      CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+      gvs[do_dup_spilled_unchanged, flookup_thm])
+  >> simp[do_restore_def, flookup_thm] >>
+     Cases_on `MEM v nl` >> simp[] >>
+     Cases_on `stack_get_depth (Var v)
+       (stack_push (Var v) ps.ps_stack)` >>
+     CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+     simp[do_dup_spilled_unchanged]
+QED
+
+Theorem emit_one_input_preserves_not_spilled[local]:
+  !opc nl op ps x.
+    x NOTIN FDOM ps.ps_spilled ==>
+    x NOTIN FDOM (SND (emit_one_input opc nl op ps)).ps_spilled
+Proof
+  rpt gen_tac >> Cases_on `op` >>
+  simp[is_var_operand_def, emit_one_input_def, LET_THM]
+  >- (rename1 `FLOOKUP ps.ps_spilled (Var v)` >>
+      Cases_on `FLOOKUP ps.ps_spilled (Var v)` >> simp[]
+      >- (Cases_on `MEM v nl` >> simp[] >>
+          Cases_on `stack_get_depth (Var v) ps.ps_stack` >>
+          CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+          simp[do_dup_spilled_unchanged])
+      >> simp[do_restore_def] >>
+         Cases_on `MEM v nl` >> simp[] >>
+         Cases_on `stack_get_depth (Var v)
+           (stack_push (Var v) ps.ps_stack)` >>
+         CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+         simp[do_dup_spilled_unchanged])
+  >> Cases_on `opc = INVOKE` >> simp[]
+QED
+
+Theorem emit_one_input_nonvar_spilled_unchanged[local]:
+  !opc nl op ps.
+    ~is_var_operand op ==>
+    (SND (emit_one_input opc nl op ps)).ps_spilled = ps.ps_spilled
+Proof
+  rpt gen_tac >> Cases_on `op` >>
+  simp[is_var_operand_def, emit_one_input_def, LET_THM] >>
+  Cases_on `opc = INVOKE` >> simp[]
+QED
+Theorem emit_input_plan_two_materialised:
+  !opc h h' nl ps iops ps1.
+    (!op. MEM op [h;h'] /\ is_var_operand op ==>
+          MEM op ps.ps_stack \/ op IN FDOM ps.ps_spilled) /\
+    emit_input_plan opc [h;h'] nl ps = (iops,ps1) ==>
+    pending_inventory_wf [h;h'] ps1 /\
+    (!op. LIST_ELEM_COUNT op [h;h'] <=
+          LIST_ELEM_COUNT op ps1.ps_stack)
+Proof
+  rpt gen_tac >> strip_tac >>
+  conj_tac
+  >- metis_tac[emit_input_plan_two_pending_inventory] >>
+  gen_tac >>
+  qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+  simp[emit_input_plan_two] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  `LIST_ELEM_COUNT op ps.ps_stack +
+     (if op IN FDOM ps.ps_spilled then 1 else 0) <=
+   LIST_ELEM_COUNT op ps1'.ps_stack +
+     (if op IN FDOM ps1'.ps_spilled then 1 else 0)` by
+    (qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`, `op`] mp_tac
+       emit_one_input_inventory_mono_aux >> simp[]) >>
+  `LIST_ELEM_COUNT op ps1'.ps_stack +
+     (if op IN FDOM ps1'.ps_spilled then 1 else 0) <=
+   LIST_ELEM_COUNT op ps1.ps_stack +
+     (if op IN FDOM ps1.ps_spilled then 1 else 0)` by
+    (qspecl_then [`opc`, `nl`, `h'`, `ps1'`, `op`] mp_tac
+       emit_one_input_inventory_mono_aux >> simp[]) >>
+  `is_var_operand h ==>
+   1 <= LIST_ELEM_COUNT h ps.ps_stack +
+        (if h IN FDOM ps.ps_spilled then 1 else 0)` by
+    (strip_tac >> irule covered_operand_inventory >>
+     qpat_assum `!x. _` (qspec_then `h` mp_tac) >> simp[]) >>
+  `is_var_operand h' ==>
+   1 <= LIST_ELEM_COUNT h' ps.ps_stack +
+        (if h' IN FDOM ps.ps_spilled then 1 else 0)` by
+    (strip_tac >> irule covered_operand_inventory >>
+     qpat_assum `!x. _` (qspec_then `h'` mp_tac) >> simp[]) >>
+  `(~is_var_operand h \/ h = h') ==>
+   LIST_ELEM_COUNT h ps.ps_stack +
+     (if h IN FDOM ps.ps_spilled then 1 else 0) + 1 <=
+   LIST_ELEM_COUNT h ps1'.ps_stack +
+     (if h IN FDOM ps1'.ps_spilled then 1 else 0)` by
+    (strip_tac >>
+     qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`] mp_tac
+       emit_one_input_inventory_inc >> simp[] >>
+     Cases_on `h` >>
+     gvs[is_var_operand_def, operand_vars_def, operand_var_def]) >>
+  `~is_var_operand h' ==>
+   LIST_ELEM_COUNT h' ps1'.ps_stack +
+     (if h' IN FDOM ps1'.ps_spilled then 1 else 0) + 1 <=
+   LIST_ELEM_COUNT h' ps1.ps_stack +
+     (if h' IN FDOM ps1.ps_spilled then 1 else 0)` by
+    (strip_tac >>
+     qspecl_then [`opc`, `nl`, `h'`, `ps1'`] mp_tac
+       emit_one_input_inventory_inc >> simp[]) >>
+  `is_var_operand h ==> h NOTIN FDOM ps1'.ps_spilled` by
+    (strip_tac >>
+     qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`]
+       mp_tac emit_one_input_var_not_spilled >> gvs[]) >>
+  `h NOTIN FDOM ps1'.ps_spilled ==>
+   h NOTIN FDOM ps1.ps_spilled` by
+    (qspecl_then [`opc`, `nl`, `h'`, `ps1'`, `h`]
+       mp_tac emit_one_input_preserves_not_spilled >> gvs[]) >>
+  `is_var_operand h' ==> h' NOTIN FDOM ps1.ps_spilled` by
+    (strip_tac >>
+     qspecl_then [`opc`, `nl`, `h'`, `ps1'`]
+       mp_tac emit_one_input_var_not_spilled >> gvs[]) >>
+  qabbrev_tac `A = LIST_ELEM_COUNT op ps.ps_stack +
+    (if op IN FDOM ps.ps_spilled then 1 else 0)` >>
+  `~is_var_operand h ==> ps1'.ps_spilled = ps.ps_spilled` by
+    (strip_tac >>
+     qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`]
+       mp_tac emit_one_input_nonvar_spilled_unchanged >> gvs[]) >>
+  `~is_var_operand h' ==> ps1.ps_spilled = ps1'.ps_spilled` by
+    (strip_tac >>
+     qspecl_then [`opc`, `nl`, `h'`, `ps1'`]
+       mp_tac emit_one_input_nonvar_spilled_unchanged >> gvs[]) >>
+  qabbrev_tac `B = LIST_ELEM_COUNT op ps1'.ps_stack +
+    (if op IN FDOM ps1'.ps_spilled then 1 else 0)` >>
+  qabbrev_tac `C = LIST_ELEM_COUNT op ps1.ps_stack +
+    (if op IN FDOM ps1.ps_spilled then 1 else 0)` >>
+  Cases_on `op = h` >> Cases_on `op = h'` >>
+  gvs[LIST_ELEM_COUNT_THM] >>
+  Cases_on `is_var_operand h` >> Cases_on `is_var_operand h'` >>
+  gvs[Abbr `A`, Abbr `B`, Abbr `C`] >>
+  Cases_on `h IN FDOM ps.ps_spilled` >>
+  Cases_on `h' IN FDOM ps.ps_spilled` >>
+  Cases_on `h IN FDOM ps1'.ps_spilled` >>
+  Cases_on `h' IN FDOM ps1'.ps_spilled` >>
+  Cases_on `h IN FDOM ps1.ps_spilled` >>
+  Cases_on `h' IN FDOM ps1.ps_spilled` >>
+  gvs[] >> decide_tac
+QED
+
 
 Theorem elem_count_from_append[local]:
   !(full : 'a list) prefix suffix.

@@ -3410,6 +3410,37 @@ Proof
   Cases_on `op = Var "y"` >> gvs[]
 QED
 
+
+Theorem bump_emit_input_plan_materialised[local]:
+  generated_plan_state_wf spill_base ps /\
+  (!op. MEM op [h;h'] /\ is_var_operand op ==>
+    (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+    IS_SOME (FLOOKUP ps.ps_spilled op)) /\
+  emit_input_plan BUMP [h;h'] nl ps = (iops,ps1) ==>
+  pending_inventory_wf [h;h'] ps1 /\
+  (!op. LIST_ELEM_COUNT op [h;h'] <=
+        LIST_ELEM_COUNT op ps1.ps_stack)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qspecl_then [`BUMP`, `h`, `h'`, `nl`, `ps`, `iops`, `ps1`] mp_tac
+    emit_input_plan_two_materialised >>
+  impl_tac
+  >- (conj_tac
+      >- (gen_tac >> strip_tac >>
+          `(?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+           IS_SOME (FLOOKUP ps.ps_spilled op)` by
+            (qpat_assum `!x. MEM x [h; h'] /\ is_var_operand x ==> _`
+               (qspec_then `op` mp_tac) >> simp[]) >>
+          pop_assum strip_assume_tac
+          >- (disj1_tac >> drule stack_get_depth_props >> strip_tac >>
+              qpat_x_assum `stack_peek d ps.ps_stack = op`
+                (fn th => rewrite_tac[GSYM th]) >>
+              rewrite_tac[stack_peek_def] >> match_mp_tac EL_MEM >> decide_tac)
+          >> disj2_tac >> Cases_on `FLOOKUP ps.ps_spilled op` >>
+             gvs[finite_mapTheory.flookup_thm])
+      >> first_assum ACCEPT_TAC)
+  >> simp[]
+QED
 Theorem bump_emit_input_plan_residual_wf[local]:
   generated_plan_state_wf spill_base ps /\
   emit_input_plan BUMP [h;h'] nl ps = (iops,ps1) /\
