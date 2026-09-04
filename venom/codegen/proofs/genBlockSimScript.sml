@@ -2738,6 +2738,13 @@ Theorem gen_inst_ok_sim:
     LENGTH (compute_operands inst) <=
       LENGTH (SND (emit_input_plan inst.inst_opcode
         (compute_operands inst) next_liveness ps)).ps_stack /\
+    (* BUMP variable inputs must be owned by the planner: each is either
+       shallow enough to duplicate or available from the spill map.
+       generated_plan_state_wf is structural and does not imply ownership. *)
+    (inst.inst_opcode = BUMP ==>
+      !op. MEM op (compute_operands inst) /\ is_var_operand op ==>
+        (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+        IS_SOME (FLOOKUP ps.ps_spilled op)) /\
     (* Label resolution: all label operands in label_offsets.
        Pipeline obligation from compute_label_offsets over full program. *)
     (!l. MEM (Label l) (compute_operands inst) ==>
@@ -3439,6 +3446,17 @@ Resume gen_inst_ok_sim[bump]:
   rpt (pairarg_tac >> gvs[]) >>
   `compute_operands inst = [h;h']` by
     simp[compute_operands_def] >>
+  `(is_var_operand h ==>
+      (?d. stack_get_depth h ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled h)) /\
+   (is_var_operand h' ==>
+      (?d. stack_get_depth h' ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled h'))` by
+    (conj_tac
+     >- (qpat_assum `!op. MEM op (compute_operands inst) /\ is_var_operand op ==> _`
+           (qspec_then `h` mp_tac) >> simp[])
+     >> qpat_assum `!op. MEM op (compute_operands inst) /\ is_var_operand op ==> _`
+          (qspec_then `h'` mp_tac) >> simp[]) >>
   `prefix_wf lo (LENGTH ps.ps_stack) input_ops /\
    prefix_end_len lo (LENGTH ps.ps_stack) input_ops = LENGTH ps1.ps_stack /\
    prefix_wf lo (LENGTH ps1.ps_stack) reorder_ops /\
