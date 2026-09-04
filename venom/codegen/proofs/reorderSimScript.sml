@@ -51,6 +51,25 @@ Proof
   qpat_assum `!i. _` (qspec_then `x` mp_tac) >> simp[]
 QED
 
+Theorem plan_stack_rel_sem_eq:
+  plan_stack_rel lo vs s1 astk /\
+  plan_stack_sem_eq lo vs s1 s2 ==>
+  plan_stack_rel lo vs s2 astk
+Proof
+  rw[plan_stack_rel_def, plan_stack_sem_eq_def] >>
+  qpat_assum `!j. j < LENGTH s1 ==>
+    operand_val vs lo (EL j s1) = operand_val vs lo (EL j s2)`
+    (qspec_then `PRE (LENGTH s2 - i)` mp_tac) >>
+  (impl_tac >- decide_tac) >>
+  strip_tac >>
+  qpat_assum `!j. j < LENGTH s1 ==>
+    operand_val vs lo (EL j (REVERSE s1)) = SOME (EL j astk)`
+    (qspec_then `i` mp_tac) >>
+  (impl_tac >- decide_tac) >>
+  strip_tac >>
+  gvs[EL_REVERSE]
+QED
+
 Theorem plan_stack_sem_eq_lastn:
   !lo vs s1 s2 n.
     plan_stack_sem_eq lo vs s1 s2 ==>
