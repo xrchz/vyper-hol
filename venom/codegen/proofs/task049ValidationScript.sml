@@ -2,7 +2,7 @@
 
 Theory task049Validation
 Ancestors
-  planExec asmSem
+  planExec asmSem venomWf
 Libs
   BasicProvers wordsLib
 
@@ -15,6 +15,12 @@ Definition task049_bump_plan_state_def:
   task049_bump_plan_state sz =
     (init_plan_state 0) with ps_stack := [Lit 0w; Lit sz]
 End
+
+Theorem task049_duplicate_bump_inst_wf:
+  inst_wf (mk_inst 49 BUMP [Lit 0w; Lit 1w] ["x"; "x"])
+Proof
+  simp[inst_wf_def, venomInstTheory.mk_inst_def]
+QED
 
 Theorem task049_bump_source_traces:
   step_inst_base (task049_bump_inst 0w) (init_venom_state "entry") =
