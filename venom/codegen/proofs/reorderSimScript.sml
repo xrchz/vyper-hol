@@ -697,6 +697,60 @@ Proof
   simp[]
 QED
 
+Theorem reduce_depth_plan_pending_inventory_mono[local]:
+  !fuel pending target_op f ps ops ps' base x.
+    residual_budget_wf base pending ps /\ MEM x pending /\
+    reduce_depth_plan fuel pending target_op f (LENGTH pending) ps =
+      (ops,ps') ==>
+    LIST_ELEM_COUNT x ps.ps_stack +
+      (if x IN FDOM ps.ps_spilled then 1 else 0) <=
+    LIST_ELEM_COUNT x ps'.ps_stack +
+      (if x IN FDOM ps'.ps_spilled then 1 else 0)
+Proof
+  Induct >> simp[reduce_depth_plan_def, LET_THM] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `stack_get_unfixed_depth target_op f (LENGTH pending)
+              ps.ps_stack` >> gvs[] >>
+  Cases_on `f + 1 < LENGTH pending` >> gvs[] >>
+  Cases_on `x' <= 16` >> gvs[] >>
+  Cases_on `select_spill_candidate ps.ps_stack pending x'
+              (LENGTH pending)` >> gvs[] >>
+  pairarg_tac >> gvs[] >>
+  rename1 `do_spill_at cand ps = (spill_ops,ps1)` >>
+  `1 <= LENGTH ps.ps_stack` by
+    (drule stack_get_unfixed_depth_bound >> simp[]) >>
+  `cand <= 16 /\ cand < LENGTH ps.ps_stack` by
+    metis_tac[select_spill_candidate_bound] >>
+  `~MEM (stack_peek cand ps.ps_stack) pending` by
+    metis_tac[select_spill_candidate_not_pending] >>
+  `stack_peek cand ps.ps_stack NOTIN FDOM ps.ps_spilled` by
+    (strip_tac >> fs[residual_budget_wf_def] >>
+     qpat_assum `!op. op IN FDOM ps.ps_spilled ==> _`
+       (qspec_then `stack_peek cand ps.ps_stack` (drule_then assume_tac)) >>
+     `MEM (stack_peek cand ps.ps_stack) ps.ps_stack` by
+       (rewrite_tac[stack_peek_def] >> match_mp_tac EL_MEM >> decide_tac) >>
+     fs[GSYM LIST_ELEM_COUNT_MEM]) >>
+  `spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled` by
+    fs[residual_budget_wf_def] >>
+  `!y. LIST_ELEM_COUNT y ps1.ps_stack +
+       (if y IN FDOM ps1.ps_spilled then 1 else 0) =
+       LIST_ELEM_COUNT y ps.ps_stack +
+       (if y IN FDOM ps.ps_spilled then 1 else 0)` by
+    (qspecl_then [`cand`, `ps`, `spill_ops`, `ps1`] mp_tac
+       do_spill_at_inventory_count >>
+     ASM_REWRITE_TAC[]) >>
+  `residual_budget_wf base' pending ps1` by
+    metis_tac[residual_budget_wf_do_spill_at] >>
+  Cases_on `reduce_depth_plan fuel pending target_op f
+              (LENGTH pending) ps1` >> gvs[] >>
+  first_x_assum
+    (qspecl_then [`pending`, `target_op`, `f`, `ps1`, `q`, `ps'`,
+                  `base'`, `x`] mp_tac) >>
+  simp[] >>
+  qpat_assum `!y. _` (qspec_then `x` assume_tac) >>
+  decide_tac
+QED
+
 
 Theorem residual_budget_wf_dup[local]:
   !base pending op dist ps ops ps'.
