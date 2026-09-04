@@ -3910,7 +3910,6 @@ Theorem do_swap_venom_asm_rel:
        spill_alloc_wf ps.ps_alloc ps.ps_spilled /\
        ps.ps_alloc.sa_next_offset + 32 * (dist + 1) < dimword(:256) /\
        ps.ps_alloc.sa_free_slots = [] /\
-       ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
        DISJOINT (set (top_n (dist + 1) ps.ps_stack))
                 (FDOM ps.ps_spilled)) /\
     venom_asm_rel lo ps vs st /\
