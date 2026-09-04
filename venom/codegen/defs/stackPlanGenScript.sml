@@ -48,12 +48,57 @@ Definition emit_one_input_def:
 End
 
 Definition emit_input_plan_def:
-  emit_input_plan opc ops next_liveness ps =
-    FOLDL (λ(acc_ops, ps) op.
-      let (step_ops, ps') = emit_one_input opc next_liveness op ps in
-      (acc_ops ++ step_ops, ps'))
-    ([] : stack_op list, ps) ops
+  emit_input_plan opc [] next_liveness ps = ([] : stack_op list, ps) /\
+  emit_input_plan opc (op :: rest) next_liveness ps =
+    let (step_ops, ps1) =
+      emit_one_input opc (operand_vars rest ++ next_liveness) op ps in
+    let (rest_ops, ps2) = emit_input_plan opc rest next_liveness ps1 in
+      (step_ops ++ rest_ops, ps2)
 End
+
+Theorem emit_input_plan_nil[simp]:
+  !opc next_liveness ps.
+    emit_input_plan opc [] next_liveness ps = ([], ps)
+Proof
+  simp[emit_input_plan_def]
+QED
+
+Theorem emit_input_plan_cons:
+  !opc op rest next_liveness ps.
+    emit_input_plan opc (op :: rest) next_liveness ps =
+      let (step_ops, ps1) =
+        emit_one_input opc (operand_vars rest ++ next_liveness) op ps in
+      let (rest_ops, ps2) = emit_input_plan opc rest next_liveness ps1 in
+        (step_ops ++ rest_ops, ps2)
+Proof
+  simp[emit_input_plan_def]
+QED
+
+Theorem emit_input_plan_one:
+  !opc op next_liveness ps.
+    emit_input_plan opc [op] next_liveness ps =
+      emit_one_input opc next_liveness op ps
+Proof
+  rpt gen_tac >>
+  simp[emit_input_plan_def, venomInstTheory.operand_vars_def,
+       dfgDefsTheory.operand_vars_def] >>
+  Cases_on `emit_one_input opc next_liveness op ps` >> simp[]
+QED
+
+Theorem emit_input_plan_two:
+  !opc op1 op2 next_liveness ps.
+    emit_input_plan opc [op1; op2] next_liveness ps =
+      let (ops1, ps1) =
+        emit_one_input opc (operand_vars [op2] ++ next_liveness) op1 ps in
+      let (ops2, ps2) = emit_one_input opc next_liveness op2 ps1 in
+        (ops1 ++ ops2, ps2)
+Proof
+  rpt gen_tac >>
+  simp[emit_input_plan_def] >>
+  Cases_on `emit_one_input opc (operand_vars [op2] ++ next_liveness) op1 ps` >>
+  Cases_on `emit_one_input opc next_liveness op2 r` >>
+  simp[venomInstTheory.operand_vars_def, dfgDefsTheory.operand_vars_def]
+QED
 
 (* =========================================================================
    Optimistic Swap
