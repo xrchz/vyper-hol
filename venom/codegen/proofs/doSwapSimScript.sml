@@ -1917,6 +1917,59 @@ Proof
   gvs[Abbr `alloc1`, Abbr `offsets`]
 QED
 
+(* Operands are infinite because variables contain strings of arbitrary length. *)
+Theorem operand_univ_infinite[local]:
+  INFINITE (UNIV:operand set)
+Proof
+  `INFINITE (IMAGE (\n:num. Var (REPLICATE n #"x")) UNIV)` by
+    (irule IMAGE_11_INFINITE >> simp[] >>
+     rpt strip_tac >>
+     pop_assum (mp_tac o AP_TERM ``LENGTH:string -> num``) >> simp[]) >>
+  irule INFINITE_SUBSET >>
+  qexists_tac `IMAGE (\n:num. Var (REPLICATE n #"x")) UNIV` >>
+  simp[]
+QED
+
+(* An operand list of any finite length can be chosen fresh from a finite map. *)
+Theorem fresh_operand_list[local]:
+  !n (s:operand set).
+    FINITE s ==>
+    ?keys. LENGTH keys = n /\ ALL_DISTINCT keys /\ DISJOINT (set keys) s
+Proof
+  Induct
+  >- simp[] >>
+  rpt gen_tac >> strip_tac >>
+  first_x_assum drule >>
+  disch_then (qx_choose_then `keys` strip_assume_tac) >>
+  `?x:operand. x IN UNIV /\ x NOTIN (s UNION set keys)` by
+    (irule IN_INFINITE_NOT_FINITE >> simp[operand_univ_infinite]) >>
+  qexists_tac `x::keys` >>
+  simp[DISJOINT_INSERT'] >>
+  fs[DISJOINT_DEF, EXTENSION] >> metis_tac[]
+QED
+
+(* Allocating one temporary slot per list occurrence and freeing exactly the
+   returned offsets restores durable layout, independently of item values. *)
+Theorem spill_alloc_n_free_layout_wf_arbitrary:
+  !al spilled items.
+    spill_alloc_layout_wf al spilled ==>
+    let res = spill_alloc_n [] al items;
+        offsets = FST res;
+        alloc2 = FOLDL (\a off. free_spill_slot off a) (SND res) offsets
+    in spill_alloc_layout_wf alloc2 spilled
+Proof
+  rpt gen_tac >> strip_tac >>
+  `?keys:operand list.
+      LENGTH keys = LENGTH items /\ ALL_DISTINCT keys /\
+      DISJOINT (set keys) (FDOM spilled)` by
+    (irule fresh_operand_list >> simp[]) >>
+  `spill_alloc_n [] al keys = spill_alloc_n [] al items` by
+    metis_tac[spill_alloc_n_length_cong] >>
+  qspecl_then [`al`, `spilled`, `keys`] mp_tac
+    spill_alloc_n_free_layout_wf >>
+  simp[]
+QED
+
 
 
 (* A valid stack swap is a transposition of two in-range positions. *)
