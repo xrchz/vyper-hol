@@ -2040,21 +2040,6 @@ QED
 (* A successful reorder step places its requested operand at its indexed
    target depth in the formal planner stack. *)
 
-(* Projecting the state component from a pair equality is kept separate from
-   reorder control flow so the boundary proof need not simplify large terms. *)
-Theorem pair_state_projection[local]:
-  !(a : stack_op list) b (s : plan_state) s'.
-    (a,s) = (b,s') ==> s' = s
-Proof
-  simp[]
-QED
-
-Theorem equality_reversed[local]:
-  !(x : plan_state) y. x = y ==> y = x
-Proof
-  simp[]
-QED
-
 (* State-only normalization of the already-available reorder path.  Consumers
    need not unfold the nested option and pair control flow of reorder_one. *)
 Theorem reorder_one_existing_state[local]:
@@ -2102,6 +2087,49 @@ Proof
     mp_tac (AP_TERM ``SND : stack_op list # plan_state -> plan_state`` th)) >>
   pure_rewrite_tac[pairTheory.SND] >>
   disch_tac >> sym_tac >> first_assum ACCEPT_TAC
+QED
+
+
+Theorem reorder_one_preserves_fixed:
+  !dfg target_ops idx op ps ops ps' i d.
+    idx < LENGTH target_ops /\ i < idx /\
+    LENGTH target_ops <= LENGTH ps.ps_stack /\ LENGTH target_ops <= 16 /\
+    stack_get_unfixed_depth op (LENGTH target_ops - 1 - idx)
+      (LENGTH target_ops) ps.ps_stack = SOME d /\
+    reorder_one dfg target_ops idx op ps = (ops,ps') ==>
+    stack_peek (LENGTH target_ops - 1 - i) ps'.ps_stack =
+    stack_peek (LENGTH target_ops - 1 - i) ps.ps_stack
+Proof
+  rpt gen_tac >> strip_tac >>
+  `idx <> 0` by decide_tac >>
+  `LENGTH target_ops - 1 - idx < LENGTH target_ops - 1 - i /\
+   LENGTH target_ops - 1 - i < LENGTH target_ops /\
+   LENGTH target_ops - 1 - idx < LENGTH ps.ps_stack /\
+   LENGTH target_ops - 1 - i < LENGTH ps.ps_stack` by decide_tac >>
+  `d < LENGTH ps.ps_stack /\ stack_peek d ps.ps_stack = op /\
+   ~(LENGTH target_ops - 1 - idx < d /\ d < LENGTH target_ops)` by
+    metis_tac[stack_get_unfixed_depth_props] >>
+  `reduce_depth_plan (LENGTH ps.ps_stack) target_ops op
+      (LENGTH target_ops - 1 - idx) (LENGTH target_ops) ps = ([],ps)` by
+    (Cases_on `LENGTH ps.ps_stack` >> simp[reduce_depth_plan_def] >> decide_tac) >>
+  `ps' = SND
+      (if d = LENGTH target_ops - 1 - idx then ([] : stack_op list,ps)
+       else
+         let at_target = stack_peek (LENGTH target_ops - 1 - idx) ps.ps_stack in
+         if operand_equiv dfg op at_target then
+           ([],ps with ps_stack :=
+             stack_poke (LENGTH target_ops - 1 - idx) op
+               (stack_poke d at_target ps.ps_stack))
+         else
+           let (s1,ps1) = do_swap d ps in
+           let (s2,ps2) = do_swap (LENGTH target_ops - 1 - idx) ps1 in
+           (s1 ++ s2,ps2))` by
+    metis_tac[reorder_one_existing_state] >>
+  qspecl_then [`dfg`, `op`, `d`, `LENGTH target_ops - 1 - idx`,
+    `LENGTH target_ops - 1 - i`, `LENGTH target_ops`, `ps`]
+    mp_tac reorder_place_phase_preserves_fixed >>
+  simp[LET_THM] >>
+  pairarg_tac >> simp[]
 QED
 
 Theorem reorder_one_places:
