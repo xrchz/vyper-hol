@@ -491,7 +491,7 @@ QED
    dist <= 16 case: use simple_prefix_venom_asm_rel + do_swap_align
    ========================================================================= *)
 
-Theorem do_swap_venom_asm_rel_small[local]:
+Theorem do_swap_venom_asm_rel_small:
   !dist ps ops ps' lo o2pc prog vs st.
     do_swap dist ps = (ops, ps') /\
     dist <= 16 /\

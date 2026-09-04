@@ -248,7 +248,7 @@ Resume pop_one_step_sim[distN]:
   SUBGOAL_THEN ``~(dist > (16:num))`` STRIP_ASSUME_TAC
   THENL [decide_tac, ALL_TAC] >>
   qspecl_then [`dist`, `ps`, `swap_ops`, `ps2`, `lo`, `o2pc`, `prog`,
-               `vs`, `st`] mp_tac do_swap_venom_asm_rel >>
+               `vs`, `st`] mp_tac do_swap_venom_asm_rel_small >>
   (impl_tac THENL [simp[], ALL_TAC]) >> strip_tac >>
   rename1 `asm_steps _ _ _ _ st = AsmOK st2` >>
   (* SOPop 1 *)
