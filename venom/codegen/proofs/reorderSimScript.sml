@@ -138,6 +138,13 @@ Definition residual_budget_wf_def:
           LIST_ELEM_COUNT op ps.ps_stack <= LIST_ELEM_COUNT op pending)
 End
 
+Definition pending_inventory_wf_def:
+  pending_inventory_wf pending (ps : plan_state) <=>
+    !op. LIST_ELEM_COUNT op pending <=
+      LIST_ELEM_COUNT op ps.ps_stack +
+      (if op IN FDOM ps.ps_spilled then 1 else 0)
+End
+
 Theorem all_distinct_elem_count_le_one[local]:
   !(xs : 'a list) x.
     ALL_DISTINCT xs ==> LIST_ELEM_COUNT x xs <= 1
@@ -250,6 +257,129 @@ Proof
   gen_tac >> Induct >> simp[LIST_ELEM_COUNT_THM]
 QED
 
+Theorem elem_count_take_el_lt[local]:
+  !(xs : operand list) n.
+    n < LENGTH xs ==>
+    LIST_ELEM_COUNT (EL n xs) (TAKE n xs) <
+      LIST_ELEM_COUNT (EL n xs) xs
+Proof
+  rpt strip_tac >> drule TAKE_DROP_SUC >>
+  disch_then (fn th => mp_tac
+    (AP_TERM ``LIST_ELEM_COUNT (EL n xs) : operand list -> num`` th)) >>
+  simp[elem_count_append, LIST_ELEM_COUNT_THM] >> decide_tac
+QED
+
+Theorem fixed_window_segment[local]:
+  !(pending : operand list) fixed stack.
+    LENGTH pending <= LENGTH stack /\ fixed <= LENGTH pending /\
+    (!i. i < fixed ==>
+      stack_peek (LENGTH pending - 1 - i) stack = EL i pending) ==>
+    TAKE fixed (DROP (LENGTH stack - LENGTH pending) stack) =
+      TAKE fixed pending
+Proof
+  rpt gen_tac >> strip_tac >> irule LIST_EQ >>
+  simp[LENGTH_TAKE, LENGTH_DROP] >> rpt strip_tac >>
+  first_x_assum (qspec_then `x` mp_tac) >>
+  simp[stack_peek_def, EL_TAKE, EL_DROP] >>
+  AP_TERM_TAC >> decide_tac
+QED
+
+
+Theorem fixed_window_count_bound[local]:
+  !(pending : operand list) fixed stack op.
+    LENGTH pending <= LENGTH stack /\ fixed <= LENGTH pending /\
+    (!i. i < fixed ==>
+      stack_peek (LENGTH pending - 1 - i) stack = EL i pending) /\
+    stack_get_unfixed_depth op (LENGTH pending - 1 - fixed)
+      (LENGTH pending) stack = NONE ==>
+    LIST_ELEM_COUNT op stack <= LIST_ELEM_COUNT op (TAKE fixed pending)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `stack_get_unfixed_depth _ _ _ _ = NONE` mp_tac >>
+  simp[stack_get_unfixed_depth_NONE] >> strip_tac >>
+  qabbrev_tac `off = LENGTH stack - LENGTH pending` >>
+  `TAKE fixed (DROP off stack) = TAKE fixed pending` by
+    (unabbrev_all_tac >> irule fixed_window_segment >> simp[]) >>
+  `stack = TAKE off stack ++ TAKE fixed (DROP off stack) ++
+           DROP (off + fixed) stack` by
+    (`TAKE fixed (DROP off stack) ++ DROP (off + fixed) stack =
+       DROP off stack` by
+       MATCH_ACCEPT_TAC
+         (ONCE_REWRITE_RULE [Q.SPECL [`fixed`, `off`] ADD_COMM]
+            (REWRITE_RULE [DROP_DROP_T]
+              (Q.SPECL [`fixed`, `DROP off stack`] TAKE_DROP))) >>
+     once_rewrite_tac[GSYM APPEND_ASSOC] >>
+     qpat_assum
+       `TAKE fixed (DROP off stack) ++ DROP (off + fixed) stack =
+          DROP off stack`
+       (fn th => once_rewrite_tac[th]) >>
+     MATCH_ACCEPT_TAC (SYM (Q.SPECL [`off`, `stack`] TAKE_DROP))) >>
+  `~MEM op (TAKE off stack)` by
+    (simp[MEM_EL] >> rpt strip_tac >>
+     first_x_assum (qspec_then `LENGTH stack - 1 - n` mp_tac) >>
+     simp[stack_peek_def] >>
+     `n < LENGTH stack` by
+       (qpat_assum `stack = _`
+          (fn th => mp_tac (AP_TERM ``LENGTH : operand list -> num`` th)) >>
+        simp[] >> decide_tac) >>
+     `LENGTH stack - 1 - (LENGTH stack - 1 - n) = n` by decide_tac >>
+     `off <= LENGTH stack` by (unabbrev_all_tac >> decide_tac) >>
+     `n < off` by fs[LENGTH_TAKE] >>
+     `LENGTH pending <= LENGTH stack - 1 - n` by
+       (unabbrev_all_tac >> decide_tac) >>
+     simp[EL_TAKE] >> decide_tac) >>
+  `~MEM op (DROP (off + fixed) stack)` by
+    (simp[MEM_EL] >> rpt strip_tac >>
+     first_x_assum
+       (qspec_then `LENGTH stack - 1 - (off + fixed + n)` mp_tac) >>
+     simp[stack_peek_def, EL_DROP] >>
+     `LENGTH stack - 1 - (LENGTH stack - 1 - (off + fixed + n)) =
+        off + fixed + n` by decide_tac >>
+     `LENGTH stack - 1 - (off + fixed + n) <=
+        LENGTH pending - 1 - fixed` by
+       (unabbrev_all_tac >> decide_tac) >>
+     simp[] >> unabbrev_all_tac >> decide_tac) >>
+  `LIST_ELEM_COUNT op (TAKE off stack) = 0 /\
+   LIST_ELEM_COUNT op (DROP (off + fixed) stack) = 0` by
+    fs[GSYM LIST_ELEM_COUNT_MEM] >>
+  qpat_x_assum `stack = _`
+    (fn th => mp_tac
+      (AP_TERM ``LIST_ELEM_COUNT op : operand list -> num`` th)) >>
+  simp[elem_count_append] >> decide_tac
+QED
+
+Theorem pending_inventory_wf_next_available:
+  !base pending fixed ps.
+    pending_inventory_wf pending ps /\
+    plan_state_residual_wf base pending fixed ps /\
+    fixed < LENGTH pending ==>
+      (?d. stack_get_unfixed_depth (EL fixed pending)
+             (LENGTH pending - 1 - fixed) (LENGTH pending)
+             ps.ps_stack = SOME d) \/
+      (stack_get_unfixed_depth (EL fixed pending)
+         (LENGTH pending - 1 - fixed) (LENGTH pending)
+         ps.ps_stack = NONE /\
+       IS_SOME (FLOOKUP ps.ps_spilled (EL fixed pending)))
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `stack_get_unfixed_depth (EL fixed pending)
+    (LENGTH pending - 1 - fixed) (LENGTH pending) ps.ps_stack` >>
+  simp[FLOOKUP_DEF] >>
+  Cases_on `EL fixed pending IN FDOM ps.ps_spilled` >> simp[] >>
+  fs[pending_inventory_wf_def] >>
+  qpat_assum `!op. _`
+    (qspec_then `EL fixed pending` assume_tac) >>
+  fs[plan_state_residual_wf_def] >>
+  `LIST_ELEM_COUNT (EL fixed pending) ps.ps_stack <=
+     LIST_ELEM_COUNT (EL fixed pending) (TAKE fixed pending)` by
+    (irule fixed_window_count_bound >> simp[]) >>
+  qpat_assum `EL fixed pending NOTIN FDOM ps.ps_spilled`
+    (fn th => fs[th]) >>
+  `LIST_ELEM_COUNT (EL fixed pending) pending <=
+     LIST_ELEM_COUNT (EL fixed pending) ps.ps_stack` by
+    first_assum ACCEPT_TAC >>
+  drule_then assume_tac elem_count_take_el_lt >> decide_tac
+QED
 Theorem residual_budget_wf_extend_pending[local]:
   !base pending op ps.
     residual_budget_wf base pending ps ==>
