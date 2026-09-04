@@ -426,14 +426,11 @@ Proof
   )
 QED
 
-(* Relational boundary for the fixed two-output BUMP encoding. *)
-Theorem bump_emit_sim:
-  !lo o2pc prog initial_fmp ps vs as stk base_op size_op
-   ptr_out next_out base_val sz.
+(* Semantic relational boundary for the fixed two-output BUMP encoding. *)
+Theorem bump_emit_sim_from_stack:
+  !lo o2pc prog initial_fmp ps vs as rest ptr_out next_out base_val sz.
     venom_asm_rel lo ps vs as /\
-    ps.ps_stack = stk ++ [base_op; size_op] /\
-    operand_val vs lo base_op = SOME base_val /\
-    operand_val vs lo size_op = SOME sz /\
+    as.as_stack = sz :: base_val :: rest /\
     ptr_out <> next_out /\
     EVERY (\op. case op of Var x => x <> ptr_out /\ x <> next_out | _ => T)
       ps.ps_stack /\
@@ -451,14 +448,6 @@ Theorem bump_emit_sim:
       as'.as_pc = as.as_pc + 8
 Proof
   rpt gen_tac >> strip_tac >>
-  `?rest. as.as_stack = sz :: base_val :: rest` by
-    (`?v1 v2 rest.
-        as.as_stack = v1 :: v2 :: rest /\
-        operand_val vs lo size_op = SOME v1 /\
-        operand_val vs lo base_op = SOME v2` by
-       (irule asm_stack_top2_from_plan >>
-        fs[venom_asm_rel_def] >> metis_tac[]) >>
-     gvs[]) >>
   qexists_tac
     `as with <| as_stack :=
        base_val + bump_round_word sz :: base_val :: rest;
@@ -469,7 +458,9 @@ Proof
   >- (`plan_stack_rel lo vs (stack_pop 2 ps.ps_stack) rest` by
         (qspecl_then [`lo`, `vs`, `ps.ps_stack`, `as.as_stack`, `2`]
            mp_tac plan_stack_rel_pop >>
-         impl_tac >- (fs[venom_asm_rel_def] >> simp[]) >>
+         impl_tac
+         >- (fs[venom_asm_rel_def] >>
+             imp_res_tac plan_stack_rel_length >> simp[]) >>
          simp[stack_pop_def]) >>
       `plan_stack_rel lo (update_var ptr_out base_val vs)
          (stack_pop 2 ps.ps_stack) rest` by
@@ -548,9 +539,46 @@ Proof
                  Cases_on `op` >> gvs[])) >>
          simp[]) >>
       simp[venom_asm_rel_def, bump_round_word_correct] >>
-      conj_tac >- metis_tac[] >>
+      conj_tac >- simp[update_var_def] >>
       simp[update_var_def]) >>
   simp[]
+QED
+
+(* Syntactic planner-stack wrapper retained for existing consumers. *)
+Theorem bump_emit_sim:
+  !lo o2pc prog initial_fmp ps vs as stk base_op size_op
+   ptr_out next_out base_val sz.
+    venom_asm_rel lo ps vs as /\
+    ps.ps_stack = stk ++ [base_op; size_op] /\
+    operand_val vs lo base_op = SOME base_val /\
+    operand_val vs lo size_op = SOME sz /\
+    ptr_out <> next_out /\
+    EVERY (\op. case op of Var x => x <> ptr_out /\ x <> next_out | _ => T)
+      ps.ps_stack /\
+    (!op. op IN FDOM ps.ps_spilled ==>
+       case op of Var x => x <> ptr_out /\ x <> next_out | _ => T) /\
+    asm_block_at prog as.as_pc (execute_plan initial_fmp bump_emit_ops) ==>
+    ?as'.
+      asm_steps lo o2pc prog 8 as = AsmOK as' /\
+      venom_asm_rel lo
+        (ps with ps_stack :=
+           stack_push (Var next_out)
+             (stack_push (Var ptr_out) (stack_pop 2 ps.ps_stack)))
+        (update_var next_out (base_val + n2w (ceil32 (w2n sz)))
+          (update_var ptr_out base_val vs)) as' /\
+      as'.as_pc = as.as_pc + 8
+Proof
+  rpt gen_tac >> strip_tac >>
+  `?rest. as.as_stack = sz :: base_val :: rest` by
+    (`?v1 v2 rest.
+        as.as_stack = v1 :: v2 :: rest /\
+        operand_val vs lo size_op = SOME v1 /\
+        operand_val vs lo base_op = SOME v2` by
+       (irule asm_stack_top2_from_plan >>
+        fs[venom_asm_rel_def] >> metis_tac[]) >>
+     gvs[]) >>
+  irule bump_emit_sim_from_stack >>
+  simp[] >> qexists_tac `initial_fmp` >> simp[]
 QED
 
 (* =========================================================================
