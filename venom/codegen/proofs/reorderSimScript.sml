@@ -380,6 +380,22 @@ Proof
     first_assum ACCEPT_TAC >>
   drule_then assume_tac elem_count_take_el_lt >> decide_tac
 QED
+
+Theorem residual_budget_does_not_imply_pending_inventory[local]:
+  let ps = (init_plan_state 0) with
+             ps_stack := [Var "core_a"; Var "core_b"] in
+    plan_state_residual_wf 0 [Var "need_x"; Var "need_y"] 0 ps /\
+    2 <= LENGTH ps.ps_stack /\
+    ~pending_inventory_wf [Var "need_x"; Var "need_y"] ps /\
+    stack_get_unfixed_depth (Var "need_x") 1 2 ps.ps_stack = NONE /\
+    ~IS_SOME (FLOOKUP ps.ps_spilled (Var "need_x"))
+Proof
+  EVAL_TAC >> conj_tac
+  >- (simp[] >> gen_tac >> Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
+      rpt IF_CASES_TAC >> gvs[]) 
+  >> strip_tac >>
+     first_x_assum (qspec_then `Var "need_x"` mp_tac) >> EVAL_TAC
+QED
 Theorem residual_budget_wf_extend_pending[local]:
   !base pending op ps.
     residual_budget_wf base pending ps ==>
