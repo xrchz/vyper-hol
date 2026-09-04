@@ -561,48 +561,7 @@ QED
 
 Finalise emit_one_input_wf_len;
 
-(* ===== emit_input_plan: FOLDL of emit_one_input ===== *)
-
-(* Generalized FOLDL invariant for prefix_wf.
-   Proves that FOLDL of emit_one_input preserves prefix_wf+end_len. *)
-Theorem emit_input_plan_foldl_wf_len[local]:
-  !ops opc nl acc_ops ps lo n.
-    opc <> INVOKE ==>
-    (!l. MEM (Label l) ops ==> IS_SOME (FLOOKUP lo l)) ==>
-    prefix_wf lo n acc_ops ==>
-    prefix_end_len lo n acc_ops = LENGTH ps.ps_stack ==>
-    let (result_ops, ps') =
-      FOLDL (\(acc_ops, ps) op.
-        let (step_ops, ps') = emit_one_input opc nl op ps in
-          (acc_ops ++ step_ops, ps'))
-        (acc_ops, ps) ops in
-    prefix_wf lo n result_ops /\
-    prefix_end_len lo n result_ops = LENGTH ps'.ps_stack
-Proof
-  Induct >> simp[LET_THM] >>
-  rpt gen_tac >> rpt disch_tac >>
-  simp[FOLDL, LET_THM] >>
-  Cases_on `emit_one_input opc nl h ps` >> gvs[UNCURRY_DEF] >>
-  rename1 `emit_one_input _ _ h _ = (h_ops, ps1)` >>
-  (* Establish wf/len for h_ops from emit_one_input_wf_len *)
-  `prefix_wf lo (LENGTH ps.ps_stack) h_ops /\
-   prefix_end_len lo (LENGTH ps.ps_stack) h_ops = LENGTH ps1.ps_stack` by (
-    qspecl_then [`opc`, `nl`, `h`, `ps`, `lo`]
-      mp_tac (REWRITE_RULE [LET_THM] emit_one_input_wf_len) >>
-    simp[] >>
-    (impl_tac >- (rpt strip_tac >> gvs[])) >>
-    simp[]
-  ) >>
-  (* Compose: prefix_wf for acc_ops ++ h_ops *)
-  `prefix_wf lo n (acc_ops ++ h_ops) /\
-   prefix_end_len lo n (acc_ops ++ h_ops) = LENGTH ps1.ps_stack` by
-    metis_tac[prefix_wf_append, prefix_end_len_append] >>
-  (* Apply IH — simp[LET_THM] expands let in IH conclusion and resolves *)
-  first_x_assum
-    (qspecl_then [`opc`, `nl`, `acc_ops ++ h_ops`, `ps1`, `lo`, `n`]
-     mp_tac) >>
-  simp[LET_THM]
-QED
+(* ===== emit_input_plan: structural traversal of emit_one_input ===== *)
 
 Theorem emit_input_plan_wf_len:
   !operands opc next_liveness ps lo.
@@ -614,16 +573,26 @@ Theorem emit_input_plan_wf_len:
       (FST (emit_input_plan opc operands next_liveness ps)) =
       LENGTH (SND (emit_input_plan opc operands next_liveness ps)).ps_stack
 Proof
+  Induct
+  >- simp[emit_input_plan_def, prefix_wf_def, prefix_end_len_def] >>
   rpt gen_tac >> rpt disch_tac >>
-  simp[emit_input_plan_def] >>
-  Cases_on `FOLDL (\(acc_ops,ps) op.
-    (\(step_ops,ps'). (acc_ops ++ step_ops, ps'))
-      (emit_one_input opc next_liveness op ps)) ([],ps) operands` >>
-  simp[] >>
-  qspecl_then [`operands`, `opc`, `next_liveness`, `[]`,
-    `ps`, `lo`, `LENGTH ps.ps_stack`]
-    mp_tac (REWRITE_RULE [LET_THM] emit_input_plan_foldl_wf_len) >>
-  simp[prefix_wf_def, prefix_end_len_def]
+  Cases_on `emit_one_input opc (operand_vars operands ++ next_liveness) h ps` >>
+  rename1 `emit_one_input _ _ h _ = (h_ops, ps1)` >>
+  Cases_on `emit_input_plan opc operands next_liveness ps1` >>
+  rename1 `emit_input_plan _ operands _ _ = (rest_ops, ps2)` >>
+  `prefix_wf lo (LENGTH ps.ps_stack) h_ops /\
+   prefix_end_len lo (LENGTH ps.ps_stack) h_ops = LENGTH ps1.ps_stack` by
+    (qspecl_then [`opc`, `operand_vars operands ++ next_liveness`, `h`, `ps`, `lo`]
+       mp_tac (REWRITE_RULE [LET_THM] emit_one_input_wf_len) >>
+     simp[] >>
+     (impl_tac >- (rpt strip_tac >> gvs[])) >>
+     simp[]) >>
+  `prefix_wf lo (LENGTH ps1.ps_stack) rest_ops /\
+   prefix_end_len lo (LENGTH ps1.ps_stack) rest_ops = LENGTH ps2.ps_stack` by
+    (first_x_assum (qspecl_then [`opc`, `next_liveness`, `ps1`, `lo`] mp_tac) >>
+     simp[]) >>
+  gvs[emit_input_plan_def] >>
+  metis_tac[prefix_wf_append, prefix_end_len_append]
 QED
 
 (* ===== reduce_depth_plan: iterated spills ===== *)

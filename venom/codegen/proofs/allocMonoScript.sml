@@ -576,19 +576,19 @@ Proof
   simp snd_next_offset_rules
 QED
 
-(* ========== emit_input_plan (FOLDL of emit_one_input) ========== *)
+(* ========== emit_input_plan (structural traversal of emit_one_input) ========== *)
 
 Theorem emit_input_plan_spill_base:
   !opc operands next_liveness ps ops ps'.
     emit_input_plan opc operands next_liveness ps = (ops, ps') ==>
     ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
 Proof
-  rpt gen_tac >> PURE_REWRITE_TAC[emit_input_plan_def] >> strip_tac >>
-  `ps' = SND (ops, ps')` by simp[] >> pop_assum SUBST1_TAC >>
-  qpat_x_assum `FOLDL _ _ _ = _` (SUBST1_TAC o GSYM) >>
-  PURE_REWRITE_TAC[foldl_snd_projection] >>
-  match_mp_tac foldl_simple_spill_base >> rpt gen_tac >>
-  Cases_on `emit_one_input opc next_liveness item ps` >> simp[] >>
+  gen_tac >> Induct
+  >- simp[emit_input_plan_def] >>
+  rpt gen_tac >>
+  Cases_on `emit_one_input opc (operand_vars operands ++ next_liveness) h ps` >>
+  Cases_on `emit_input_plan opc operands next_liveness r` >>
+  gvs[emit_input_plan_def] >>
   metis_tac[emit_one_input_spill_base]
 QED
 
@@ -597,13 +597,14 @@ Theorem emit_input_plan_next_offset:
     emit_input_plan opc operands next_liveness ps = (ops, ps') ==>
     ps.ps_alloc.sa_next_offset <= ps'.ps_alloc.sa_next_offset
 Proof
-  rpt gen_tac >> PURE_REWRITE_TAC[emit_input_plan_def] >> strip_tac >>
-  `ps' = SND (ops, ps')` by simp[] >> pop_assum SUBST1_TAC >>
-  qpat_x_assum `FOLDL _ _ _ = _` (SUBST1_TAC o GSYM) >>
-  PURE_REWRITE_TAC[foldl_snd_projection] >>
-  match_mp_tac foldl_simple_next_offset >> rpt gen_tac >>
-  Cases_on `emit_one_input opc next_liveness item ps` >> simp[] >>
-  metis_tac[emit_one_input_next_offset]
+  gen_tac >> Induct
+  >- simp[emit_input_plan_def] >>
+  rpt gen_tac >>
+  Cases_on `emit_one_input opc (operand_vars operands ++ next_liveness) h ps` >>
+  Cases_on `emit_input_plan opc operands next_liveness r` >>
+  gvs[emit_input_plan_def] >>
+  imp_res_tac emit_one_input_next_offset >>
+  first_x_assum drule >> rpt strip_tac >> gvs[] >> decide_tac
 QED
 
 (* ========== popmany_individual (FOLDL with do_swap) ========== *)
