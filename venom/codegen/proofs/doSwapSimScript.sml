@@ -3637,9 +3637,6 @@ QED
 Theorem do_swap_generated_spills_prefix_wf_cross_view:
   !dist producer consumer ops producer' lo.
     16 < dist /\ dist < LENGTH producer.ps_stack /\
-    LENGTH consumer.ps_stack = LENGTH producer.ps_stack /\
-    producer.ps_alloc = consumer.ps_alloc /\
-    producer.ps_spilled = consumer.ps_spilled /\
     spill_alloc_layout_wf producer.ps_alloc producer.ps_spilled /\
     ALL_DISTINCT (top_n (dist + 1) producer.ps_stack) /\
     do_swap dist producer = (ops,producer') /\
@@ -3688,8 +3685,6 @@ Proof
          simp[EL_ZIP] >> strip_tac >> first_assum ACCEPT_TAC) >>
      simp[Abbr `items`, top_n_def]) >>
   simp[Abbr `offsets`, Abbr `items`] >>
-  qpat_assum `producer.ps_alloc = consumer.ps_alloc`
-    (fn th => PURE_ONCE_REWRITE_TAC[GSYM th]) >>
   first_assum ACCEPT_TAC
 QED
 
