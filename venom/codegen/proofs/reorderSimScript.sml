@@ -4600,3 +4600,31 @@ Proof
   rpt IF_CASES_TAC >> strip_tac >>
   gvs[prefix_spill_wf_def, spill_op_wf_def]
 QED
+
+
+Theorem reorder_one_exact_two_second_absent_prefix_spill_wf[local]:
+  !dfg h h' ps ops0 ps1 ops1 ps2 lo.
+    reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
+    reorder_one dfg [h;h'] 1 h' ps1 = (ops1,ps2) /\
+    2 <= LENGTH ps1.ps_stack /\
+    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = NONE /\
+    prefix_spill_wf initial_fmp lo (ops0 ++ ops1) ps ==>
+    prefix_spill_wf initial_fmp lo ops1 ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `FLOOKUP ps1.ps_spilled h'`
+  >- (qpat_x_assum `reorder_one _ _ 1 _ _ = _` mp_tac >>
+      simp[reorder_one_def, LET_THM, do_restore_def] >>
+      strip_tac >> gvs[prefix_spill_wf_def]) >>
+  rename1 `FLOOKUP ps1.ps_spilled h' = SOME off` >>
+  `stack_get_unfixed_depth h' 0 2 (stack_push h' ps1.ps_stack) = SOME 0` by
+    (irule stack_get_unfixed_depth_zero >>
+     simp[stack_get_depth_def, stack_push_def, REVERSE_SNOC, stack_find_def]) >>
+  qpat_x_assum `reorder_one _ _ 1 _ _ = _` mp_tac >>
+  simp[reorder_one_def, LET_THM, do_restore_def] >>
+  strip_tac >> gvs[] >>
+  qpat_x_assum `prefix_spill_wf _ _ (_ ++ _) _` mp_tac >>
+  simp[prefix_spill_wf_append_reorder, prefix_spill_wf_def,
+       spill_op_wf_def] >>
+  strip_tac >> qexists_tac `h'` >> simp[]
+QED
