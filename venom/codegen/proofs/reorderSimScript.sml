@@ -1391,18 +1391,122 @@ Proof
     (if op IN FDOM ps1'.ps_spilled then 1 else 0)` >>
   qabbrev_tac `C = LIST_ELEM_COUNT op ps1.ps_stack +
     (if op IN FDOM ps1.ps_spilled then 1 else 0)` >>
-  Cases_on `op = h` >> Cases_on `op = h'` >>
-  gvs[LIST_ELEM_COUNT_THM] >>
-  Cases_on `is_var_operand h` >> Cases_on `is_var_operand h'` >>
+  Cases_on `op = h` >> gvs[LIST_ELEM_COUNT_THM] >>
+  Cases_on `op = h'` >> gvs[LIST_ELEM_COUNT_THM] >>
+  Cases_on `is_var_operand h` >>
   gvs[Abbr `A`, Abbr `B`, Abbr `C`] >>
-  Cases_on `h IN FDOM ps.ps_spilled` >>
-  Cases_on `h' IN FDOM ps.ps_spilled` >>
-  Cases_on `h IN FDOM ps1'.ps_spilled` >>
-  Cases_on `h' IN FDOM ps1'.ps_spilled` >>
-  Cases_on `h IN FDOM ps1.ps_spilled` >>
-  Cases_on `h' IN FDOM ps1.ps_spilled` >>
-  gvs[] >> decide_tac
+  Cases_on `is_var_operand h'` >> gvs[] >>
+  Cases_on `h = h'` >> gvs[LIST_ELEM_COUNT_THM] >>
+  Cases_on `h IN FDOM ps.ps_spilled` >> gvs[] >>
+  Cases_on `h' IN FDOM ps.ps_spilled` >> gvs[] >>
+  Cases_on `h IN FDOM ps1'.ps_spilled` >> gvs[] >>
+  Cases_on `h' IN FDOM ps1'.ps_spilled` >> gvs[] >>
+  Cases_on `h IN FDOM ps1.ps_spilled` >> gvs[] >>
+  Cases_on `h' IN FDOM ps1.ps_spilled` >> gvs[] >>
+  decide_tac
 QED
+
+Theorem elem_count_le_length[local]:
+  !x (xs : 'a list). LIST_ELEM_COUNT x xs <= LENGTH xs
+Proof
+  rpt gen_tac >> Induct_on `xs` >> simp[LIST_ELEM_COUNT_THM] >>
+  rpt strip_tac >> Cases_on `h = x` >> gvs[LIST_ELEM_COUNT_THM]
+QED
+
+Theorem exact_two_materialised_length[local]:
+  !h h' (stk : 'a list).
+    (!x. LIST_ELEM_COUNT x [h;h'] <= LIST_ELEM_COUNT x stk) ==>
+    2 <= LENGTH stk
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `h = h'`
+  >- (gvs[] >>
+      `2 <= LIST_ELEM_COUNT h stk` by
+        (qpat_assum `!x. LIST_ELEM_COUNT x [h;h] <= LIST_ELEM_COUNT x stk`
+           (qspec_then `h` (fn th =>
+              ACCEPT_TAC (SIMP_RULE (srw_ss()) [LIST_ELEM_COUNT_THM] th)))) >>
+      qspecl_then [`h`, `stk`] assume_tac elem_count_le_length >>
+      decide_tac)
+  >> Cases_on `stk`
+     >- (qpat_assum `!x. LIST_ELEM_COUNT x [h;h'] <=
+                            LIST_ELEM_COUNT x []`
+           (qspec_then `h` (fn th =>
+              CONTR_TAC (SIMP_RULE (srw_ss()) [LIST_ELEM_COUNT_THM] th)))) >>
+     rename1 `a::rest` >> Cases_on `rest`
+     >- (Cases_on `a = h`
+         >- (gvs[] >>
+             qpat_assum `a <> h'` (fn neq =>
+               first_assum (qspec_then `h'` (fn th =>
+                 CONTR_TAC (SIMP_RULE (srw_ss())
+                   [LIST_ELEM_COUNT_THM, neq] th)))))
+         >> qpat_assum `a <> h` (fn neq =>
+              first_assum (qspec_then `h` (fn th =>
+                CONTR_TAC (SIMP_RULE (srw_ss())
+                  [LIST_ELEM_COUNT_THM, neq] th)))))
+     >> simp[]
+QED
+Theorem emit_input_plan_two_var_not_spilled[local]:
+  !opc h h' nl ps iops ps1.
+    emit_input_plan opc [h;h'] nl ps = (iops,ps1) ==>
+    !x. MEM x [h;h'] /\ is_var_operand x ==>
+        x NOTIN FDOM ps1.ps_spilled
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+  simp[emit_input_plan_two] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  gen_tac >> strip_tac >> gvs[]
+  >- (`h NOTIN FDOM ps1'.ps_spilled` by
+        (qspecl_then [`opc`, `operand_vars [h'] ++ nl`, `h`, `ps`]
+           mp_tac emit_one_input_var_not_spilled >> simp[]) >>
+      qspecl_then [`opc`, `nl`, `h'`, `ps1'`, `h`]
+        mp_tac emit_one_input_preserves_not_spilled >> simp[])
+  >> qspecl_then [`opc`, `nl`, `h'`, `ps1'`]
+       mp_tac emit_one_input_var_not_spilled >> simp[]
+QED
+
+Definition exact_two_planner_ready_def:
+  exact_two_planner_ready base h h' (ps : plan_state) <=>
+    residual_budget_wf base [h;h'] ps /\
+    pending_inventory_wf [h;h'] ps /\
+    2 <= LENGTH ps.ps_stack /\
+    (!x. LIST_ELEM_COUNT x [h;h'] <= LIST_ELEM_COUNT x ps.ps_stack) /\
+    (!x. MEM x [h;h'] /\ is_var_operand x ==>
+         x NOTIN FDOM ps.ps_spilled)
+End
+
+Theorem emit_input_plan_two_exact_two_planner_ready:
+  !base opc h h' nl ps iops ps1.
+    residual_budget_wf base [] ps /\
+    (!op. MEM op [h;h'] /\ is_var_operand op ==>
+          MEM op ps.ps_stack \/ op IN FDOM ps.ps_spilled) /\
+    emit_input_plan opc [h;h'] nl ps = (iops,ps1) ==>
+    exact_two_planner_ready base h h' ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  rename1 `residual_budget_wf spill_base [] ps` >>
+  `pending_inventory_wf [h;h'] ps1 /\
+   (!x. LIST_ELEM_COUNT x [h;h'] <= LIST_ELEM_COUNT x ps1.ps_stack)` by
+    metis_tac[emit_input_plan_two_materialised] >>
+  `residual_budget_wf spill_base [h;h'] ps1` by
+    (qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+     simp[emit_input_plan_two] >>
+     rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+     `residual_budget_wf spill_base [h] ps1'` by
+       (qspecl_then [`spill_base`, `[]`, `opc`, `operand_vars [h'] ++ nl`,
+                     `h`, `ps`, `ops1`, `ps1'`] mp_tac
+          emit_one_input_residual_budget_wf >> simp[]) >>
+     qspecl_then [`spill_base`, `[h]`, `opc`, `nl`, `h'`, `ps1'`,
+                   `ops2`, `ps1`] mp_tac emit_one_input_residual_budget_wf >>
+     simp[]) >>
+  `2 <= LENGTH ps1.ps_stack` by
+    metis_tac[exact_two_materialised_length] >>
+  `!x. MEM x [h;h'] /\ is_var_operand x ==>
+       x NOTIN FDOM ps1.ps_spilled` by
+    metis_tac[emit_input_plan_two_var_not_spilled] >>
+  simp[exact_two_planner_ready_def]
+QED
+
 
 
 Theorem elem_count_from_append[local]:
@@ -3804,6 +3908,290 @@ Proof
      decide_tac
 QED
 
+Theorem do_restore_preserves_not_spilled[local]:
+  !op ps x.
+    x NOTIN FDOM ps.ps_spilled ==>
+    x NOTIN FDOM (SND (do_restore op ps)).ps_spilled
+Proof
+  rpt gen_tac >> simp[do_restore_def] >>
+  Cases_on `FLOOKUP ps.ps_spilled op` >>
+  simp[finite_mapTheory.FDOM_DOMSUB]
+QED
+
+Theorem do_swap_spilled_unchanged[local]:
+  !d ps. (SND (do_swap d ps)).ps_spilled = ps.ps_spilled
+Proof
+  rpt gen_tac >> Cases_on `d = 0` >> simp[do_swap_def] >>
+  Cases_on `d <= 16` >> simp[do_swap_def] >>
+  simp[do_swap_def, LET_THM] >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem reduce_depth_plan_pending_not_spilled[local]:
+  !fuel pending target_op f ps ops ps' base.
+    residual_budget_wf base pending ps /\
+    (!y. MEM y pending /\ is_var_operand y ==>
+         y NOTIN FDOM ps.ps_spilled) /\
+    reduce_depth_plan fuel pending target_op f (LENGTH pending) ps =
+      (ops,ps') ==>
+    !y. MEM y pending /\ is_var_operand y ==>
+         y NOTIN FDOM ps'.ps_spilled
+Proof
+  Induct >> simp[reduce_depth_plan_def, LET_THM] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `stack_get_unfixed_depth target_op f (LENGTH pending)
+              ps.ps_stack` >> gvs[] >>
+  Cases_on `f + 1 < LENGTH pending` >> gvs[] >>
+  Cases_on `x <= 16` >> gvs[] >>
+  Cases_on `select_spill_candidate ps.ps_stack pending x
+              (LENGTH pending)` >> gvs[] >>
+  pairarg_tac >> gvs[] >>
+  rename1 `do_spill_at cand ps = (spill_ops,ps1)` >>
+  `1 <= LENGTH ps.ps_stack` by
+    (drule stack_get_unfixed_depth_bound >> decide_tac) >>
+  `cand <= 16 /\ cand < LENGTH ps.ps_stack` by
+    (qspecl_then [`ps.ps_stack`, `pending`, `x`, `LENGTH pending`, `cand`]
+       mp_tac select_spill_candidate_bound >> simp[]) >>
+  `~MEM (stack_peek cand ps.ps_stack) pending` by
+    metis_tac[select_spill_candidate_not_pending] >>
+  `spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled` by
+    fs[residual_budget_wf_def] >>
+  `?off. ps1.ps_spilled =
+         ps.ps_spilled |+ (stack_peek cand ps.ps_stack,off)` by
+    metis_tac[do_spill_at_multiplicity_layout] >>
+  `!y. MEM y pending /\ is_var_operand y ==>
+       y NOTIN FDOM ps1.ps_spilled` by
+    (rpt strip_tac >> gvs[finite_mapTheory.FDOM_FUPDATE] >> metis_tac[]) >>
+  `residual_budget_wf base' pending ps1` by
+    metis_tac[residual_budget_wf_do_spill_at] >>
+  Cases_on `reduce_depth_plan fuel pending target_op f
+              (LENGTH pending) ps1` >> gvs[] >>
+  qpat_assum `!pending target_op f ps ops ps' base.
+      residual_budget_wf base pending ps /\ _ /\
+      reduce_depth_plan fuel pending target_op f (LENGTH pending) ps =
+        (ops,ps') ==> _`
+    (qspecl_then [`pending`, `target_op`, `f`, `ps1`, `q`, `ps'`, `base'`]
+       mp_tac) >> simp[]
+QED
+
+Theorem reorder_restore_pending_var_not_spilled[local]:
+  !pending op f ps.
+    (!y. MEM y pending /\ is_var_operand y ==>
+         y NOTIN FDOM ps.ps_spilled) ==>
+    let (_,ps') =
+      case stack_get_unfixed_depth op f (LENGTH pending) ps.ps_stack of
+        SOME _ => ([] : stack_op list,ps)
+      | NONE =>
+          (case FLOOKUP ps.ps_spilled op of
+             SOME _ => do_restore op ps
+           | NONE => ([],ps))
+    in !y. MEM y pending /\ is_var_operand y ==>
+           y NOTIN FDOM ps'.ps_spilled
+Proof
+  rpt strip_tac >> simp[LET_THM] >>
+  Cases_on `stack_get_unfixed_depth op f (LENGTH pending) ps.ps_stack` >>
+  simp[] >> Cases_on `FLOOKUP ps.ps_spilled op` >>
+  simp[do_restore_def, finite_mapTheory.FDOM_DOMSUB]
+QED
+
+Theorem reorder_one_pending_var_not_spilled[local]:
+  !dfg pending idx op ps ops ps' base.
+    residual_budget_wf base pending ps /\
+    idx < LENGTH pending /\ LENGTH pending <= LENGTH ps.ps_stack /\
+    (!y. MEM y pending /\ is_var_operand y ==>
+         y NOTIN FDOM ps.ps_spilled) /\
+    reorder_one dfg pending idx op ps = (ops,ps') ==>
+    !y. MEM y pending /\ is_var_operand y ==>
+         y NOTIN FDOM ps'.ps_spilled
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `reorder_one _ _ _ _ _ = _` mp_tac >>
+  rewrite_tac[reorder_one_def, LET_THM] >>
+  pairarg_tac >> simp[] >> pairarg_tac >> simp[] >>
+  `residual_budget_wf base' pending ps1 /\
+   LENGTH pending <= LENGTH ps1.ps_stack` by
+    (qspecl_then [`base'`, `pending`, `op`,
+       `LENGTH pending - (idx + 1)`, `ps`]
+       mp_tac reorder_restore_residual_budget_wf >> simp[] >> gvs[]) >>
+  `!y. MEM y pending /\ is_var_operand y ==>
+       y NOTIN FDOM ps1.ps_spilled` by
+    (qspecl_then [`pending`, `op`, `LENGTH pending - (idx + 1)`, `ps`]
+       mp_tac reorder_restore_pending_var_not_spilled >> simp[] >> gvs[]) >>
+  gvs[] >>
+  Cases_on `stack_get_unfixed_depth op
+    (LENGTH pending - (idx + 1)) (LENGTH pending) ps1.ps_stack` >> simp[]
+  >- (strip_tac >> gvs[]) >>
+  pairarg_tac >> simp[] >>
+  `residual_budget_wf base' pending ps2` by
+    (Cases_on `x > 16` >> gvs[] >>
+     qspecl_then [`LENGTH ps1.ps_stack`, `base'`, `pending`, `op`,
+       `LENGTH pending - (idx + 1)`, `ps1`, `reduce_ops`, `ps2`]
+       mp_tac reduce_depth_plan_residual_budget_wf >> simp[]) >>
+  `!y. MEM y pending /\ is_var_operand y ==>
+       y NOTIN FDOM ps2.ps_spilled` by
+    (Cases_on `x > 16` >> gvs[] >>
+     qspecl_then [`LENGTH ps1.ps_stack`, `pending`, `op`,
+       `LENGTH pending - (idx + 1)`, `ps1`, `reduce_ops`, `ps2`, `base'`]
+       mp_tac reduce_depth_plan_pending_not_spilled >> simp[]) >>
+  Cases_on `stack_get_unfixed_depth op
+    (LENGTH pending - (idx + 1)) (LENGTH pending) ps2.ps_stack` >> simp[]
+  >- (strip_tac >> gvs[]) >>
+  rename1 `stack_get_unfixed_depth op _ _ ps2.ps_stack = SOME dist'` >>
+  `dist' < LENGTH ps2.ps_stack` by
+    metis_tac[stack_get_unfixed_depth_bound] >>
+  Cases_on `dist' = LENGTH pending - (idx + 1)` >> simp[]
+  >- (strip_tac >> gvs[]) >>
+  Cases_on `LENGTH pending - (idx + 1) < LENGTH ps2.ps_stack` >> gvs[] >>
+  Cases_on `operand_equiv dfg op
+    (stack_peek (LENGTH pending - (idx + 1)) ps2.ps_stack)` >> simp[]
+  >- (strip_tac >> gvs[]) >>
+  pairarg_tac >> simp[] >> pairarg_tac >> simp[] >> strip_tac >> gvs[] >>
+  `ps3.ps_spilled = ps2.ps_spilled` by
+    (qspecl_then [`dist'`, `ps2`] mp_tac do_swap_spilled_unchanged >> simp[]) >>
+  `ps'.ps_spilled = ps3.ps_spilled` by
+    (qspecl_then [`LENGTH pending - (idx + 1)`, `ps3`]
+       mp_tac do_swap_spilled_unchanged >> simp[]) >>
+  gvs[]
+QED
+
+
+Theorem reorder_one_after_restore_state[local]:
+  !dfg pending idx op ps restore_ops psr off.
+    stack_get_unfixed_depth op (LENGTH pending - (idx + 1))
+      (LENGTH pending) ps.ps_stack = NONE /\
+    FLOOKUP ps.ps_spilled op = SOME off /\
+    do_restore op ps = (restore_ops,psr) /\
+    stack_get_unfixed_depth op (LENGTH pending - (idx + 1))
+      (LENGTH pending) psr.ps_stack = SOME 0 ==>
+    SND (reorder_one dfg pending idx op ps) =
+    SND (reorder_one dfg pending idx op psr)
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[reorder_one_def, LET_THM] >>
+  CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+  asm_rewrite_tac[] >>
+  CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+  rpt IF_CASES_TAC >> simp[]
+QED
+
+Theorem do_restore_stack_count_mono[local]:
+  !op ps x.
+    LIST_ELEM_COUNT x ps.ps_stack <=
+    LIST_ELEM_COUNT x (SND (do_restore op ps)).ps_stack
+Proof
+  rpt gen_tac >> simp[do_restore_def] >>
+  Cases_on `FLOOKUP ps.ps_spilled op` >>
+  simp[stack_push_def, elem_count_snoc, LIST_ELEM_COUNT_THM]
+QED
+
+Theorem reorder_one_no_entry[local]:
+  !dfg pending idx op ps.
+    stack_get_unfixed_depth op (LENGTH pending - (idx + 1))
+      (LENGTH pending) ps.ps_stack = NONE /\
+    FLOOKUP ps.ps_spilled op = NONE ==>
+    reorder_one dfg pending idx op ps = ([],ps)
+Proof
+  rpt gen_tac >> strip_tac >>
+  simp[reorder_one_def, LET_THM] >>
+  CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >>
+  asm_rewrite_tac[]
+QED
+
+Theorem reorder_one_pending_materialised[local]:
+  !dfg pending idx op ps ops ps' base.
+    residual_budget_wf base pending ps /\ idx < LENGTH pending /\
+    LENGTH pending <= LENGTH ps.ps_stack /\ LENGTH pending <= 16 /\
+    MEM op pending /\
+    (!x. LIST_ELEM_COUNT x pending <= LIST_ELEM_COUNT x ps.ps_stack) /\
+    reorder_one dfg pending idx op ps = (ops,ps') ==>
+    !x. LIST_ELEM_COUNT x pending <= LIST_ELEM_COUNT x ps'.ps_stack
+Proof
+  rpt gen_tac >> strip_tac >>
+  `LENGTH pending - 1 - idx = LENGTH pending - (idx + 1)` by
+    decide_tac >>
+  Cases_on `stack_get_unfixed_depth op (LENGTH pending - (idx + 1))
+              (LENGTH pending) ps.ps_stack`
+  >- (Cases_on `FLOOKUP ps.ps_spilled op`
+      >- (`reorder_one dfg pending idx op ps = ([],ps)` by
+            metis_tac[reorder_one_no_entry] >> gvs[])
+      >> rename1 `FLOOKUP ps.ps_spilled op = SOME off` >>
+         Cases_on `do_restore op ps` >>
+         rename1 `do_restore op ps = (restore_ops,psr)` >>
+         `residual_budget_wf base' pending psr` by
+           metis_tac[residual_budget_wf_restore] >>
+         `LENGTH pending <= LENGTH psr.ps_stack` by
+           (qspecl_then [`op`, `ps`] mp_tac do_restore_length >> simp[] >>
+            decide_tac) >>
+         `stack_get_depth op psr.ps_stack = SOME 0` by
+           (qspecl_then [`ps`, `op`, `off`] mp_tac
+              stack_get_depth_restore_inventory >> simp[]) >>
+         `stack_get_unfixed_depth op (LENGTH pending - (idx + 1))
+            (LENGTH pending) psr.ps_stack = SOME 0` by
+           metis_tac[stack_get_unfixed_depth_zero] >>
+         `SND (reorder_one dfg pending idx op ps) =
+          SND (reorder_one dfg pending idx op psr)` by
+           metis_tac[reorder_one_after_restore_state] >>
+         Cases_on `reorder_one dfg pending idx op psr` >>
+         rename1 `reorder_one dfg pending idx op psr = (ropsr,psf)` >>
+         `psf = ps'` by gvs[] >>
+         `!x. LIST_ELEM_COUNT x ps.ps_stack <=
+              LIST_ELEM_COUNT x psr.ps_stack` by
+           (gen_tac >> qspecl_then [`op`, `ps`, `x`]
+              mp_tac do_restore_stack_count_mono >> simp[]) >>
+         `!x. MEM x pending ==>
+              LIST_ELEM_COUNT x psf.ps_stack =
+              LIST_ELEM_COUNT x psr.ps_stack` by
+           (qspecl_then [`dfg`, `pending`, `idx`, `op`, `psr`, `ropsr`,
+                          `psf`, `base'`, `0`]
+              mp_tac reorder_one_materialised_counts >> simp[]) >>
+         gen_tac >> qpat_assum `!x. LIST_ELEM_COUNT x pending <= _`
+           (qspec_then `x` assume_tac) >>
+         qpat_assum `!x. LIST_ELEM_COUNT x ps.ps_stack <= _`
+           (qspec_then `x` assume_tac) >>
+         Cases_on `MEM x pending`
+         >- (qpat_assum `!x. MEM x pending ==> _`
+               (qspec_then `x` (drule_then assume_tac)) >>
+             qpat_x_assum `psf = ps'` SUBST_ALL_TAC >> decide_tac)
+         >> fs[GSYM LIST_ELEM_COUNT_MEM])
+  >> rename1 `stack_get_unfixed_depth op _ _ ps.ps_stack = SOME d` >>
+     qspecl_then [`dfg`, `pending`, `idx`, `op`, `ps`, `ops`, `ps'`,
+                   `base'`, `d`] mp_tac reorder_one_materialised_counts >>
+     simp[] >> strip_tac >> gen_tac >>
+     Cases_on `MEM x pending`
+     >- (first_x_assum (qspec_then `x` (drule_then assume_tac)) >>
+         qpat_assum `!x. LIST_ELEM_COUNT x pending <= _`
+           (qspec_then `x` assume_tac) >> decide_tac)
+     >> fs[GSYM LIST_ELEM_COUNT_MEM]
+QED
+
+Theorem reorder_one_exact_two_planner_ready:
+  !dfg base h h' idx op ps ops ps'.
+    exact_two_planner_ready base h h' ps /\ idx < 2 /\
+    MEM op [h;h'] /\ reorder_one dfg [h;h'] idx op ps = (ops,ps') ==>
+    exact_two_planner_ready base h h' ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  fs[exact_two_planner_ready_def] >>
+  `residual_budget_wf base' [h;h'] ps' /\
+   2 <= LENGTH ps'.ps_stack` by
+    (qspecl_then [`dfg`, `[h;h']`, `idx`, `op`, `ps`, `ops`, `ps'`, `base'`]
+       mp_tac reorder_one_residual_budget_wf >> simp[]) >>
+  `pending_inventory_wf [h;h'] ps'` by
+    (qspecl_then [`dfg`, `[h;h']`, `idx`, `op`, `ps`, `ops`, `ps'`, `base'`]
+       mp_tac reorder_one_pending_inventory_wf >> simp[]) >>
+  `!y. MEM y [h;h'] /\ is_var_operand y ==>
+       y NOTIN FDOM ps'.ps_spilled` by
+    (qspecl_then [`dfg`, `[h;h']`, `idx`, `op`, `ps`, `ops`, `ps'`, `base'`]
+       MATCH_MP_TAC reorder_one_pending_var_not_spilled >> simp[] >>
+     metis_tac[]) >>
+  `!x. LIST_ELEM_COUNT x [h;h'] <= LIST_ELEM_COUNT x ps'.ps_stack` by
+    (qspecl_then [`dfg`, `[h;h']`, `idx`, `op`, `ps`, `ops`, `ps'`, `base'`]
+       MATCH_MP_TAC reorder_one_pending_materialised >> simp[] >>
+     goal_assum ACCEPT_TAC) >>
+  simp[]
+QED
+
+
+
 (* =========================================================================
    Extended: operand value at TOS for any depth (including d > 16)
    ========================================================================= *)
@@ -5017,42 +5405,724 @@ Proof
 QED
 
 
-Theorem reorder_one_exact_two_second_deep_prefix_spill_wf[local]:
-  !dfg h h' ps ops0 ps1 ops1 ps2 lo d.
-    reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
-    reorder_one dfg [h;h'] 1 h' ps1 = (ops1,ps2) /\
-    2 <= LENGTH ps1.ps_stack /\
-    prefix_spill_wf initial_fmp lo (ops0 ++ ops1) ps /\
-    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\
-    16 < d ==>
+Theorem prefix_spill_wf_map_restore_distinct_witnesses[local]:
+  !offsets lo ps.
+    prefix_spill_wf initial_fmp lo (MAP SORestore offsets) ps ==>
+    ?ws. LENGTH ws = LENGTH offsets /\
+         ALL_DISTINCT ws /\
+         (!k. k < LENGTH offsets ==>
+              FLOOKUP ps.ps_spilled (EL k ws) = SOME (EL k offsets))
+Proof
+  Induct
+  >- simp[]
+  >> rpt gen_tac >>
+     simp[prefix_spill_wf_def, spill_op_wf_def] >>
+     strip_tac >>
+     qabbrev_tac `sel = spill_lookup h ps.ps_spilled` >>
+     `FLOOKUP ps.ps_spilled sel = SOME h` by
+       (simp[Abbr `sel`, spill_lookup_def] >> metis_tac[SELECT_AX]) >>
+     first_x_assum (qspecl_then
+       [`lo`, `apply_prefix_op initial_fmp lo (SORestore h) ps`] mp_tac) >>
+     simp[] >> strip_tac >>
+     qexists `sel::ws` >> simp[] >>
+     conj_tac
+     >- (simp[MEM_EL] >> rpt strip_tac >>
+         qpat_x_assum `!k. k < LENGTH offsets ==> _`
+           (qspec_then `n` mp_tac) >>
+         fs[apply_prefix_op_def, LET_THM, DOMSUB_FLOOKUP_THM,
+            Abbr `sel`]) >>
+     gen_tac >> Cases_on `k` >> simp[] >> strip_tac >>
+     qpat_x_assum `!k. k < LENGTH offsets ==> _`
+       (qspec_then `n` mp_tac) >>
+     fs[apply_prefix_op_def, LET_THM, DOMSUB_FLOOKUP_THM,
+        Abbr `sel`]
+QED
+
+
+Theorem mem_take_suc[local]:
+  !n (xs : 'a list) x.
+    MEM x (TAKE n xs) ==> MEM x (TAKE (SUC n) xs)
+Proof
+  Induct_on `xs` >> simp[] >>
+  rpt gen_tac >> Cases_on `n` >> simp[] >> metis_tac[]
+QED
+
+Theorem spill_batch_next_item_mem[local]:
+  !offsets lo ps.
+    SUC (LENGTH offsets) <= LENGTH ps.ps_stack ==>
+    MEM (stack_peek 0
+      (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack)
+      (TAKE (SUC (LENGTH offsets)) (REVERSE ps.ps_stack))
+Proof
+  rpt gen_tac >> strip_tac >>
+  `LENGTH offsets <= LENGTH ps.ps_stack` by decide_tac >>
+  `0 < LENGTH
+     (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack` by
+    (qspecl_then [`offsets`, `lo`, `ps`] mp_tac apply_spill_ops_stack >>
+     simp[LENGTH_TAKE] >> decide_tac) >>
+  `stack_peek 0
+      (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack =
+   EL 0 (REVERSE
+      (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack)` by
+    metis_tac[stack_peek_eq_EL_REVERSE_inventory] >>
+  simp[MEM_EL] >>
+  qexists `LENGTH offsets` >>
+  qspecl_then [`offsets`, `lo`, `ps`] mp_tac apply_spill_ops_stack >>
+  simp[LENGTH_TAKE, EL_TAKE, EL_REVERSE] >>
+  strip_tac >>
+  `TAKE (LENGTH ps.ps_stack - LENGTH offsets) ps.ps_stack <> []` by
+    (simp[GSYM LENGTH_NON_NIL, LENGTH_TAKE] >> decide_tac) >>
+  `PRE (LENGTH ps.ps_stack - LENGTH offsets) <
+     LENGTH ps.ps_stack - LENGTH offsets` by decide_tac >>
+  `PRE (LENGTH ps.ps_stack - LENGTH offsets) < LENGTH ps.ps_stack` by
+    decide_tac >>
+  simp[HD_REVERSE, LAST_EL, LENGTH_TAKE, EL_TAKE]
+QED
+
+Theorem prefix_spill_wf_map_spill_final_provenance[local]:
+  !offsets lo ps op off.
+    LENGTH offsets <= LENGTH ps.ps_stack /\
+    prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) ps /\
+    FLOOKUP (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled op = SOME off /\
+    MEM off offsets ==>
+    MEM op (TAKE (LENGTH offsets) (REVERSE ps.ps_stack))
+Proof
+  rpt gen_tac >>
+  qid_spec_tac `off` >> qid_spec_tac `op` >>
+  qid_spec_tac `ps` >> qid_spec_tac `lo` >>
+  Induct_on `offsets` using SNOC_INDUCT
+  >- simp[apply_prefix_ops_def]
+  >> rpt gen_tac >> strip_tac >>
+     qpat_x_assum `prefix_spill_wf _ _ (MAP SOSpill (SNOC _ _)) _` mp_tac >>
+     simp[MAP_SNOC, SNOC_APPEND, prefix_spill_wf_append_reorder,
+          apply_prefix_ops_append] >>
+     strip_tac >>
+     qpat_x_assum `FLOOKUP (apply_prefix_ops _ _ (MAP SOSpill (SNOC _ _)) _).ps_spilled _ = _` mp_tac >>
+     simp[MAP_SNOC, SNOC_APPEND, apply_prefix_ops_append,
+          apply_prefix_ops_def, apply_prefix_op_def, FLOOKUP_UPDATE] >>
+     strip_tac >>
+     Cases_on `stack_peek 0
+       (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_stack = op` >>
+     gvs[]
+     >- metis_tac[spill_batch_next_item_mem]
+     >- metis_tac[spill_batch_next_item_mem]
+     >- (qpat_x_assum `prefix_spill_wf _ _ [SOSpill off] _` mp_tac >>
+         simp[prefix_spill_wf_def, spill_op_wf_def] >> strip_tac >>
+         qpat_x_assum `!op2 off2. _`
+           (qspecl_then [`op`, `off`] mp_tac) >>
+         simp[] >> decide_tac)
+     >> qpat_x_assum `!lo ps op off. _`
+          (qspecl_then [`lo`, `ps`, `op`, `off`] mp_tac) >>
+        simp[] >> strip_tac >>
+        metis_tac[mem_take_suc]
+QED
+
+Theorem distinct_full_length_subset[local]:
+  !ws (items : 'a list).
+    LENGTH ws = LENGTH items /\
+    ALL_DISTINCT ws /\
+    (!x. MEM x ws ==> MEM x items) ==>
+    ALL_DISTINCT items
+Proof
+  rpt gen_tac >> strip_tac >>
+  irule CARD_LIST_TO_SET_ALL_DISTINCT >>
+  `CARD (set ws) = LENGTH ws` by
+    simp[ALL_DISTINCT_CARD_LIST_TO_SET] >>
+  `set ws SUBSET set items` by fs[pred_setTheory.SUBSET_DEF] >>
+  `CARD (set ws) <= CARD (set items)` by
+    (irule pred_setTheory.CARD_SUBSET >> simp[]) >>
+  `CARD (set items) <= LENGTH items` by
+    simp[CARD_LIST_TO_SET] >>
+  decide_tac
+QED
+
+
+Theorem map_el_restore_targets[local]:
+  !indices (offsets : num list).
+    LENGTH indices = LENGTH offsets /\
+    EVERY (\i. i < LENGTH offsets) indices ==>
+    LENGTH (MAP (\idx. EL idx offsets) indices) = LENGTH offsets /\
+    (!off. MEM off (MAP (\idx. EL idx offsets) indices) ==>
+           MEM off offsets)
+Proof
+  rpt gen_tac >> strip_tac >>
+  conj_tac >- simp[] >>
+  rpt strip_tac >> gvs[MEM_MAP, EVERY_MEM] >>
+  metis_tac[EL_MEM]
+QED
+
+
+Theorem prefix_spill_wf_spill_restore_top_distinct[local]:
+  !offsets restore_offsets lo ps.
+    LENGTH offsets <= LENGTH ps.ps_stack /\
+    LENGTH restore_offsets = LENGTH offsets /\
+    (!off. MEM off restore_offsets ==> MEM off offsets) /\
+    prefix_spill_wf initial_fmp lo
+      (MAP SOSpill offsets ++ MAP SORestore restore_offsets) ps ==>
+    ALL_DISTINCT (TAKE (LENGTH offsets) (REVERSE ps.ps_stack))
+Proof
+  rpt gen_tac >> strip_tac >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) ps /\
+   prefix_spill_wf initial_fmp lo (MAP SORestore restore_offsets)
+     (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps)` by
+    fs[prefix_spill_wf_append_reorder] >>
+  `?ws. LENGTH ws = LENGTH restore_offsets /\
+        ALL_DISTINCT ws /\
+        (!k. k < LENGTH restore_offsets ==>
+             FLOOKUP
+               (apply_prefix_ops initial_fmp lo
+                 (MAP SOSpill offsets) ps).ps_spilled
+               (EL k ws) = SOME (EL k restore_offsets))` by
+    metis_tac[prefix_spill_wf_map_restore_distinct_witnesses] >>
+  pop_assum strip_assume_tac >>
+  irule distinct_full_length_subset >>
+  qexists `ws` >>
+  conj_tac
+  >- (rpt strip_tac >>
+      `?n. n < LENGTH ws /\ x = EL n ws` by metis_tac[MEM_EL] >>
+      pop_assum strip_assume_tac >>
+      qpat_x_assum `x = EL n ws` SUBST_ALL_TAC >>
+      `n < LENGTH restore_offsets` by decide_tac >>
+      `FLOOKUP
+         (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled
+         (EL n ws) = SOME (EL n restore_offsets)` by metis_tac[] >>
+      `MEM (EL n restore_offsets) restore_offsets` by metis_tac[EL_MEM] >>
+      `MEM (EL n restore_offsets) offsets` by
+        (qpat_assum `!off. MEM off restore_offsets ==> MEM off offsets`
+           (qspec_then `EL n restore_offsets` mp_tac) >>
+         simp[]) >>
+      irule prefix_spill_wf_map_spill_final_provenance >>
+      simp[] >>
+      qexistsl [`initial_fmp`, `lo`, `EL n restore_offsets`] >>
+      simp[]) >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  simp[LENGTH_TAKE] >> decide_tac
+QED
+Theorem deep_swap_complete_wf_top_distinct[local]:
+  !d ps lo offsets restore_offsets.
+    16 < d /\ d < LENGTH ps.ps_stack /\
+    offsets = FST (spill_alloc_n [] ps.ps_alloc
+      (top_n (d + 1) ps.ps_stack)) /\
+    restore_offsets =
+      MAP (\idx. EL idx offsets)
+        (REVERSE ([d] ++ GENLIST (\i. i + 1) (d - 1) ++ [0])) /\
+    prefix_spill_wf initial_fmp lo
+      (MAP SOSpill offsets ++ MAP SORestore restore_offsets) ps ==>
+    ALL_DISTINCT (top_n (d + 1) ps.ps_stack)
+Proof
+  rpt gen_tac >> strip_tac >>
+  `LENGTH (top_n (d + 1) ps.ps_stack) = d + 1` by
+    simp[top_n_def, LENGTH_TAKE] >>
+  `LENGTH offsets = d + 1` by
+    simp[spill_alloc_n_offsets_length] >>
+  qabbrev_tac `indices =
+    REVERSE ([d] ++ GENLIST (\i. i + 1) (d - 1) ++ [0])` >>
+  `LENGTH indices = LENGTH offsets` by
+    (simp[Abbr `indices`, LENGTH_REVERSE, LENGTH_GENLIST] >> decide_tac) >>
+  `EVERY (\i. i < LENGTH offsets) indices` by
+    (simp[Abbr `indices`, EVERY_REVERSE, EVERY_APPEND, EVERY_GENLIST] >>
+     decide_tac) >>
+  `LENGTH restore_offsets = LENGTH offsets /\
+   (!off. MEM off restore_offsets ==> MEM off offsets)` by
+    (qpat_x_assum `restore_offsets = _` SUBST_ALL_TAC >>
+     irule map_el_restore_targets >> simp[]) >>
+  `ALL_DISTINCT (TAKE (LENGTH offsets) (REVERSE ps.ps_stack))` by
+    (irule prefix_spill_wf_spill_restore_top_distinct >>
+     conj_tac >- decide_tac >>
+     qexistsl [`initial_fmp`, `lo`, `restore_offsets`] >>
+     conj_tac >- first_assum ACCEPT_TAC >>
+     conj_tac >- first_assum ACCEPT_TAC >>
+     first_assum ACCEPT_TAC) >>
+  simp[top_n_def] >>
+  qpat_assum `LENGTH offsets = d + 1`
+    (fn th => PURE_ONCE_REWRITE_TAC[GSYM th]) >>
+  first_assum ACCEPT_TAC
+QED
+
+
+
+(* Closed crossing-window truth probe for the exact-two suffix-WF boundary. *)
+Definition crossing_dfg_def:
+  crossing_dfg =
+    dfg_build_insts [mk_inst 1 ASSIGN [Var "cross_h"] ["cross_alias"]]
+End
+
+Definition crossing_stack_def:
+  crossing_stack =
+    stack_poke 19 (Var "cross_h")
+      (stack_poke 17 (Var "cross_hprime")
+        (stack_poke 1 (Var "cross_alias")
+          (REPLICATE 20 (Lit 0w))))
+End
+
+Definition crossing_alloc_def:
+  crossing_alloc = <| sa_free_slots := [];
+                      sa_next_offset := 64;
+                      sa_spill_base := 0 |>
+End
+
+Definition crossing_ps_def:
+  crossing_ps = (init_plan_state 0) with <|
+    ps_stack := crossing_stack;
+    ps_spilled := FEMPTY |+ (Var "cross_h",0);
+    ps_alloc := crossing_alloc |>
+End
+
+Theorem crossing_probe_geometry[local]:
+  stack_peek 1 crossing_ps.ps_stack = Var "cross_alias" /\
+  operand_equiv crossing_dfg (Var "cross_h")
+    (stack_peek 1 crossing_ps.ps_stack) /\
+  stack_peek 17 crossing_ps.ps_stack = Var "cross_hprime" /\
+  stack_peek 19 crossing_ps.ps_stack = Var "cross_h" /\
+  FLOOKUP crossing_ps.ps_spilled (Var "cross_h") = SOME 0
+Proof
+  EVAL_TAC
+QED
+
+Definition crossing_res0_def:
+  crossing_res0 =
+    reorder_one crossing_dfg [Var "cross_h"; Var "cross_hprime"] 0
+      (Var "cross_h") crossing_ps
+End
+
+Definition crossing_res1_def:
+  crossing_res1 =
+    reorder_one crossing_dfg [Var "cross_h"; Var "cross_hprime"] 1
+      (Var "cross_hprime") (SND crossing_res0)
+End
+
+Theorem crossing_probe_first_no_ops[local]:
+  FST crossing_res0 = []
+Proof EVAL_TAC
+QED
+
+Theorem crossing_probe_second_depth[local]:
+  2 <= LENGTH (SND crossing_res0).ps_stack /\
+  stack_get_unfixed_depth (Var "cross_hprime") 0 2
+    (SND crossing_res0).ps_stack = SOME 17
+Proof EVAL_TAC
+QED
+
+
+
+Theorem exact_two_reduce_ops_empty[local]:
+  !ps h h' ops ps'.
+    reduce_depth_plan (LENGTH ps.ps_stack) [h;h'] h' 0 2 ps = (ops,ps') ==>
+    ops = []
+Proof
+  rpt gen_tac >>
+  Cases_on `LENGTH ps.ps_stack` >>
+  simp[reduce_depth_plan_def]
+QED
+
+Theorem deep_do_swap_prefix_spill_wf_transfer[local]:
+  !d ps ops ps' lo.
+    do_swap d ps = (ops,ps') /\
+    d < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT (top_n (d + 1) ps.ps_stack) /\
+    DISJOINT (set (top_n (d + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) ps ==>
+    prefix_spill_wf initial_fmp lo ops ps
+Proof
+  metis_tac[do_swap_prefix_spill_wf_from_front]
+QED
+
+
+
+
+Definition spill_batch_freshness_counter_ps_def:
+  spill_batch_freshness_counter_ps =
+    (init_plan_state 0) with <|
+      ps_stack := [Var "fresh_other"; Var "fresh_shadow"];
+      ps_spilled := FEMPTY |+ (Var "fresh_shadow",0);
+      ps_alloc := <| sa_free_slots := [];
+                     sa_next_offset := 96;
+                     sa_spill_base := 0 |>
+    |>
+End
+
+Theorem spill_batch_initial_freshness_counterexample[local]:
+  prefix_spill_wf initial_fmp (FEMPTY:string |-> num)
+    [SOSpill 64; SOSpill 0]
+    spill_batch_freshness_counter_ps /\
+  FLOOKUP spill_batch_freshness_counter_ps.ps_spilled
+    (Var "fresh_shadow") = SOME 0 /\
+  MEM (0:num) [64;0]
+Proof
+  EVAL_TAC >>
+  rpt strip_tac >> rpt IF_CASES_TAC >> gvs[] >> decide_tac
+QED
+Theorem reorder_one_exact_two_first_noops_shape[local]:
+  !base dfg h h' ps ps1.
+    exact_two_planner_ready base h h' ps /\
+    reorder_one dfg [h;h'] 0 h ps = ([],ps1) ==>
+    ps1.ps_alloc = ps.ps_alloc /\ ps1.ps_spilled = ps.ps_spilled /\
+    (ps1.ps_stack = ps.ps_stack \/
+     ?src at. src < LENGTH ps.ps_stack /\
+       at = stack_peek 1 ps.ps_stack /\
+       operand_equiv dfg h at /\
+       ps1.ps_stack = stack_poke 1 h (stack_poke src at ps.ps_stack))
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `reorder_one _ _ _ _ _ = _` mp_tac >>
+  rewrite_tac[reorder_one_def, LET_THM] >>
+  CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >> BETA_TAC >>
+  Cases_on `stack_get_unfixed_depth h 1 2 ps.ps_stack` >> simp[]
+  >- (Cases_on `FLOOKUP ps.ps_spilled h` >> simp[do_restore_def, LET_THM] >>
+      `stack_get_unfixed_depth h 1 2 (stack_push h ps.ps_stack) = SOME 0` by
+        (irule stack_get_unfixed_depth_zero >>
+         simp[stack_get_depth_push_inventory]) >>
+      simp[] >> rpt IF_CASES_TAC >> gvs[]) >>
+  rename1 `stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src` >>
+  Cases_on `src > 16` >> simp[]
+  >- (Cases_on `reduce_depth_plan (LENGTH ps.ps_stack) [h;h'] h 1 2 ps` >>
+      simp[] >> strip_tac >>
+      `q = []` by
+        (qpat_x_assum `(case _ of _ => _) = ([],ps1)` mp_tac >>
+         Cases_on `stack_get_unfixed_depth h 1 2 r.ps_stack` >> simp[] >>
+         rename1 `stack_get_unfixed_depth h 1 2 r.ps_stack = SOME src'` >>
+         Cases_on `src' = 1` >> simp[] >>
+         rpt IF_CASES_TAC >> simp[]) >>
+      `r = ps` by
+        (qpat_x_assum `reduce_depth_plan _ _ _ _ _ _ = _` mp_tac >>
+         Cases_on `LENGTH ps.ps_stack` >>
+         simp[reduce_depth_plan_def, LET_THM] >>
+         asm_rewrite_tac[] >>
+         Cases_on `select_spill_candidate ps.ps_stack [h;h'] src 2` >> simp[] >>
+         simp[do_spill_at_def, do_spill_tos_def, LET_THM] >>
+         Cases_on `alloc_spill_slot ps.ps_alloc` >>
+         Cases_on `x = 0` >> simp[] >> pairarg_tac >> simp[]) >>
+      gvs[] >>
+      Cases_on `stack_get_unfixed_depth h 1 2 ps.ps_stack` >> gvs[] >>
+      rename1 `stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src'` >>
+      Cases_on `src' = 1` >> simp[] >>
+      fs[exact_two_planner_ready_def] >>
+      Cases_on `operand_equiv dfg h (stack_peek 1 ps.ps_stack)` >> simp[]
+      >- (strip_tac >> gvs[] >> disj2_tac >>
+          qexists `src'` >>
+          metis_tac[stack_get_unfixed_depth_bound]) >>
+      `((2 < LENGTH ps.ps_stack + 1 /\ 0 < LENGTH ps.ps_stack) /\
+        0 < LENGTH ps.ps_stack)` by decide_tac >>
+      Cases_on `do_swap src' ps` >> simp[] >>
+      `q <> []` by
+        (qpat_x_assum `do_swap src' ps = (q,r)` mp_tac >>
+         simp[do_swap_def, LET_THM] >> pairarg_tac >> simp[] >>
+         strip_tac >> gvs[]) >>
+      Cases_on `do_swap 1 r` >> simp[] >>
+      qpat_x_assum `(if _ then _ else _) = ([],ps1)` mp_tac >>
+      asm_rewrite_tac[] >> simp[]) >>
+  Cases_on `src = 1` >> simp[] >>
+  fs[exact_two_planner_ready_def] >>
+  Cases_on `operand_equiv dfg h (stack_peek 1 ps.ps_stack)` >> simp[]
+  >- (strip_tac >> gvs[] >> disj2_tac >>
+      qexists `src` >>
+      metis_tac[stack_get_unfixed_depth_bound]) >>
+  Cases_on `src = 0` >> simp[do_swap_def]
+QED
+
+Theorem reorder_one_exact_two_first_noops_source_shape[local]:
+  !base dfg h h' ps ps1.
+    exact_two_planner_ready base h h' ps /\
+    reorder_one dfg [h;h'] 0 h ps = ([],ps1) ==>
+    ps1.ps_alloc = ps.ps_alloc /\ ps1.ps_spilled = ps.ps_spilled /\
+    (ps1.ps_stack = ps.ps_stack \/
+     ?src at. stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src /\
+       src < LENGTH ps.ps_stack /\ at = stack_peek 1 ps.ps_stack /\
+       operand_equiv dfg h at /\
+       ps1.ps_stack = stack_poke 1 h (stack_poke src at ps.ps_stack))
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `reorder_one _ _ _ _ _ = _` mp_tac >>
+  rewrite_tac[reorder_one_def, LET_THM] >>
+  CONV_TAC (DEPTH_CONV pairLib.GEN_BETA_CONV) >> BETA_TAC >>
+  Cases_on `stack_get_unfixed_depth h 1 2 ps.ps_stack` >> simp[]
+  >- (Cases_on `FLOOKUP ps.ps_spilled h` >> simp[do_restore_def, LET_THM] >>
+      `stack_get_unfixed_depth h 1 2 (stack_push h ps.ps_stack) = SOME 0` by
+        (irule stack_get_unfixed_depth_zero >>
+         simp[stack_get_depth_push_inventory]) >>
+      simp[] >> rpt IF_CASES_TAC >> gvs[]) >>
+  rename1 `stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src` >>
+  Cases_on `src > 16` >> simp[]
+  >- (Cases_on `reduce_depth_plan (LENGTH ps.ps_stack) [h;h'] h 1 2 ps` >>
+      simp[] >> strip_tac >>
+      `q = []` by
+        (qpat_x_assum `(case _ of _ => _) = ([],ps1)` mp_tac >>
+         Cases_on `stack_get_unfixed_depth h 1 2 r.ps_stack` >> simp[] >>
+         rename1 `stack_get_unfixed_depth h 1 2 r.ps_stack = SOME src'` >>
+         Cases_on `src' = 1` >> simp[] >> rpt IF_CASES_TAC >> simp[]) >>
+      `r = ps` by
+        (qpat_x_assum `reduce_depth_plan _ _ _ _ _ _ = _` mp_tac >>
+         Cases_on `LENGTH ps.ps_stack` >>
+         simp[reduce_depth_plan_def, LET_THM] >> asm_rewrite_tac[] >>
+         Cases_on `select_spill_candidate ps.ps_stack [h;h'] src 2` >> simp[] >>
+         simp[do_spill_at_def, do_spill_tos_def, LET_THM] >>
+         Cases_on `alloc_spill_slot ps.ps_alloc` >>
+         Cases_on `x = 0` >> simp[] >> pairarg_tac >> simp[]) >>
+      gvs[] >>
+      Cases_on `stack_get_unfixed_depth h 1 2 ps.ps_stack` >> gvs[] >>
+      rename1 `stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src'` >>
+      Cases_on `src' = 1` >> simp[] >> fs[exact_two_planner_ready_def] >>
+      Cases_on `operand_equiv dfg h (stack_peek 1 ps.ps_stack)` >> simp[]
+      >- (strip_tac >> gvs[] >> disj2_tac >>
+          metis_tac[stack_get_unfixed_depth_bound]) >>
+      `((2 < LENGTH ps.ps_stack + 1 /\ 0 < LENGTH ps.ps_stack) /\
+        0 < LENGTH ps.ps_stack)` by decide_tac >>
+      Cases_on `do_swap src' ps` >> simp[] >>
+      `q <> []` by
+        (qpat_x_assum `do_swap src' ps = (q,r)` mp_tac >>
+         simp[do_swap_def, LET_THM] >> pairarg_tac >> simp[] >>
+         strip_tac >> gvs[]) >>
+      Cases_on `do_swap 1 r` >> simp[] >>
+      qpat_x_assum `(if _ then _ else _) = ([],ps1)` mp_tac >>
+      asm_rewrite_tac[] >> simp[]) >>
+  Cases_on `src = 1` >> simp[] >> fs[exact_two_planner_ready_def] >>
+  Cases_on `operand_equiv dfg h (stack_peek 1 ps.ps_stack)` >> simp[]
+  >- (strip_tac >> gvs[] >> disj2_tac >>
+      metis_tac[stack_get_unfixed_depth_bound]) >>
+  Cases_on `src = 0` >> simp[do_swap_def]
+QED
+
+Theorem reverse_stack_poke[local]:
+  !d x stk. d < LENGTH stk ==>
+    REVERSE (stack_poke d x stk) = LUPDATE x d (REVERSE stk)
+Proof
+  rpt gen_tac >> qid_spec_tac `d` >>
+  Induct_on `stk` using SNOC_INDUCT
+  >- simp[] >>
+  gen_tac >> Cases_on `d`
+  >- simp[stack_poke_def, LUPDATE_SNOC, LUPDATE_def] >>
+  strip_tac >>
+  `n < LENGTH stk` by fs[] >>
+  `LENGTH stk - SUC n = LENGTH stk - 1 - n` by decide_tac >>
+  first_x_assum (qspec_then `n` mp_tac) >>
+  simp[stack_poke_def] >> strip_tac >>
+  `LENGTH stk - (n + 1) < LENGTH stk` by decide_tac >>
+  simp[LUPDATE_APPEND1, LUPDATE_def]
+QED
+
+Theorem TAKE_LUPDATE_LT[local]:
+  !n d x xs. n <= LENGTH xs /\ d < n ==>
+    TAKE n (LUPDATE x d xs) = LUPDATE x d (TAKE n xs)
+Proof
+  simp[LIST_EQ_REWRITE, EL_LUPDATE, EL_TAKE]
+QED
+
+Theorem top_n_stack_poke_inside[local]:
+  !n d x stk. n <= LENGTH stk /\ d < n ==>
+    top_n n (stack_poke d x stk) = stack_poke d x (top_n n stk)
+Proof
+  rpt strip_tac >>
+  irule (iffLR REVERSE_11) >>
+  simp[Excl "REVERSE_11", top_n_def, reverse_stack_poke, TAKE_LUPDATE_LT]
+QED
+
+Theorem stack_find_shallowest[local]:
+  !p xs d. stack_find p xs = SOME d ==>
+    !j. j < d ==> ~p (EL j xs)
+Proof
+  gen_tac >> Induct >> simp[stack_find_def] >>
+  rpt gen_tac >> IF_CASES_TAC >> gvs[] >>
+  Cases_on `stack_find p xs` >> gvs[] >>
+  strip_tac >> Cases_on `j` >> gvs[]
+QED
+
+Theorem stack_get_depth_shallowest[local]:
+  !h stk src j. stack_get_depth h stk = SOME src /\ j < src ==>
+    stack_peek j stk <> h
+Proof
+  rpt gen_tac >> strip_tac >>
+  `src < LENGTH stk` by metis_tac[stack_get_depth_props] >>
+  `j < LENGTH stk` by decide_tac >>
+  fs[stack_get_depth_def] >>
+  drule stack_find_shallowest >>
+  disch_then (qspec_then `j` mp_tac) >>
+  simp[stack_peek_def, EL_REVERSE] >>
+  `PRE (LENGTH stk - j) = LENGTH stk - 1 - j` by decide_tac >>
+  simp[]
+QED
+
+Theorem ALL_DISTINCT_LUPDATE_fresh[local]:
+  !xs i x. ALL_DISTINCT xs /\ i < LENGTH xs /\ ~MEM x xs ==>
+    ALL_DISTINCT (LUPDATE x i xs)
+Proof
+  rw[EL_ALL_DISTINCT_EL_EQ, EL_LUPDATE] >>
+  rpt (IF_CASES_TAC >> gvs[]) >>
+  metis_tac[ALL_DISTINCT_EL_IMP, MEM_EL]
+QED
+
+Theorem stack_peek_top_n[local]:
+  !n d stk. n <= LENGTH stk /\ d < n ==>
+    stack_peek d (top_n n stk) = stack_peek d stk
+Proof
+  rpt strip_tac >>
+  simp[top_n_def, stack_peek_def, EL_REVERSE, EL_TAKE] >>
+  `PRE (n - d) = n - 1 - d /\
+   PRE (LENGTH stk - d) = LENGTH stk - 1 - d /\
+   PRE (LENGTH stk - PRE (d + 1)) = LENGTH stk - (d + 1)` by decide_tac >>
+  simp[]
+QED
+
+Theorem TAKE_LUPDATE_GE[local]:
+  !n d x xs. n <= LENGTH xs /\ n <= d ==>
+    TAKE n (LUPDATE x d xs) = TAKE n xs
+Proof
+  simp[LIST_EQ_REWRITE, EL_LUPDATE, EL_TAKE]
+QED
+
+Theorem top_n_stack_poke_outside[local]:
+  !n d x stk. n <= LENGTH stk /\ n <= d /\ d < LENGTH stk ==>
+    top_n n (stack_poke d x stk) = top_n n stk
+Proof
+  rpt strip_tac >>
+  irule (iffLR REVERSE_11) >>
+  simp[Excl "REVERSE_11", top_n_def, reverse_stack_poke, TAKE_LUPDATE_GE]
+QED
+
+Theorem stack_peek_eq_reverse_el[local]:
+  !d stk. d < LENGTH stk ==>
+    stack_peek d stk = EL d (REVERSE stk)
+Proof
+  rpt strip_tac >> simp[stack_peek_def, EL_REVERSE] >>
+  `PRE (LENGTH stk - d) = LENGTH stk - 1 - d` by decide_tac >>
+  simp[]
+QED
+
+Theorem reorder_alias_exchange_top_n_distinct[local]:
+  !h ps ps1 src d.
+    stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src /\
+    src < LENGTH ps.ps_stack /\ 1 < LENGTH ps.ps_stack /\
+    ps1.ps_stack =
+      stack_poke 1 h
+        (stack_poke src (stack_peek 1 ps.ps_stack) ps.ps_stack) /\
+    d < LENGTH ps.ps_stack /\
+    ALL_DISTINCT (top_n (d + 1) ps.ps_stack) ==>
+    ALL_DISTINCT (top_n (d + 1) ps1.ps_stack)
+Proof
+  rpt gen_tac >> strip_tac >>
+  `stack_get_depth h ps.ps_stack = SOME src` by
+    fs[stack_get_unfixed_depth_def] >>
+  `stack_peek src ps.ps_stack = h` by
+    metis_tac[stack_get_depth_props] >>
+  `d + 1 <= LENGTH ps.ps_stack` by decide_tac >>
+  gvs[] >> Cases_on `src <= d`
+  >- (Cases_on `d = 0`
+      >- (`LENGTH (top_n 1
+              (stack_poke 1 (stack_peek src ps.ps_stack)
+                (stack_poke src (stack_peek 1 ps.ps_stack) ps.ps_stack))) = 1` by
+            simp[top_n_def, stack_poke_def] >>
+          rw[EL_ALL_DISTINCT_EL_EQ] >> decide_tac) >>
+      `src < d + 1 /\ 1 < d + 1` by decide_tac >>
+      `top_n (d + 1)
+          (stack_poke 1 (stack_peek src ps.ps_stack)
+            (stack_poke src (stack_peek 1 ps.ps_stack) ps.ps_stack)) =
+       stack_poke 1 (stack_peek src ps.ps_stack)
+         (stack_poke src (stack_peek 1 ps.ps_stack)
+           (top_n (d + 1) ps.ps_stack))` by
+        metis_tac[top_n_stack_poke_inside, stack_poke_def, LENGTH_LUPDATE] >>
+      pop_assum SUBST1_TAC >>
+      `stack_peek src (top_n (d + 1) ps.ps_stack) =
+         stack_peek src ps.ps_stack /\
+       stack_peek 1 (top_n (d + 1) ps.ps_stack) =
+         stack_peek 1 ps.ps_stack` by
+        simp[stack_peek_top_n] >>
+      qpat_assum `stack_peek src (top_n _ _) = _`
+        (fn th => once_rewrite_tac[GSYM th]) >>
+      qpat_assum `stack_peek 1 (top_n _ _) = _`
+        (fn th => once_rewrite_tac[GSYM th]) >>
+      irule (cj 1 stack_poke_exchange_structural_wf) >>
+      simp[top_n_def, LENGTH_TAKE_EQ]) >>
+  `d + 1 <= src` by decide_tac >>
+  `top_n (d + 1)
+      (stack_poke src (stack_peek 1 ps.ps_stack) ps.ps_stack) =
+    top_n (d + 1) ps.ps_stack` by
+    (irule top_n_stack_poke_outside >> simp[]) >>
+  Cases_on `d = 0`
+  >- (`LENGTH (top_n 1
+          (stack_poke 1 (stack_peek src ps.ps_stack)
+            (stack_poke src (stack_peek 1 ps.ps_stack) ps.ps_stack))) = 1` by
+        simp[top_n_def, stack_poke_def] >>
+      rw[EL_ALL_DISTINCT_EL_EQ] >> decide_tac) >>
+  `1 < d + 1` by decide_tac >>
+  `~MEM (stack_peek src ps.ps_stack) (top_n (d + 1) ps.ps_stack)` by
+    (strip_tac >>
+     `MEM (stack_peek src ps.ps_stack)
+        (REVERSE (top_n (d + 1) ps.ps_stack))` by simp[] >>
+     qpat_x_assum `MEM _ (REVERSE _)` mp_tac >>
+     pure_rewrite_tac[MEM_EL] >> strip_tac >>
+     rename1 `j < LENGTH (REVERSE _)` >>
+     `j < d + 1` by
+       (qpat_x_assum `j < LENGTH (REVERSE _)` mp_tac >>
+        simp[top_n_def]) >>
+     `stack_peek j (top_n (d + 1) ps.ps_stack) =
+        EL j (REVERSE (top_n (d + 1) ps.ps_stack))` by
+       (irule stack_peek_eq_reverse_el >>
+        simp[top_n_def, LENGTH_TAKE_EQ]) >>
+     `stack_peek j ps.ps_stack = stack_peek src ps.ps_stack` by
+       metis_tac[stack_peek_top_n] >>
+     `j < src` by decide_tac >>
+     qspecl_then [`stack_peek src ps.ps_stack`, `ps.ps_stack`, `src`, `j`]
+       mp_tac stack_get_depth_shallowest >> simp[]) >>
+  `top_n (d + 1)
+      (stack_poke 1 (stack_peek src ps.ps_stack)
+        (stack_poke src (stack_peek 1 ps.ps_stack) ps.ps_stack)) =
+    stack_poke 1 (stack_peek src ps.ps_stack)
+      (top_n (d + 1) ps.ps_stack)` by
+    metis_tac[top_n_stack_poke_inside, stack_poke_def, LENGTH_LUPDATE] >>
+  pop_assum SUBST1_TAC >>
+  simp[stack_poke_def] >>
+  irule ALL_DISTINCT_LUPDATE_fresh >>
+  simp[top_n_def, LENGTH_TAKE_EQ]
+QED
+
+Theorem reorder_one_exact_two_first_noops_deep_transfer[local]:
+  !base dfg h h' ps ps1 d ops1 ps2 lo.
+    exact_two_planner_ready base h h' ps /\
+    reorder_one dfg [h;h'] 0 h ps = ([],ps1) /\
+    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\ 16 < d /\
+    do_swap d ps1 = (ops1,ps2) /\
+    prefix_spill_wf initial_fmp lo ops1 ps ==>
     prefix_spill_wf initial_fmp lo ops1 ps1
 Proof
   rpt gen_tac >> strip_tac >>
-  `prefix_spill_wf initial_fmp lo ops1
-     (apply_prefix_ops initial_fmp lo ops0 ps)` by
-    metis_tac[prefix_spill_wf_append_reorder] >>
+  qspecl_then [`base'`, `dfg`, `h`, `h'`, `ps`, `ps1`] mp_tac
+    reorder_one_exact_two_first_noops_shape >> simp[] >> strip_tac >>
+  Cases_on `ps1.ps_stack = ps.ps_stack`
+  >- (`spill_wf_view_eq ps1 ps` by
+        fs[spill_wf_view_eq_def] >>
+      metis_tac[prefix_spill_wf_view_eq]) >>
+  gvs[] >>
+  TRY (metis_tac[prefix_spill_wf_view_eq, spill_wf_view_eq_def]) >>
+  FAIL_TAC "noops alias deep transfer needs permutation spill-WF boundary"
+QED
+
+Theorem reorder_one_exact_two_suffix_prefix_spill_wf[local]:
+  !base dfg h h' ps ops0 ps1 ops1 ps2 lo.
+    exact_two_planner_ready base h h' ps /\
+    reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
+    reorder_one dfg [h;h'] 1 h' ps1 = (ops1,ps2) /\
+    prefix_spill_wf initial_fmp lo (ops0 ++ ops1) ps ==>
+    prefix_spill_wf initial_fmp lo ops1 ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  `exact_two_planner_ready base' h h' ps1` by
+    (qspecl_then [`dfg`, `base'`, `h`, `h'`, `0`, `h`, `ps`, `ops0`, `ps1`]
+       MATCH_MP_TAC reorder_one_exact_two_planner_ready >> simp[]) >>
+  `2 <= LENGTH ps1.ps_stack` by
+    fs[exact_two_planner_ready_def] >>
+  Cases_on `stack_get_unfixed_depth h' 0 2 ps1.ps_stack`
+  >- metis_tac[reorder_one_exact_two_second_absent_prefix_spill_wf] >>
+  rename1 `stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d` >>
+  Cases_on `d <= 16`
+  >- metis_tac[reorder_one_exact_two_second_shallow_prefix_spill_wf] >>
+  `reduce_depth_plan (LENGTH ps1.ps_stack) [h;h'] h' 0 2 ps1 =
+     ([],ps1)` by
+    (Cases_on `LENGTH ps1.ps_stack` >>
+     gvs[reduce_depth_plan_def]) >>
   qpat_x_assum `reorder_one _ _ 1 _ _ = _` mp_tac >>
   simp[reorder_one_def, LET_THM] >>
-  pairarg_tac >> simp[] >>
-  Cases_on `stack_get_unfixed_depth h' 0 2 ps2'.ps_stack` >> simp[]
-  >- (strip_tac >>
-      qspecl_then [`LENGTH ps1.ps_stack`, `[h;h']`, `h'`, `0`, `2`,
-                   `ps1`, `d`]
-        mp_tac (CONV_RULE (DEPTH_CONV pairLib.GEN_BETA_CONV)
-          (REWRITE_RULE [LET_THM] reduce_depth_plan_dist_ge)) >>
-      (impl_tac >- simp[]) >> strip_tac >> gvs[]) >>
-  `16 <= x` by (
-    qspecl_then [`LENGTH ps1.ps_stack`, `[h;h']`, `h'`, `0`, `2`,
-                 `ps1`, `d`]
-      mp_tac (CONV_RULE (DEPTH_CONV pairLib.GEN_BETA_CONV)
-        (REWRITE_RULE [LET_THM] reduce_depth_plan_dist_ge)) >>
-    (impl_tac >- simp[]) >> strip_tac >> gvs[]) >>
-  Cases_on `x = 0`
-  >- (gvs[] >> decide_tac) >>
-  `x < LENGTH ps2'.ps_stack` by
-    metis_tac[stack_get_unfixed_depth_props] >>
-  simp[] >>
-  Cases_on `operand_equiv dfg h' (stack_peek 0 ps2'.ps_stack)` >> simp[]
-  >- FAIL_TAC "exact-two deep post-reduction alias" >>
-  FAIL_TAC "exact-two deep post-reduction swap"
+  Cases_on `operand_equiv dfg h' (stack_peek 0 ps1.ps_stack)`
+  >- simp[prefix_spill_wf_def] >>
+  simp[do_swap_def] >>
+  FAIL_TAC "exact-two ready deep suffix"
 QED

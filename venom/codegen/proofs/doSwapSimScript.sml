@@ -1830,7 +1830,7 @@ Proof
 QED
 
 (* Allocation offsets and allocator evolution depend only on item count. *)
-Theorem spill_alloc_n_length_cong[local]:
+Theorem spill_alloc_n_length_cong:
   !xs ys offs al.
     LENGTH xs = LENGTH ys ==>
     spill_alloc_n offs al xs = spill_alloc_n offs al ys
