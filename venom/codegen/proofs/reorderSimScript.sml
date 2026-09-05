@@ -2850,6 +2850,94 @@ Proof
 QED
 
 
+Definition spill_overwrite_equiv_def:
+  spill_overwrite_equiv items (p:plan_state) q <=>
+    p.ps_stack = q.ps_stack /\
+    p.ps_alloc.sa_spill_base = q.ps_alloc.sa_spill_base /\
+    p.ps_alloc.sa_next_offset = q.ps_alloc.sa_next_offset /\
+    (!op. ~MEM op items ==>
+          FLOOKUP p.ps_spilled op = FLOOKUP q.ps_spilled op)
+End
+
+Theorem fupdate_list_spill_overwrite[local]:
+  !items offsets (m1:operand |-> num) m2.
+    LENGTH items = LENGTH offsets /\
+    ALL_DISTINCT items /\
+    (!op. ~MEM op items ==> FLOOKUP m1 op = FLOOKUP m2 op) ==>
+    m1 |++ ZIP(items,offsets) = m2 |++ ZIP(items,offsets)
+Proof
+  Induct
+  >- (simp[FUPDATE_LIST_THM, FLOOKUP_EXT, FUN_EQ_THM] >> metis_tac[]) >>
+  rpt gen_tac >> Cases_on `offsets` >> simp[] >>
+  rpt strip_tac >>
+  simp[FUPDATE_LIST_THM] >>
+  first_x_assum irule >> simp[] >>
+  rpt strip_tac >> Cases_on `op = h` >> simp[FLOOKUP_UPDATE]
+QED
+
+
+Theorem apply_spill_ops_nonmap_fields[local]:
+  !offsets lo (p:plan_state) q.
+    p.ps_stack = q.ps_stack /\
+    p.ps_alloc.sa_spill_base = q.ps_alloc.sa_spill_base /\
+    p.ps_alloc.sa_next_offset = q.ps_alloc.sa_next_offset ==>
+    let p' = apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) p;
+        q' = apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) q
+    in p'.ps_stack = q'.ps_stack /\
+       p'.ps_alloc.sa_spill_base = q'.ps_alloc.sa_spill_base /\
+       p'.ps_alloc.sa_next_offset = q'.ps_alloc.sa_next_offset
+Proof
+  Induct
+  >- simp[apply_prefix_ops_def, LET_THM] >>
+  rpt gen_tac >> rpt strip_tac >>
+  pop_last_assum mp_tac >>
+  simp[apply_prefix_ops_def, apply_prefix_op_def, LET_THM, stack_pop_def]
+QED
+
+Theorem apply_spill_ops_overwrite_converge[local]:
+  !items offsets lo (p:plan_state) q.
+    spill_overwrite_equiv items p q /\
+    ALL_DISTINCT items /\
+    LENGTH items = LENGTH offsets /\
+    LENGTH offsets <= LENGTH p.ps_stack /\
+    items = TAKE (LENGTH offsets) (REVERSE p.ps_stack) ==>
+    let p' = apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) p;
+        q' = apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) q
+    in p'.ps_stack = q'.ps_stack /\
+       p'.ps_spilled = q'.ps_spilled /\
+       p'.ps_alloc.sa_spill_base = q'.ps_alloc.sa_spill_base /\
+       p'.ps_alloc.sa_next_offset = q'.ps_alloc.sa_next_offset
+Proof
+  rpt gen_tac >> strip_tac >> simp[LET_THM] >>
+  qpat_assum `LENGTH items = LENGTH offsets` (mk_asm "lens") >>
+  fs[spill_overwrite_equiv_def] >>
+  `LENGTH offsets <= LENGTH q.ps_stack` by metis_tac[] >>
+  `TAKE (LENGTH offsets) (REVERSE q.ps_stack) = items` by
+    metis_tac[] >>
+  `let p' = apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) p;
+       q' = apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) q
+   in p'.ps_stack = q'.ps_stack /\
+      p'.ps_alloc.sa_spill_base = q'.ps_alloc.sa_spill_base /\
+      p'.ps_alloc.sa_next_offset = q'.ps_alloc.sa_next_offset` by
+    (irule apply_spill_ops_nonmap_fields >>
+     fs[spill_overwrite_equiv_def]) >>
+  qpat_x_assum `let p' = _; q' = _ in _` mp_tac >>
+  simp[LET_THM] >> strip_tac >>
+  qspecl_then [`offsets`, `lo`, `p`] mp_tac apply_spill_ops_spilled >>
+  qspecl_then [`offsets`, `lo`, `q`] mp_tac apply_spill_ops_spilled >>
+  (impl_tac >- first_assum ACCEPT_TAC) >> strip_tac >>
+  (impl_tac >- first_assum ACCEPT_TAC) >> strip_tac >>
+  `p.ps_spilled |++ ZIP(items,offsets) =
+   q.ps_spilled |++ ZIP(items,offsets)` by
+    (irule fupdate_list_spill_overwrite >>
+     conj_tac
+     >- (rpt strip_tac >> first_x_assum irule >> metis_tac[]) >>
+     conj_tac >- metis_tac[] >>
+     asm "lens" ACCEPT_TAC) >>
+  metis_tac[]
+QED
+
+
 (* Threaded spill well-formedness depends only on the fields changed by prefix
    interpretation, not on allocator free-list bookkeeping. *)
 Theorem prefix_spill_wf_ext_relevant[local]:

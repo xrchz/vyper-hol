@@ -2143,6 +2143,58 @@ Proof
   Cases_on `stack_peek 0 ps.ps_stack = x` >> simp[]
 QED
 
+
+Theorem spill_prefix_preserves_value_unique[local]:
+  !sops lo ps.
+    (!x y off. FLOOKUP ps.ps_spilled x = SOME off /\
+               FLOOKUP ps.ps_spilled y = SOME off ==> x = y) /\
+    EVERY (\p. ?off. p = SOSpill off) sops /\
+    prefix_spill_wf initial_fmp lo sops ps ==>
+    !x y off.
+      FLOOKUP (apply_prefix_ops initial_fmp lo sops ps).ps_spilled x = SOME off /\
+      FLOOKUP (apply_prefix_ops initial_fmp lo sops ps).ps_spilled y = SOME off ==>
+      x = y
+Proof
+  Induct >> simp[apply_prefix_ops_def, prefix_spill_wf_def] >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `h` >> gvs[spill_op_wf_def, apply_prefix_op_def] >>
+  first_x_assum (qspecl_then [`lo`,
+    `apply_prefix_op initial_fmp lo (SOSpill n) ps`] mp_tac) >>
+  simp[apply_prefix_op_def] >>
+  (impl_tac >-
+    (rpt strip_tac >>
+     qpat_x_assum `FLOOKUP (_ |+ _) _ = _` mp_tac >>
+     qpat_x_assum `FLOOKUP (_ |+ _) _ = _` mp_tac >>
+     simp[finite_mapTheory.FLOOKUP_UPDATE] >>
+     rpt IF_CASES_TAC >> gvs[] >>
+     rpt strip_tac >>
+     qpat_assum `!op2 off2. FLOOKUP ps.ps_spilled op2 = SOME off2 ==> _`
+       drule >> decide_tac)) >>
+  simp[]
+QED
+
+Theorem unique_offset_cannot_be_restored_twice[local]:
+  !off middle lo ps.
+    (!x y v. FLOOKUP ps.ps_spilled x = SOME v /\
+             FLOOKUP ps.ps_spilled y = SOME v ==> x = y) /\
+    EVERY (\p. ?v. p = SORestore v) middle /\
+    prefix_spill_wf initial_fmp lo
+      ([SORestore off] ++ middle ++ [SORestore off]) ps ==>
+    F
+Proof
+  rpt gen_tac >> strip_tac >>
+  fs[prefix_spill_wf_def] >>
+  fs[prefix_spill_wf_snoc] >>
+  `off NOTIN FRANGE
+     (apply_prefix_op initial_fmp lo (SORestore off) ps).ps_spilled` by
+    (irule restore_unique_clears_frange >>
+     fs[spill_op_wf_def] >> metis_tac[]) >>
+  `off IN FRANGE
+     (apply_prefix_ops initial_fmp lo middle
+       (apply_prefix_op initial_fmp lo (SORestore off) ps)).ps_spilled` by
+    (fs[spill_op_wf_def, finite_mapTheory.FRANGE_FLOOKUP] >> metis_tac[]) >>
+  drule_all frange_restore_only_mono >> strip_tac >> gvs[]
+QED
 (* spill_seq_first_off_unique and do_dup_deep_not_spill_wf deleted:
    replaced by depth <= 15 precondition approach. *)
 
@@ -2232,6 +2284,168 @@ Proof
           apply_prefix_op_def, apply_simple_op_def, stack_push_def])
     )
   )
+QED
+
+Theorem bump_prefix_spill_wf_append[local]:
+  !l1 l2 lo ps.
+    prefix_spill_wf initial_fmp lo (l1 ++ l2) ps <=>
+    prefix_spill_wf initial_fmp lo l1 ps /\
+    prefix_spill_wf initial_fmp lo l2
+      (apply_prefix_ops initial_fmp lo l1 ps)
+Proof
+  Induct >> simp[prefix_spill_wf_def, apply_prefix_ops_def] >>
+  metis_tac[]
+QED
+
+Theorem do_dup_deep_not_prefix_spill_wf[local]:
+  !dist ps ops ps' lo.
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    15 < dist /\ dist < LENGTH ps.ps_stack /\
+    do_dup dist ps = (ops,ps') /\
+    prefix_spill_wf initial_fmp lo ops ps ==>
+    F
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `do_dup dist ps` >> gvs[] >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_dup_big_decompose) >>
+  (impl_tac >- decide_tac) >>
+  disch_then assume_tac >>
+  gvs[LET_THM] >>
+  qabbrev_tac `offsets = FST
+    (spill_alloc_n [] ps.ps_alloc (top_n (dist + 1) ps.ps_stack))` >>
+  `LENGTH offsets = dist + 1` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length,
+         top_n_def, LENGTH_TAKE_EQ] >>
+  fs[bump_prefix_spill_wf_append] >>
+  `!x y off.
+     FLOOKUP ps.ps_spilled x = SOME off /\
+     FLOOKUP ps.ps_spilled y = SOME off ==> x = y` by
+    (rpt strip_tac >> Cases_on `x = y` >> simp[] >>
+     drule spill_alloc_layout_wf_spilled_separated >>
+     disch_then (qspecl_then [`x`, `off`, `y`, `off`] mp_tac) >>
+     simp[] >> decide_tac) >>
+  `!xs:num list. EVERY (\p. ?off. p = SOSpill off) (MAP SOSpill xs)` by
+    (Induct >> simp[] >> metis_tac[]) >>
+  `!x y off.
+     FLOOKUP (apply_prefix_ops initial_fmp lo
+       (MAP SOSpill offsets) ps).ps_spilled x = SOME off /\
+     FLOOKUP (apply_prefix_ops initial_fmp lo
+       (MAP SOSpill offsets) ps).ps_spilled y = SOME off ==> x = y` by
+    (match_mp_tac (Q.SPECL [`MAP SOSpill offsets`, `lo`, `ps`]
+       spill_prefix_preserves_value_unique) >> simp[]) >>
+  `REVERSE (GENLIST I (dist + 1)) =
+   REVERSE (GENLIST (\i. i + 1) dist) ++ [0]` by
+    (simp[GSYM ADD1, GENLIST_CONS, combinTheory.o_DEF] >>
+     AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM]) >>
+  `offsets <> []` by (Cases_on `offsets` >> gvs[]) >>
+  `HD offsets = EL 0 offsets` by (Cases_on `offsets` >> gvs[]) >>
+  qabbrev_tac `middle = MAP (\idx. SORestore (EL idx offsets))
+    (REVERSE (GENLIST (\i. i + 1) dist))` >>
+  `!xs:num list. EVERY (\p. ?v. p = SORestore v)
+      (MAP (\idx. SORestore (EL idx offsets)) xs)` by
+    (Induct >> simp[] >> metis_tac[]) >>
+  `EVERY (\p. ?v. p = SORestore v) middle` by
+    simp[Abbr `middle`] >>
+  qabbrev_tac `pst = apply_prefix_ops initial_fmp lo
+    (MAP SOSpill offsets) ps` >>
+  `MAP (\idx. SORestore (EL idx offsets))
+      (REVERSE (GENLIST I (dist + 1))) =
+    middle ++ [SORestore (EL 0 offsets)]` by
+    (qpat_assum `REVERSE (GENLIST I (dist + 1)) = _`
+       (fn th => once_rewrite_tac[th]) >>
+     pure_rewrite_tac[MAP_APPEND, MAP] >>
+     qpat_assum `Abbrev (middle = _)`
+       (fn th => pure_once_rewrite_tac
+         [REWRITE_RULE [markerTheory.Abbrev_def] th]) >>
+     BETA_TAC >> REFL_TAC) >>
+  `apply_prefix_ops initial_fmp lo
+      (MAP SOSpill offsets ++ [SORestore (HD offsets)]) ps =
+    apply_prefix_ops initial_fmp lo [SORestore (EL 0 offsets)] pst` by
+    (pure_once_rewrite_tac[apply_prefix_ops_append] >>
+     qpat_assum `HD offsets = _` (fn th => pure_once_rewrite_tac[th]) >>
+     qpat_assum `Abbrev (pst = _)`
+       (fn th => pure_once_rewrite_tac
+         [REWRITE_RULE [markerTheory.Abbrev_def] th]) >>
+     REFL_TAC) >>
+  `prefix_spill_wf initial_fmp lo
+     (middle ++ [SORestore (HD offsets)])
+     (apply_prefix_ops initial_fmp lo [SORestore (HD offsets)] pst)` by
+    metis_tac[] >>
+  fs[bump_prefix_spill_wf_append] >>
+  `prefix_spill_wf initial_fmp lo
+     ([SORestore (HD offsets)] ++ middle ++
+      [SORestore (HD offsets)]) pst` by
+    (once_rewrite_tac[bump_prefix_spill_wf_append] >>
+     conj_tac
+     >- (once_rewrite_tac[bump_prefix_spill_wf_append] >>
+         conj_tac >- metis_tac[] >> metis_tac[]) >>
+     metis_tac[apply_prefix_ops_append]) >>
+  match_mp_tac (Q.SPECL [`HD offsets`, `middle`, `lo`, `pst`]
+    unique_offset_cannot_be_restored_twice) >>
+  simp[]
+QED
+
+Theorem bump_emit_one_input_ss_align_deep_safe[local]:
+  !opc nl op ps ops ps' lo.
+    emit_one_input opc nl op ps = (ops,ps') /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    prefix_spill_wf initial_fmp lo ops ps /\
+    ~(?l. op = Label l /\ opc = INVOKE) ==>
+    (apply_prefix_ops initial_fmp lo ops ps).ps_stack = ps'.ps_stack /\
+    (apply_prefix_ops initial_fmp lo ops ps).ps_spilled = ps'.ps_spilled
+Proof
+  rpt gen_tac >> strip_tac >>
+  `!op1 off1 op2 off2.
+     FLOOKUP ps.ps_spilled op1 = SOME off1 /\
+     FLOOKUP ps.ps_spilled op2 = SOME off2 /\ op1 <> op2 ==>
+     off1 + 32 <= off2 \/ off2 + 32 <= off1` by
+    fs[spill_alloc_layout_wf_def] >>
+  qpat_x_assum `emit_one_input _ _ _ _ = _` mp_tac >>
+  simp[emit_one_input_def, LET_THM] >>
+  Cases_on `is_var_operand op /\ IS_SOME (FLOOKUP ps.ps_spilled op)`
+  >- (simp[] >>
+      Cases_on `do_restore op ps` >>
+      rename1 `do_restore op ps = (restore_ops, ps1)` >> simp[] >>
+      `(apply_prefix_ops initial_fmp lo restore_ops ps).ps_stack = ps1.ps_stack /\
+       (apply_prefix_ops initial_fmp lo restore_ops ps).ps_spilled = ps1.ps_spilled` by
+        (irule do_restore_ss_align >> metis_tac[]) >>
+      Cases_on `op` >> fs[is_var_operand_def]
+      >- (`stack_get_depth (Var s) ps1.ps_stack = SOME 0` by
+            (qpat_x_assum `do_restore _ _ = _` mp_tac >>
+             simp[do_restore_def, LET_THM] >>
+             Cases_on `FLOOKUP ps.ps_spilled (Var s)` >> simp[] >>
+             strip_tac >> gvs[] >> simp[stack_get_depth_push]) >>
+          Cases_on `MEM s nl` >> simp[]
+          >- (Cases_on `do_dup 0 ps1` >>
+              rename1 `do_dup 0 ps1 = (dup_ops, ps2)` >>
+              simp[] >> strip_tac >> gvs[] >>
+              gvs[do_dup_def, stack_dup_def, stack_peek_def] >>
+              simp[apply_prefix_ops_append] >>
+              qmatch_goalsub_abbrev_tac `apply_prefix_ops initial_fmp lo _ ps_mid` >>
+              simp[apply_prefix_ops_def, apply_prefix_op_def, apply_simple_op_def] >>
+              `ps_mid.ps_stack = ps1.ps_stack` by simp[Abbr `ps_mid`] >> gvs[])
+          >> (strip_tac >> gvs[])))
+  >> (simp[] >> Cases_on `op` >> fs[is_var_operand_def]
+      >- (strip_tac >> gvs[apply_prefix_ops_def,
+            apply_prefix_op_def, apply_simple_op_def, stack_push_def])
+      >- (Cases_on `MEM s nl` >> simp[]
+          >- (Cases_on `stack_get_depth (Var s) ps.ps_stack` >> simp[]
+              >- simp[apply_prefix_ops_def]
+              >- (rename1 `stack_get_depth _ _ = SOME dist` >>
+                  Cases_on `do_dup dist ps` >>
+                  rename1 `do_dup dist ps = (dup_ops, ps2)` >>
+                  simp[] >> strip_tac >> gvs[] >>
+                  Cases_on `dist <= 15`
+                  >- metis_tac[do_dup_align]
+                  >> `15 < dist` by decide_tac >>
+                     `dist < LENGTH ps.ps_stack` by
+                       metis_tac[stack_get_depth_bound] >>
+                     metis_tac[do_dup_deep_not_prefix_spill_wf]))
+          >- simp[apply_prefix_ops_def])
+      >- (Cases_on `opc = INVOKE`
+          >- gvs[]
+          >> (simp[] >> strip_tac >> gvs[apply_prefix_ops_def,
+                apply_prefix_op_def, apply_simple_op_def, stack_push_def])))
 QED
 
 (* After emit_one_input (non-INVOKE), the operand is accessible on the
@@ -3967,6 +4181,38 @@ Proof
        alloc_slots_bounded_def, spill_alloc_layout_wf_def]
 QED
 
+(* Allocator-shape reachability probe for the actual second BUMP reorder step. *)
+Theorem probe_bump_depth17_second_step_allocator[local]:
+  let ps0 = (init_plan_state 0) with ps_stack :=
+    [Var "deep"; Lit 0w; Lit 1w; Lit 2w; Lit 3w; Lit 4w; Lit 5w;
+     Lit 6w; Lit 7w; Lit 8w; Lit 9w; Lit 10w; Lit 11w; Lit 12w;
+     Lit 13w; Lit 14w; Var "spill"] in
+  let (_,ps) = do_spill_tos ps0 in
+  let (_,ps1) = emit_input_plan BUMP
+    [Var "spill"; Var "deep"] ["spill"] ps in
+  let (_,ps2) = reorder_one dfg_empty [Var "spill"; Var "deep"] 0
+    (Var "spill") ps1 in
+  let (reduce_ops,ps3) = reduce_depth_plan (LENGTH ps2.ps_stack)
+    [Var "spill"; Var "deep"] (Var "deep") 0 2 ps2 in
+  let (swap_ops,_) = do_swap 17 ps3 in
+  let (ops2,_) = reorder_one dfg_empty [Var "spill"; Var "deep"] 1
+    (Var "deep") ps2 in
+    generated_plan_state_wf 0 ps /\
+    (!op. MEM op [Var "spill"; Var "deep"] /\ is_var_operand op ==>
+      (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled op)) /\
+    2 <= LENGTH ps1.ps_stack /\
+    ps2.ps_alloc.sa_free_slots <> [] /\
+    stack_get_unfixed_depth (Var "deep") 0 2 ps3.ps_stack = SOME 17 /\
+    reduce_ops = [] /\ ps3 = ps2 /\ swap_ops = ops2
+Proof
+  EVAL_TAC >>
+  simp[generated_plan_state_wf_def, plan_slots_bounded_def,
+       alloc_slots_bounded_def, spill_alloc_layout_wf_def] >>
+  gen_tac >> Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
+  rpt IF_CASES_TAC >> gvs[]
+QED
+
 (* The reachable depth-17 case also checks whether the source window meets
    the local uniqueness premise required by deep-swap semantic alignment. *)
 Theorem probe_bump_depth17_window_has_duplicate[local]:
@@ -4005,6 +4251,286 @@ Proof
   EVAL_TAC >> qexists `0` >> simp[] >>
   strip_tac >> Cases_on `op` >> gvs[] >>
   rpt (IF_CASES_TAC >> gvs[])
+QED
+
+
+Theorem bump_apply_prefix_op_ext_relevant[local]:
+  !op lo ps1 ps2.
+    ps1.ps_stack = ps2.ps_stack /\
+    ps1.ps_spilled = ps2.ps_spilled /\
+    ps1.ps_alloc.sa_spill_base = ps2.ps_alloc.sa_spill_base /\
+    ps1.ps_alloc.sa_next_offset = ps2.ps_alloc.sa_next_offset ==>
+    let via1 = apply_prefix_op initial_fmp lo op ps1;
+        via2 = apply_prefix_op initial_fmp lo op ps2
+    in via1.ps_stack = via2.ps_stack /\
+       via1.ps_spilled = via2.ps_spilled /\
+       via1.ps_alloc.sa_spill_base = via2.ps_alloc.sa_spill_base /\
+       via1.ps_alloc.sa_next_offset = via2.ps_alloc.sa_next_offset
+Proof
+  rpt gen_tac >> strip_tac >> Cases_on `op` >>
+  simp[apply_prefix_op_def, apply_simple_op_def, LET_THM,
+       stack_push_def, stack_pop_def, stack_swap_def,
+       stack_peek_def, stack_poke_def, spill_lookup_def, MAX_DEF] >>
+  TRY (Cases_on `o'` >> simp[apply_simple_op_def, stack_push_def])
+QED
+
+Theorem bump_prefix_spill_wf_ext_relevant[local]:
+  !ops lo ps1 ps2.
+    ps1.ps_stack = ps2.ps_stack /\
+    ps1.ps_spilled = ps2.ps_spilled /\
+    ps1.ps_alloc.sa_spill_base = ps2.ps_alloc.sa_spill_base /\
+    ps1.ps_alloc.sa_next_offset = ps2.ps_alloc.sa_next_offset /\
+    prefix_spill_wf initial_fmp lo ops ps1 ==>
+    prefix_spill_wf initial_fmp lo ops ps2
+Proof
+  Induct >> simp[prefix_spill_wf_def] >>
+  rpt gen_tac >> strip_tac >>
+  conj_tac
+  >- (Cases_on `h` >>
+      gvs[spill_op_wf_def, apply_prefix_op_def, apply_simple_op_def,
+          stack_push_def, stack_pop_def, stack_swap_def, stack_peek_def,
+          stack_poke_def, spill_lookup_def] >>
+      TRY (first_assum ACCEPT_TAC) >> TRY (metis_tac[])) >>
+  first_x_assum (qspecl_then
+    [`lo`, `apply_prefix_op initial_fmp lo h ps1`,
+     `apply_prefix_op initial_fmp lo h ps2`] mp_tac) >>
+  (impl_tac >-
+    (qspecl_then [`h`, `lo`, `ps1`, `ps2`] mp_tac
+       bump_apply_prefix_op_ext_relevant >> simp[LET_THM])) >>
+  simp[]
+QED
+
+Theorem bump_emit_one_input_next_offset[local]:
+  !opc nl op ps ops ps' lo.
+    (is_var_operand op ==>
+      (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled op)) /\
+    emit_one_input opc nl op ps = (ops,ps') ==>
+    ps'.ps_alloc.sa_next_offset = ps.ps_alloc.sa_next_offset /\
+    (apply_prefix_ops initial_fmp lo ops ps).ps_alloc.sa_next_offset =
+      ps'.ps_alloc.sa_next_offset
+Proof
+  rpt gen_tac >> disch_tac >>
+  qpat_x_assum `_ /\ _` (CONJUNCTS_THEN2 assume_tac assume_tac) >>
+  Cases_on `op`
+  >- (qpat_x_assum `emit_one_input _ _ _ _ = _` mp_tac >>
+      simp[emit_one_input_def, is_var_operand_def] >> strip_tac >>
+      gvs[apply_prefix_ops_def, apply_prefix_op_def, apply_simple_op_def])
+  >- (Cases_on `FLOOKUP ps.ps_spilled (Var s)`
+      >- (Cases_on `MEM s nl` >>
+          gvs[emit_one_input_def, is_var_operand_def, do_dup_def,
+              apply_prefix_ops_def, apply_prefix_op_def, apply_simple_op_def])
+      >- (Cases_on `MEM s nl` >>
+          gvs[emit_one_input_def, is_var_operand_def, do_restore_def,
+              free_spill_slot_def, stack_get_depth_def, REVERSE_SNOC,
+              stack_find_def, stack_push_def, do_dup_def,
+              apply_prefix_ops_append, apply_prefix_ops_def,
+              apply_prefix_op_def, apply_simple_op_def]))
+  >- (Cases_on `opc = INVOKE` >>
+      gvs[emit_one_input_def, is_var_operand_def, apply_prefix_ops_def,
+          apply_prefix_op_def, apply_simple_op_def])
+QED
+
+Theorem bump_spilled_separated_domsub[local]:
+  !fm x.
+    (!op1 off1 op2 off2.
+       FLOOKUP fm op1 = SOME off1 /\ FLOOKUP fm op2 = SOME off2 /\
+       op1 <> op2 ==> off1 + 32 <= off2 \/ off2 + 32 <= off1) ==>
+    (!op1 off1 op2 off2.
+       FLOOKUP (fm \\ x) op1 = SOME off1 /\
+       FLOOKUP (fm \\ x) op2 = SOME off2 /\ op1 <> op2 ==>
+       off1 + 32 <= off2 \/ off2 + 32 <= off1)
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `!op1 off1 op2 off2. _`
+    (qspecl_then [`op1`, `off1`, `op2`, `off2`] mp_tac) >>
+  gvs[finite_mapTheory.DOMSUB_FLOOKUP_THM]
+QED
+
+Theorem bump_do_dup_spilled_unchanged[local]:
+  !(ps : plan_state) dist.
+    (SND (do_dup dist ps)).ps_spilled = ps.ps_spilled
+Proof
+  gen_tac >> gen_tac >> Cases_on `dist <= 15` >>
+  simp[do_dup_def, LET_THM] >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem bump_emit_one_input_spilled_shape[local]:
+  !opc nl op ps ops ps'.
+    emit_one_input opc nl op ps = (ops,ps') ==>
+    ps'.ps_spilled = ps.ps_spilled \/
+    ps'.ps_spilled = ps.ps_spilled \\ op
+Proof
+  rpt gen_tac >> Cases_on `op` >>
+  simp[emit_one_input_def, is_var_operand_def]
+  >- (strip_tac >> gvs[])
+  >- (Cases_on `FLOOKUP ps.ps_spilled (Var s)` >> simp[]
+      >- (Cases_on `MEM s nl` >> simp[] >>
+          Cases_on `stack_get_depth (Var s) ps.ps_stack` >> simp[] >>
+          Cases_on `do_dup x ps` >> strip_tac >>
+          qspecl_then [`ps`, `x`] mp_tac bump_do_dup_spilled_unchanged >>
+          ASM_REWRITE_TAC[] >> strip_tac >> gvs[])
+      >- (simp[do_restore_def, stack_get_depth_def, stack_push_def,
+               REVERSE_SNOC, stack_find_def] >>
+          Cases_on `MEM s nl` >> simp[]
+          >- (Cases_on `do_dup 0
+                (ps with <|ps_stack := stack_push (Var s) ps.ps_stack;
+                  ps_spilled := ps.ps_spilled \\ Var s;
+                  ps_alloc := free_spill_slot x ps.ps_alloc|>)` >>
+              strip_tac >>
+              qspecl_then [`ps with <|ps_stack := stack_push (Var s) ps.ps_stack;
+                  ps_spilled := ps.ps_spilled \\ Var s;
+                  ps_alloc := free_spill_slot x ps.ps_alloc|>`, `0`]
+                mp_tac bump_do_dup_spilled_unchanged >>
+              ASM_REWRITE_TAC[stack_push_def] >> strip_tac >>
+              gvs[stack_push_def])
+          >- (strip_tac >> gvs[])))
+  >- (Cases_on `opc = INVOKE` >> simp[] >> strip_tac >> gvs[])
+QED
+
+Theorem bump_input_reorder_venom_asm_rel[local]:
+  !base h h' nl ps input_ops ps1 dfg reorder_ops ps4
+   initial_fmp lo o2pc prog vs as.
+    generated_plan_state_wf base ps /\
+    (!op. MEM op [h;h'] /\ is_var_operand op ==>
+      (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled op)) /\
+    (!l. MEM (Label l) [h;h'] ==> IS_SOME (FLOOKUP lo l)) /\
+    (!op at. operand_equiv dfg op at ==>
+       operand_val vs lo op = operand_val vs lo at) /\
+    emit_input_plan BUMP [h;h'] nl ps = (input_ops,ps1) /\
+    2 <= LENGTH ps1.ps_stack /\
+    reorder_plan dfg [h;h'] ps1 = (reorder_ops,ps4) /\
+    prefix_spill_wf initial_fmp lo (input_ops ++ reorder_ops) ps /\
+    venom_asm_rel lo ps vs as /\
+    asm_block_at prog as.as_pc
+      (execute_plan initial_fmp (input_ops ++ reorder_ops)) ==>
+    ?as'.
+      asm_steps lo o2pc prog
+        (LENGTH (execute_plan initial_fmp (input_ops ++ reorder_ops))) as =
+        AsmOK as' /\
+      venom_asm_rel lo ps4 vs as' /\
+      as'.as_pc = as.as_pc +
+        LENGTH (execute_plan initial_fmp (input_ops ++ reorder_ops))
+Proof
+  rpt strip_tac >>
+  `prefix_wf lo (LENGTH ps.ps_stack) input_ops` by
+    (qspecl_then [`[h;h']`, `BUMP`, `nl`, `ps`, `lo`]
+       mp_tac emit_input_plan_wf_len >>
+     (impl_tac >- simp[]) >>
+     (impl_tac >- (rpt strip_tac >>
+       qpat_assum `!l. MEM (Label l) [h;h'] ==> _`
+         (qspec_then `l` mp_tac) >> simp[])) >> simp[]) >>
+  `prefix_spill_wf initial_fmp lo input_ops ps` by
+    (irule prefix_spill_wf_prefix >> qexists `reorder_ops` >> simp[]) >>
+  `asm_block_at prog as.as_pc (execute_plan initial_fmp input_ops)` by
+    (qpat_x_assum `asm_block_at _ _ (execute_plan _ (_ ++ _))` mp_tac >>
+     simp[execute_plan_append, asm_block_at_append]) >>
+  qspecl_then [`input_ops`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+    `ps`, `vs`, `as`] mp_tac mixed_prefix_venom_asm_rel >>
+  (impl_tac >- (ASM_REWRITE_TAC[] >>
+    metis_tac[prefix_wf_every_prefix_op])) >>
+  strip_tac >>
+  `(apply_prefix_ops initial_fmp lo input_ops ps).ps_stack = ps1.ps_stack /\
+   (apply_prefix_ops initial_fmp lo input_ops ps).ps_spilled = ps1.ps_spilled` by
+    (qpat_x_assum `emit_input_plan _ _ _ _ = _` mp_tac >>
+     simp[emit_input_plan_two] >>
+     rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+     `prefix_spill_wf initial_fmp lo ops1 ps` by
+       (irule prefix_spill_wf_prefix >> qexists `ops2` >> simp[]) >>
+     `(apply_prefix_ops initial_fmp lo ops1 ps).ps_stack = ps1'.ps_stack /\
+      (apply_prefix_ops initial_fmp lo ops1 ps).ps_spilled = ps1'.ps_spilled` by
+       (irule emit_one_input_ss_align_from_spill_wf >>
+        conj_tac
+        >- fs[generated_plan_state_wf_def, spill_alloc_layout_wf_def] >>
+        conj_tac
+        >- (qexistsl [`operand_vars [h'] ++ nl`, `h`, `BUMP`] >>
+            ASM_REWRITE_TAC[] >>
+            conj_tac
+            >- (rpt strip_tac >>
+                qpat_assum `!op. (op = h \/ op = h') /\ is_var_operand op ==> _`
+                  (qspec_then `Var s` mp_tac) >>
+                (impl_tac >- simp[is_var_operand_def]) >>
+                strip_tac >- gvs[] >> gvs[])
+            >> simp[]) >>
+        ASM_REWRITE_TAC[]) >>
+     `(is_var_operand h ==>
+       (?d. stack_get_depth h ps.ps_stack = SOME d /\ d <= 15) \/
+       IS_SOME (FLOOKUP ps.ps_spilled h))` by
+       (strip_tac >>
+        qpat_assum `!op. (op = h \/ op = h') /\ is_var_operand op ==> _`
+          (qspec_then `h` mp_tac) >> simp[]) >>
+     `(apply_prefix_ops initial_fmp lo ops1 ps).ps_alloc.sa_spill_base =
+        ps1'.ps_alloc.sa_spill_base` by
+       (qspecl_then [`BUMP`, `operand_vars [h'] ++ nl`, `h`, `ps`,
+          `ops1`, `ps1'`] mp_tac emit_one_input_spill_base >>
+        ASM_REWRITE_TAC[] >> strip_tac >>
+        simp[apply_prefix_ops_spill_base] >> metis_tac[]) >>
+     `(apply_prefix_ops initial_fmp lo ops1 ps).ps_alloc.sa_next_offset =
+        ps1'.ps_alloc.sa_next_offset` by
+       (drule_all bump_emit_one_input_next_offset >> simp[]) >>
+     `prefix_spill_wf initial_fmp lo ops2
+        (apply_prefix_ops initial_fmp lo ops1 ps)` by
+       fs[bump_prefix_spill_wf_append] >>
+     `prefix_spill_wf initial_fmp lo ops2 ps1'` by
+       (qspecl_then [`ops2`, `lo`,
+          `apply_prefix_ops initial_fmp lo ops1 ps`, `ps1'`]
+          mp_tac bump_prefix_spill_wf_ext_relevant >>
+        (impl_tac >- (rpt conj_tac >> simp[])) >> simp[]) >>
+     `!op1 off1 op2 off2.
+        FLOOKUP ps1'.ps_spilled op1 = SOME off1 /\
+        FLOOKUP ps1'.ps_spilled op2 = SOME off2 /\ op1 <> op2 ==>
+        off1 + 32 <= off2 \/ off2 + 32 <= off1` by
+       (qspecl_then [`BUMP`, `operand_vars [h'] ++ nl`, `h`, `ps`,
+          `ops1`, `ps1'`] mp_tac bump_emit_one_input_spilled_shape >>
+        ASM_REWRITE_TAC[] >> strip_tac
+        >- (fs[generated_plan_state_wf_def, spill_alloc_layout_wf_def]) >>
+        irule bump_spilled_separated_domsub >>
+        fs[generated_plan_state_wf_def, spill_alloc_layout_wf_def]) >>
+     `(apply_prefix_ops initial_fmp lo ops2 ps1').ps_stack = ps1.ps_stack /\
+      (apply_prefix_ops initial_fmp lo ops2 ps1').ps_spilled = ps1.ps_spilled` by
+       (irule emit_one_input_ss_align_from_spill_wf >>
+        ASM_REWRITE_TAC[] >>
+        (conj_tac >- simp[]) >>
+        FAIL_TAC "probe_bump_second_depth") >>
+     simp[apply_prefix_ops_append]) >>
+  FAIL_TAC "probe_bump_boundary_after_align"
+QED
+
+Theorem bump_emit_sim_sem_stack[local]:
+  !lo o2pc prog initial_fmp psA psB vs as stk base_op size_op
+   ptr_out next_out base_val sz.
+    venom_asm_rel lo psA vs as /\
+    plan_stack_sem_eq lo vs psA.ps_stack psB.ps_stack /\
+    psB.ps_spilled = psA.ps_spilled /\
+    psB.ps_alloc.sa_spill_base = psA.ps_alloc.sa_spill_base /\
+    psB.ps_alloc.sa_next_offset = psA.ps_alloc.sa_next_offset /\
+    psB.ps_stack = stk ++ [base_op; size_op] /\
+    operand_val vs lo base_op = SOME base_val /\
+    operand_val vs lo size_op = SOME sz /\
+    ptr_out <> next_out /\
+    EVERY (\op. case op of Var x => x <> ptr_out /\ x <> next_out | _ => T)
+      psB.ps_stack /\
+    (!op. op IN FDOM psB.ps_spilled ==>
+       case op of Var x => x <> ptr_out /\ x <> next_out | _ => T) /\
+    asm_block_at prog as.as_pc (execute_plan initial_fmp bump_emit_ops) ==>
+    ?as'.
+      asm_steps lo o2pc prog 8 as = AsmOK as' /\
+      venom_asm_rel lo
+        (psB with ps_stack :=
+           stack_push (Var next_out)
+             (stack_push (Var ptr_out) (stack_pop 2 psB.ps_stack)))
+        (update_var next_out (base_val + n2w (ceil32 (w2n sz)))
+          (update_var ptr_out base_val vs)) as' /\
+      as'.as_pc = as.as_pc + 8
+Proof
+  rpt strip_tac >>
+  `venom_asm_rel lo psB vs as` by
+    (qspecl_then [`lo`, `psA`, `psB`, `vs`, `as`] mp_tac
+       venom_asm_rel_sem_stack_transport >> simp[]) >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `initial_fmp`, `psB`, `vs`, `as`,
+    `stk`, `base_op`, `size_op`, `ptr_out`, `next_out`, `base_val`, `sz`]
+    mp_tac bump_emit_sim >> simp[]
 QED
 
 Definition probe_bump_depth17_vs_def:
@@ -4072,7 +4598,7 @@ Theorem probe_bump_depth17_deep_swap_runtime[local]:
     ps2.ps_alloc.sa_next_offset = 576 /\
     ps2.ps_alloc.sa_spill_base = ps1.ps_alloc.sa_spill_base
 Proof
-  EVAL_TAC
+  EVAL_TAC >> rpt conj_tac >> wordsLib.WORD_DECIDE_TAC
 QED
 
 Resume gen_inst_ok_sim[bump]:
@@ -4188,7 +4714,6 @@ Resume gen_inst_ok_sim[bump]:
     (irule generated_plan_state_wf_bump_outputs >> simp[]) >>
   FAIL_TAC "probe_bump_values"
 QED
-
 Resume gen_inst_ok_sim[invoke]:
   cheat
 QED
