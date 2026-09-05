@@ -5364,6 +5364,44 @@ Resume gen_inst_ok_sim[none]:
   >> suspend "assert_unreachable_ok"
 QED
 
+Theorem istore_emit_relation_agreement[local]:
+  let inst = mk_inst 0 ISTORE [Lit (0w:bytes32); Lit (1w:bytes32)] [] in
+  let vs = init_venom_state "entry" in
+  let ps = (init_plan_state 0) with
+             ps_stack := [Lit (0w:bytes32); Lit (1w:bytes32)] in
+  let st = <| as_stack := [(1w:bytes32); (0w:bytes32)];
+              as_memory := [];
+              as_accounts := vs.vs_accounts;
+              as_transient := vs.vs_transient;
+              as_returndata := vs.vs_returndata;
+              as_logs := vs.vs_logs;
+              as_pc := 0;
+              as_call_ctx := vs.vs_call_ctx;
+              as_tx_ctx := vs.vs_tx_ctx;
+              as_block_ctx := vs.vs_block_ctx;
+              as_code := vs.vs_code;
+              as_prev_hashes := vs.vs_prev_hashes |> in
+  let st' = st with <| as_stack := [];
+                       as_memory := word_to_bytes (1w:bytes32) T;
+                       as_pc := 2 |> in
+  let vs' = istore 0 (1w:bytes32) vs in
+    inst_wf inst /\
+    step_inst_base inst vs = OK vs' /\
+    FST (generate_emit_ops inst 0 (init_plan_state 0)) =
+      [SOEmit "SWAP1"; SOEmit "MSTORE"] /\
+    venom_asm_rel FEMPTY ps vs st /\
+    asm_steps FEMPTY FEMPTY [AsmOp "SWAP1"; AsmOp "MSTORE"] 2 st =
+      AsmOK st' /\
+    venom_asm_rel FEMPTY (init_plan_state 0) vs' st'
+Proof
+  EVAL_TAC >>
+  simp[venom_asm_rel_def, plan_stack_rel_def, plan_spill_rel_def,
+       memory_rel_def, read_byte_def, istore_def, mstore_def] >>
+  rpt strip_tac >> Cases_on `i` >> simp[operand_val_def] >>
+  Cases_on `n` >> simp[operand_val_def] >>
+  qpat_x_assum `SUC (SUC _) < 2` mp_tac >> simp[]
+QED
+
 Resume gen_inst_ok_sim[istore]:
   cheat
 QED

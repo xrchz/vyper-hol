@@ -1460,7 +1460,7 @@ fun prove_fdom_group opcode_list = prove(
       step_inst_base_def, exec_pure2_def, exec_pure1_def, exec_pure3_def,
       exec_read0_def, exec_read1_def, exec_write2_def,
       exec_alloca_def,
-      mstore_def, mstore8_def, sstore_def, tstore_def] >>
+      istore_def, mstore_def, mstore8_def, sstore_def, tstore_def] >>
   BasicProvers.every_case_tac >>
   gvs[update_var_def, finite_mapTheory.FDOM_FUPDATE] >>
   simp[pred_setTheory.EXTENSION] >> metis_tac[]);

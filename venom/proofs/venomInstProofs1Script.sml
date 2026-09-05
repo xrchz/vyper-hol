@@ -263,7 +263,6 @@ QED
 Theorem step_istore_preserves:
   !fuel ctx inst s s'.
     step_inst fuel ctx inst s = OK s' /\ inst.inst_opcode = ISTORE ==>
-    s'.vs_memory = s.vs_memory /\
     s'.vs_transient = s.vs_transient /\
     s'.vs_accounts = s.vs_accounts /\
     s'.vs_logs = s.vs_logs /\
@@ -280,7 +279,7 @@ Proof
   qhdtm_x_assum`step_inst_base`mp_tac >>
   simp[Once step_inst_base_def] >>
   strip_tac >> gvs[exec_write2_def,AllCaseEqs()] >>
-  simp[lookup_var_def]
+  simp[istore_def, mstore_def, lookup_var_def]
 QED
 
 Theorem step_log_preserves:
@@ -341,7 +340,7 @@ val step_base_field_finish_tac =
   gvs[AllCaseEqs()] >>
   rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
   fs[update_var_def, mstore_def, mstore8_def, sstore_def, tstore_def,
-     write_memory_with_expansion_def, mcopy_def,
+     istore_def, write_memory_with_expansion_def, mcopy_def,
      revert_state_def, eval_operands_def,
      lookup_var_def, FLOOKUP_UPDATE];
 
@@ -621,9 +620,10 @@ Proof
 QED
 
 Resume step_inst_base_preserves_all[g1]:
-      Cases_on `inst.inst_opcode` >> gvs[is_ext_call_op_def] >>
-      gvs[Once step_inst_base_def, is_terminator_def,
-          is_alloca_op_def, write_effects_def, all_effects_def] >>
+      Cases_on `inst.inst_opcode` >>
+      gvs[is_ext_call_op_def, is_terminator_def, is_alloca_op_def,
+          write_effects_def, all_effects_def] >>
+      gvs[Once step_inst_base_def] >>
       gvs[exec_ext_call_def, exec_delegatecall_def, AllCaseEqs(),
           extract_venom_result_def, update_var_def,
           pairTheory.UNCURRY, lookup_var_def] >>

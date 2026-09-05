@@ -82,6 +82,34 @@ Definition mcopy_def:
     write_memory_with_expansion dst data s
 End
 
+(* Immutable stores lower to MSTORE.  The finite map is retained only as
+   source-level bookkeeping; executable behavior is carried by vs_memory. *)
+Definition istore_def:
+  istore offset (value:bytes32) s =
+    (mstore offset value s with
+       vs_immutables := s.vs_immutables |+ (offset, value))
+End
+
+Theorem istore_memory[simp]:
+  (istore offset value s).vs_memory = (mstore offset value s).vs_memory
+Proof
+  simp[istore_def]
+QED
+
+Theorem istore_shared_fields[simp]:
+  (istore offset value s).vs_accounts = s.vs_accounts /\
+  (istore offset value s).vs_transient = s.vs_transient /\
+  (istore offset value s).vs_returndata = s.vs_returndata /\
+  (istore offset value s).vs_logs = s.vs_logs /\
+  (istore offset value s).vs_call_ctx = s.vs_call_ctx /\
+  (istore offset value s).vs_tx_ctx = s.vs_tx_ctx /\
+  (istore offset value s).vs_block_ctx = s.vs_block_ctx /\
+  (istore offset value s).vs_code = s.vs_code /\
+  (istore offset value s).vs_prev_hashes = s.vs_prev_hashes
+Proof
+  simp[istore_def, mstore_def]
+QED
+
 
 Definition pair_dret_words_def:
   pair_dret_words [] = SOME [] /\
@@ -918,18 +946,15 @@ Definition step_inst_base_def:
             else word_of_bytes T (0w:bytes32)
                    (Keccak_256_w64 acct.code)) inst s
 
-    (* Immutables - separate from memory, used during constructor *)
-    | ILOAD => exec_read1
-        (\off s.
-          case FLOOKUP s.vs_immutables (w2n off) of
-            SOME v => v
-          | NONE => 0w) inst s
+    (* Immutables are lowered to ordinary EVM memory operations.  Keep the
+       finite map as source-level bookkeeping, but make executable reads and
+       writes use the same byte memory represented by assembly semantics. *)
+    | ILOAD => exec_read1 (\off s. mload (w2n off) s) inst s
     | ISTORE =>
         (case inst.inst_operands of
           [offset_op; val_op] =>
             (case (eval_operand offset_op s, eval_operand val_op s) of
-              (SOME off, SOME v) =>
-                OK (s with vs_immutables := s.vs_immutables |+ (w2n off, v))
+              (SOME off, SOME v) => OK (istore (w2n off) v s)
             | _ => Error "undefined operand")
         | _ => Error "istore requires 2 operands")
 
@@ -1116,6 +1141,23 @@ Definition step_inst_base_def:
     | _ => Error "unknown opcode"
 End
 
+Theorem step_inst_base_ILOAD:
+  eval_operand op s = SOME off ==>
+  step_inst_base (instruction id ILOAD [op] [out]) s =
+    OK (update_var out (mload (w2n off) s) s)
+Proof
+  simp[step_inst_base_def, exec_read1_def]
+QED
+
+Theorem step_inst_base_ISTORE:
+  eval_operand offset_op s = SOME off /\
+  eval_operand value_op s = SOME value ==>
+  step_inst_base (instruction id ISTORE [offset_op; value_op] []) s =
+    OK (istore (w2n off) value s)
+Proof
+  simp[step_inst_base_def, exec_write2_def]
+QED
+
 Theorem step_inst_base_NOT:
   inst.inst_opcode = NOT ==>
   step_inst_base inst s = exec_pure1 word_1comp inst s
@@ -1223,7 +1265,7 @@ Proof
   gvs[AllCaseEqs()] >>
   rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
   fs[update_var_def, mstore_def, mstore8_def, sstore_def, tstore_def,
-     write_memory_with_expansion_def, mcopy_def,
+     istore_def, write_memory_with_expansion_def, mcopy_def,
      revert_state_def, eval_operands_def]
 QED
 

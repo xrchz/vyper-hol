@@ -221,7 +221,6 @@ QED
 Theorem step_istore_preserves:
   !fuel ctx inst s s'.
     step_inst fuel ctx inst s = OK s' /\ inst.inst_opcode = ISTORE ==>
-    s'.vs_memory = s.vs_memory /\
     s'.vs_transient = s.vs_transient /\
     s'.vs_accounts = s.vs_accounts /\
     s'.vs_logs = s.vs_logs /\
