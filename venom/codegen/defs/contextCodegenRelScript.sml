@@ -167,6 +167,17 @@ Definition source_memory_reads_disjoint_def:
         ~context_spill_byte cp i
 End
 
+(* Every source write range avoids every context-owned spill region.  Keeping
+   the endpoint form here makes projection to a function-local allocator a
+   direct boundary theorem rather than repeated bytewise arithmetic. *)
+Definition context_source_memory_writes_disjoint_def:
+  context_source_memory_writes_disjoint cp inst vs <=>
+    EVERY (\(off,len).
+      len = 0 \/
+      !r. MEM r cp.cp_regions ==>
+          off + len <= r.sr_spill_base \/ r.sr_spill_end <= off)
+      (source_memory_write_ranges inst vs)
+End
 (* The entry dispatcher must not return through the internal-call protocol. *)
 Definition entry_fn_no_ret_def:
   entry_fn_no_ret fn <=>
