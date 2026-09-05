@@ -4805,3 +4805,204 @@ Proof
        spill_op_wf_def] >>
   strip_tac >> qexists_tac `h'` >> simp[]
 QED
+
+
+Definition spill_wf_view_eq_def:
+  spill_wf_view_eq (p:plan_state) q <=>
+    p.ps_stack = q.ps_stack /\
+    p.ps_spilled = q.ps_spilled /\
+    p.ps_alloc.sa_spill_base = q.ps_alloc.sa_spill_base
+End
+
+Theorem spill_wf_view_eq_step[local]:
+  !initial_fmp op lo p q.
+    spill_wf_view_eq p q ==>
+    (spill_op_wf p op = spill_op_wf q op) /\
+    spill_wf_view_eq
+      (apply_prefix_op initial_fmp lo op p)
+      (apply_prefix_op initial_fmp lo op q)
+Proof
+  rpt gen_tac >> strip_tac >> Cases_on `op` >>
+  gvs[spill_wf_view_eq_def, spill_op_wf_def, apply_prefix_op_def,
+      apply_simple_op_def, stack_push_def, stack_pop_def, stack_swap_def,
+      stack_dup_def, stack_poke_def] >>
+  Cases_on `o'` >>
+  gvs[apply_simple_op_def, stack_push_def]
+QED
+
+Theorem prefix_spill_wf_view_eq[local]:
+  !initial_fmp ops lo p q.
+    spill_wf_view_eq p q ==>
+    (prefix_spill_wf initial_fmp lo ops p <=>
+     prefix_spill_wf initial_fmp lo ops q)
+Proof
+  gen_tac >> Induct >> simp[prefix_spill_wf_def] >>
+  rpt gen_tac >> strip_tac >>
+  qspecl_then [`initial_fmp`, `h`, `lo`, `p`, `q`] mp_tac
+    spill_wf_view_eq_step >> simp[] >> strip_tac >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem apply_prefix_op_spill_base[local]:
+  !initial_fmp op lo ps.
+    (apply_prefix_op initial_fmp lo op ps).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
+Proof
+  rpt gen_tac >> Cases_on `op` >>
+  simp[apply_prefix_op_def, apply_simple_op_def, stack_push_def,
+       stack_pop_def, stack_swap_def, stack_dup_def, stack_poke_def] >>
+  Cases_on `o'` >> simp[apply_simple_op_def, stack_push_def]
+QED
+
+Theorem apply_prefix_ops_spill_base[local]:
+  !initial_fmp ops lo ps.
+    (apply_prefix_ops initial_fmp lo ops ps).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
+Proof
+  gen_tac >> Induct >> simp[apply_prefix_ops_def, apply_prefix_op_spill_base]
+QED
+
+Theorem do_spill_at_spill_base[local]:
+  !d ps.
+    (SND (do_spill_at d ps)).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
+Proof
+  rpt gen_tac >>
+  simp[do_spill_at_def, do_spill_tos_def, LET_THM] >>
+  Cases_on `d = 0` >>
+  Cases_on `alloc_spill_slot ps.ps_alloc` >>
+  simp[] >> metis_tac[doSwapSimTheory.alloc_spill_slot_spill_base]
+QED
+
+Theorem reduce_depth_plan_spill_base[local]:
+  !fuel target_ops target_op f target_len ps ops ps'.
+    reduce_depth_plan fuel target_ops target_op f target_len ps = (ops,ps') ==>
+    ps'.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base
+Proof
+  Induct >> simp[reduce_depth_plan_def, LET_THM] >>
+  rpt gen_tac >>
+  Cases_on `stack_get_unfixed_depth target_op f target_len ps.ps_stack` >>
+  simp[] >> IF_CASES_TAC >> simp[] >>
+  Cases_on `select_spill_candidate ps.ps_stack target_ops x target_len` >>
+  simp[] >>
+  Cases_on `do_spill_at x' ps` >>
+  rename1 `do_spill_at _ ps = (spill_ops, ps1)` >> simp[] >>
+  Cases_on `reduce_depth_plan fuel target_ops target_op f target_len ps1` >>
+  rename1 `reduce_depth_plan _ _ _ _ _ _ = (rest_ops, ps2)` >>
+  Cases_on `x <= 16` >> simp[] >> strip_tac >> gvs[] >>
+  `ps1.ps_alloc.sa_spill_base = ps.ps_alloc.sa_spill_base` by
+    (qspecl_then [`x'`, `ps`] mp_tac do_spill_at_spill_base >> gvs[]) >>
+  first_x_assum (qspecl_then
+    [`target_ops`, `target_op`, `f`, `target_len`, `ps1`, `rest_ops`, `ps'`]
+    mp_tac) >> simp[]
+QED
+
+Theorem reduce_depth_plan_spill_wf_view_align[local]:
+  !fuel target_ops target_op f target_len ps ops ps' lo.
+    reduce_depth_plan fuel target_ops target_op f target_len ps = (ops,ps') ==>
+    spill_wf_view_eq (apply_prefix_ops initial_fmp lo ops ps) ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  `(apply_prefix_ops initial_fmp lo ops ps).ps_stack = ps'.ps_stack /\
+   (apply_prefix_ops initial_fmp lo ops ps).ps_spilled = ps'.ps_spilled` by
+    (qspecl_then [`fuel`, `target_ops`, `target_op`, `f`, `target_len`, `ps`, `lo`]
+       mp_tac reduce_depth_plan_align >> gvs[LET_THM]) >>
+  fs[spill_wf_view_eq_def] >>
+  metis_tac[apply_prefix_ops_spill_base, reduce_depth_plan_spill_base]
+QED
+
+
+(* A duplicate restore-offset collision cannot witness the proposed transfer
+   failure when reduction reuses the just-freed slot: the interpreted restore
+   necessarily leaves at least one colliding key, so the whole prefix is
+   already not spill-well-formed. *)
+Theorem restore_collision_reuse_blocks_whole_prefix[local]:
+  !h alt off ps lo ops ps'.
+    h <> alt /\
+    FLOOKUP ps.ps_spilled h = SOME off /\
+    FLOOKUP ps.ps_spilled alt = SOME off /\
+    do_restore h ps = (ops,ps') ==>
+    ~prefix_spill_wf initial_fmp lo (ops ++ [SOSpill off]) ps
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `do_restore _ _ = _` mp_tac >>
+  simp[do_restore_def] >> strip_tac >> gvs[] >>
+  simp[prefix_spill_wf_def, spill_op_wf_def, apply_prefix_op_def,
+       spill_lookup_def] >>
+  SELECT_ELIM_TAC >> simp[] >>
+  conj_tac >- (qexists_tac `h` >> simp[]) >>
+  rpt strip_tac >>
+  Cases_on `off < dimword(:256)` >> gvs[] >>
+  Cases_on `ps.ps_alloc.sa_spill_base <= off` >> gvs[] >>
+  Cases_on `x = h` >> gvs[]
+  >- (disj2_tac >> qexistsl [`alt`, `off`] >>
+      gvs[finite_mapTheory.FLOOKUP_DEF, DOMSUB_FAPPLY_THM]) >>
+  disj2_tac >> qexistsl [`h`, `off`] >>
+  gvs[finite_mapTheory.FLOOKUP_DEF, DOMSUB_FAPPLY_THM]
+QED
+
+
+Theorem reorder_one_exact_two_reduce_prefix_spill_wf[local]:
+  !dfg h h' ps ops0 ps1 reduce_ops psr lo d.
+    reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
+    2 <= LENGTH ps1.ps_stack /\
+    prefix_spill_wf initial_fmp lo (ops0 ++ reduce_ops) ps /\
+    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\
+    16 < d /\
+    reduce_depth_plan (LENGTH ps1.ps_stack) [h;h'] h' 0 2 ps1 =
+      (reduce_ops,psr) ==>
+    prefix_spill_wf initial_fmp lo reduce_ops ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  `prefix_spill_wf initial_fmp lo reduce_ops
+     (apply_prefix_ops initial_fmp lo ops0 ps)` by
+    metis_tac[prefix_spill_wf_append_reorder] >>
+  qpat_x_assum `reorder_one _ _ 0 _ _ = _` mp_tac >>
+  rewrite_tac[reorder_one_def, LET_THM] >>
+  Cases_on `stack_get_unfixed_depth h 1 2 ps.ps_stack` >> simp[]
+  >- (Cases_on `FLOOKUP ps.ps_spilled h` >> simp[]
+      >- (strip_tac >> gvs[]) >>
+      FAIL_TAC "exact-two reduce transfer first absent restored") >>
+  FAIL_TAC "exact-two reduce transfer first present"
+QED
+
+
+Theorem reorder_one_exact_two_second_deep_prefix_spill_wf[local]:
+  !dfg h h' ps ops0 ps1 ops1 ps2 lo d.
+    reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
+    reorder_one dfg [h;h'] 1 h' ps1 = (ops1,ps2) /\
+    2 <= LENGTH ps1.ps_stack /\
+    prefix_spill_wf initial_fmp lo (ops0 ++ ops1) ps /\
+    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\
+    16 < d ==>
+    prefix_spill_wf initial_fmp lo ops1 ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  `prefix_spill_wf initial_fmp lo ops1
+     (apply_prefix_ops initial_fmp lo ops0 ps)` by
+    metis_tac[prefix_spill_wf_append_reorder] >>
+  qpat_x_assum `reorder_one _ _ 1 _ _ = _` mp_tac >>
+  simp[reorder_one_def, LET_THM] >>
+  pairarg_tac >> simp[] >>
+  Cases_on `stack_get_unfixed_depth h' 0 2 ps2'.ps_stack` >> simp[]
+  >- (strip_tac >>
+      qspecl_then [`LENGTH ps1.ps_stack`, `[h;h']`, `h'`, `0`, `2`,
+                   `ps1`, `d`]
+        mp_tac (CONV_RULE (DEPTH_CONV pairLib.GEN_BETA_CONV)
+          (REWRITE_RULE [LET_THM] reduce_depth_plan_dist_ge)) >>
+      (impl_tac >- simp[]) >> strip_tac >> gvs[]) >>
+  `16 <= x` by (
+    qspecl_then [`LENGTH ps1.ps_stack`, `[h;h']`, `h'`, `0`, `2`,
+                 `ps1`, `d`]
+      mp_tac (CONV_RULE (DEPTH_CONV pairLib.GEN_BETA_CONV)
+        (REWRITE_RULE [LET_THM] reduce_depth_plan_dist_ge)) >>
+    (impl_tac >- simp[]) >> strip_tac >> gvs[]) >>
+  Cases_on `x = 0`
+  >- (gvs[] >> decide_tac) >>
+  `x < LENGTH ps2'.ps_stack` by
+    metis_tac[stack_get_unfixed_depth_props] >>
+  simp[] >>
+  Cases_on `operand_equiv dfg h' (stack_peek 0 ps2'.ps_stack)` >> simp[]
+  >- FAIL_TAC "exact-two deep post-reduction alias" >>
+  FAIL_TAC "exact-two deep post-reduction swap"
+QED
