@@ -65,9 +65,12 @@ Proof
         — dischargeable from ssa_form + plan_state invariant.
      6. Stack depth after emit_input_plan ≥ operand count
         — dischargeable from plan_state invariant.
-     7. PHI soundness: stack-found phi var evaluates correctly
+     7. Variable-input ownership: every variable in compute_operands is
+        shallowly present on the plan stack or available in the spill map.
+        This is independent of the post-input stack-length bound.
+     8. PHI soundness: stack-found phi var evaluates correctly
         — dischargeable from block entry invariant.
-     Items 1,4,5,6,7 are dischargeable at block/fn level from their
+     Items 1,4,5,6,7,8 are dischargeable at block/fn level from their
      own invariants. Items 2,3 are pipeline obligations. *)
   cheat
 QED

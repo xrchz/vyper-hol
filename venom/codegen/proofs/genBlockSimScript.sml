@@ -3117,6 +3117,35 @@ Proof
   gvs[eval_operand_def, operand_val_def, lookup_var_def]
 QED
 
+(* The shared ownership contract is strong enough to materialise both ISTORE
+   operands and establish the exact-two reorder interface. *)
+Theorem istore_input_ownership_ready_probe[local]:
+  generated_plan_state_wf spill_base ps /\
+  (!op. MEM op [h;h'] /\ is_var_operand op ==>
+    (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+    IS_SOME (FLOOKUP ps.ps_spilled op)) /\
+  emit_input_plan ISTORE [h;h'] nl ps = (iops,ps1) ==>
+  exact_two_planner_ready spill_base h h' ps1
+Proof
+  rpt strip_tac >>
+  qspecl_then [`spill_base`, `ISTORE`, `h`, `h'`, `nl`, `ps`,
+                `iops`, `ps1`] mp_tac
+    emit_input_plan_two_exact_two_planner_ready >>
+  ASM_REWRITE_TAC[] >>
+  disch_then match_mp_tac >>
+  conj_tac >- metis_tac[generated_plan_state_wf_residual_nil] >>
+  rpt strip_tac >>
+  qpat_assum `!x. MEM x [h; h'] /\ is_var_operand x ==> _`
+    (qspec_then `op` mp_tac) >>
+  (impl_tac >- simp[]) >> strip_tac
+  >- (disj1_tac >> drule stack_get_depth_props >> strip_tac >>
+      qpat_assum `stack_peek d ps.ps_stack = op`
+        (fn th => rewrite_tac[GSYM th]) >>
+      rewrite_tac[stack_peek_def] >> irule EL_MEM >> decide_tac)
+  >> disj2_tac >> Cases_on `FLOOKUP ps.ps_spilled op` >>
+     gvs[finite_mapTheory.flookup_thm]
+QED
+
 (* Comprehensive per-instruction OK simulation.
    Stronger than venomToAsmProps.gen_inst_simulation:
    - requires inst_wf, operand bound, label resolution, prefix_spill_wf
@@ -3140,13 +3169,12 @@ Theorem gen_inst_ok_sim:
     LENGTH (compute_operands inst) <=
       LENGTH (SND (emit_input_plan inst.inst_opcode
         (compute_operands inst) next_liveness ps)).ps_stack /\
-    (* BUMP variable inputs must be owned by the planner: each is either
+    (* Every variable input must be owned by the planner: each is either
        shallow enough to duplicate or available from the spill map.
        generated_plan_state_wf is structural and does not imply ownership. *)
-    (inst.inst_opcode = BUMP ==>
-      !op. MEM op (compute_operands inst) /\ is_var_operand op ==>
-        (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
-        IS_SOME (FLOOKUP ps.ps_spilled op)) /\
+    (!op. MEM op (compute_operands inst) /\ is_var_operand op ==>
+      (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled op)) /\
     (* Label resolution: all label operands in label_offsets.
        Pipeline obligation from compute_label_offsets over full program. *)
     (!l. MEM (Label l) (compute_operands inst) ==>
