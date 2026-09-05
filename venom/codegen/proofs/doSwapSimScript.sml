@@ -636,7 +636,7 @@ Definition spill_alloc_n_def:
 End
 
 (* Bridge: the 3-component FOLDL's SND equals spill_alloc_n *)
-Theorem spill_foldl_snd_eq[local]:
+Theorem spill_foldl_snd_eq:
   !items ops0 offs0 al0.
     SND (FOLDL
       (\(ops,offs,al) item.
@@ -679,7 +679,7 @@ Proof
   decide_tac
 QED
 
-Theorem spill_alloc_n_offsets_length[local]:
+Theorem spill_alloc_n_offsets_length:
   !items offs0 al0.
     LENGTH (FST (spill_alloc_n offs0 al0 items)) =
     LENGTH offs0 + LENGTH items
@@ -691,7 +691,7 @@ Proof
 QED
 
 (* spill_ops = MAP SOSpill offsets after the FOLDL *)
-Theorem spill_foldl_ops_eq_map[local]:
+Theorem spill_foldl_ops_eq_map:
   !items ops0 offs0 al0.
     ops0 = MAP SOSpill offs0 ==>
     FST (FOLDL
@@ -1718,7 +1718,7 @@ Proof
 QED
 
 (* Structural decomposition of the deep duplication branch. *)
-Theorem do_dup_big_decompose[local]:
+Theorem do_dup_big_decompose:
   !dist ps.
     dist > 15 /\ dist < LENGTH ps.ps_stack ==>
     let items = top_n (dist + 1) ps.ps_stack;
@@ -2073,7 +2073,7 @@ QED
 
 (* Occurrence-indexed allocator interface for deep swap simulation.  The
    returned offsets depend only on the number of items, not their identities. *)
-Theorem spill_alloc_n_occurrence_offset_facts[local]:
+Theorem spill_alloc_n_occurrence_offset_facts:
   !al spilled items.
     spill_alloc_layout_wf al spilled /\
     al.sa_next_offset + 32 * LENGTH items < dimword(:256) ==>
@@ -3342,7 +3342,7 @@ QED
 
 
 (* Helper: ps_spilled after applying a batch of generated spill operations. *)
-Theorem apply_spill_ops_spilled[local]:
+Theorem apply_spill_ops_spilled:
   !offsets lo ps.
     LENGTH offsets <= LENGTH ps.ps_stack ==>
     (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps).ps_spilled =
