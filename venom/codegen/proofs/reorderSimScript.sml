@@ -6085,15 +6085,85 @@ Theorem reorder_one_exact_two_first_noops_deep_transfer[local]:
     prefix_spill_wf initial_fmp lo ops1 ps1
 Proof
   rpt gen_tac >> strip_tac >>
-  qspecl_then [`base'`, `dfg`, `h`, `h'`, `ps`, `ps1`] mp_tac
-    reorder_one_exact_two_first_noops_shape >> simp[] >> strip_tac >>
-  Cases_on `ps1.ps_stack = ps.ps_stack`
-  >- (`spill_wf_view_eq ps1 ps` by
-        fs[spill_wf_view_eq_def] >>
+  `ps1.ps_alloc = ps.ps_alloc /\ ps1.ps_spilled = ps.ps_spilled /\
+   (ps1.ps_stack = ps.ps_stack \/
+    ?src at. stack_get_unfixed_depth h 1 2 ps.ps_stack = SOME src /\
+      src < LENGTH ps.ps_stack /\ at = stack_peek 1 ps.ps_stack /\
+      operand_equiv dfg h at /\
+      ps1.ps_stack = stack_poke 1 h (stack_poke src at ps.ps_stack))` by
+    metis_tac[reorder_one_exact_two_first_noops_source_shape] >>
+  pop_assum strip_assume_tac
+  >- (`spill_wf_view_eq ps1 ps` by fs[spill_wf_view_eq_def] >>
       metis_tac[prefix_spill_wf_view_eq]) >>
   gvs[] >>
-  TRY (metis_tac[prefix_spill_wf_view_eq, spill_wf_view_eq_def]) >>
-  FAIL_TAC "noops alias deep transfer needs permutation spill-WF boundary"
+  `LENGTH ps1.ps_stack = LENGTH ps.ps_stack` by
+    simp[stack_poke_def] >>
+  `d < LENGTH ps.ps_stack` by
+    metis_tac[stack_get_unfixed_depth_bound] >>
+  `d < LENGTH ps1.ps_stack` by decide_tac >>
+  qabbrev_tac `source_items = top_n (d + 1) ps.ps_stack` >>
+  qabbrev_tac `target_items = top_n (d + 1) ps1.ps_stack` >>
+  qabbrev_tac `source_offsets =
+    FST (spill_alloc_n [] ps.ps_alloc source_items)` >>
+  qabbrev_tac `target_offsets =
+    FST (spill_alloc_n [] ps1.ps_alloc target_items)` >>
+  `d + 1 <= LENGTH ps.ps_stack /\
+   d + 1 <= LENGTH ps1.ps_stack` by decide_tac >>
+  `LENGTH source_items = d + 1` by
+    metis_tac[top_n_def, LENGTH_REVERSE, LENGTH_TAKE_EQ] >>
+  `LENGTH target_items = d + 1` by
+    metis_tac[top_n_def, LENGTH_REVERSE, LENGTH_TAKE_EQ] >>
+  `spill_alloc_n [] ps.ps_alloc source_items =
+     spill_alloc_n [] ps.ps_alloc target_items` by
+    metis_tac[spill_alloc_n_length_cong] >>
+  `source_offsets = target_offsets` by
+    simp[Abbr `source_offsets`, Abbr `target_offsets`] >>
+  qabbrev_tac `restore_offsets =
+    MAP (\idx. EL idx target_offsets)
+      (REVERSE ([d] ++ GENLIST (\i. i + 1) (d - 1) ++ [0]))` >>
+  `ops1 = MAP SOSpill target_offsets ++ MAP SORestore restore_offsets` by
+    (qabbrev_tac `fres = FOLDL
+       (\(ops,offs,al) item.
+          (\(off,al'). (ops ++ [SOSpill off], SNOC off offs, al'))
+            (alloc_spill_slot al))
+       ([],[],ps1.ps_alloc) target_items` >>
+     PairCases_on `fres` >> fs[] >>
+     qspecl_then [`target_items`, `[]`, `[]`, `ps1.ps_alloc`]
+       mp_tac spill_foldl_snd_eq >> fs[] >> strip_tac >>
+     qspecl_then [`target_items`, `[]`, `[]`, `ps1.ps_alloc`]
+       mp_tac spill_foldl_ops_eq_map >> simp[] >> fs[] >> strip_tac >>
+     qpat_x_assum `do_swap d ps1 = (ops1,ps2)` mp_tac >>
+     simp[do_swap_def, LET_THM] >> pairarg_tac >> pairarg_tac >>
+     gvs[Abbr `target_offsets`, REVERSE_APPEND, MAP_APPEND] >>
+     strip_tac >> gvs[MAP_MAP_o, combinTheory.o_DEF,
+                       Abbr `restore_offsets`]) >>
+  `ALL_DISTINCT source_items` by
+    (simp[Abbr `source_items`] >>
+     MATCH_MP_TAC (Q.SPECL
+       [`d`, `ps`, `lo`, `target_offsets`, `restore_offsets`]
+       deep_swap_complete_wf_top_distinct) >>
+     simp[Abbr `source_offsets`] >>
+     conj_tac
+     >- simp[Abbr `restore_offsets`, REVERSE_APPEND, MAP_APPEND] >>
+     qpat_assum `ops1 = _` (fn th => PURE_ONCE_REWRITE_TAC[GSYM th]) >>
+     first_assum ACCEPT_TAC) >>
+  `ALL_DISTINCT target_items` by
+    (qspecl_then [`h`, `ps`, `ps1`, `src`, `d`] mp_tac
+       reorder_alias_exchange_top_n_distinct >>
+     simp[Abbr `source_items`, Abbr `target_items`] >>
+     metis_tac[]) >>
+  `spill_alloc_layout_wf ps1.ps_alloc ps1.ps_spilled` by
+    fs[exact_two_planner_ready_def, residual_budget_wf_def] >>
+  `prefix_spill_wf initial_fmp lo
+     (MAP SOSpill target_offsets) ps1` by
+    (qspecl_then [`d`, `ps1`, `ps`, `ops1`, `ps2`, `lo`] mp_tac
+       do_swap_generated_spills_prefix_wf_cross_view >>
+     simp[Abbr `target_items`, Abbr `target_offsets`] >>
+     metis_tac[]) >>
+  qspecl_then [`d`, `ps1`, `ops1`, `ps2`, `lo`] mp_tac
+    do_swap_prefix_spill_wf_from_generated_spills >>
+  simp[Abbr `target_items`, Abbr `target_offsets`] >>
+  metis_tac[]
 QED
 
 Theorem reorder_one_exact_two_suffix_prefix_spill_wf[local]:
