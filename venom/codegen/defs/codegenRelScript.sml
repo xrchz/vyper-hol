@@ -95,6 +95,142 @@ Definition memory_rel_def:
       read_byte i venom_mem = read_byte i asm_mem
 End
 
+(* ===== Source Memory Write Footprints ===== *)
+
+(* A direct source write is described by its destination byte offset and
+   length.  These footprints are computed from the pre-state operands, not
+   from a pre/post memory diff, so idempotent writes are still represented. *)
+Definition fixed_source_write_range_def:
+  fixed_source_write_range s dst_op value_op len =
+    case (eval_operand dst_op s, eval_operand value_op s) of
+      (SOME dst,SOME value) => [(w2n dst,len)]
+    | _ => []
+End
+
+Definition sized_source_write_range_def:
+  sized_source_write_range s dst_op src_op size_op =
+    case (eval_operand dst_op s, eval_operand src_op s,
+          eval_operand size_op s) of
+      (SOME dst,SOME src,SOME sz) => [(w2n dst,w2n sz)]
+    | _ => []
+End
+
+(* DRET copies each dynamic return value to a distinct destination cursor;
+   the cursor advances by the padded size, while the actual write length is
+   the unpadded size used by pack_dret_dynamic. *)
+Definition dret_source_write_ranges_def:
+  dret_source_write_ranges (cursor:bytes32) [] = [] /\
+  dret_source_write_ranges cursor ((src,sz)::rest) =
+    (w2n cursor,w2n sz) ::
+    dret_source_write_ranges
+      (cursor + n2w (ceil32 (w2n sz))) rest
+End
+
+Definition source_memory_write_ranges_def:
+  source_memory_write_ranges inst s =
+    case inst.inst_opcode of
+      MSTORE =>
+        (case inst.inst_operands of
+           [dst_op; value_op] => fixed_source_write_range s dst_op value_op 32
+         | _ => [])
+    | MSTORE8 =>
+        (case inst.inst_operands of
+           [dst_op; value_op] => fixed_source_write_range s dst_op value_op 1
+         | _ => [])
+    | ISTORE =>
+        (case inst.inst_operands of
+           [dst_op; value_op] => fixed_source_write_range s dst_op value_op 32
+         | _ => [])
+    | MCOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | CALLDATACOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | RETURNDATACOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | DLOADBYTES =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | CODECOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | EXTCODECOPY =>
+        (case inst.inst_operands of
+           [addr_op; dst_op; src_op; size_op] =>
+             (case eval_operand addr_op s of
+                SOME addr => sized_source_write_range s dst_op src_op size_op
+              | NONE => [])
+         | _ => [])
+    | CALL =>
+        (case inst.inst_operands of
+           [gas_op; addr_op; value_op; args_off_op; args_size_op;
+            ret_off_op; ret_size_op] =>
+             (case (eval_operand gas_op s, eval_operand addr_op s,
+                    eval_operand value_op s, eval_operand args_off_op s,
+                    eval_operand args_size_op s, eval_operand ret_off_op s,
+                    eval_operand ret_size_op s) of
+                (SOME gas,SOME addr,SOME value,SOME args_off,SOME args_size,
+                 SOME ret_off,SOME ret_size) => [(w2n ret_off,w2n ret_size)]
+              | _ => [])
+         | _ => [])
+    | STATICCALL =>
+        (case inst.inst_operands of
+           [gas_op; addr_op; args_off_op; args_size_op;
+            ret_off_op; ret_size_op] =>
+             (case (eval_operand gas_op s, eval_operand addr_op s,
+                    eval_operand args_off_op s, eval_operand args_size_op s,
+                    eval_operand ret_off_op s, eval_operand ret_size_op s) of
+                (SOME gas,SOME addr,SOME args_off,SOME args_size,
+                 SOME ret_off,SOME ret_size) => [(w2n ret_off,w2n ret_size)]
+              | _ => [])
+         | _ => [])
+    | DELEGATECALL =>
+        (case inst.inst_operands of
+           [gas_op; addr_op; args_off_op; args_size_op;
+            ret_off_op; ret_size_op] =>
+             (case (eval_operand gas_op s, eval_operand addr_op s,
+                    eval_operand args_off_op s, eval_operand args_size_op s,
+                    eval_operand ret_off_op s, eval_operand ret_size_op s) of
+                (SOME gas,SOME addr,SOME args_off,SOME args_size,
+                 SOME ret_off,SOME ret_size) => [(w2n ret_off,w2n ret_size)]
+              | _ => [])
+         | _ => [])
+    | DRET =>
+        (case parse_dret_shape inst of
+           NONE => []
+         | SOME (ordinary,dynamic) =>
+             (case eval_operands inst.inst_operands s of
+                NONE => []
+              | SOME vals =>
+                  (case pair_dret_words
+                    (TAKE (2 * dynamic) (DROP (1 + ordinary) vals)) of
+                     NONE => []
+                   | SOME pairs =>
+                       dret_source_write_ranges s.vs_call_entry_fmp pairs)))
+    | _ => []
+End
+(* Every nonempty source-write interval is disjoint from the compiler-owned
+   half-open spill interval [sa_spill_base,sa_next_offset). *)
+Definition source_memory_writes_disjoint_def:
+  source_memory_writes_disjoint (alloc:spill_alloc) inst s <=>
+    EVERY (\(off,len).
+      len = 0 \/ off + len <= alloc.sa_spill_base \/
+      alloc.sa_next_offset <= off)
+      (source_memory_write_ranges inst s)
+End
+
 (* ===== Spill Safety Conditions ===== *)
 
 (* A Venom step doesn't modify memory in the spill region.
@@ -109,6 +245,74 @@ Definition step_mem_safe_def:
       read_byte i vs.vs_memory = read_byte i vs'.vs_memory
 End
 
+(* Simulation safety keeps post-hoc source preservation and intentional
+   write/spill disjointness as independent obligations. *)
+Definition inst_memory_safe_def:
+  inst_memory_safe (alloc:spill_alloc) inst vs vs' <=>
+    step_mem_safe alloc vs vs' /\
+    source_memory_writes_disjoint alloc inst vs
+End
+
+Theorem source_memory_write_ranges_ISTORE_lit[simp]:
+  source_memory_write_ranges
+    (instruction id ISTORE [Lit off; Lit value] []) s = [(w2n off,32)]
+Proof
+  simp[source_memory_write_ranges_def, fixed_source_write_range_def,
+       venomStateTheory.eval_operand_def]
+QED
+
+Theorem source_memory_write_ranges_ADD[simp]:
+  source_memory_write_ranges
+    (instruction id ADD operands outputs) s = []
+Proof
+  simp[source_memory_write_ranges_def]
+QED
+
+Theorem source_memory_write_ranges_MSTORE8_lit[simp]:
+  source_memory_write_ranges
+    (instruction id MSTORE8 [Lit off; Lit value] []) s = [(w2n off,1)]
+Proof
+  simp[source_memory_write_ranges_def, fixed_source_write_range_def,
+       venomStateTheory.eval_operand_def]
+QED
+
+Theorem source_memory_write_ranges_MCOPY_lit[simp]:
+  source_memory_write_ranges
+    (instruction id MCOPY [Lit dst; Lit src; Lit sz] []) s =
+    [(w2n dst,w2n sz)]
+Proof
+  simp[source_memory_write_ranges_def, sized_source_write_range_def,
+       venomStateTheory.eval_operand_def]
+QED
+
+Theorem source_memory_writes_disjoint_overlap_probe:
+  let alloc = <| sa_free_slots := []; sa_next_offset := 32;
+                 sa_spill_base := 0 |> in
+  let inst = instruction id ISTORE
+               [Lit (0w:bytes32); Lit (1w:bytes32)] [] in
+    ~source_memory_writes_disjoint alloc inst s
+Proof
+  simp[source_memory_writes_disjoint_def]
+QED
+
+Theorem inst_memory_safe_overlap_probe:
+  let alloc = <| sa_free_slots := []; sa_next_offset := 32;
+                 sa_spill_base := 0 |> in
+  let inst = instruction id ISTORE
+               [Lit (0w:bytes32); Lit (1w:bytes32)] [] in
+    ~inst_memory_safe alloc inst vs vs'
+Proof
+  simp[inst_memory_safe_def, source_memory_writes_disjoint_def]
+QED
+Theorem source_memory_writes_disjoint_zero_length_probe:
+  let alloc = <| sa_free_slots := []; sa_next_offset := 64;
+                 sa_spill_base := 32 |> in
+  let inst = instruction id MCOPY
+               [Lit (40w:bytes32); Lit (0w:bytes32); Lit (0w:bytes32)] [] in
+    source_memory_writes_disjoint alloc inst s
+Proof
+  simp[source_memory_writes_disjoint_def]
+QED
 (* Memory is pre-expanded to cover the spill high-water mark.
    Ensures MEMTOP agrees between Venom and asm from the start.
    Established at context entry by emitting a memory-touching op

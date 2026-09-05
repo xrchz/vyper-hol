@@ -5406,6 +5406,64 @@ Resume gen_inst_ok_sim[istore]:
   cheat
 QED
 
+Theorem istore_spill_overlap_mismatch[local]:
+  let vs0 = (init_venom_state "entry") with <|
+              vs_memory := word_to_bytes (1w:bytes32) T;
+              vs_vars := FEMPTY |+ ("spill",(0w:bytes32)) |> in
+  let ps0 = (init_plan_state 0) with <|
+              ps_stack := [Lit (0w:bytes32); Lit (1w:bytes32)];
+              ps_spilled := FEMPTY |+ (Var "spill",0);
+              ps_alloc := <| sa_free_slots := [];
+                             sa_next_offset := 32;
+                             sa_spill_base := 0 |> |> in
+  let as0 = <| as_stack := [(1w:bytes32); (0w:bytes32)];
+               as_memory := word_to_bytes (0w:bytes32) T;
+               as_accounts := vs0.vs_accounts;
+               as_transient := vs0.vs_transient;
+               as_returndata := vs0.vs_returndata;
+               as_logs := vs0.vs_logs;
+               as_pc := 0;
+               as_call_ctx := vs0.vs_call_ctx;
+               as_tx_ctx := vs0.vs_tx_ctx;
+               as_block_ctx := vs0.vs_block_ctx;
+               as_code := vs0.vs_code;
+               as_prev_hashes := vs0.vs_prev_hashes |> in
+  let vs1 = istore 0 (1w:bytes32) vs0 in
+  let as1 = as0 with <| as_stack := [];
+                        as_memory := word_to_bytes (1w:bytes32) T;
+                        as_pc := 2 |> in
+    venom_asm_rel FEMPTY ps0 vs0 as0 /\
+    step_mem_safe ps0.ps_alloc vs0 vs1 /\
+    asm_steps FEMPTY FEMPTY [AsmOp "SWAP1"; AsmOp "MSTORE"] 2 as0 =
+      AsmOK as1 /\
+    ~venom_asm_rel FEMPTY (ps0 with ps_stack := []) vs1 as1
+Proof
+  simp[venom_asm_rel_def, plan_stack_rel_def, plan_spill_rel_def,
+       memory_rel_def, step_mem_safe_def, read_byte_def,
+       istore_def, mstore_def, init_venom_state_def, init_plan_state_def,
+       asm_steps_def, asm_step_def, asm_step_op_def, asm_swap_def,
+       asm_mstore_def, asm_next_def, asm_expand_memory_def, LET_THM,
+       vfmTypesTheory.word_to_bytes_word_of_bytes_256] >>
+  conj_tac
+  >- (conj_tac
+      >- (rpt strip_tac >> Cases_on `i` >> simp[operand_val_def] >>
+          Cases_on `n` >> simp[operand_val_def] >>
+          qpat_x_assum `SUC (SUC _) < 2` mp_tac >> simp[])
+      >> rpt strip_tac >>
+         gvs[finite_mapTheory.FLOOKUP_UPDATE, operand_val_def, lookup_var_def,
+             byteTheory.LENGTH_word_to_bytes, TAKE_LENGTH_ID_rwt,
+             vfmTypesTheory.word_to_bytes_word_of_bytes_256]) >>
+  conj_tac
+  >- (rpt strip_tac >>
+      simp[EL_APPEND1, byteTheory.LENGTH_word_to_bytes]) >>
+  conj_tac
+  >- EVAL_TAC >>
+  qexists `Var "spill"` >> qexists `0` >>
+  simp[finite_mapTheory.FLOOKUP_UPDATE, operand_val_def, lookup_var_def,
+       byteTheory.LENGTH_word_to_bytes, TAKE_LENGTH_ID_rwt,
+       vfmTypesTheory.word_to_bytes_word_of_bytes_256]
+QED
+
 Resume gen_inst_ok_sim[jmp]:
   cheat
 QED
