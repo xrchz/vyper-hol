@@ -3393,8 +3393,8 @@ Theorem do_swap_deep_restore_prefix_spill_wf[local]:
   !dist ps lo.
     dist > 16 /\ dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
-    ALL_DISTINCT ps.ps_stack /\
-    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     prefix_spill_wf initial_fmp lo
       (MAP SOSpill (FST (spill_alloc_n [] ps.ps_alloc
         (top_n (dist + 1) ps.ps_stack)))) ps ==>
@@ -3418,12 +3418,9 @@ Proof
     simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
   `LENGTH desired_rev = LENGTH items` by
     simp[Abbr `desired_rev`, LENGTH_REVERSE, LENGTH_GENLIST] >>
-  `ALL_DISTINCT items` by
-    simp[Abbr `items`, top_n_def, ALL_DISTINCT_REVERSE, ALL_DISTINCT_TAKE] >>
-  `DISJOINT (set items) (FDOM ps.ps_spilled)` by (
-    fs[DISJOINT_DEF, EXTENSION] >> gen_tac >>
-    qpat_x_assum `!x. ~MEM x ps.ps_stack \/ _` (qspec_then `x` mp_tac) >>
-    simp[Abbr `items`, top_n_def] >> metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  `ALL_DISTINCT items` by simp[Abbr `items`] >>
+  `DISJOINT (set items) (FDOM ps.ps_spilled)` by
+    simp[Abbr `items`] >>
   `EVERY (\off. off < dimword(:256)) offsets` by
     metis_tac[prefix_spill_wf_map_spill_bounds] >>
   `EVERY (\i. i < LENGTH items) desired_rev` by
@@ -3493,8 +3490,8 @@ Theorem do_swap_prefix_spill_wf_from_front:
     do_swap dist ps = (ops,ps') /\
     dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
-    ALL_DISTINCT ps.ps_stack /\
-    DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled) /\
+    ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     prefix_spill_wf initial_fmp lo (FRONT ops) ps ==>
     prefix_spill_wf initial_fmp lo ops ps
 Proof
@@ -3598,6 +3595,10 @@ Proof
     (fs[DISJOINT_DEF, EXTENSION] >> gen_tac >>
      qpat_x_assum `!x. ~MEM x target.ps_stack \/ _` (qspec_then `x` mp_tac) >>
      simp[Abbr `items`, top_n_def] >> metis_tac[MEM_TAKE, MEM_REVERSE]) >>
+  `ALL_DISTINCT items` by
+    metis_tac[ALL_DISTINCT_REVERSE] >>
+  `DISJOINT (set items) (FDOM target.ps_spilled)` by
+    metis_tac[LIST_TO_SET_REVERSE] >>
   `REVERSE items = TAKE (LENGTH offsets) (REVERSE target.ps_stack)` by
     simp[Abbr `items`, top_n_def] >>
   `spill_alloc_layout_wf
