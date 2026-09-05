@@ -6555,3 +6555,74 @@ Proof
   (conj_tac >- simp[]) >>
   qexistsl [`h`, `via`] >> simp[]
 QED
+
+
+Theorem reorder_plan_exact_two_venom_asm_rel:
+  !base dfg h h' ps ops ps' lo o2pc prog vs st.
+    exact_two_planner_ready base h h' ps /\
+    reorder_plan dfg [h;h'] ps = (ops,ps') /\
+    (!op1 at. operand_equiv dfg op1 at ==>
+              operand_val vs lo op1 = operand_val vs lo at) /\
+    prefix_spill_wf initial_fmp lo ops ps /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
+        AsmOK st' /\
+      venom_asm_rel lo ps' vs st' /\
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `reorder_plan _ _ _ = _` mp_tac >>
+  simp[reorder_plan_def, indexedListsTheory.MAPi_def,
+       indexedListsTheory.MAPi_ACC_def, LET_THM] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  `exact_two_planner_ready base' h h' ps''` by
+    (qspecl_then [`dfg`, `base'`, `h`, `h'`, `0`, `h`, `ps`, `ops'`, `ps''`]
+       mp_tac reorder_one_exact_two_planner_ready >> simp[]) >>
+  `prefix_spill_wf initial_fmp lo ops' ps` by
+    fs[prefix_spill_wf_append_reorder] >>
+  `prefix_spill_wf initial_fmp lo step_ops ps''` by
+    (qspecl_then [`base'`, `dfg`, `h`, `h'`, `ps`, `ops'`, `ps''`,
+                  `step_ops`, `ps'`, `lo`]
+       mp_tac reorder_one_exact_two_suffix_prefix_spill_wf >> simp[]) >>
+  `asm_block_at prog st.as_pc (execute_plan initial_fmp ops') /\
+   asm_block_at prog
+     (st.as_pc + LENGTH (execute_plan initial_fmp ops'))
+     (execute_plan initial_fmp step_ops)` by
+    (qpat_x_assum `asm_block_at prog st.as_pc
+       (execute_plan initial_fmp (ops' ++ step_ops))` mp_tac >>
+     simp[execute_plan_append, asm_block_at_append]) >>
+  `residual_budget_wf base' [h;h'] ps /\
+   pending_inventory_wf [h;h'] ps /\
+   2 <= LENGTH ps.ps_stack` by
+    fs[exact_two_planner_ready_def] >>
+  `?st1.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops')) st =
+        AsmOK st1 /\
+      venom_asm_rel lo ps'' vs st1 /\
+      st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops') /\
+      residual_budget_wf base' [h;h'] ps'' /\
+      pending_inventory_wf [h;h'] ps''` by
+    (qspecl_then [`dfg`, `[h;h']`, `0`, `h`, `ps`, `ops'`, `ps''`,
+                  `base'`, `lo`, `o2pc`, `prog`, `vs`, `st`]
+       mp_tac reorder_one_venom_asm_rel_residual >>
+     simp[exact_two_planner_ready_def]) >>
+  `asm_block_at prog st1.as_pc (execute_plan initial_fmp step_ops)` by
+    metis_tac[] >>
+  `2 <= LENGTH ps''.ps_stack` by
+    fs[exact_two_planner_ready_def] >>
+  `?st2.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp step_ops)) st1 =
+        AsmOK st2 /\
+      venom_asm_rel lo ps' vs st2 /\
+      st2.as_pc = st1.as_pc + LENGTH (execute_plan initial_fmp step_ops) /\
+      residual_budget_wf base' [h;h'] ps' /\
+      pending_inventory_wf [h;h'] ps'` by
+    (qspecl_then [`dfg`, `[h;h']`, `1`, `h'`, `ps''`, `step_ops`, `ps'`,
+                  `base'`, `lo`, `o2pc`, `prog`, `vs`, `st1`]
+       mp_tac reorder_one_venom_asm_rel_residual >> simp[]) >>
+  qexists_tac `st2` >>
+  ASM_REWRITE_TAC[execute_plan_append, LENGTH_APPEND, asm_steps_add] >>
+  simp[]
+QED
