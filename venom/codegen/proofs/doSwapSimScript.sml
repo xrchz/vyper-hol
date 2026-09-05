@@ -3524,6 +3524,8 @@ Proof
        (MAP SORestore _ ++ [SORestore _]) _` mp_tac >>
   simp[prefix_spill_wf_append, apply_prefix_ops_append] >>
   strip_tac >>
+
+
   `dist + 1 <= LENGTH ps.ps_stack` by decide_tac >>
   `LENGTH (FST (spill_alloc_n [] ps.ps_alloc
       (top_n (dist + 1) ps.ps_stack))) = dist + 1` by
@@ -3536,6 +3538,102 @@ Proof
   PURE_ONCE_REWRITE_TAC[GSYM apply_prefix_ops_append] >>
   simp[] >> first_assum ACCEPT_TAC
 QED
+
+Theorem prefix_spill_wf_front[local]:
+  !ops lo ps.
+    ops <> [] /\ prefix_spill_wf initial_fmp lo ops ps ==>
+    prefix_spill_wf initial_fmp lo (FRONT ops) ps
+Proof
+  rpt gen_tac >> strip_tac >>
+  `ops = FRONT ops ++ [LAST ops]` by simp[APPEND_FRONT_LAST] >>
+  qpat_x_assum `prefix_spill_wf _ _ ops _` mp_tac >>
+  qpat_assum `ops = FRONT ops ++ [LAST ops]`
+    (fn th => PURE_ONCE_REWRITE_TAC[th]) >>
+  simp[prefix_spill_wf_append, FRONT_APPEND_NOT_NIL]
+QED
+
+Theorem do_swap_front_prefix_spill_wf_cross_view:
+  !dist producer consumer ops producer' initial_fmp lo.
+    16 < dist /\ dist < LENGTH producer.ps_stack /\
+    spill_alloc_layout_wf producer.ps_alloc producer.ps_spilled /\
+    ALL_DISTINCT (top_n (dist + 1) producer.ps_stack) /\
+    consumer.ps_stack = producer.ps_stack /\
+    consumer.ps_alloc.sa_spill_base = producer.ps_alloc.sa_spill_base /\
+    prefix_spill_wf initial_fmp lo ops consumer /\
+    do_swap dist producer = (ops,producer') ==>
+    prefix_spill_wf initial_fmp lo (FRONT ops) producer
+Proof
+  rpt gen_tac >> strip_tac >>
+  `dist > 16` by decide_tac >>
+  mp_tac (Q.SPECL [`dist`, `producer`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[] >>
+  qabbrev_tac `items = top_n (dist + 1) producer.ps_stack` >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] producer.ps_alloc items)` >>
+  qabbrev_tac `desired = [dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]` >>
+  qabbrev_tac `restore_offsets = MAP (\idx. EL idx offsets) (REVERSE desired)` >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) consumer` by
+    (qpat_x_assum `prefix_spill_wf _ _ (_ ++ _) consumer` mp_tac >>
+     simp[prefix_spill_wf_append]) >>
+  `EVERY (\off. off < dimword(:256)) offsets` by
+    metis_tac[prefix_spill_wf_map_spill_bounds] >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_TAKE] >>
+  `LENGTH offsets = LENGTH items` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  `!k. k < LENGTH offsets ==>
+       EL k offsets < dimword(:256) /\
+       producer.ps_alloc.sa_spill_base <= EL k offsets /\
+       (!op off. FLOOKUP producer.ps_spilled op = SOME off ==>
+          off + 32 <= EL k offsets \/ EL k offsets + 32 <= off) /\
+       (!j. j < k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)` by
+    (qspecl_then [`dist`, `items`, `producer.ps_alloc`,
+                  `producer.ps_spilled`] mp_tac deep_swap_occurrence_offsets >>
+     simp[LET_THM, Abbr `offsets`] >> metis_tac[]) >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) producer` by
+    (qspecl_then [`ZIP (REVERSE items,offsets)`, `lo`, `producer`]
+       mp_tac prefix_spill_wf_map_spill_pairs >>
+     simp[MAP_ZIP, LENGTH_ZIP, ALL_DISTINCT_REVERSE] >>
+     disch_then irule >>
+     conj_tac
+     >- (simp[Abbr `items`, top_n_def] >>
+         gen_tac >> strip_tac >>
+         `k < LENGTH offsets` by decide_tac >>
+         first_x_assum (qspec_then `k` mp_tac) >>
+         simp[EL_ZIP] >> strip_tac >> first_assum ACCEPT_TAC) >>
+     simp[Abbr `items`, top_n_def]) >>
+  `prefix_spill_wf initial_fmp lo (MAP SORestore restore_offsets)
+     (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) producer)` by
+    (qspecl_then [`dist`, `producer`, `lo`] mp_tac
+       do_swap_deep_restore_prefix_spill_wf >>
+     simp[Abbr `items`, Abbr `offsets`, Abbr `desired`,
+          Abbr `restore_offsets`]) >>
+  `([SORestore (HD offsets)] ++
+      MAP SORestore
+        (MAP (\idx. EL idx offsets)
+          (REVERSE (GENLIST (\i. i + 1) (dist - 1)))) ++
+      [SORestore (EL dist offsets)]) = MAP SORestore restore_offsets` by
+    simp[Abbr `restore_offsets`, Abbr `desired`, REVERSE_APPEND, MAP_APPEND] >>
+  `prefix_spill_wf initial_fmp lo
+     (MAP SOSpill offsets ++ MAP SORestore restore_offsets) producer` by
+    simp[prefix_spill_wf_append] >>
+  `prefix_spill_wf initial_fmp lo
+     (MAP SOSpill offsets ++ [SORestore (HD offsets)] ++
+      MAP SORestore
+        (MAP (\idx. EL idx offsets)
+          (REVERSE (GENLIST (\i. i + 1) (dist - 1)))) ++
+      [SORestore (EL dist offsets)]) producer` by
+    (qpat_x_assum `prefix_spill_wf _ _
+       (MAP SOSpill offsets ++ MAP SORestore restore_offsets) producer` mp_tac >>
+     qpat_assum `_ = MAP SORestore restore_offsets`
+       (fn th => PURE_ONCE_REWRITE_TAC[GSYM th]) >>
+     simp[APPEND_ASSOC]) >>
+  irule prefix_spill_wf_front >>
+  conj_tac >- simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  first_assum ACCEPT_TAC
+QED
+
 
 Theorem do_swap_prefix_spill_wf_from_front:
   !dist ps ops ps' lo.
