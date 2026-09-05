@@ -547,6 +547,14 @@ Proof
   simp[apply_prefix_ops_def, apply_prefix_op_spill_base]
 QED
 
+Theorem apply_prefix_ops_spill_base_zero[local]:
+  !lo ops ps.
+    (apply_prefix_ops 0 lo ops ps).ps_alloc.sa_spill_base =
+    ps.ps_alloc.sa_spill_base
+Proof
+  rpt gen_tac >> irule apply_prefix_ops_spill_base
+QED
+
 (* sa_next_offset only grows via SOSpill *)
 Theorem apply_prefix_op_next_offset[local]:
   !lo op ps.
@@ -5030,4 +5038,337 @@ Proof
   rewrite_tac[LET_THM] >> BETA_TAC >> strip_tac >>
   ASM_REWRITE_TAC[spill_alloc_wf_iff_layout_ready] >>
   simp[headroom_ps_def, headroom_stack_def, top_n_def]
+QED
+
+
+(* Checked counterexample to duplicate-safe threaded suffix transport.
+   The top operand is already spilled at offset 0.  A deep swap overwrites
+   and then removes that finite-map entry in the interpreted execution,
+   whereas the direct planner result retains it.  Consequently SOSpill 0 is
+   well formed only at the interpreted state. *)
+Definition suffix_probe_alloc_def:
+  suffix_probe_alloc = <|
+    sa_free_slots := [];
+    sa_next_offset := 32;
+    sa_spill_base := 0 |>
+End
+
+Definition suffix_probe_ps_def:
+  suffix_probe_ps = (init_plan_state 0) with <|
+    ps_stack := headroom_stack;
+    ps_spilled := FEMPTY |+ (Var "r", 0);
+    ps_alloc := suffix_probe_alloc |>
+End
+
+Definition suffix_probe_offsets_def:
+  suffix_probe_offsets = GENLIST (\k. 32 * (k + 1)) 18
+End
+
+Theorem suffix_probe_allocator_trajectory[local]:
+  FST (spill_alloc_n [] suffix_probe_alloc headroom_stack) =
+    suffix_probe_offsets
+Proof
+  simp[suffix_probe_offsets_def, suffix_probe_alloc_def,
+       headroom_stack_def, spill_alloc_n_def, alloc_spill_slot_def]
+QED
+
+Theorem suffix_probe_spill_phase[local]:
+  prefix_spill_wf initial_fmp FEMPTY
+    (MAP SOSpill suffix_probe_offsets) suffix_probe_ps
+Proof
+  qspecl_then
+    [`ZIP (REVERSE headroom_stack, suffix_probe_offsets)`,
+     `FEMPTY`, `suffix_probe_ps`]
+    mp_tac prefix_spill_wf_map_spill_pairs >>
+  (impl_tac >-
+    (rpt conj_tac
+     >- simp[suffix_probe_ps_def, suffix_probe_offsets_def,
+             headroom_stack_def, MAP_ZIP]
+     >- simp[suffix_probe_ps_def, suffix_probe_offsets_def,
+             headroom_stack_def]
+     >- simp[suffix_probe_offsets_def, headroom_stack_def, MAP_ZIP] >>
+     gen_tac >> strip_tac >>
+     `LENGTH (REVERSE headroom_stack) = 18 /\
+      LENGTH suffix_probe_offsets = 18` by
+       simp[headroom_stack_def, suffix_probe_offsets_def] >>
+     `k < 18` by fs[LENGTH_ZIP] >>
+     `576 < dimword(:256)` by
+       (simp[wordsTheory.dimword_def] >>
+        CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
+     `EL k (ZIP (REVERSE headroom_stack, suffix_probe_offsets)) =
+        (EL k (REVERSE headroom_stack), EL k suffix_probe_offsets)` by
+       (irule EL_ZIP >> simp[]) >>
+     `SND (EL k (ZIP (REVERSE headroom_stack, suffix_probe_offsets))) =
+        32 * (k + 1)` by
+       (ASM_REWRITE_TAC[] >>
+        PURE_REWRITE_TAC[suffix_probe_offsets_def] >>
+        ASM_SIMP_TAC pure_ss [EL_GENLIST] >> REFL_TAC) >>
+     ASM_REWRITE_TAC[] >>
+     simp[suffix_probe_ps_def, suffix_probe_alloc_def,
+          init_plan_state_def, FLOOKUP_UPDATE] >>
+     rpt strip_tac >> TRY decide_tac >>
+     `j < 18` by decide_tac >>
+     `EL j (ZIP (REVERSE headroom_stack, suffix_probe_offsets)) =
+        (EL j (REVERSE headroom_stack), EL j suffix_probe_offsets)` by
+       (irule EL_ZIP >> simp[]) >>
+     `SND (EL j (ZIP (REVERSE headroom_stack, suffix_probe_offsets))) =
+        32 * (j + 1)` by
+       (ASM_REWRITE_TAC[] >>
+        PURE_REWRITE_TAC[suffix_probe_offsets_def] >>
+        ASM_SIMP_TAC pure_ss [EL_GENLIST] >> REFL_TAC) >>
+     ASM_REWRITE_TAC[] >> decide_tac)) >>
+  simp[suffix_probe_offsets_def, headroom_stack_def, MAP_ZIP]
+QED
+
+Definition suffix_probe_desired_rev_def:
+  suffix_probe_desired_rev =
+    REVERSE ([17] ++ GENLIST (\i. i + 1) 16 ++ [0])
+End
+
+Theorem suffix_probe_overwrite_map[local]:
+  (FEMPTY |+ (Var "r", 0)) |++
+      ZIP (REVERSE headroom_stack, suffix_probe_offsets) =
+  FEMPTY |++ ZIP (REVERSE headroom_stack, suffix_probe_offsets)
+Proof
+  simp[suffix_probe_offsets_def, headroom_stack_def, FUPDATE_LIST_THM]
+QED
+
+Theorem suffix_probe_restore_phase[local]:
+  let post = apply_prefix_ops initial_fmp FEMPTY
+               (MAP SOSpill suffix_probe_offsets) suffix_probe_ps
+  in prefix_spill_wf initial_fmp FEMPTY
+       (MAP SORestore
+          (MAP (\idx. EL idx suffix_probe_offsets)
+               suffix_probe_desired_rev)) post
+Proof
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  qabbrev_tac `items = MAP (\idx. EL idx (REVERSE headroom_stack))
+                           suffix_probe_desired_rev` >>
+  qabbrev_tac `restore_offsets =
+    MAP (\idx. EL idx suffix_probe_offsets) suffix_probe_desired_rev` >>
+  qabbrev_tac `post = apply_prefix_ops initial_fmp FEMPTY
+    (MAP SOSpill suffix_probe_offsets) suffix_probe_ps` >>
+  `LENGTH suffix_probe_offsets = 18` by simp[suffix_probe_offsets_def] >>
+  `LENGTH suffix_probe_desired_rev = 18` by
+    simp[suffix_probe_desired_rev_def] >>
+  `ALL_DISTINCT suffix_probe_desired_rev` by
+    (simp[suffix_probe_desired_rev_def] >>
+     irule desired_indices_all_distinct >> decide_tac) >>
+  `EVERY (\i. i < 18) suffix_probe_desired_rev` by
+    (simp[EVERY_EL] >> rpt strip_tac >>
+     qspecl_then [`18`, `n`] mp_tac desired_rev_el_bound >>
+     simp[suffix_probe_desired_rev_def]) >>
+  `ALL_DISTINCT items` by
+    (simp[Abbr `items`] >> irule all_distinct_map_el >>
+     simp[headroom_stack_def, ALL_DISTINCT_REVERSE] >>
+     ASM_REWRITE_TAC[] >> fs[EVERY_EL]) >>
+  `ALL_DISTINCT suffix_probe_offsets` by
+    (simp[suffix_probe_offsets_def, ALL_DISTINCT_GENLIST] >> decide_tac) >>
+  `ALL_DISTINCT restore_offsets` by
+    (simp[Abbr `restore_offsets`] >> irule all_distinct_map_el >>
+     ASM_REWRITE_TAC[] >> fs[EVERY_EL]) >>
+  `post.ps_spilled = suffix_probe_ps.ps_spilled |++
+       ZIP (REVERSE headroom_stack, suffix_probe_offsets)` by
+    (simp[Abbr `post`] >>
+     qspecl_then [`suffix_probe_offsets`, `FEMPTY`, `suffix_probe_ps`]
+       mp_tac apply_spill_ops_spilled >>
+     (impl_tac >-
+       simp[suffix_probe_ps_def, suffix_probe_offsets_def,
+            headroom_stack_def]) >>
+     simp[suffix_probe_ps_def, headroom_stack_def]) >>
+  qspecl_then [`items`, `restore_offsets`, `FEMPTY`, `post`]
+    mp_tac prefix_spill_wf_map_restore_lookup >>
+  (impl_tac >-
+    (rpt conj_tac
+     >- simp[Abbr `items`, Abbr `restore_offsets`]
+     >- simp[]
+     >- simp[] >>
+     gen_tac >> strip_tac >>
+     `k < LENGTH suffix_probe_desired_rev` by fs[Abbr `items`] >>
+     simp[Abbr `items`, Abbr `restore_offsets`, EL_MAP] >>
+     conj_tac
+     >- (ASM_REWRITE_TAC[] >> irule flookup_fupdate_list_el >>
+         simp[headroom_stack_def, ALL_DISTINCT_REVERSE] >>
+         fs[EVERY_EL]) >>
+     `576 < dimword(:256)` by
+       (simp[wordsTheory.dimword_def] >>
+        CONV_TAC (DEPTH_CONV fcpLib.INDEX_CONV) >> decide_tac) >>
+     `EL k suffix_probe_desired_rev < 18` by
+       (fs[EVERY_EL] >> metis_tac[]) >>
+     `EL (EL k suffix_probe_desired_rev) suffix_probe_offsets =
+        32 * (EL k suffix_probe_desired_rev + 1)` by
+       (PURE_REWRITE_TAC[suffix_probe_offsets_def] >>
+        ASM_SIMP_TAC pure_ss [EL_GENLIST] >> REFL_TAC) >>
+     decide_tac)) >>
+  simp[Abbr `items`, Abbr `restore_offsets`, Abbr `post`]
+QED
+
+Theorem suffix_probe_final_spilled[local]:
+  let spill_post = apply_prefix_ops initial_fmp FEMPTY
+       (MAP SOSpill suffix_probe_offsets) suffix_probe_ps;
+      restore_items = MAP (\idx. EL idx (REVERSE headroom_stack))
+       suffix_probe_desired_rev;
+      restore_offsets = MAP (\idx. EL idx suffix_probe_offsets)
+       suffix_probe_desired_rev
+  in
+    (apply_prefix_ops initial_fmp FEMPTY
+       (MAP SORestore restore_offsets) spill_post).ps_spilled = FEMPTY
+Proof
+  rewrite_tac[LET_THM] >> BETA_TAC >>
+  qabbrev_tac `restore_items = MAP (\idx. EL idx (REVERSE headroom_stack))
+    suffix_probe_desired_rev` >>
+  qabbrev_tac `restore_offsets = MAP (\idx. EL idx suffix_probe_offsets)
+    suffix_probe_desired_rev` >>
+  qabbrev_tac `post = apply_prefix_ops initial_fmp FEMPTY
+    (MAP SOSpill suffix_probe_offsets) suffix_probe_ps` >>
+  `LENGTH suffix_probe_offsets = 18` by simp[suffix_probe_offsets_def] >>
+  `LENGTH suffix_probe_desired_rev = 18` by
+    simp[suffix_probe_desired_rev_def] >>
+  `ALL_DISTINCT suffix_probe_desired_rev` by
+    (simp[suffix_probe_desired_rev_def] >>
+     irule desired_indices_all_distinct >> decide_tac) >>
+  `EVERY (\i. i < 18) suffix_probe_desired_rev` by
+    (simp[EVERY_EL] >> rpt strip_tac >>
+     qspecl_then [`18`, `n`] mp_tac desired_rev_el_bound >>
+     simp[suffix_probe_desired_rev_def]) >>
+  `ALL_DISTINCT restore_items` by
+    (simp[Abbr `restore_items`] >> irule all_distinct_map_el >>
+     simp[headroom_stack_def, ALL_DISTINCT_REVERSE] >>
+     ASM_REWRITE_TAC[] >> fs[EVERY_EL]) >>
+  `ALL_DISTINCT suffix_probe_offsets` by
+    (simp[suffix_probe_offsets_def, ALL_DISTINCT_GENLIST] >> decide_tac) >>
+  `ALL_DISTINCT restore_offsets` by
+    (simp[Abbr `restore_offsets`] >> irule all_distinct_map_el >>
+     ASM_REWRITE_TAC[] >> fs[EVERY_EL]) >>
+  `post.ps_spilled = FEMPTY |++
+       ZIP (REVERSE headroom_stack, suffix_probe_offsets)` by
+    (simp[Abbr `post`] >>
+     qspecl_then [`suffix_probe_offsets`, `FEMPTY`, `suffix_probe_ps`]
+       mp_tac apply_spill_ops_spilled >>
+     (impl_tac >-
+       simp[suffix_probe_ps_def, suffix_probe_offsets_def,
+            headroom_stack_def]) >>
+     strip_tac >> ASM_REWRITE_TAC[] >>
+     simp[suffix_probe_ps_def, headroom_stack_def,
+          suffix_probe_offsets_def, FUPDATE_LIST_THM]) >>
+  `spill_alloc_layout_wf
+      (SND (spill_alloc_n [] suffix_probe_alloc headroom_stack))
+      (FEMPTY |++ ZIP (REVERSE headroom_stack, suffix_probe_offsets))` by
+    (qspecl_then [`headroom_stack`, `REVERSE headroom_stack`,
+                  `suffix_probe_alloc`, `FEMPTY`]
+       mp_tac spill_alloc_n_layout_wf_keys >>
+     (impl_tac >-
+       simp[suffix_probe_alloc_def, spill_alloc_layout_wf_def,
+            headroom_stack_def]) >>
+     simp[suffix_probe_allocator_trajectory]) >>
+  `!op1 off1 op2 off2.
+      FLOOKUP post.ps_spilled op1 = SOME off1 /\
+      FLOOKUP post.ps_spilled op2 = SOME off2 /\ op1 <> op2 ==>
+      off1 + 32 <= off2 \/ off2 + 32 <= off1` by
+    (ASM_REWRITE_TAC[] >>
+     ho_match_mp_tac spill_alloc_layout_wf_spilled_separated >>
+     qexists `SND (spill_alloc_n [] suffix_probe_alloc headroom_stack)` >>
+     ASM_REWRITE_TAC[]) >>
+  qspecl_then [`restore_items`, `restore_offsets`, `FEMPTY`, `post`]
+    mp_tac apply_restore_ops_spilled >>
+  (impl_tac >-
+    (rpt conj_tac
+     >- simp[Abbr `restore_items`, Abbr `restore_offsets`]
+     >- simp[]
+     >- (rpt strip_tac >>
+         `k < LENGTH suffix_probe_desired_rev` by fs[Abbr `restore_items`] >>
+         simp[Abbr `restore_items`, Abbr `restore_offsets`, EL_MAP] >>
+         ASM_REWRITE_TAC[] >> irule flookup_fupdate_list_el >>
+         simp[headroom_stack_def, ALL_DISTINCT_REVERSE] >> fs[EVERY_EL]) >>
+     ASM_REWRITE_TAC[])) >>
+  disch_then SUBST1_TAC >>
+  ASM_REWRITE_TAC[] >>
+  irule foldl_domsub_cancel >>
+  simp[Abbr `restore_items`, MAP_ZIP, headroom_stack_def] >>
+  qspecl_then [`18`, `headroom_stack`] mp_tac set_desired_perm >>
+  simp[suffix_probe_desired_rev_def, headroom_stack_def] >>
+  SET_TAC []
+QED
+
+Theorem suffix_probe_spill_phase_zero[local]:
+  prefix_spill_wf 0 FEMPTY
+    (MAP SOSpill suffix_probe_offsets) suffix_probe_ps
+Proof
+  irule suffix_probe_spill_phase
+QED
+
+Theorem suffix_probe_restore_phase_zero[local]:
+  let post = apply_prefix_ops 0 FEMPTY
+               (MAP SOSpill suffix_probe_offsets) suffix_probe_ps
+  in prefix_spill_wf 0 FEMPTY
+       (MAP SORestore
+          (MAP (\idx. EL idx suffix_probe_offsets)
+               suffix_probe_desired_rev)) post
+Proof
+  irule suffix_probe_restore_phase
+QED
+
+Theorem suffix_probe_final_spilled_zero[local]:
+  let spill_post = apply_prefix_ops 0 FEMPTY
+       (MAP SOSpill suffix_probe_offsets) suffix_probe_ps;
+      restore_items = MAP (\idx. EL idx (REVERSE headroom_stack))
+       suffix_probe_desired_rev;
+      restore_offsets = MAP (\idx. EL idx suffix_probe_offsets)
+       suffix_probe_desired_rev
+  in
+    (apply_prefix_ops 0 FEMPTY
+       (MAP SORestore restore_offsets) spill_post).ps_spilled = FEMPTY
+Proof
+  irule suffix_probe_final_spilled
+QED
+
+Theorem do_swap_prefix_spill_wf_suffix_counterexample:
+  let ps = suffix_probe_ps;
+      res = do_swap 17 ps;
+      lo = (FEMPTY : (string, num) fmap)
+  in
+    17 < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    prefix_spill_wf 0 lo (FST res ++ [SOSpill 0]) ps /\
+    ~prefix_spill_wf 0 lo [SOSpill 0] (SND res)
+Proof
+  rewrite_tac[LET_THM] >>
+  simp[suffix_probe_ps_def, headroom_stack_def,
+       suffix_probe_alloc_def, init_plan_state_def,
+       spill_alloc_layout_wf_def, FLOOKUP_UPDATE] >>
+  reverse conj_tac
+  >- (mp_tac (Q.SPECL [`17`, `suffix_probe_ps`] do_swap_layout_wf) >>
+      (impl_tac >-
+        simp[suffix_probe_ps_def, headroom_stack_def,
+             suffix_probe_alloc_def, init_plan_state_def,
+             spill_alloc_layout_wf_def, FLOOKUP_UPDATE]) >>
+      strip_tac >>
+      gvs[suffix_probe_ps_def, suffix_probe_alloc_def,
+          headroom_stack_def, init_plan_state_def,
+          prefix_spill_wf_def, spill_op_wf_def, FLOOKUP_UPDATE]) >>
+  `FST (do_swap 17 suffix_probe_ps) =
+     MAP SOSpill suffix_probe_offsets ++
+     MAP SORestore
+       (MAP (\idx. EL idx suffix_probe_offsets) suffix_probe_desired_rev)` by
+    (mp_tac (Q.SPECL [`17`, `suffix_probe_ps`] do_swap_big_decompose) >>
+     simp[LET_THM, suffix_probe_ps_def, top_n_def,
+          GSYM suffix_probe_allocator_trajectory,
+          suffix_probe_desired_rev_def, headroom_stack_def]) >>
+  gvs[suffix_probe_ps_def, suffix_probe_alloc_def,
+      headroom_stack_def, init_plan_state_def] >>
+  simp[prefix_spill_wf_append, apply_prefix_ops_append] >>
+  conj_tac
+  >- (conj_tac
+      >- (mp_tac suffix_probe_spill_phase_zero >>
+          simp[suffix_probe_ps_def, suffix_probe_alloc_def,
+               headroom_stack_def, init_plan_state_def]) >>
+      mp_tac suffix_probe_restore_phase_zero >>
+      simp[LET_THM, suffix_probe_ps_def, suffix_probe_alloc_def,
+           headroom_stack_def, init_plan_state_def]) >>
+  mp_tac suffix_probe_final_spilled_zero >>
+  simp[LET_THM, suffix_probe_ps_def, suffix_probe_alloc_def,
+       headroom_stack_def, init_plan_state_def] >> strip_tac >>
+  simp[prefix_spill_wf_def, spill_op_wf_def] >>
+  simp[apply_prefix_ops_spill_base_zero,
+       suffix_probe_ps_def, suffix_probe_alloc_def]
 QED
