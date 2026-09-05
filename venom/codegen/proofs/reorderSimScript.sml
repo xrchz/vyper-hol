@@ -4642,9 +4642,41 @@ Proof
   CONV_TAC (DEPTH_CONV wordsLib.WORD_EVAL_CONV) >>
   EVAL_TAC
 QED
+
+Definition two_deep_second_first_swap_def:
+  two_deep_second_first_swap = do_swap 18 two_deep_ps1_expected
+End
+
+Definition two_deep_second_final_swap_def:
+  two_deep_second_final_swap =
+    do_swap 0 (SND two_deep_second_first_swap)
+End
+
+Definition two_deep_ops1_expected_def:
+  two_deep_ops1_expected =
+    FST two_deep_second_first_swap ++ FST two_deep_second_final_swap
+End
+
+Definition two_deep_ps2_expected_def:
+  two_deep_ps2_expected = SND two_deep_second_final_swap
+End
+
+Theorem two_deep_second_reorder[local]:
+  reorder_one dfg_empty [Lit 1w; Lit 0w] 1 (Lit 0w)
+    two_deep_ps1_expected =
+    (two_deep_ops1_expected,two_deep_ps2_expected)
+Proof
+  EVAL_TAC
+QED
+
+Theorem two_deep_ps1_length[local]:
+  2 <= LENGTH two_deep_ps1_expected.ps_stack
+Proof
+  EVAL_TAC
+QED
+
 Theorem reorder_one_exact_two_second_shallow_prefix_spill_wf[local]:
   !dfg h h' ps1 ops1 ps2 lo d.
-    2 <= LENGTH ps1.ps_stack /\
     stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\
     d <= 16 /\
     reorder_one dfg [h;h'] 1 h' ps1 = (ops1,ps2) ==>
