@@ -6438,6 +6438,64 @@ Proof
   metis_tac[]
 QED
 
+Theorem deep_do_swap_prefix_spill_wf_emitted_view_transfer[local]:
+  !h d via ps1 ops1 ps2 lo.
+    16 < d ==>
+    d < LENGTH ps1.ps_stack ==>
+    spill_alloc_layout_wf ps1.ps_alloc ps1.ps_spilled ==>
+    do_swap d ps1 = (ops1,ps2) ==>
+    prefix_spill_wf initial_fmp lo ops1 via ==>
+    (via.ps_stack = ps1.ps_stack \/
+     ?src. stack_get_unfixed_depth h 1 2 via.ps_stack = SOME src /\
+       src < LENGTH via.ps_stack /\
+       ps1.ps_stack = stack_poke 1 h
+         (stack_poke src (stack_peek 1 via.ps_stack) via.ps_stack)) ==>
+    prefix_spill_wf initial_fmp lo ops1 ps1
+Proof
+  rpt gen_tac >> rpt disch_tac >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] ps1.ps_alloc
+    (top_n (d + 1) ps1.ps_stack))` >>
+  qabbrev_tac `restore_offsets = MAP (\idx. EL idx offsets)
+    (REVERSE ([d] ++ GENLIST (\i. i + 1) (d - 1) ++ [0]))` >>
+  `ops1 = MAP SOSpill offsets ++ MAP SORestore restore_offsets` by
+    (qpat_assum `do_swap d ps1 = (ops1,ps2)` mp_tac >>
+     qspecl_then [`d`, `ps1`] mp_tac do_swap_big_ops_decompose_reorder >>
+     simp[Abbr `offsets`, Abbr `restore_offsets`] >> metis_tac[]) >>
+  `LENGTH via.ps_stack = LENGTH ps1.ps_stack` by
+    (pop_assum strip_assume_tac >> gvs[stack_poke_def]) >>
+  `ALL_DISTINCT (top_n (d + 1) via.ps_stack)` by
+    (MATCH_MP_TAC (Q.SPECL [`d`, `via`, `lo`, `offsets`, `restore_offsets`]
+       deep_swap_complete_wf_top_distinct_any_offsets) >>
+     conj_tac >- decide_tac >>
+     conj_tac >- decide_tac >>
+     conj_tac >-
+       (`LENGTH (top_n (d + 1) ps1.ps_stack) = d + 1` by
+          (simp[NoAsms, top_n_def, LENGTH_REVERSE] >>
+           irule LENGTH_TAKE >> pure_rewrite_tac[LENGTH_REVERSE] >> decide_tac) >>
+        simp[Abbr `offsets`, spill_alloc_n_offsets_length]) >>
+     conj_tac >- simp[Abbr `restore_offsets`] >>
+     qpat_assum `ops1 = _` (fn th => PURE_ONCE_REWRITE_TAC[GSYM th]) >>
+     first_assum ACCEPT_TAC) >>
+  `ALL_DISTINCT (top_n (d + 1) ps1.ps_stack)` by
+    (qpat_assum `via.ps_stack = ps1.ps_stack \/ _` strip_assume_tac
+     >- (qpat_assum `via.ps_stack = ps1.ps_stack` (fn eqth =>
+           qpat_assum `ALL_DISTINCT (top_n (d + 1) via.ps_stack)`
+             (ACCEPT_TAC o REWRITE_RULE [eqth]))) >>
+     qspecl_then [`h`, `via`, `ps1`, `src`, `d`] mp_tac
+       reorder_alias_exchange_top_n_distinct >>
+     simp[] >> disch_then irule >>
+     conj_tac >-
+       (pure_rewrite_tac[stack_poke_def, LENGTH_LUPDATE] >> decide_tac) >>
+     pure_rewrite_tac[stack_poke_def, LENGTH_LUPDATE] >> decide_tac) >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) ps1` by
+    (qspecl_then [`d`, `ps1`, `via`, `ops1`, `ps2`, `lo`] mp_tac
+       do_swap_generated_spills_prefix_wf_cross_view >>
+     simp[Abbr `offsets`] >> metis_tac[]) >>
+  qspecl_then [`d`, `ps1`, `ops1`, `ps2`, `lo`] mp_tac
+    do_swap_prefix_spill_wf_from_generated_spills >>
+  simp[Abbr `offsets`] >> metis_tac[]
+QED
+
 Theorem reorder_one_exact_two_suffix_prefix_spill_wf[local]:
   !base dfg h h' ps ops0 ps1 ops1 ps2 lo.
     exact_two_planner_ready base h h' ps /\
