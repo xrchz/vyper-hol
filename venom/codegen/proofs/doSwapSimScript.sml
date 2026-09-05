@@ -3536,6 +3536,21 @@ Proof
   metis_tac[do_swap_prefix_spill_wf_from_front_no_disjoint]
 QED
 
+Theorem prefix_spill_wf_map_restore_initial_lookup[local]:
+  !offsets lo ps off.
+    prefix_spill_wf initial_fmp lo (MAP SORestore offsets) ps /\
+    MEM off offsets ==>
+    ?op. FLOOKUP ps.ps_spilled op = SOME off
+Proof
+  Induct >> simp[prefix_spill_wf_def, spill_op_wf_def] >>
+  rpt gen_tac >> strip_tac >> gvs[]
+  >- metis_tac[] >>
+  pop_last_assum drule >>
+  disch_then (qspec_then `off` mp_tac) >> simp[] >>
+  simp[apply_prefix_op_def, DOMSUB_FLOOKUP_THM] >>
+  metis_tac[]
+QED
+
 Theorem prefix_spill_wf_front_after_initial_prefix[local]:
   !xs ys source initial_fmp lo.
     ys <> [] /\
