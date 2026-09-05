@@ -3394,7 +3394,6 @@ Theorem do_swap_deep_restore_prefix_spill_wf[local]:
     dist > 16 /\ dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
     ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
-    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     prefix_spill_wf initial_fmp lo
       (MAP SOSpill (FST (spill_alloc_n [] ps.ps_alloc
         (top_n (dist + 1) ps.ps_stack)))) ps ==>
@@ -3419,8 +3418,6 @@ Proof
   `LENGTH desired_rev = LENGTH items` by
     simp[Abbr `desired_rev`, LENGTH_REVERSE, LENGTH_GENLIST] >>
   `ALL_DISTINCT items` by simp[Abbr `items`] >>
-  `DISJOINT (set items) (FDOM ps.ps_spilled)` by
-    simp[Abbr `items`] >>
   `EVERY (\off. off < dimword(:256)) offsets` by
     metis_tac[prefix_spill_wf_map_spill_bounds] >>
   `EVERY (\i. i < LENGTH items) desired_rev` by
@@ -3485,13 +3482,12 @@ Proof
   simp[Abbr `restore_offsets`]
 QED
 
-Theorem do_swap_prefix_spill_wf_from_front:
+Theorem do_swap_prefix_spill_wf_from_front_no_disjoint:
   !dist ps ops ps' lo.
     do_swap dist ps = (ops,ps') /\
     dist < LENGTH ps.ps_stack /\
     spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
     ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
-    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
     prefix_spill_wf initial_fmp lo (FRONT ops) ps ==>
     prefix_spill_wf initial_fmp lo ops ps
 Proof
@@ -3525,6 +3521,19 @@ Proof
   gvs[REVERSE_APPEND, MAP_APPEND, apply_prefix_ops_append] >>
   PURE_ONCE_REWRITE_TAC[GSYM apply_prefix_ops_append] >>
   simp[] >> first_assum ACCEPT_TAC
+QED
+
+Theorem do_swap_prefix_spill_wf_from_front:
+  !dist ps ops ps' lo.
+    do_swap dist ps = (ops,ps') /\
+    dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+    DISJOINT (set (top_n (dist + 1) ps.ps_stack)) (FDOM ps.ps_spilled) /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) ps ==>
+    prefix_spill_wf initial_fmp lo ops ps
+Proof
+  metis_tac[do_swap_prefix_spill_wf_from_front_no_disjoint]
 QED
 
 Theorem prefix_spill_wf_front_after_initial_prefix[local]:
