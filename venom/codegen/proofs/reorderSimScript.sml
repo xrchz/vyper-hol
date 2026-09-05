@@ -4358,3 +4358,40 @@ Proof
   ASM_REWRITE_TAC[asm_steps_add] >>
   simp[execute_plan_append]
 QED
+
+
+Definition second_wf_counterexample_alloc_def:
+  second_wf_counterexample_alloc = <|
+    sa_free_slots := [];
+    sa_next_offset := dimword(:256) + 32;
+    sa_spill_base := 0 |>
+End
+
+Definition second_wf_counterexample_ps_def:
+  second_wf_counterexample_ps = (init_plan_state 0) with <|
+    ps_stack := [Var "a"; Var "a"];
+    ps_spilled := FEMPTY |+ (Var "b", dimword(:256));
+    ps_alloc := second_wf_counterexample_alloc |>
+End
+
+Theorem reorder_one_two_second_prefix_spill_wf_counterexample:
+  let ps = second_wf_counterexample_ps;
+      res = reorder_one dfg_empty [Var "a"; Var "b"] 1 (Var "b") ps
+  in
+    residual_budget_wf 0 [Var "a"; Var "b"] ps /\
+    pending_inventory_wf [Var "a"; Var "b"] ps /\
+    2 <= LENGTH ps.ps_stack /\
+    ~prefix_spill_wf initial_fmp FEMPTY (FST res) ps
+Proof
+  EVAL_TAC >>
+  simp[residual_budget_wf_def, pending_inventory_wf_def,
+       plan_slots_bounded_def, alloc_slots_bounded_def,
+       spill_alloc_layout_wf_def, second_wf_counterexample_ps_def,
+       second_wf_counterexample_alloc_def, init_plan_state_def,
+       LIST_ELEM_COUNT_THM] >>
+  conj_tac
+  >- (gen_tac >> Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
+      rpt IF_CASES_TAC >> gvs[]) >>
+  gen_tac >> Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
+  rpt IF_CASES_TAC >> gvs[]
+QED
