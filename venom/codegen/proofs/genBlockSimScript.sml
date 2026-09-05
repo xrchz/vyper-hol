@@ -1053,6 +1053,34 @@ Definition generated_plan_state_wf_def:
     DISJOINT (set ps.ps_stack) (FDOM ps.ps_spilled)
 End
 
+
+Theorem bump_all_distinct_elem_count_le_one[local]:
+  !(xs : 'a list) x.
+    ALL_DISTINCT xs ==> LIST_ELEM_COUNT x xs <= 1
+Proof
+  Induct >> simp[LIST_ELEM_COUNT_THM] >> rpt strip_tac >>
+  Cases_on `h = x` >> gvs[LIST_ELEM_COUNT_THM]
+  >- (`~(LIST_ELEM_COUNT h xs > 0)` by
+        metis_tac[LIST_ELEM_COUNT_MEM] >> decide_tac)
+  >> first_x_assum (qspec_then `x` mp_tac) >> simp[]
+QED
+Theorem generated_plan_state_wf_residual_nil[local]:
+  !base ps.
+    generated_plan_state_wf base ps ==>
+    residual_budget_wf base [] ps
+Proof
+  rpt gen_tac >> simp[generated_plan_state_wf_def, residual_budget_wf_def] >>
+  strip_tac >> conj_tac
+  >- (gen_tac >> drule bump_all_distinct_elem_count_le_one >>
+      disch_then (qspec_then `op` mp_tac) >> simp[]) >>
+  rpt strip_tac >>
+  `op NOTIN set ps.ps_stack` by
+    (fs[pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >> metis_tac[]) >>
+  `~(LIST_ELEM_COUNT op ps.ps_stack > 0)` by
+    metis_tac[LIST_ELEM_COUNT_MEM] >>
+  decide_tac
+QED
+
 Theorem reorder_plan_two_residual_pop_generated_wf_counterexample[local]:
   ?dfg h h' ps ops ps' base.
     pending_inventory_wf [h;h'] ps /\
@@ -4633,7 +4661,45 @@ Proof
     (qspecl_then [`base'`, `h`, `h'`, `nl`, `ps`, `input_ops`, `ps1`, `lo`]
        mp_tac bump_emit_input_plan_state_align >>
      ASM_REWRITE_TAC[] >> simp[LET_THM]) >>
-  FAIL_TAC "probe_bump_boundary_after_align"
+  `exact_two_planner_ready base' h h' ps1` by
+    (qspecl_then [`base'`, `BUMP`, `h`, `h'`, `nl`, `ps`, `input_ops`, `ps1`]
+       mp_tac emit_input_plan_two_exact_two_planner_ready >>
+     ASM_REWRITE_TAC[] >>
+     (impl_tac >-
+       (conj_tac >- metis_tac[generated_plan_state_wf_residual_nil] >>
+        rpt strip_tac >>
+        qpat_assum `!op. MEM op [h;h'] /\ is_var_operand op ==> _`
+          (qspec_then `op` mp_tac) >>
+        (impl_tac >- simp[]) >> strip_tac
+        >- (disj1_tac >> drule stack_get_depth_props >> strip_tac >>
+            fs[stack_peek_def, MEM_EL] >>
+            qexists `LENGTH ps.ps_stack - (d + 1)` >>
+            conj_tac >- decide_tac >> simp[])
+        >- (disj2_tac >> Cases_on `FLOOKUP ps.ps_spilled op` >>
+            gvs[finite_mapTheory.flookup_thm]))) >>
+     simp[]) >>
+  `prefix_spill_wf initial_fmp lo reorder_ops ps1` by
+    (`prefix_spill_wf initial_fmp lo reorder_ops
+        (apply_prefix_ops initial_fmp lo input_ops ps)` by
+       fs[bump_prefix_spill_wf_append] >>
+     qspecl_then [`reorder_ops`, `lo`,
+       `apply_prefix_ops initial_fmp lo input_ops ps`, `ps1`]
+       mp_tac bump_prefix_spill_wf_ext_relevant >> simp[]) >>
+  `venom_asm_rel lo ps1 vs st'` by
+    (qspecl_then [`lo`, `apply_prefix_ops initial_fmp lo input_ops ps`,
+       `ps1`, `vs`, `st'`] mp_tac venom_asm_rel_sem_stack_transport >>
+     simp[plan_stack_sem_eq_def]) >>
+  `asm_block_at prog st'.as_pc (execute_plan initial_fmp reorder_ops)` by
+    (qpat_x_assum `asm_block_at prog as.as_pc
+       (execute_plan initial_fmp (input_ops ++ reorder_ops))` mp_tac >>
+     simp[execute_plan_append, asm_block_at_append] >> metis_tac[]) >>
+  qspecl_then [`base'`, `dfg`, `h`, `h'`, `ps1`, `reorder_ops`, `ps4`,
+    `lo`, `o2pc`, `prog`, `vs`, `st'`] mp_tac
+    reorder_plan_exact_two_venom_asm_rel >>
+  ASM_REWRITE_TAC[] >> strip_tac >>
+  qexists `st''` >>
+  ASM_REWRITE_TAC[execute_plan_append, LENGTH_APPEND, asm_steps_add] >>
+  simp[]
 QED
 
 Theorem bump_emit_sim_sem_stack[local]:
