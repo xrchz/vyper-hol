@@ -3693,6 +3693,46 @@ Proof
   first_assum ACCEPT_TAC
 QED
 
+Theorem append_cons_reassoc[local]:
+  !a x b c. a ++ x :: (b ++ c) = a ++ [x] ++ b ++ c
+Proof
+  simp[APPEND_ASSOC]
+QED
+
+Theorem do_swap_prefix_spill_wf_from_generated_spills:
+  !dist ps ops ps' lo.
+    16 < dist /\ dist < LENGTH ps.ps_stack /\
+    spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled /\
+    ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
+    do_swap dist ps = (ops,ps') /\
+    prefix_spill_wf initial_fmp lo
+      (MAP SOSpill
+        (FST (spill_alloc_n [] ps.ps_alloc
+          (top_n (dist + 1) ps.ps_stack)))) ps ==>
+    prefix_spill_wf initial_fmp lo ops ps
+Proof
+  rpt gen_tac >> strip_tac >>
+  qabbrev_tac `items = top_n (dist + 1) ps.ps_stack` >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] ps.ps_alloc items)` >>
+  qabbrev_tac `restore_offsets =
+    MAP (\idx. EL idx offsets)
+      (REVERSE ([dist] ++ GENLIST (\i. i + 1) (dist - 1) ++ [0]))` >>
+  `prefix_spill_wf initial_fmp lo (MAP SORestore restore_offsets)
+      (apply_prefix_ops initial_fmp lo (MAP SOSpill offsets) ps)` by
+    (qspecl_then [`dist`, `ps`, `lo`] mp_tac
+       do_swap_deep_restore_prefix_spill_wf >>
+     simp[Abbr `items`, Abbr `offsets`, Abbr `restore_offsets`]) >>
+  `prefix_spill_wf initial_fmp lo
+      (MAP SOSpill offsets ++ MAP SORestore restore_offsets) ps` by
+    simp[prefix_spill_wf_append] >>
+  pop_assum $ mk_asm "combined" >>
+  mp_tac (Q.SPECL [`dist`, `ps`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[] >>
+  asm "combined" mp_tac >>
+  simp[Abbr `restore_offsets`, REVERSE_APPEND, MAP_APPEND,
+       append_cons_reassoc]
+QED
+
 
 Theorem do_swap_prefix_spill_wf_from_front:
   !dist ps ops ps' lo.
