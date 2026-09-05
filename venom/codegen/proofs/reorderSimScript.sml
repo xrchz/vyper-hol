@@ -4585,6 +4585,63 @@ Proof
 QED
 
 
+(* Staged concrete two-deep probe: first execution boundary only. *)
+Definition two_deep_stack_def:
+  two_deep_stack = GENLIST (\i. Lit (n2w i)) 19
+End
+
+Definition two_deep_alloc_def:
+  two_deep_alloc = <|sa_free_slots := []; sa_next_offset := 0;
+                     sa_spill_base := 0|>
+End
+
+Definition two_deep_ps_def:
+  two_deep_ps = (init_plan_state 0) with <|
+    ps_stack := two_deep_stack;
+    ps_alloc := two_deep_alloc |>
+End
+
+Definition two_deep_first_swap_def:
+  two_deep_first_swap = do_swap 17 two_deep_ps
+End
+
+Definition two_deep_second_swap_def:
+  two_deep_second_swap = do_swap 1 (SND two_deep_first_swap)
+End
+
+Definition two_deep_ops0_expected_def:
+  two_deep_ops0_expected =
+    FST two_deep_first_swap ++ FST two_deep_second_swap
+End
+
+Definition two_deep_ps1_expected_def:
+  two_deep_ps1_expected = SND two_deep_second_swap
+End
+
+Theorem two_deep_first_target_depth[local]:
+  stack_get_unfixed_depth (Lit 1w) 1 2 two_deep_ps.ps_stack = SOME 17
+Proof
+  EVAL_TAC >>
+  CONV_TAC (DEPTH_CONV wordsLib.WORD_EVAL_CONV) >>
+  EVAL_TAC
+QED
+
+Theorem two_deep_first_reorder[local]:
+  reorder_one dfg_empty [Lit 1w; Lit 0w] 0 (Lit 1w) two_deep_ps =
+    (two_deep_ops0_expected,two_deep_ps1_expected)
+Proof
+  EVAL_TAC
+QED
+
+
+Theorem two_deep_second_target_depth[local]:
+  stack_get_unfixed_depth (Lit 0w) 0 2
+    two_deep_ps1_expected.ps_stack = SOME 18
+Proof
+  EVAL_TAC >>
+  CONV_TAC (DEPTH_CONV wordsLib.WORD_EVAL_CONV) >>
+  EVAL_TAC
+QED
 Theorem reorder_one_exact_two_second_shallow_prefix_spill_wf[local]:
   !dfg h h' ps1 ops1 ps2 lo d.
     2 <= LENGTH ps1.ps_stack /\
