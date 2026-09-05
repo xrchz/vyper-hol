@@ -3284,9 +3284,15 @@ Proof
   CASE_TAC >> simp[] >> strip_tac >> gvs[]
   >- (qexists `st` >> simp[execute_plan_def, asm_steps_def]) >>
   `x < LENGTH ps.ps_stack` by metis_tac[stack_get_depth_bound] >>
+  `ALL_DISTINCT (top_n (x + 1) ps.ps_stack)` by
+    (simp[top_n_def] >> irule ALL_DISTINCT_TAKE >>
+     simp[ALL_DISTINCT_REVERSE] >>
+     fs[generated_plan_state_wf_def]) >>
   `prefix_spill_wf initial_fmp lo ops ps` by
-    (fs[generated_plan_state_wf_def] >>
-     metis_tac[doSwapSimTheory.do_swap_prefix_spill_wf_from_front]) >>
+    (irule doSwapSimTheory.do_swap_prefix_spill_wf_from_front_no_disjoint >>
+     ASM_REWRITE_TAC[] >>
+     (conj_tac >- (qexistsl [`x`, `ps'`] >> simp[])) >>
+     fs[generated_plan_state_wf_def]) >>
   `generated_plan_state_wf base' ps'` by
     (qspecl_then [`base'`, `x`, `ps`, `lo`] mp_tac
        do_swap_generated_plan_state_wf >>
