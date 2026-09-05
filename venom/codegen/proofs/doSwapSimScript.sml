@@ -2093,8 +2093,15 @@ Theorem spill_alloc_n_occurrence_offset_facts:
       spill_alloc_layout_wf alloc2 spilled
 Proof
   rpt gen_tac >> strip_tac >> simp[LET_THM] >>
+  `32 * LENGTH items + al.sa_next_offset < dimword(:256)` by
+    (once_rewrite_tac[ADD_COMM] >> first_assum ACCEPT_TAC) >>
   `spill_alloc_wf al spilled` by
-    (simp[spill_alloc_wf_iff_layout_ready] >> decide_tac) >>
+    (rewrite_tac[spill_alloc_wf_iff_layout_ready] >>
+     conj_tac >- first_assum ACCEPT_TAC >>
+     irule arithmeticTheory.LESS_EQ_LESS_TRANS >>
+     qexists `al.sa_next_offset + 32 * LENGTH items` >>
+     conj_tac >- first_assum ACCEPT_TAC >>
+     simp[]) >>
   `?keys:operand list.
       LENGTH keys = LENGTH items /\ ALL_DISTINCT keys /\
       DISJOINT (set keys) (FDOM spilled)` by
@@ -2105,7 +2112,14 @@ Proof
   conj_tac
   >- (qspecl_then [`keys`, `al`, `spilled`] mp_tac
         spill_alloc_n_offset_props >>
-      simp[LET_THM] >> strip_tac >>
+      PURE_REWRITE_TAC[LET_THM] >> BETA_TAC >>
+      (impl_tac >-
+        (conj_tac >- first_assum ACCEPT_TAC >>
+         conj_tac >- first_assum ACCEPT_TAC >>
+         conj_tac >- first_assum ACCEPT_TAC >>
+         qpat_x_assum `LENGTH keys = LENGTH items`
+           (fn th => rewrite_tac[th]) >>
+         first_assum ACCEPT_TAC)) >> strip_tac >>
       gen_tac >> strip_tac >>
       first_x_assum (qspec_then `k` mp_tac) >> simp[] >>
       strip_tac >> metis_tac[]) >>
