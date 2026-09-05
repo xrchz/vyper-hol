@@ -4583,3 +4583,20 @@ Proof
   simp[exact_two_stale_key_probe_results_def, exact_two_probe_keys_def,
        headroom_stack_def]
 QED
+
+
+Theorem reorder_one_exact_two_second_shallow_prefix_spill_wf[local]:
+  !dfg h h' ps1 ops1 ps2 lo d.
+    2 <= LENGTH ps1.ps_stack /\
+    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\
+    d <= 16 /\
+    reorder_one dfg [h;h'] 1 h' ps1 = (ops1,ps2) ==>
+    prefix_spill_wf initial_fmp lo ops1 ps1
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `reorder_one _ _ _ _ _ = _` mp_tac >>
+  simp[reorder_one_def, LET_THM, do_swap_def,
+       prefix_spill_wf_def, spill_op_wf_def] >>
+  rpt IF_CASES_TAC >> strip_tac >>
+  gvs[prefix_spill_wf_def, spill_op_wf_def]
+QED
