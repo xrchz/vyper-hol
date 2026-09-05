@@ -21,9 +21,53 @@ Ancestors
   codegenRel asmSem planExec stackPlanGen stackPlanTypes stackModel
   venomExecSemantics venomState venomInst
   instSimHelpers stackOpSim blockSimHelpers asmToBytecodeProofs
-  list rich_list finite_map
+  strongPrefixSim list rich_list finite_map
 Libs
   BasicProvers
+
+Theorem initial_fmp_emit_update_var:
+  !lo o2pc prog ps vs as initial_fmp out.
+    venom_asm_rel lo ps vs as /\
+    ~MEM (Var out) ps.ps_stack /\
+    Var out NOTIN FDOM ps.ps_spilled /\
+    n2w initial_fmp = vs.vs_initial_fmp /\
+    asm_block_at prog as.as_pc (execute_plan initial_fmp [SOInitialFmp]) ==>
+    ?as'.
+      asm_steps lo o2pc prog 1 as = AsmOK as' /\
+      venom_asm_rel lo
+        (ps with ps_stack := SNOC (Var out) ps.ps_stack)
+        (update_var out vs.vs_initial_fmp vs) as' /\
+      as'.as_pc = as.as_pc + 1
+Proof
+  rpt strip_tac >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`, `initial_fmp`]
+    mp_tac initial_fmp_push_venom_asm_rel >>
+  (impl_tac >-
+    (qpat_x_assum `asm_block_at _ _ (execute_plan _ _)` mp_tac >>
+     simp[execute_plan_def, exec_stack_op_def])) >>
+  strip_tac >> qexists_tac `st'` >> ASM_REWRITE_TAC[] >>
+  gvs[venom_asm_rel_def, update_var_def] >>
+  conj_tac
+  >- (`plan_stack_rel lo (update_var out vs.vs_initial_fmp vs)
+          (SNOC (Lit vs.vs_initial_fmp) ps.ps_stack) st'.as_stack` by
+        (irule plan_stack_rel_update_var >>
+         simp[EVERY_MEM] >> rpt strip_tac >>
+         Cases_on `op` >> gvs[] >> metis_tac[]) >>
+      qpat_x_assum `plan_stack_rel lo (update_var out vs.vs_initial_fmp vs)
+          (SNOC (Lit vs.vs_initial_fmp) ps.ps_stack) st'.as_stack` mp_tac >>
+      simp[update_var_def, plan_stack_rel_def, LENGTH_SNOC] >> strip_tac >>
+      rw[plan_stack_rel_def, LENGTH_SNOC] >>
+      first_x_assum (qspec_then `i` mp_tac) >>
+      Cases_on `i` >>
+      simp[REVERSE_SNOC, operand_val_def, lookup_var_def,
+           finite_mapTheory.FLOOKUP_UPDATE])
+  >- (`plan_spill_rel lo (update_var out vs.vs_initial_fmp vs)
+          ps.ps_spilled st'.as_memory` by
+        (irule plan_spill_rel_update_var >>
+         simp[] >> rpt strip_tac >> Cases_on `op` >> gvs[] >>
+         metis_tac[]) >>
+      gvs[update_var_def])
+QED
 
 (* =========================================================================
    Rounded BUMP boundary
