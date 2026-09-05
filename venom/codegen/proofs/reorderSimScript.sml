@@ -4980,6 +4980,25 @@ Proof
 QED
 
 
+
+Theorem reorder_one_exact_two_reduce_init_view[local]:
+  !dfg h h' ps ops0 ps1 reduce_ops psr lo d.
+    reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
+    2 <= LENGTH ps1.ps_stack /\
+    prefix_spill_wf initial_fmp lo (ops0 ++ reduce_ops) ps /\
+    stack_get_unfixed_depth h' 0 2 ps1.ps_stack = SOME d /\
+    16 < d /\
+    reduce_depth_plan (LENGTH ps1.ps_stack) [h;h'] h' 0 2 ps1 =
+      (reduce_ops,psr) ==>
+    reduce_ops = [] \/
+    spill_wf_view_eq (apply_prefix_ops initial_fmp lo ops0 ps) ps1
+Proof
+  rpt gen_tac >> strip_tac >> disj1_tac >>
+  qpat_x_assum `reduce_depth_plan _ _ _ _ _ _ = _` mp_tac >>
+  Cases_on `LENGTH ps1.ps_stack` >> simp[reduce_depth_plan_def]
+QED
+
+
 Theorem reorder_one_exact_two_reduce_prefix_spill_wf[local]:
   !dfg h h' ps ops0 ps1 reduce_ops psr lo d.
     reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
