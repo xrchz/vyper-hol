@@ -4395,3 +4395,191 @@ Proof
   gen_tac >> Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
   rpt IF_CASES_TAC >> gvs[]
 QED
+
+
+Definition exact_two_deep_probe_results_def:
+  exact_two_deep_probe_results =
+    MAP (\h'.
+      let ps = suffix_probe_ps;
+          h = stack_peek 17 ps.ps_stack;
+          (ops0,ps1) = reorder_one dfg_empty [h;h'] 0 h ps;
+          (ops1,ps2) = reorder_one dfg_empty [h;h'] 1 h' ps1
+      in
+        prefix_spill_wf 0 FEMPTY (ops0 ++ ops1) ps /\
+        ~prefix_spill_wf 0 FEMPTY ops1 ps1)
+      headroom_stack
+End
+
+Theorem probe_exact_two_deep_results[local]:
+  ~MEM T exact_two_deep_probe_results
+Proof
+  EVAL_TAC
+QED
+
+Definition exact_two_probe_keys_def:
+  exact_two_probe_keys = headroom_stack ++ [Var "z"]
+End
+
+Definition exact_two_stale_key_ps_def:
+  exact_two_stale_key_ps k = (init_plan_state 0) with <|
+    ps_stack := headroom_stack;
+    ps_spilled := FEMPTY |+ (k,0);
+    ps_alloc := suffix_probe_alloc |>
+End
+
+Definition exact_two_stale_key_mismatch_def:
+  exact_two_stale_key_mismatch k h' =
+    let ps = exact_two_stale_key_ps k;
+        h = stack_peek 17 ps.ps_stack;
+        (ops0,ps1) = reorder_one dfg_empty [h;h'] 0 h ps;
+        (ops1,ps2) = reorder_one dfg_empty [h;h'] 1 h' ps1
+    in
+      prefix_spill_wf 0 FEMPTY (ops0 ++ ops1) ps /\
+      ~prefix_spill_wf 0 FEMPTY ops1 ps1
+End
+
+Definition exact_two_stale_key_probe_entry_def:
+  exact_two_stale_key_probe_entry k h' =
+    let ps = exact_two_stale_key_ps k;
+        h = stack_peek 17 ps.ps_stack
+    in
+      residual_budget_wf 0 [h;h'] ps /\
+      pending_inventory_wf [h;h'] ps /\
+      2 <= LENGTH ps.ps_stack /\
+      exact_two_stale_key_mismatch k h'
+End
+
+Definition exact_two_stale_key_probe_row_def:
+  exact_two_stale_key_probe_row k =
+    MAP (exact_two_stale_key_probe_entry k) exact_two_probe_keys
+End
+
+Definition exact_two_stale_key_mismatch_row_def:
+  exact_two_stale_key_mismatch_row k =
+    MAP (exact_two_stale_key_mismatch k) exact_two_probe_keys
+End
+
+Definition exact_two_stale_key_probe_results_def:
+  exact_two_stale_key_probe_results =
+    MAP exact_two_stale_key_probe_row exact_two_probe_keys
+End
+
+Theorem probe_exact_two_stale_key_results_00[local]:
+  ~MEM T (exact_two_stale_key_mismatch_row (EL 0 exact_two_probe_keys))
+Proof
+  EVAL_TAC >> metis_tac[]
+QED
+Theorem probe_exact_two_stale_key_results_01[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 1 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_02[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 2 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_03[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 3 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_04[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 4 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_05[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 5 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_06[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 6 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_07[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 7 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_08[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 8 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_09[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 9 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_10[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 10 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_11[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 11 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_12[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 12 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_13[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 13 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_14[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 14 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_15[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 15 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_16[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 16 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_17[local]:
+  ~MEM T (exact_two_stale_key_probe_row (EL 17 exact_two_probe_keys))
+Proof EVAL_TAC
+QED
+Theorem probe_exact_two_stale_key_results_18[local]:
+  ~MEM T (exact_two_stale_key_mismatch_row (EL 18 exact_two_probe_keys))
+Proof
+  EVAL_TAC >> metis_tac[]
+QED
+
+Theorem exact_two_probe_row_no_true[local]:
+  !k. ~MEM T (exact_two_stale_key_mismatch_row k) ==>
+      ~MEM T (exact_two_stale_key_probe_row k)
+Proof
+  simp[exact_two_stale_key_mismatch_row_def,
+       exact_two_stale_key_probe_row_def,
+       exact_two_stale_key_probe_entry_def, MEM_MAP] >> metis_tac[]
+QED
+
+Theorem probe_exact_two_stale_key_results[local]:
+  ~MEM T (FLAT exact_two_stale_key_probe_results)
+Proof
+  `~MEM T (exact_two_stale_key_probe_row (EL 0 exact_two_probe_keys))` by
+    (irule exact_two_probe_row_no_true >>
+     ACCEPT_TAC probe_exact_two_stale_key_results_00) >>
+  `~MEM T (exact_two_stale_key_probe_row (EL 18 exact_two_probe_keys))` by
+    (irule exact_two_probe_row_no_true >>
+     ACCEPT_TAC probe_exact_two_stale_key_results_18) >>
+  fs[exact_two_probe_keys_def, headroom_stack_def] >>
+  map_every mp_tac
+    [probe_exact_two_stale_key_results_01,
+     probe_exact_two_stale_key_results_02,
+     probe_exact_two_stale_key_results_03,
+     probe_exact_two_stale_key_results_04,
+     probe_exact_two_stale_key_results_05,
+     probe_exact_two_stale_key_results_06,
+     probe_exact_two_stale_key_results_07,
+     probe_exact_two_stale_key_results_08,
+     probe_exact_two_stale_key_results_09,
+     probe_exact_two_stale_key_results_10,
+     probe_exact_two_stale_key_results_11,
+     probe_exact_two_stale_key_results_12,
+     probe_exact_two_stale_key_results_13,
+     probe_exact_two_stale_key_results_14,
+     probe_exact_two_stale_key_results_15,
+     probe_exact_two_stale_key_results_16,
+     probe_exact_two_stale_key_results_17] >>
+  simp[exact_two_stale_key_probe_results_def, exact_two_probe_keys_def,
+       headroom_stack_def]
+QED
