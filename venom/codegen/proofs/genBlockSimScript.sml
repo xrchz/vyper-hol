@@ -3397,12 +3397,92 @@ Resume gen_inst_ok_sim[phi_live_do_dup_align]:
     (impl_tac >- ASM_REWRITE_TAC[]) >>
     rewrite_tac[])
   >- (
-    (* Deep case: x > 15, needs do_dup_align_gen *)
-    cheat)
+    (* A deep duplication would start with generated spills, but the theorem's
+       FRONT spill-WF premise rules out precisely that impossible branch. *)
+    `prefix_spill_wf initial_fmp lo dup_ops ps` by
+      (qpat_x_assum `prefix_spill_wf initial_fmp lo (FRONT _) ps` mp_tac >>
+       simp[FRONT_APPEND_NOT_NIL]) >>
+    `spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled` by
+      fs[generated_plan_state_wf_def] >>
+    `15 < x` by decide_tac >>
+    metis_tac[do_dup_deep_not_prefix_spill_wf])
+QED
+
+Theorem venom_asm_rel_push_lit_as_fresh_var[local]:
+  !lo ps vs as out value.
+    venom_asm_rel lo
+      (ps with ps_stack := SNOC (Lit value) ps.ps_stack) vs as /\
+    ~MEM (Var out) ps.ps_stack /\
+    Var out NOTIN FDOM ps.ps_spilled ==>
+    venom_asm_rel lo
+      (ps with ps_stack := SNOC (Var out) ps.ps_stack)
+      (update_var out value vs) as
+Proof
+  rpt strip_tac >>
+  gvs[venom_asm_rel_def, update_var_def] >>
+  conj_tac
+  >- (`plan_stack_rel lo (update_var out value vs)
+          (SNOC (Lit value) ps.ps_stack) as.as_stack` by
+        (irule plan_stack_rel_update_var >>
+         simp[EVERY_MEM] >> rpt strip_tac >>
+         Cases_on `op` >> gvs[] >> metis_tac[]) >>
+      qpat_x_assum `plan_stack_rel lo (update_var out value vs)
+          (SNOC (Lit value) ps.ps_stack) as.as_stack` mp_tac >>
+      simp[update_var_def, plan_stack_rel_def, LENGTH_SNOC] >> strip_tac >>
+      rw[plan_stack_rel_def, LENGTH_SNOC] >>
+      first_x_assum (qspec_then `i` mp_tac) >>
+      Cases_on `i` >>
+      simp[REVERSE_SNOC, operand_val_def, lookup_var_def,
+           finite_mapTheory.FLOOKUP_UPDATE])
+  >- (`plan_spill_rel lo (update_var out value vs)
+          ps.ps_spilled as.as_memory` by
+        (irule plan_spill_rel_update_var >>
+         simp[] >> rpt strip_tac >> Cases_on `op` >> gvs[] >>
+         metis_tac[]) >>
+      gvs[update_var_def])
 QED
 
 Resume gen_inst_ok_sim[offset]:
-  cheat
+  drule_all inst_wf_offset_shape >> strip_tac >> gvs[] >>
+  qpat_x_assum `generate_offset_plan _ _ = _` mp_tac >>
+  simp[generate_offset_plan_def] >> strip_tac >> gvs[] >>
+  qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
+  simp[step_inst_non_invoke, step_inst_base_def, exec_pure2_def,
+       eval_operand_def] >>
+  strip_tac >> gvs[] >>
+  `?off. FLOOKUP lo lbl = SOME off` by
+    (Cases_on `FLOOKUP lo lbl` >> gvs[compute_operands_def]) >>
+  `FLOOKUP vs.vs_labels lbl = SOME (n2w off)` by
+    (qpat_x_assum `!op. MEM op (compute_operands inst) ==> _`
+       (qspec_then `Label lbl` mp_tac) >>
+     simp[compute_operands_def, eval_operand_def, operand_val_def]) >>
+  gvs[] >>
+  `v + n2w off = n2w (off + w2n v)` by
+    simp[wordsTheory.word_add_def, arithmeticTheory.ADD_COMM] >>
+  `~MEM (Var out) ps.ps_stack` by
+    (strip_tac >>
+     qpat_x_assum `EVERY _ ps.ps_stack`
+       (fn th => mp_tac (REWRITE_RULE [EVERY_MEM] th)) >>
+     disch_then (qspec_then `Var out` mp_tac) >> gvs[]) >>
+  `Var out NOTIN FDOM ps.ps_spilled` by
+    (strip_tac >>
+     qpat_x_assum `!op. op IN FDOM _ ==> _`
+       (qspec_then `Var out` mp_tac) >> simp[]) >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`, `lbl`,
+               `w2n v`, `off`] mp_tac simple_op_push_ofst >>
+  (impl_tac >-
+    (ASM_REWRITE_TAC[] >>
+     qpat_x_assum `asm_block_at _ _ (execute_plan _ _)` mp_tac >>
+     simp[execute_plan_def, exec_stack_op_def])) >>
+  strip_tac >>
+  `venom_asm_rel lo
+      (ps with ps_stack := stack_push (Var out) ps.ps_stack)
+      (update_var out (v + n2w off) vs) st'` by
+    (simp[stack_push_def] >>
+     irule venom_asm_rel_push_lit_as_fresh_var >>
+     ASM_REWRITE_TAC[]) >>
+  qexistsl [`1`, `st'`] >> ASM_REWRITE_TAC[] >>
+  simp[execute_plan_def, exec_stack_op_def]
 QED
 
 Resume gen_inst_ok_sim[param]:
