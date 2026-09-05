@@ -4911,6 +4911,44 @@ Proof
   metis_tac[apply_prefix_ops_spill_base, reduce_depth_plan_spill_base]
 QED
 
+Theorem reduce_depth_plan_nonempty_first_spill[local]:
+  !fuel target_ops target_op f target_len ps ops ps'.
+    reduce_depth_plan fuel target_ops target_op f target_len ps = (ops,ps') /\
+    ops <> [] ==>
+    ?cand off al' spill_ops rest_ops.
+      alloc_spill_slot ps.ps_alloc = (off,al') /\
+      (spill_ops = [SOSpill off] \/
+       spill_ops = [SOSwap cand; SOSpill off]) /\
+      ops = spill_ops ++ rest_ops
+Proof
+  Cases_on `fuel` >> simp[reduce_depth_plan_def, LET_THM] >>
+  rpt gen_tac >>
+  IF_CASES_TAC >> simp[] >>
+  Cases_on `stack_get_unfixed_depth target_op f target_len ps.ps_stack` >>
+  simp[] >>
+  Cases_on `x <= 16` >> simp[] >>
+  Cases_on `select_spill_candidate ps.ps_stack target_ops x target_len` >>
+  simp[] >>
+  simp[do_spill_at_def, do_spill_tos_def, LET_THM] >>
+  Cases_on `alloc_spill_slot ps.ps_alloc` >>
+  Cases_on `reduce_depth_plan n target_ops target_op f target_len
+              (if x' = 0 then
+                 ps with <| ps_stack := stack_pop 1 ps.ps_stack;
+                            ps_spilled := ps.ps_spilled |+
+                              (stack_peek 0 ps.ps_stack,q);
+                            ps_alloc := r |>
+               else
+                 ps with <| ps_stack :=
+                              stack_pop 1 (stack_swap x' ps.ps_stack);
+                            ps_spilled := ps.ps_spilled |+
+                              (stack_peek 0 (stack_swap x' ps.ps_stack),q);
+                            ps_alloc := r |>)` >>
+  Cases_on `x' = 0` >> simp[] >> rpt strip_tac >> gvs[]
+  >- (qexistsl [`0`, `[SOSpill q]`, `q'`] >> simp[])
+  >> qexistsl [`x'`, `[SOSwap x'; SOSpill q]`, `q'`] >> simp[]
+QED
+
+
 
 (* A duplicate restore-offset collision cannot witness the proposed transfer
    failure when reduction reuses the just-freed slot: the interpreted restore
