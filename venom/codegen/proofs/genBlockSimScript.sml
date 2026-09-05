@@ -5334,7 +5334,7 @@ Resume gen_inst_ok_sim[bump]:
 
 QED
 Resume gen_inst_ok_sim[invoke]:
-  cheat
+  fs[is_pre_codegen_opcode_def, is_unlowered_internal_call_opcode_def]
 QED
 
 Resume gen_inst_ok_sim[none]:
