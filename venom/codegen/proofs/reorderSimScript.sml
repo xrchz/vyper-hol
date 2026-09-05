@@ -5011,16 +5011,9 @@ Theorem reorder_one_exact_two_reduce_prefix_spill_wf[local]:
     prefix_spill_wf initial_fmp lo reduce_ops ps1
 Proof
   rpt gen_tac >> strip_tac >>
-  `prefix_spill_wf initial_fmp lo reduce_ops
-     (apply_prefix_ops initial_fmp lo ops0 ps)` by
-    metis_tac[prefix_spill_wf_append_reorder] >>
-  qpat_x_assum `reorder_one _ _ 0 _ _ = _` mp_tac >>
-  rewrite_tac[reorder_one_def, LET_THM] >>
-  Cases_on `stack_get_unfixed_depth h 1 2 ps.ps_stack` >> simp[]
-  >- (Cases_on `FLOOKUP ps.ps_spilled h` >> simp[]
-      >- (strip_tac >> gvs[]) >>
-      FAIL_TAC "exact-two reduce transfer first absent restored") >>
-  FAIL_TAC "exact-two reduce transfer first present"
+  qpat_x_assum `reduce_depth_plan _ _ _ _ _ _ = _` mp_tac >>
+  Cases_on `LENGTH ps1.ps_stack` >>
+  gvs[reduce_depth_plan_def, prefix_spill_wf_def]
 QED
 
 
