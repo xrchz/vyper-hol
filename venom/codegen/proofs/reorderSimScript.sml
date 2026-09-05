@@ -6523,6 +6523,35 @@ Proof
   simp[reorder_one_def, LET_THM] >>
   Cases_on `operand_equiv dfg h' (stack_peek 0 ps1.ps_stack)`
   >- simp[prefix_spill_wf_def] >>
-  simp[do_swap_def] >>
-  FAIL_TAC "exact-two ready deep suffix"
+  simp[] >> strip_tac >>
+  Cases_on `do_swap d ps1` >>
+  rename1 `do_swap d ps1 = (swap1,ps3)` >>
+  `do_swap 0 ps3 = ([],ps3)` by simp[do_swap_def] >>
+  gvs[] >>
+  `d < LENGTH ps1.ps_stack` by
+    metis_tac[stack_get_unfixed_depth_bound] >>
+  qabbrev_tac `via = apply_prefix_ops initial_fmp lo ops0 ps` >>
+  `prefix_spill_wf initial_fmp lo ops0 ps /\
+   prefix_spill_wf initial_fmp lo ops1 via` by
+    fs[prefix_spill_wf_append_reorder, Abbr `via`] >>
+  Cases_on `ops0 = []`
+  >- (gvs[Abbr `via`] >>
+      `16 < d` by decide_tac >>
+      drule_all reorder_one_exact_two_first_noops_deep_transfer >> simp[]) >>
+  `spill_alloc_layout_wf ps1.ps_alloc ps1.ps_spilled` by
+    fs[exact_two_planner_ready_def, residual_budget_wf_def] >>
+  `via.ps_stack = ps1.ps_stack \/
+   ?src. stack_get_unfixed_depth h 1 2 via.ps_stack = SOME src /\
+     src < LENGTH via.ps_stack /\
+     ps1.ps_stack = stack_poke 1 h
+       (stack_poke src (stack_peek 1 via.ps_stack) via.ps_stack)` by
+    (qspecl_then [`base'`, `dfg`, `h`, `h'`, `ps`, `ops0`, `ps1`, `lo`]
+       mp_tac reorder_one_exact_two_first_emitted_view_shape >>
+     simp[Abbr `via`] >> metis_tac[]) >>
+  irule (Q.SPECL [`h`, `d`, `via`, `ps1`, `ops1`, `ps2`, `lo`]
+    deep_do_swap_prefix_spill_wf_emitted_view_transfer) >>
+  (conj_tac >-
+    (qexistsl [`d`, `ps2`] >> simp[] >> decide_tac)) >>
+  (conj_tac >- simp[]) >>
+  qexistsl [`h`, `via`] >> simp[]
 QED
