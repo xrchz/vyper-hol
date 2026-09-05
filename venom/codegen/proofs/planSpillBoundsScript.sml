@@ -9,7 +9,7 @@
 Theory planSpillBounds
 Ancestors
   allocMono stackPlanGen stackPlanOps stackPlanTypes stackModel asmIR
-  finite_map list rich_list arithmetic pair
+  contextCodegenRel finite_map list rich_list arithmetic pair
 Libs
   BasicProvers pairLib
 
@@ -55,6 +55,24 @@ Theorem ops_spill_bounded_weaken:
     ops_spill_bounded base e2 ops
 Proof
   simp[ops_spill_bounded_def] >> metis_tac[LESS_EQ_TRANS]
+QED
+
+Theorem ops_spill_bounded_context_spill_byte:
+  !base spill_end ops r cp off i.
+    ops_spill_bounded base spill_end ops /\
+    MEM r cp.cp_regions /\ r.sr_spill_base = base /\
+    spill_end <= r.sr_spill_end /\
+    (MEM (SOSpill off) ops \/ MEM (SORestore off) ops) /\
+    off <= i /\ i < off + 32 ==>
+    context_spill_byte cp i
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `ops_spill_bounded _ _ _` mp_tac >>
+  rewrite_tac[ops_spill_bounded_def] >>
+  disch_then (qspec_then `off` mp_tac) >>
+  (impl_tac >- simp[]) >> strip_tac >>
+  simp[context_spill_byte_def] >>
+  qexists `r` >> simp[] >> decide_tac
 QED
 
 Theorem every_front_last[local]:
