@@ -5383,7 +5383,9 @@ Theorem spill_batch_initial_freshness_counterexample[local]:
   MEM (0:num) [64;0]
 Proof
   EVAL_TAC >>
-  rpt strip_tac >> rpt IF_CASES_TAC >> gvs[] >> decide_tac
+  rpt strip_tac >> rpt IF_CASES_TAC >> gvs[] >>
+  simp[wordsTheory.dimword_def] >>
+  CONV_TAC (RAND_CONV fcpLib.INDEX_CONV) >> decide_tac
 QED
 Theorem reorder_one_exact_two_first_noops_shape[local]:
   !base dfg h h' ps ps1.

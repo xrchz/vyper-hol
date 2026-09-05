@@ -3687,6 +3687,59 @@ Proof
   simp[Abbr `offsets`, Abbr `items`] >>
   first_assum ACCEPT_TAC
 QED
+Theorem do_swap_generated_spills_prefix_wf_from_front_cross_view:
+  !dist producer consumer ops producer' lo.
+    16 < dist /\ dist < LENGTH producer.ps_stack /\
+    spill_alloc_layout_wf producer.ps_alloc producer.ps_spilled /\
+    ALL_DISTINCT (top_n (dist + 1) producer.ps_stack) /\
+    do_swap dist producer = (ops,producer') /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) consumer ==>
+    prefix_spill_wf initial_fmp lo
+      (MAP SOSpill
+        (FST (spill_alloc_n [] producer.ps_alloc
+          (top_n (dist + 1) producer.ps_stack)))) producer
+Proof
+  rpt gen_tac >> strip_tac >>
+  mp_tac (Q.SPECL [`dist`, `producer`] do_swap_big_decompose) >>
+  simp[LET_THM] >> strip_tac >> gvs[] >>
+  qabbrev_tac `items = top_n (dist + 1) producer.ps_stack` >>
+  qabbrev_tac `offsets = FST (spill_alloc_n [] producer.ps_alloc items)` >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) consumer` by
+    (qpat_x_assum `prefix_spill_wf _ _ (FRONT _) consumer` mp_tac >>
+     simp[FRONT_APPEND_NOT_NIL, prefix_spill_wf_append]) >>
+  `EVERY (\off. off < dimword(:256)) offsets` by
+    metis_tac[prefix_spill_wf_map_spill_bounds] >>
+  `LENGTH items = dist + 1` by
+    simp[Abbr `items`, top_n_def, LENGTH_TAKE] >>
+  `LENGTH offsets = LENGTH items` by
+    simp[Abbr `offsets`, spill_alloc_n_offsets_length] >>
+  `!k. k < LENGTH offsets ==>
+       EL k offsets < dimword(:256) /\
+       producer.ps_alloc.sa_spill_base <= EL k offsets /\
+       (!op off. FLOOKUP producer.ps_spilled op = SOME off ==>
+          off + 32 <= EL k offsets \/ EL k offsets + 32 <= off) /\
+       (!j. j < k ==>
+          EL j offsets + 32 <= EL k offsets \/
+          EL k offsets + 32 <= EL j offsets)` by
+    (qspecl_then [`dist`, `items`, `producer.ps_alloc`,
+                  `producer.ps_spilled`] mp_tac deep_swap_occurrence_offsets >>
+     simp[LET_THM, Abbr `offsets`] >> metis_tac[]) >>
+  `prefix_spill_wf initial_fmp lo (MAP SOSpill offsets) producer` by
+    (qspecl_then [`ZIP (REVERSE items,offsets)`, `lo`, `producer`]
+       mp_tac prefix_spill_wf_map_spill_pairs >>
+     simp[MAP_ZIP, LENGTH_ZIP, ALL_DISTINCT_REVERSE] >>
+     disch_then irule >>
+     conj_tac
+     >- (simp[Abbr `items`, top_n_def] >>
+         gen_tac >> strip_tac >>
+         `k < LENGTH offsets` by decide_tac >>
+         first_x_assum (qspec_then `k` mp_tac) >>
+         simp[EL_ZIP] >> strip_tac >> first_assum ACCEPT_TAC) >>
+     simp[Abbr `items`, top_n_def]) >>
+  simp[Abbr `offsets`, Abbr `items`] >>
+  first_assum ACCEPT_TAC
+QED
+
 
 Theorem append_cons_reassoc[local]:
   !a x b c. a ++ x :: (b ++ c) = a ++ [x] ++ b ++ c
@@ -3728,6 +3781,31 @@ Proof
        append_cons_reassoc]
 QED
 
+
+Theorem do_swap_prefix_spill_wf_from_front_cross_view:
+  !dist producer consumer ops producer' lo.
+    do_swap dist producer = (ops,producer') /\
+    dist < LENGTH producer.ps_stack /\
+    spill_alloc_layout_wf producer.ps_alloc producer.ps_spilled /\
+    ALL_DISTINCT (top_n (dist + 1) producer.ps_stack) /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) consumer ==>
+    prefix_spill_wf initial_fmp lo ops producer
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `dist = 0`
+  >- gvs[do_swap_def, prefix_spill_wf_def] >>
+  Cases_on `dist <= 16`
+  >- gvs[do_swap_def, prefix_spill_wf_def, spill_op_wf_def] >>
+  `16 < dist` by decide_tac >>
+  qspecl_then [`dist`, `producer`, `ops`, `producer'`, `lo`]
+    mp_tac do_swap_prefix_spill_wf_from_generated_spills >>
+  (impl_tac >-
+    (ASM_REWRITE_TAC[] >>
+     qspecl_then [`dist`, `producer`, `consumer`, `ops`, `producer'`, `lo`]
+       mp_tac do_swap_generated_spills_prefix_wf_from_front_cross_view >>
+     ASM_REWRITE_TAC[])) >>
+  simp[]
+QED
 
 Theorem do_swap_prefix_spill_wf_from_front:
   !dist ps ops ps' lo.

@@ -522,6 +522,18 @@ Proof
   first_x_assum irule >> metis_tac[]
 QED
 
+Theorem prefix_spill_wf_front_prefix[local]:
+  !prefix_ops emit_ops lo ps.
+    emit_ops <> [] /\
+    prefix_spill_wf initial_fmp lo (FRONT (prefix_ops ++ emit_ops)) ps ==>
+    prefix_spill_wf initial_fmp lo prefix_ops ps
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `prefix_spill_wf initial_fmp _ (FRONT _) _` mp_tac >>
+  simp[FRONT_APPEND_NOT_NIL] >>
+  metis_tac[prefix_spill_wf_prefix]
+QED
+
 (* prefix_sim: Given prefix_ops that are well-formed prefix operations,
    execute them preserving venom_asm_rel and splitting asm_block_at.
    Caller provides prefix_ops/emit_ops decomposition and emit_ops <> []. *)
@@ -1184,6 +1196,61 @@ Proof
   `MEM x (TAKE (LENGTH ps.ps_stack - n) ps.ps_stack) ==>
    MEM x ps.ps_stack` by metis_tac[rich_listTheory.MEM_TAKE] >>
   metis_tac[]
+QED
+
+Theorem popmany_plan_top_two_align[local]:
+  !drop_a drop_b a b stk ps ops ps' lo.
+    ps.ps_stack = stk ++ [a; b] /\
+    a <> b /\
+    popmany_plan
+      (if drop_a then a :: if drop_b then [b] else []
+       else if drop_b then [b] else []) ps = (ops,ps') ==>
+    apply_prefix_ops initial_fmp lo ops ps = ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `drop_a` >> Cases_on `drop_b` >>
+  gvs[popmany_plan_def, popmany_individual_def, is_contiguous_top_def,
+      stack_get_depth_def, stack_find_def, do_swap_def, LET_THM,
+      apply_prefix_ops_append, apply_prefix_ops_def, apply_prefix_op_def,
+      apply_simple_op_def, stack_pop_def, stack_swap_def, stack_push_def,
+      stack_peek_def, stack_poke_def, REVERSE_APPEND, TAKE_APPEND1,
+      TAKE_APPEND2, sortingTheory.QSORT_DEF, sortingTheory.PARTITION_DEF,
+      sortingTheory.PART_DEF]
+QED
+
+Theorem popmany_plan_top_two_generated_wf[local]:
+  !base drop_a drop_b a b stk ps ops ps'.
+    generated_plan_state_wf base ps /\
+    ps.ps_stack = stk ++ [a; b] /\
+    a <> b /\
+    popmany_plan
+      (if drop_a then a :: if drop_b then [b] else []
+       else if drop_b then [b] else []) ps = (ops,ps') ==>
+    generated_plan_state_wf base ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `drop_a` >> Cases_on `drop_b` >>
+  `generated_plan_state_wf base' (SND (do_swap 1 ps))` by
+    (irule do_swap_generated_plan_state_wf >>
+     gvs[] >>
+     qexistsl [`initial_fmp`, `ARB`] >>
+     irule simple_prefix_spill_wf >>
+     simp[do_swap_def, is_simple_stack_op_def]) >>
+  `generated_plan_state_wf base'
+     ((SND (do_swap 1 ps)) with ps_stack :=
+       stack_pop 1 (SND (do_swap 1 ps)).ps_stack)` by
+    (irule generated_plan_state_wf_pop >> first_assum ACCEPT_TAC) >>
+  gvs[popmany_plan_def, popmany_individual_def, is_contiguous_top_def,
+      stack_get_depth_def, stack_find_def, do_swap_def, LET_THM,
+      REVERSE_APPEND, stack_pop_def, TAKE_APPEND1, TAKE_APPEND2,
+      sortingTheory.QSORT_DEF, sortingTheory.PARTITION_DEF,
+      sortingTheory.PART_DEF] >>
+  gvs[generated_plan_state_wf_def, stack_swap_def, ALL_DISTINCT_APPEND,
+      pred_setTheory.DISJOINT_DEF, pred_setTheory.EXTENSION] >>
+  gen_tac >>
+  qpat_x_assum `!y. ~MEM y _ \/ y NOTIN _`
+    (qspec_then `x` mp_tac) >>
+  metis_tac[rich_listTheory.MEM_TAKE]
 QED
 
 Theorem generated_plan_state_wf_bump_outputs[local]:
@@ -3039,6 +3106,17 @@ Proof
   drule step_inst_base_preserves_all >> simp[]
 QED
 
+Theorem eval_operand_eq_operand_val_on[local]:
+  !ops vs lo.
+    (!l. MEM (Label l) ops ==>
+         FLOOKUP vs.vs_labels l = OPTION_MAP n2w (FLOOKUP lo l)) ==>
+    !op. MEM op ops ==>
+      eval_operand op vs = operand_val vs lo op
+Proof
+  rpt strip_tac >> Cases_on `op` >>
+  gvs[eval_operand_def, operand_val_def, lookup_var_def]
+QED
+
 (* Comprehensive per-instruction OK simulation.
    Stronger than venomToAsmProps.gen_inst_simulation:
    - requires inst_wf, operand bound, label resolution, prefix_spill_wf
@@ -3073,6 +3151,10 @@ Theorem gen_inst_ok_sim:
        Pipeline obligation from compute_label_offsets over full program. *)
     (!l. MEM (Label l) (compute_operands inst) ==>
          IS_SOME (FLOOKUP lo l)) /\
+    (* Cross-layer operand evaluation agreement.  In particular, Label
+       operands must agree between vs_labels and generated label offsets. *)
+    (!op. MEM op (compute_operands inst) ==>
+          eval_operand op vs = operand_val vs lo op) /\
     (* DFG alias soundness: planner-equivalent operands denote the same
        runtime word under the current value state and label environment.
        This is an explicit pipeline obligation for alias-only reorder steps. *)
@@ -3414,6 +3496,49 @@ Proof
   >- (fs[generated_plan_state_wf_def] >> ASM_REWRITE_TAC[]) >>
   strip_tac >> qexists_tac `st'` >> ASM_REWRITE_TAC[] >> decide_tac
 QED
+Theorem optimistic_swap_plan_postfix_sim_cross_view[local]:
+  !base dfg inst next_liveness next_is_term ps ops ps'
+   initial_fmp lo o2pc prog vs st spill_view.
+    generated_plan_state_wf base ps /\
+    optimistic_swap_plan dfg inst next_liveness next_is_term ps = (ops,ps') /\
+    prefix_spill_wf initial_fmp lo (FRONT ops) spill_view /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st' /\
+      venom_asm_rel lo ps' vs st' /\
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops) /\
+      generated_plan_state_wf base ps'
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `optimistic_swap_plan _ _ _ _ _ = _` mp_tac >>
+  simp[optimistic_swap_plan_def] >>
+  rpt (IF_CASES_TAC >> simp[]) >>
+  TRY (strip_tac >> gvs[] >> qexists `st` >>
+       simp[execute_plan_def, asm_steps_def] >> NO_TAC) >>
+  CASE_TAC >> simp[] >> strip_tac >> gvs[]
+  >- (qexists `st` >> simp[execute_plan_def, asm_steps_def]) >>
+  `x < LENGTH ps.ps_stack` by metis_tac[stack_get_depth_bound] >>
+  `ALL_DISTINCT (top_n (x + 1) ps.ps_stack)` by
+    (simp[top_n_def] >> irule ALL_DISTINCT_TAKE >>
+     simp[ALL_DISTINCT_REVERSE] >>
+     fs[generated_plan_state_wf_def]) >>
+  `prefix_spill_wf initial_fmp lo ops ps` by
+    (qspecl_then [`x`, `ps`, `spill_view`, `ops`, `ps'`, `lo`] mp_tac
+       doSwapSimTheory.do_swap_prefix_spill_wf_from_front_cross_view >>
+     ASM_REWRITE_TAC[] >>
+     fs[generated_plan_state_wf_def]) >>
+  `generated_plan_state_wf base' ps'` by
+    (qspecl_then [`base'`, `x`, `ps`, `lo`] mp_tac
+       do_swap_generated_plan_state_wf >>
+     ASM_REWRITE_TAC[]) >>
+  qspecl_then [`x`, `ps`, `ops`, `ps'`, `lo`, `o2pc`, `prog`, `vs`, `st`]
+    mp_tac doSwapSimTheory.do_swap_venom_asm_rel_layout >>
+  impl_tac
+  >- (fs[generated_plan_state_wf_def] >> ASM_REWRITE_TAC[]) >>
+  strip_tac >> qexists_tac `st'` >> ASM_REWRITE_TAC[] >> decide_tac
+QED
+
 
 Theorem generated_do_swap_initial_fmp_front_transport[local]:
   !base dist source target ops target' initial_fmp lo.
@@ -4609,6 +4734,20 @@ Proof
     bump_apply_prefix_ops_ext_relevant >>
   simp[LET_THM, apply_prefix_ops_spill_base] >> metis_tac[]
 QED
+Theorem bump_asm_block_at_after_two_prefixes[local]:
+  !prog pc initial_fmp ops1 ops2 suffix.
+    asm_block_at prog pc
+      (execute_plan initial_fmp (ops1 ++ ops2 ++ suffix)) ==>
+    asm_block_at prog
+      (pc + LENGTH (execute_plan initial_fmp (ops1 ++ ops2)))
+      (execute_plan initial_fmp suffix)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum `asm_block_at _ _ _` mp_tac >>
+  PURE_REWRITE_TAC[execute_plan_append, asm_block_at_append] >>
+  strip_tac >> fs[LENGTH_APPEND, arithmeticTheory.ADD_ASSOC]
+QED
+
 Theorem bump_input_reorder_venom_asm_rel[local]:
   !base h h' nl ps input_ops ps1 dfg reorder_ops ps4
    initial_fmp lo o2pc prog vs as.
@@ -4851,14 +4990,37 @@ Resume gen_inst_ok_sim[bump]:
     (irule prefix_wf_append >> gvs[]) >>
   `EVERY is_prefix_op (input_ops ++ reorder_ops)` by
     metis_tac[prefix_wf_every_prefix_op] >>
-  qspecl_then [`lo`, `o2pc`, `prog`, `ps`, `vs`, `as`,
-    `input_ops ++ reorder_ops`,
-    `bump_emit_ops ++ pop_ops ++ opt_ops`] mp_tac prefix_sim >>
-  impl_tac
-  >- (ASM_REWRITE_TAC[] >>
-      conj_tac >- simp[bump_emit_ops_def] >>
-      qpat_x_assum `prefix_spill_wf initial_fmp _ _ _` mp_tac >>
-      simp[bump_emit_ops_def, FRONT_APPEND]) >>
+  `!op. MEM op [h;h'] /\ is_var_operand op ==>
+      (?d. stack_get_depth op ps.ps_stack = SOME d /\ d <= 15) \/
+      IS_SOME (FLOOKUP ps.ps_spilled op)` by
+    (rpt strip_tac >> gvs[] >> metis_tac[]) >>
+  `!l. MEM (Label l) [h;h'] ==> IS_SOME (FLOOKUP lo l)` by
+    (rpt strip_tac >>
+     qpat_assum `!l. MEM (Label l) (compute_operands inst) ==> _`
+       (qspec_then `l` mp_tac) >>
+     qpat_assum `compute_operands inst = [h;h']`
+       (fn th => rewrite_tac[th]) >> simp[]) >>
+  `2 <= LENGTH ps1.ps_stack` by
+    (qpat_x_assum `LENGTH (compute_operands inst) <=
+       LENGTH (SND (emit_input_plan BUMP (compute_operands inst)
+         next_liveness ps)).ps_stack` mp_tac >>
+     ASM_REWRITE_TAC[] >> simp[]) >>
+  `prefix_spill_wf initial_fmp lo (input_ops ++ reorder_ops) ps` by
+    (qspecl_then [`input_ops ++ reorder_ops`,
+       `[SOPush (Lit 31w); SOEmit "ADD"; SOPush (Lit 5w); SOEmit "SHR";
+         SOPush (Lit 5w); SOEmit "SHL"; SODup 2; SOEmit "ADD"] ++
+        pop_ops ++ opt_ops`, `lo`, `ps`] mp_tac
+       prefix_spill_wf_front_prefix >>
+     simp[APPEND_ASSOC]) >>
+  `asm_block_at prog as.as_pc
+     (execute_plan initial_fmp (input_ops ++ reorder_ops))` by
+    (qpat_x_assum `asm_block_at prog as.as_pc
+       (execute_plan initial_fmp _)` mp_tac >>
+     simp[APPEND_ASSOC, execute_plan_append, asm_block_at_append]) >>
+  qspecl_then [`base'`, `h`, `h'`, `next_liveness`, `ps`, `input_ops`,
+    `ps1`, `dfg`, `reorder_ops`, `ps4`, `initial_fmp`, `lo`, `o2pc`,
+    `prog`, `vs`, `as`] mp_tac bump_input_reorder_venom_asm_rel >>
+  (impl_tac >- ASM_REWRITE_TAC[]) >>
   strip_tac >>
   qpat_x_assum `(case eval_operand h vs of _ => _) = OK vs'` mp_tac >>
   Cases_on `eval_operand h vs` >> gvs[] >>
@@ -4917,7 +5079,119 @@ Resume gen_inst_ok_sim[bump]:
        stack_push (Var h'³')
          (stack_push (Var h'') (stack_pop 2 ps4.ps_stack)))` by
     (irule generated_plan_state_wf_bump_outputs >> simp[]) >>
-  FAIL_TAC "probe_bump_values"
+  `operand_val vs lo h = SOME x` by metis_tac[] >>
+  `operand_val vs lo h' = SOME x'` by metis_tac[] >>
+  `asm_block_at prog
+     (as.as_pc + LENGTH (execute_plan initial_fmp (input_ops ++ reorder_ops)))
+     (execute_plan initial_fmp (bump_emit_ops ++ pop_ops ++ opt_ops))` by
+    (qspecl_then [`prog`, `as.as_pc`, `initial_fmp`, `input_ops`,
+       `reorder_ops`, `bump_emit_ops ++ pop_ops ++ opt_ops`] mp_tac
+       bump_asm_block_at_after_two_prefixes >>
+     simp[bump_emit_ops_def] >> ASM_REWRITE_TAC[]) >>
+  `as'.as_pc =
+     as.as_pc + LENGTH (execute_plan initial_fmp (input_ops ++ reorder_ops))` by
+    decide_tac >>
+  `asm_block_at prog as'.as_pc
+     (execute_plan initial_fmp (bump_emit_ops ++ pop_ops ++ opt_ops))` by
+    (qpat_x_assum `asm_block_at prog (as.as_pc + _) _` mp_tac >>
+     qpat_assum `as'.as_pc = as.as_pc + _`
+       (fn th => rewrite_tac[GSYM th])) >>
+  qpat_x_assum `asm_block_at prog as'.as_pc
+     (execute_plan initial_fmp (bump_emit_ops ++ pop_ops ++ opt_ops))`
+    mp_tac >>
+  PURE_REWRITE_TAC[execute_plan_append, asm_block_at_append] >> strip_tac >>
+  `EVERY (\op. case op of Var v => v <> h'' /\ v <> h'³' | _ => T)
+     ps4.ps_stack` by
+    (simp[EVERY_MEM] >> rpt strip_tac >> Cases_on `op` >> gvs[] >>
+     metis_tac[]) >>
+  `!op. op IN FDOM ps4.ps_spilled ==>
+     (case op of Var v => v <> h'' /\ v <> h'³' | _ => T)` by
+    (rpt strip_tac >> Cases_on `op` >> gvs[] >> metis_tac[]) >>
+  `asm_block_at prog as'.as_pc
+     (execute_plan initial_fmp bump_emit_ops)` by
+    (qpat_assum `asm_block_at prog as'.as_pc _` mp_tac >>
+     simp[bump_emit_ops_def]) >>
+  qspecl_then [`lo`, `o2pc`, `prog`, `initial_fmp`, `ps4`, `ps4`, `vs`,
+    `as'`, `stack_pop 2 ps4.ps_stack`, `h`, `h'`, `h''`, `h'³'`, `x`, `x'`]
+    mp_tac bump_emit_sim_sem_stack >>
+  (impl_tac >-
+    (rpt conj_tac >>
+     FIRST [first_assum ACCEPT_TAC, simp[plan_stack_sem_eq_def]])) >>
+  strip_tac >>
+  `LENGTH (execute_plan initial_fmp bump_emit_ops) = 8` by
+    EVAL_TAC >>
+  `as''.as_pc =
+     as'.as_pc + LENGTH (execute_plan initial_fmp bump_emit_ops)` by
+    (qpat_assum `as''.as_pc = as'.as_pc + 8` mp_tac >>
+     ASM_REWRITE_TAC[]) >>
+  `asm_block_at prog as''.as_pc
+     (execute_plan initial_fmp pop_ops)` by
+    (qpat_x_assum `asm_block_at prog
+       (as'.as_pc + LENGTH (execute_plan initial_fmp bump_emit_ops))
+       (execute_plan initial_fmp pop_ops)` mp_tac >>
+     qpat_assum `as''.as_pc = as'.as_pc + _`
+       (fn th => rewrite_tac[GSYM th])) >>
+  `?npop as8.
+     asm_steps lo o2pc prog npop as'' = AsmOK as8 /\
+     venom_asm_rel lo ps8
+       (update_var h'³' (x + n2w (ceil32 (w2n x')))
+         (update_var h'' x vs)) as8 /\
+     as8.as_pc = as''.as_pc + LENGTH (execute_plan initial_fmp pop_ops)` by
+    (Cases_on `is_halting`
+     >- (qpat_x_assum `(if ~T then _ else _) = (pop_ops,ps8)` mp_tac >>
+         simp[] >> strip_tac >> gvs[] >>
+         qexistsl [`0`, `as''`] >>
+         conj_tac >- simp[asm_steps_def] >>
+         conj_tac >- first_assum ACCEPT_TAC >>
+         simp[execute_plan_def])
+     >> qspecl_then
+          [`~MEM h'' next_liveness`, `~MEM h'³' next_liveness`,
+           `Var h''`, `Var h'³'`, `stack_pop 2 ps4.ps_stack`,
+           `ps4 with ps_stack :=
+              stack_push (Var h'³')
+                (stack_push (Var h'') (stack_pop 2 ps4.ps_stack))`,
+           `pop_ops`, `ps8`, `lo`, `o2pc`, `prog`,
+           `update_var h'³' (x + n2w (ceil32 (w2n x')))
+              (update_var h'' x vs)`, `as''`]
+          mp_tac popmany_plan_top_two_sim >>
+        (impl_tac >-
+          ((conj_tac >- simp[stack_push_def]) >>
+           (conj_tac >- simp[]) >>
+           (conj_tac >-
+             (qpat_x_assum `(if ~F then _ else _) = (pop_ops,ps8)` mp_tac >>
+              Cases_on `MEM h'' next_liveness` >>
+              Cases_on `MEM h'³' next_liveness` >> simp[])) >>
+           (conj_tac >- first_assum ACCEPT_TAC) >>
+           first_assum ACCEPT_TAC)) >>
+        simp[]) >>
+  `generated_plan_state_wf base' ps8` by
+    (Cases_on `is_halting`
+     >- (qpat_x_assum `(if ~T then _ else _) = (pop_ops,ps8)` mp_tac >>
+         simp[] >> strip_tac >> gvs[] >>
+         first_assum ACCEPT_TAC)
+     >> qspecl_then
+          [`base'`, `~MEM h'' next_liveness`, `~MEM h'³' next_liveness`,
+           `Var h''`, `Var h'³'`, `stack_pop 2 ps4.ps_stack`,
+           `ps4 with ps_stack :=
+              stack_push (Var h'³')
+                (stack_push (Var h'') (stack_pop 2 ps4.ps_stack))`,
+           `pop_ops`, `ps8`] mp_tac popmany_plan_top_two_generated_wf >>
+        (impl_tac >-
+          ((conj_tac >- first_assum ACCEPT_TAC) >>
+           (conj_tac >- simp[stack_push_def]) >>
+           (conj_tac >- simp[]) >>
+           (qpat_x_assum `(if ~F then _ else _) = (pop_ops,ps8)` mp_tac >>
+            Cases_on `MEM h'' next_liveness` >>
+            Cases_on `MEM h'³' next_liveness` >> simp[]))) >>
+        simp[]) >>
+  `asm_block_at prog as8.as_pc (execute_plan initial_fmp opt_ops)` by
+    (qpat_x_assum `asm_block_at prog _
+       (execute_plan initial_fmp opt_ops)` mp_tac >>
+     qpat_assum `as8.as_pc = as''.as_pc + _` mp_tac >>
+     qpat_assum `as''.as_pc = as'.as_pc + _` mp_tac >>
+     simp[]) >>
+  FAIL_TAC "probe_bump_opt_block"
+
 QED
 Resume gen_inst_ok_sim[invoke]:
   cheat
