@@ -265,6 +265,7 @@ Definition codegen_memory_obligations_def:
       MEM fn ctx.ctx_functions /\
       MEM inst (fn_insts fn) ==>
       source_memory_reads_disjoint cp inst vs1 /\
+      context_source_memory_writes_disjoint cp inst vs1 /\
       (step_inst fuel ctx inst vs1 = OK vs2 ==>
        context_spill_step_safe cp vs1 vs2)
 End

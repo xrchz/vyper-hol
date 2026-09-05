@@ -35,7 +35,7 @@ Ancestors
    venom_asm_rel is the LOOP INVARIANT — needed in both precondition
    and conclusion for chaining across instructions within a block. *)
 Theorem gen_inst_simulation:
-  ∀fuel ctx label_offsets offset_to_pc prog
+  ∀fuel ctx label_offsets offset_to_pc prog initial_fmp
    liveness dfg cfg fn inst next_liveness is_halting
    next_is_term bb_label ps vs as ops ps'.
     codegen_ready_fn fn ∧
@@ -43,9 +43,9 @@ Theorem gen_inst_simulation:
     generate_inst_plan liveness dfg cfg fn inst
       next_liveness is_halting next_is_term bb_label ps =
       SOME (ops, ps') ∧
-    asm_block_at prog as.as_pc (execute_plan ops) ⇒
+    asm_block_at prog as.as_pc (execute_plan initial_fmp ops) ⇒
     ∀vs'. step_inst fuel ctx inst vs = OK vs' ∧
-          step_mem_safe ps.ps_alloc vs vs' ⇒
+          inst_memory_safe ps.ps_alloc inst vs vs' ⇒
       ∃n as'.
         asm_steps label_offsets offset_to_pc prog n as = AsmOK as' ∧
         venom_asm_rel label_offsets ps' vs' as'
@@ -80,23 +80,23 @@ QED
    OK case: venom_asm_rel maintained (loop invariant for next block).
    Halt/Abort: venom_asm_terminal_rel (only observable effects matter).
 
-   step_mem_safe is required for every Venom step during block
+   inst_memory_safe is required for every Venom step during block
    execution (propagated from gen_inst_simulation). The quantified
    form below is stronger than necessary — it covers all possible
    step_inst calls, not just those reachable during this block.
    Refined at proof time to only reachable states. *)
 Theorem gen_block_simulation:
-  ∀fuel ctx label_offsets offset_to_pc prog
+  ∀fuel ctx label_offsets offset_to_pc prog initial_fmp
    liveness dfg cfg fn bb ps vs as block_ops ps'.
     codegen_ready_fn fn ∧
     venom_asm_rel label_offsets ps vs as ∧
     generate_block_plan liveness dfg cfg fn bb ps =
       SOME (block_ops, ps') ∧
-    asm_block_at prog as.as_pc (execute_plan block_ops) ∧
+    asm_block_at prog as.as_pc (execute_plan initial_fmp block_ops) ∧
     (* Spill safety: every Venom step preserves the spill region *)
     (∀inst vs1 vs2 fuel'.
        step_inst fuel' ctx inst vs1 = OK vs2 ⇒
-       step_mem_safe ps.ps_alloc vs1 vs2) ⇒
+       inst_memory_safe ps.ps_alloc inst vs1 vs2) ⇒
     (* OK case: block continues to next block, invariant maintained *)
     (∀vs'. exec_block fuel ctx bb vs = OK vs' ⇒
       ∃n as'.
@@ -151,8 +151,8 @@ QED
    The proof establishes the full venom_asm_rel invariant after the
    entry block's prepare_params_plan processes dead params.
 
-   Spill safety: required for every Venom step during function
-   execution. Uses fn_init_ps alloc (sa_spill_base = fn_eom).
+   Spill safety: inst_memory_safe is required for every Venom step during
+   function execution. Uses fn_init_ps alloc (sa_spill_base = fn_eom).
    spill_mem_covered: initial memory covers spill high-water mark
    so MEMTOP agrees between Venom and asm from the start. *)
 Theorem gen_fn_simulation:
@@ -161,11 +161,11 @@ Theorem gen_fn_simulation:
     codegen_ready_fn fn ∧
     generate_fn_plan fn fn_eom 0 = SOME (fn_ops, ps_final) ∧
     venom_asm_rel label_offsets (fn_init_ps fn fn_eom) vs as ∧
-    asm_block_at prog as.as_pc (execute_plan fn_ops) ∧
+    asm_block_at prog as.as_pc (execute_plan fn_eom fn_ops) ∧
     (* Spill safety *)
     (∀inst vs1 vs2 fuel'.
        step_inst fuel' ctx inst vs1 = OK vs2 ⇒
-       step_mem_safe (fn_init_ps fn fn_eom).ps_alloc vs1 vs2) ∧
+       inst_memory_safe (fn_init_ps fn fn_eom).ps_alloc inst vs1 vs2) ∧
     (* MEMTOP: initial memory covers max spill offset *)
     spill_mem_covered ps_final.ps_alloc.sa_next_offset vs.vs_memory ⇒
     (* Halt case *)

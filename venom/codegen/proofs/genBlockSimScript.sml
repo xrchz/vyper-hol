@@ -2858,7 +2858,7 @@ Theorem gen_inst_sim_param:
            ~MEM (Var out) ps.ps_stack /\
            Var out NOTIN FDOM ps.ps_spilled) ==>
     !vs'. step_inst fuel ctx inst vs = OK vs' /\
-          step_mem_safe ps.ps_alloc vs vs' ==>
+          inst_memory_safe ps.ps_alloc inst vs vs' ==>
       ops = [] /\ ps' = ps /\
       ?n as'.
         asm_steps lo o2pc prog n as = AsmOK as' /\
@@ -3190,7 +3190,7 @@ Theorem gen_inst_ok_sim:
       SOME (ops, ps') /\
     asm_block_at prog as.as_pc (execute_plan initial_fmp ops) ==>
     !vs'. step_inst fuel ctx inst vs = OK vs' /\
-          step_mem_safe ps.ps_alloc vs vs' ==>
+          inst_memory_safe ps.ps_alloc inst vs vs' ==>
       ?n as'.
         asm_steps lo o2pc prog n as = AsmOK as' /\
         venom_asm_rel lo ps' vs' as' /\
