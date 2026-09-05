@@ -354,6 +354,57 @@ Proof
   metis_tac[]
 QED
 
+Theorem popmany_plan_top_two_sim:
+  !drop_a drop_b a b stk ps ops ps' lo o2pc prog vs st.
+    ps.ps_stack = stk ++ [a; b] /\
+    a <> b /\
+    popmany_plan
+      (if drop_a then a :: if drop_b then [b] else []
+       else if drop_b then [b] else []) ps = (ops,ps') /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?n st'.
+      asm_steps lo o2pc prog n st = AsmOK st' /\
+      venom_asm_rel lo ps' vs st' /\
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qexists_tac `LENGTH (execute_plan initial_fmp ops)` >>
+  Cases_on `drop_a` >> Cases_on `drop_b` >>
+  gvs[popmany_plan_def, popmany_individual_def, is_contiguous_top_def,
+      stack_get_depth_def, stack_find_def, do_swap_def, LET_THM,
+      REVERSE_APPEND, stack_pop_def, TAKE_APPEND1, TAKE_APPEND2,
+      sortingTheory.QSORT_DEF,
+      sortingTheory.PARTITION_DEF, sortingTheory.PART_DEF] >>
+  once_rewrite_tac[arithmeticTheory.ADD_COMM] >>
+  TRY (rename1 `asm_block_at _ _ (execute_plan _ [])` >>
+       qexists_tac `st` >>
+       gvs[asm_steps_def, execute_plan_def] >> NO_TAC) >>
+  TRY (rename1 `asm_block_at _ _ (execute_plan _ [SOPop 1])` >>
+       qspecl_then [`[SOPop 1]`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+                    `ps`, `vs`, `st`] mp_tac simple_prefix_venom_asm_rel >>
+       (impl_tac >-
+         gvs[prefix_wf_def, stack_op_wf_def, is_simple_stack_op_def]) >>
+       strip_tac >> qexists_tac `st'` >>
+       gvs[apply_simple_ops_def, apply_simple_op_def, stack_pop_def,
+           TAKE_APPEND1, TAKE_APPEND2] >> NO_TAC) >>
+  TRY (rename1 `asm_block_at _ _ (execute_plan _ [SOSwap 1; SOPop 1])` >>
+       qspecl_then [`[SOSwap 1; SOPop 1]`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+                    `ps`, `vs`, `st`] mp_tac simple_prefix_venom_asm_rel >>
+       (impl_tac >-
+         gvs[prefix_wf_def, stack_op_wf_def, is_simple_stack_op_def]) >>
+       strip_tac >> qexists_tac `st'` >>
+       gvs[apply_simple_ops_def, apply_simple_op_def, stack_swap_def,
+           stack_pop_def, TAKE_APPEND1, TAKE_APPEND2] >> NO_TAC) >>
+  rename1 `asm_block_at _ _ (execute_plan _ [SOPop 1; SOPop 1])` >>
+  qspecl_then [`[SOPop 1; SOPop 1]`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+               `ps`, `vs`, `st`] mp_tac simple_prefix_venom_asm_rel >>
+  (impl_tac >-
+    gvs[prefix_wf_def, stack_op_wf_def, is_simple_stack_op_def]) >>
+  strip_tac >> qexists_tac `st'` >>
+  gvs[apply_simple_ops_def, apply_simple_op_def, stack_pop_def,
+      TAKE_APPEND1, TAKE_APPEND2]
+QED
 Theorem clean_ops_sim:
   !label_offsets offset_to_pc prog liveness cfg fn bb ps ps2 clean_ops vs as.
     venom_asm_rel label_offsets ps vs as /\
