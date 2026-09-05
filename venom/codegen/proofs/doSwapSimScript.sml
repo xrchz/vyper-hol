@@ -4402,8 +4402,6 @@ Theorem do_swap_apply_stack_align_layout:
     dist < LENGTH ps.ps_stack /\
     (dist > 16 ==>
        ALL_DISTINCT (top_n (dist + 1) ps.ps_stack) /\
-       DISJOINT (set (top_n (dist + 1) ps.ps_stack))
-                (FDOM ps.ps_spilled) /\
        spill_alloc_layout_wf ps.ps_alloc ps.ps_spilled) ==>
     (apply_prefix_ops initial_fmp lo (FST (do_swap dist ps)) ps).ps_stack =
     (SND (do_swap dist ps)).ps_stack
@@ -4595,12 +4593,15 @@ QED
 
 Resume do_swap_apply_stack_align_layout[separation]:
   simp[Abbr `rev_items`] >>
+  `spill_alloc_n [] ps.ps_alloc (REVERSE items) =
+   spill_alloc_n [] ps.ps_alloc items` by
+    (irule spill_alloc_n_length_cong >> simp[]) >>
   `spill_alloc_layout_wf
      (SND (spill_alloc_n [] ps.ps_alloc items))
-     (ps.ps_spilled |++ ZIP(REVERSE items, offsets))` by (
-    qspecl_then [`items`, `REVERSE items`, `ps.ps_alloc`, `ps.ps_spilled`]
-      mp_tac spill_alloc_n_layout_wf_keys >>
-    simp[Abbr `offsets`, LENGTH_REVERSE, ALL_DISTINCT_REVERSE]) >>
+     (ps.ps_spilled |++ ZIP(REVERSE items, offsets))` by
+    (qspecl_then [`REVERSE items`, `[]`, `ps.ps_alloc`,
+                   `ps.ps_spilled`, `[]`] mp_tac spill_alloc_n_layout_wf >>
+     simp[FUPDATE_LIST_THM, ALL_DISTINCT_REVERSE, Abbr `offsets`]) >>
   fs[spill_alloc_layout_wf_def]
 QED
 
