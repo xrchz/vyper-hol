@@ -377,6 +377,18 @@ Definition bytecode_unit_pipeline_for_testing_def:
                 po_final_assembly := rpolicy.rpol_final_assembly |>
 End
 
+
+Theorem empty_bytecode_unit_pipeline_exact:
+  bytecode_unit_pipeline_for_testing empty_prague_rpolicy
+    empty_runtime_raw_unit =
+  SOME <| po_unit := empty_runtime_concrete_unit;
+          po_final_assembly := empty_prague_rpolicy.rpol_final_assembly |>
+Proof
+  simp[bytecode_unit_pipeline_for_testing_def,
+       empty_runtime_context_concretize_exact,
+       empty_runtime_concrete_unit_def]
+QED
+
 Definition bytecode_identity_finalizer_for_testing_def:
   bytecode_identity_finalizer_for_testing
     (rpolicy : resolved_compiler_policy) asm = SOME asm
