@@ -481,7 +481,7 @@ Proof
        irule exec_write2_renamed >>
        conj_tac >- first_assum ACCEPT_TAC >>
        qexists_tac `s1` >>
-       gvs[mstore_def, mstore8_def, sstore_def, tstore_def,
+       gvs[mstore_def, istore_def, mstore8_def, sstore_def, tstore_def,
            contract_storage_def, contract_transient_def,
            ssa_sim_def] >> NO_TAC) >>
   gvs[exec_read0_def] >>
@@ -523,7 +523,7 @@ Proof
   TRY (irule ssa_sim_update_var2 >> gvs[] >> NO_TAC) >>
   (* Phase 8: state-modifying / trivial — sigma unchanged (opcode_has_output = F) *)
   gvs[mcopy_def, write_memory_with_expansion_def] >>
-  gvs[mload_def, mstore_def, mstore8_def] >>
+  gvs[mload_def, mstore_def, istore_def, mstore8_def] >>
   gvs[sload_def, sstore_def, contract_storage_def] >>
   gvs[tload_def, tstore_def, contract_transient_def] >>
   gvs[ssa_sim_def] >>

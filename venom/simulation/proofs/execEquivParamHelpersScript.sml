@@ -284,7 +284,7 @@ Theorem vsr_step_inst_istore:
 Proof
   rpt strip_tac >> gvs[] >> vsr_eval_rewrite_tac () >>
   rpt (CASE_TAC >> gvs[lift_result_def]) >>
-  vsr_irule vsr_immutables_R_ok >> simp[]
+  vsr_irule vsr_istore >> simp[]
 QED
 
 fun vsr_data_copy_operands_tac () =

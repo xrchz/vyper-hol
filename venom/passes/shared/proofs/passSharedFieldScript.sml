@@ -594,6 +594,14 @@ Proof
   simp[mstore_def, write_memory_with_expansion_def]
 QED
 
+
+Theorem istore_trans[local,simp]:
+  !addr val (s:venom_state) t.
+    istore addr val (s with vs_transient := t) =
+    (istore addr val s) with vs_transient := t
+Proof
+  simp[istore_def, mstore_trans]
+QED
 Theorem mstore8_trans[local,simp]:
   !addr val (s:venom_state) t.
     mstore8 addr val (s with vs_transient := t) =
@@ -904,6 +912,14 @@ Proof
   simp[mstore_def, write_memory_with_expansion_def]
 QED
 
+
+Theorem istore_acct[local,simp]:
+  !addr val (s:venom_state) f.
+    istore addr val (s with vs_accounts updated_by f) =
+    (istore addr val s) with vs_accounts updated_by f
+Proof
+  simp[istore_def, mstore_acct]
+QED
 Theorem mstore8_acct[local,simp]:
   !addr val (s:venom_state) f.
     mstore8 addr val (s with vs_accounts updated_by f) =

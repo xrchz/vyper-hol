@@ -54,7 +54,7 @@ QED
 (* State-accessing function defs used by step_inst_base helpers.
    Needed so gvs can rewrite through field equalities (e.g.
    s1.vs_memory = s2.vs_memory ==> mload x s1 = mload x s2). *)
-val state_fn_defs = [mload_def, mstore_def, mstore8_def, sload_def, sstore_def,
+val state_fn_defs = [mload_def, mstore_def, istore_def, mstore8_def, sload_def, sstore_def,
   tload_def, tstore_def, contract_storage_def, contract_transient_def,
   write_memory_with_expansion_def, write_memory_def, expand_memory_def,
   read_memory_def, mcopy_def];

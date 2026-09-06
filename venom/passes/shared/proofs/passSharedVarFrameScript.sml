@@ -471,7 +471,7 @@ Proof
   qpat_assum `inst.inst_opcode = op` (fn th => rewrite_tac[th]) >>
   gvs(exec_frame_thms @
       (update_var_def :: finite_mapTheory.FUPDATE_COMMUTES ::
-       mload_def :: mstore_def :: mstore8_def :: sload_def :: sstore_def ::
+       mload_def :: mstore_def :: istore_def :: mstore8_def :: sload_def :: sstore_def ::
        tload_def :: tstore_def :: read_memory_def ::
        contract_storage_def :: contract_transient_def ::
        revert_state_def :: halt_state_def :: set_returndata_def ::
@@ -506,7 +506,7 @@ Proof
   gvs[update_var_def, var_frame_result_def, venom_state_component_equality] >>
   rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
   gvs(update_var_def :: finite_mapTheory.FUPDATE_COMMUTES ::
-      mload_def :: mstore_def :: mstore8_def :: sload_def :: sstore_def ::
+      mload_def :: mstore_def :: istore_def :: mstore8_def :: sload_def :: sstore_def ::
       tload_def :: tstore_def :: read_memory_def ::
       contract_storage_def :: contract_transient_def ::
       revert_state_def :: halt_state_def :: set_returndata_def ::

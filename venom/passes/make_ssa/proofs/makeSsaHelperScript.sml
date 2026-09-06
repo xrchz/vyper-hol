@@ -640,7 +640,7 @@ Proof
   gvs[extract_venom_result_def] >>
   gvs[AllCaseEqs(), LET_THM] >>
   gvs[update_var_def, FDOM_FUPDATE] >>
-  gvs[jump_to_def, mcopy_def, mstore_def, mstore8_def] >>
+  gvs[jump_to_def, mcopy_def, mstore_def, istore_def, mstore8_def] >>
   gvs[sstore_def, tstore_def] >>
   gvs[halt_state_def, revert_state_def, set_returndata_def] >>
   rpt strip_tac >> gvs[SUBSET_DEF, IN_INSERT, IN_UNION] >>
@@ -888,7 +888,7 @@ Proof
   gvs[extract_venom_result_def] >>
   gvs[AllCaseEqs(), LET_THM] >>
   gvs[update_var_def, lookup_var_def, FLOOKUP_UPDATE] >>
-  gvs[jump_to_def, mcopy_def, mstore_def, mstore8_def] >>
+  gvs[jump_to_def, mcopy_def, mstore_def, istore_def, mstore8_def] >>
   gvs[sstore_def, tstore_def] >>
   gvs[halt_state_def, revert_state_def, set_returndata_def] >>
   rpt strip_tac >> gvs[FLOOKUP_UPDATE] >>

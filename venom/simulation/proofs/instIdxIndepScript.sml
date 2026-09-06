@@ -106,6 +106,12 @@ Theorem mstore_idx[local]:
 Proof simp[mstore_def, LET_THM]
 QED
 
+Theorem istore_idx[local]:
+  !off v s n. istore off v (s with vs_inst_idx := n) =
+              (istore off v s) with vs_inst_idx := n
+Proof simp[istore_def, mstore_idx]
+QED
+
 Theorem mstore8_idx[local]:
   !off v s n. mstore8 off v (s with vs_inst_idx := n) =
               (mstore8 off v s) with vs_inst_idx := n
@@ -348,7 +354,7 @@ QED
 val idx_rw = [eval_op_inst_idx, eval_ops_inst_idx, update_var_idx,
               write_mem_idx, read_mem_idx, jump_to_idx,
               halt_state_idx, revert_state_idx, set_returndata_idx,
-              mstore_idx, mstore8_idx, sstore_idx, tstore_idx, mcopy_idx, mload_idx,
+              mstore_idx, istore_idx, mstore8_idx, sstore_idx, tstore_idx, mcopy_idx, mload_idx,
               sload_idx, tload_idx, exec_result_map_def];
 
 val opcode_idx_tac =
