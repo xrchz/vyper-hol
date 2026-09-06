@@ -142,4 +142,110 @@ Proof
        internal_call_arg_bar_not_canonical]
 QED
 
+val internal_call_arg_bar_entry_insts_eval =
+  EVAL ``(HD internal_call_arg_bar.fn_blocks).bb_instructions``
+
+Theorem internal_call_arg_bar_entry_insts_exact:
+  (HD internal_call_arg_bar.fn_blocks).bb_instructions =
+    ^(rhs (concl internal_call_arg_bar_entry_insts_eval))
+Proof
+  ACCEPT_TAC internal_call_arg_bar_entry_insts_eval
+QED
+
+val internal_call_arg_bar_params_eval =
+  EVAL ``get_params (HD internal_call_arg_bar.fn_blocks).bb_instructions``
+
+Theorem internal_call_arg_bar_params_exact:
+  get_params (HD internal_call_arg_bar.fn_blocks).bb_instructions =
+    ^(rhs (concl internal_call_arg_bar_params_eval))
+Proof
+  ACCEPT_TAC internal_call_arg_bar_params_eval
+QED
+
+Definition internal_call_bar_def:
+  internal_call_bar = HD (TL internal_call_trace_context.ctx_functions)
+End
+
+val internal_call_bar_entry_insts_eval =
+  EVAL ``(HD internal_call_bar.fn_blocks).bb_instructions``
+val internal_call_bar_params_eval =
+  EVAL ``get_params (HD internal_call_bar.fn_blocks).bb_instructions``
+
+Theorem internal_call_bar_entry_insts_exact:
+  (HD internal_call_bar.fn_blocks).bb_instructions =
+    ^(rhs (concl internal_call_bar_entry_insts_eval))
+Proof
+  ACCEPT_TAC internal_call_bar_entry_insts_eval
+QED
+
+Theorem internal_call_bar_params_exact:
+  get_params (HD internal_call_bar.fn_blocks).bb_instructions =
+    ^(rhs (concl internal_call_bar_params_eval))
+Proof
+  ACCEPT_TAC internal_call_bar_params_eval
+QED
+
+Theorem internal_call_bar_canonical:
+  canonical_param_prefix internal_call_bar
+Proof
+  EVAL_TAC
+QED
+
+Definition internal_call_arg_caller_def:
+  internal_call_arg_caller = HD internal_call_arg_trace_context.ctx_functions
+End
+
+val internal_call_arg_invoke_eval =
+  EVAL ``HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+          (fn_insts internal_call_arg_caller))``
+
+Theorem internal_call_arg_invoke_exact:
+  HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+        (fn_insts internal_call_arg_caller)) =
+    ^(rhs (concl internal_call_arg_invoke_eval))
+Proof
+  ACCEPT_TAC internal_call_arg_invoke_eval
+QED
+
+Definition internal_call_caller_def:
+  internal_call_caller = HD internal_call_trace_context.ctx_functions
+End
+
+val internal_call_invoke_eval =
+  EVAL ``HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+          (fn_insts internal_call_caller))``
+
+Theorem internal_call_invoke_exact:
+  HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+        (fn_insts internal_call_caller)) =
+    ^(rhs (concl internal_call_invoke_eval))
+Proof
+  ACCEPT_TAC internal_call_invoke_eval
+QED
+
+Theorem internal_call_parameter_prefix_comparison:
+  LENGTH (get_params (HD internal_call_arg_bar.fn_blocks).bb_instructions) = 1 /\
+  LENGTH (get_params (HD internal_call_bar.fn_blocks).bb_instructions) = 1 /\
+  ~canonical_param_prefix internal_call_arg_bar /\
+  canonical_param_prefix internal_call_bar
+Proof
+  EVAL_TAC
+QED
+
+Theorem internal_call_arg_guard_precedes_callee_prepare:
+  MAP (\inst. inst.inst_opcode)
+      (TAKE 4 (HD internal_call_arg_bar.fn_blocks).bb_instructions) =
+    [PARAM; MSTORE; PARAM; MSTORE] /\
+  MAP (\inst. inst.inst_opcode)
+      (TAKE 4 (HD internal_call_bar.fn_blocks).bb_instructions) =
+    [PARAM; MSTORE; MLOAD; RET] /\
+  (HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+       (fn_insts internal_call_arg_caller))).inst_operands =
+    [Label "bar"; Var "%13"] /\
+  (HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+       (fn_insts internal_call_caller))).inst_operands = [Label "bar"]
+Proof
+  EVAL_TAC
+QED
+
 val _ = export_theory()
