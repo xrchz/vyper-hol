@@ -19,185 +19,535 @@ val () = computeLib.upd_compset (computeLib.add_thms [i2w_pos])
 
 val () = Globals.max_print_depth := 20
 
-Theorem empty_bytecode_matches_expected:
-  compile_vyper ([] : toplevel list)
-    concretize_context_eval Linear =
-    SOME ^(evalCompilerBytecodeLib.read_hex_bytes "empty.hex")
+Definition empty_runtime_entry_raw_fn_def:
+  empty_runtime_entry_raw_fn =
+    <| fn_name := "__entry";
+       fn_blocks :=
+         [<| bb_label := "__entry";
+             bb_instructions :=
+               [mk_inst 0 CALLDATASIZE [] ["%0"];
+                mk_inst 1 LT [Var "%0"; Lit 4w] ["%1"];
+                mk_inst 2 ISZERO [Var "%1"] ["%2"];
+                mk_inst 3 JNZ
+                  [Var "%2"; Label "@dispatch_1"; Label "@fallback_0"] []] |>;
+          <| bb_label := "@dispatch_1";
+             bb_instructions :=
+               [mk_inst 4 CALLDATALOAD [Lit 0w] ["%3"];
+                mk_inst 5 SHR [Lit 224w; Var "%3"] ["%4"];
+                mk_inst 6 JMP [Label "@fallback_0"] []] |>;
+          <| bb_label := "@fallback_0";
+             bb_instructions := [mk_inst 7 REVERT [Lit 0w; Lit 0w] []] |>];
+       fn_call_abi := default_internal_call_abi;
+       fn_noinline := F;
+       fn_forced_alloc_positions := FEMPTY;
+       fn_eom := NONE;
+       fn_fmp_signature := NONE |>
+End
+
+
+val empty_runtime_entry_concretized_eval =
+  EVAL ``concretize_function_eval [] empty_runtime_entry_raw_fn``
+val empty_runtime_entry_concrete_value_eval =
+  EVAL ``THE ^(rhs (concl empty_runtime_entry_concretized_eval))``
+Definition empty_runtime_entry_fn_def:
+  empty_runtime_entry_fn =
+    ^(rhs (concl empty_runtime_entry_concrete_value_eval))
+End
+Theorem empty_runtime_entry_control_eval[local]:
+  fn_entry_label empty_runtime_entry_fn = SOME "__entry" /\
+  lookup_block "__entry" empty_runtime_entry_fn.fn_blocks =
+    SOME (HD empty_runtime_entry_fn.fn_blocks) /\
+  lookup_block "@dispatch_1" empty_runtime_entry_fn.fn_blocks =
+    SOME (EL 1 empty_runtime_entry_fn.fn_blocks) /\
+  lookup_block "@fallback_0" empty_runtime_entry_fn.fn_blocks =
+    SOME (EL 2 empty_runtime_entry_fn.fn_blocks)
 Proof
   EVAL_TAC
 QED
 
+val empty_runtime_entry_block_eval = EVAL ``HD empty_runtime_entry_fn.fn_blocks``
+val empty_runtime_dispatch_block_eval = EVAL ``EL 1 empty_runtime_entry_fn.fn_blocks``
+val empty_runtime_fallback_block_eval = EVAL ``EL 2 empty_runtime_entry_fn.fn_blocks``
+val empty_runtime_live_eval = EVAL ``liveness_analyze empty_runtime_entry_fn``
+val empty_runtime_dfg_eval = EVAL ``dfg_build_function empty_runtime_entry_fn``
+val empty_runtime_cfg_eval = EVAL ``cfg_analyze empty_runtime_entry_fn``
+
+
+Definition empty_runtime_entry_block_def:
+  empty_runtime_entry_block = ^(rhs (concl empty_runtime_entry_block_eval))
+End
+
+Definition empty_runtime_dispatch_block_def:
+  empty_runtime_dispatch_block = ^(rhs (concl empty_runtime_dispatch_block_eval))
+End
+
+Definition empty_runtime_fallback_block_def:
+  empty_runtime_fallback_block = ^(rhs (concl empty_runtime_fallback_block_eval))
+End
+Definition empty_runtime_entry_live_def:
+  empty_runtime_entry_live = ^(rhs (concl empty_runtime_live_eval))
+End
+
+Definition empty_runtime_entry_dfg_def:
+  empty_runtime_entry_dfg = ^(rhs (concl empty_runtime_dfg_eval))
+End
+
+Definition empty_runtime_entry_cfg_def:
+  empty_runtime_entry_cfg = ^(rhs (concl empty_runtime_cfg_eval))
+End
+
+val empty_runtime_entry_preds_eval =
+  EVAL ``cfg_preds_of empty_runtime_entry_cfg "__entry"``
+val empty_runtime_dispatch_preds_eval =
+  EVAL ``cfg_preds_of empty_runtime_entry_cfg "@dispatch_1"``
+val empty_runtime_fallback_preds_eval =
+  EVAL ``cfg_preds_of empty_runtime_entry_cfg "@fallback_0"``
+
+Theorem empty_runtime_block_lookup_eval[local]:
+  lookup_block "__entry" empty_runtime_entry_fn.fn_blocks =
+    SOME empty_runtime_entry_block /\
+  lookup_block "@dispatch_1" empty_runtime_entry_fn.fn_blocks =
+    SOME empty_runtime_dispatch_block /\
+  lookup_block "@fallback_0" empty_runtime_entry_fn.fn_blocks =
+    SOME empty_runtime_fallback_block
+Proof
+  EVAL_TAC
+QED
+
+Theorem empty_runtime_entry_live_eval[local]:
+  liveness_analyze empty_runtime_entry_fn = empty_runtime_entry_live
+Proof
+  simp[empty_runtime_entry_live_def, empty_runtime_live_eval]
+QED
+
+Theorem empty_runtime_entry_dfg_eval[local]:
+  dfg_build_function empty_runtime_entry_fn = empty_runtime_entry_dfg
+Proof
+  simp[empty_runtime_entry_dfg_def, empty_runtime_dfg_eval]
+QED
+
+Theorem empty_runtime_entry_cfg_eval[local]:
+  cfg_analyze empty_runtime_entry_fn = empty_runtime_entry_cfg
+Proof
+  simp[empty_runtime_entry_cfg_def, empty_runtime_cfg_eval]
+QED
+
+Theorem empty_runtime_entry_cfg_control_eval[local]:
+  cfg_succs_of empty_runtime_entry_cfg "__entry" =
+    ["@fallback_0"; "@dispatch_1"] /\
+  cfg_succs_of empty_runtime_entry_cfg "@dispatch_1" = ["@fallback_0"] /\
+  cfg_succs_of empty_runtime_entry_cfg "@fallback_0" = []
+Proof
+  EVAL_TAC
+QED
+
+Theorem empty_runtime_entry_cfg_preds_eval[local]:
+  cfg_preds_of empty_runtime_entry_cfg "__entry" =
+    ^(rhs (concl empty_runtime_entry_preds_eval)) /\
+  cfg_preds_of empty_runtime_entry_cfg "@dispatch_1" =
+    ^(rhs (concl empty_runtime_dispatch_preds_eval)) /\
+  cfg_preds_of empty_runtime_entry_cfg "@fallback_0" =
+    ^(rhs (concl empty_runtime_fallback_preds_eval))
+Proof
+  simp[empty_runtime_entry_preds_eval, empty_runtime_dispatch_preds_eval,
+       empty_runtime_fallback_preds_eval]
+QED
+
+
+val empty_runtime_entry_block_plan_eval = EVAL
+  ``generate_block_plan empty_runtime_entry_live empty_runtime_entry_dfg
+      empty_runtime_entry_cfg empty_runtime_entry_fn empty_runtime_entry_block
+      (init_plan_state 0)``
+
+Definition empty_runtime_entry_block_plan_result_def:
+  empty_runtime_entry_block_plan_result =
+    ^(rhs (concl empty_runtime_entry_block_plan_eval))
+End
+
+Theorem empty_runtime_entry_block_plan[local]:
+  generate_block_plan empty_runtime_entry_live empty_runtime_entry_dfg
+    empty_runtime_entry_cfg empty_runtime_entry_fn empty_runtime_entry_block
+    (init_plan_state 0) = empty_runtime_entry_block_plan_result
+Proof
+  simp[empty_runtime_entry_block_plan_result_def,
+       empty_runtime_entry_block_plan_eval]
+QED
+
+val empty_runtime_after_entry_eval =
+  EVAL ``SND (THE empty_runtime_entry_block_plan_result)``
+Definition empty_runtime_after_entry_def:
+  empty_runtime_after_entry = ^(rhs (concl empty_runtime_after_entry_eval))
+End
+
+val empty_runtime_fallback_block_plan_eval = EVAL
+  ``generate_block_plan empty_runtime_entry_live empty_runtime_entry_dfg
+      empty_runtime_entry_cfg empty_runtime_entry_fn empty_runtime_fallback_block
+      empty_runtime_after_entry``
+Definition empty_runtime_fallback_block_plan_result_def:
+  empty_runtime_fallback_block_plan_result =
+    ^(rhs (concl empty_runtime_fallback_block_plan_eval))
+End
+Theorem empty_runtime_fallback_block_plan[local]:
+  generate_block_plan empty_runtime_entry_live empty_runtime_entry_dfg
+    empty_runtime_entry_cfg empty_runtime_entry_fn empty_runtime_fallback_block
+    empty_runtime_after_entry = empty_runtime_fallback_block_plan_result
+Proof
+  simp[empty_runtime_fallback_block_plan_result_def,
+       empty_runtime_fallback_block_plan_eval]
+QED
+
+val empty_runtime_after_fallback_eval =
+  EVAL ``SND (THE empty_runtime_fallback_block_plan_result)``
+Definition empty_runtime_after_fallback_def:
+  empty_runtime_after_fallback = ^(rhs (concl empty_runtime_after_fallback_eval))
+End
+
+val empty_runtime_dispatch_block_plan_eval = EVAL
+  ``generate_block_plan empty_runtime_entry_live empty_runtime_entry_dfg
+      empty_runtime_entry_cfg empty_runtime_entry_fn empty_runtime_dispatch_block
+      empty_runtime_after_fallback``
+Definition empty_runtime_dispatch_block_plan_result_def:
+  empty_runtime_dispatch_block_plan_result =
+    ^(rhs (concl empty_runtime_dispatch_block_plan_eval))
+End
+Theorem empty_runtime_dispatch_block_plan[local]:
+  generate_block_plan empty_runtime_entry_live empty_runtime_entry_dfg
+    empty_runtime_entry_cfg empty_runtime_entry_fn empty_runtime_dispatch_block
+    empty_runtime_after_fallback = empty_runtime_dispatch_block_plan_result
+Proof
+  simp[empty_runtime_dispatch_block_plan_result_def,
+       empty_runtime_dispatch_block_plan_eval]
+QED
+
+val empty_runtime_aux_eval = EVAL
+  ``generate_fn_plan_aux empty_runtime_entry_live empty_runtime_entry_dfg
+      empty_runtime_entry_cfg empty_runtime_entry_fn ["__entry"] []
+      (init_plan_state 0)``
+Definition empty_runtime_aux_result_def:
+  empty_runtime_aux_result = ^(rhs (concl empty_runtime_aux_eval))
+End
+
+Theorem empty_runtime_aux_plan[local]:
+  generate_fn_plan_aux empty_runtime_entry_live empty_runtime_entry_dfg
+    empty_runtime_entry_cfg empty_runtime_entry_fn ["__entry"] []
+    (init_plan_state 0) = empty_runtime_aux_result
+Proof
+  simp[empty_runtime_aux_result_def, empty_runtime_aux_eval]
+QED
+(* Unit-shaped bounded O1 configuration used only by executable fixtures. *)
+
+val empty_runtime_entry_plan_value_eval = EVAL
+  ``case empty_runtime_aux_result of
+      NONE => ARB
+    | SOME (ops, labels, ps) => (ops, ps)``
+Definition empty_runtime_entry_plan_def:
+  empty_runtime_entry_plan = ^(rhs (concl empty_runtime_entry_plan_value_eval))
+End
+
+Theorem empty_runtime_entry_canonical[local]:
+  canonical_param_prefix empty_runtime_entry_fn
+Proof
+  EVAL_TAC
+QED
+
+Definition empty_prague_rpolicy_def:
+  empty_prague_rpolicy =
+    <| rpol_target := prague_capabilities;
+       rpol_frontend_dispatch := Linear;
+       rpol_final_assembly := FAP_Optimize |>
+End
+
+val empty_runtime_lowering_eval =
+  EVAL ``lower_vyper_runtime_unit ([] : toplevel list) empty_prague_rpolicy``
+val empty_runtime_raw_unit_value_eval =
+  EVAL ``THE (lower_vyper_runtime_unit ([] : toplevel list)
+               empty_prague_rpolicy)``
+
+Definition empty_runtime_raw_unit_def:
+  empty_runtime_raw_unit = ^(rhs (concl empty_runtime_raw_unit_value_eval))
+End
+
+Theorem empty_runtime_lowering_exact:
+  lower_vyper_runtime_unit ([] : toplevel list) empty_prague_rpolicy =
+    SOME empty_runtime_raw_unit
+Proof
+  simp[empty_runtime_raw_unit_def, empty_runtime_lowering_eval,
+       empty_runtime_raw_unit_value_eval,
+       finite_mapTheory.FEVERY_FEMPTY,
+       venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+QED
+
+
+Theorem empty_runtime_raw_context_exact:
+  empty_runtime_raw_unit.cu_context =
+    <| ctx_functions := [empty_runtime_entry_raw_fn];
+       ctx_entry := SOME "__entry";
+       ctx_global_reserved := [] |>
+Proof
+  simp[empty_runtime_raw_unit_def, empty_runtime_raw_unit_value_eval,
+       empty_runtime_entry_raw_fn_def, venomInstTheory.mk_inst_def,
+       venomInstTheory.default_internal_call_abi_def,
+       finite_mapTheory.FEVERY_FEMPTY,
+       venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+QED
+Definition empty_runtime_concrete_unit_def:
+  empty_runtime_concrete_unit =
+    empty_runtime_raw_unit with cu_context :=
+      (empty_runtime_raw_unit.cu_context with
+         ctx_functions := [empty_runtime_entry_fn])
+End
+
+
+
+Theorem empty_runtime_entry_concretize_eval[local]:
+  concretize_function_eval [] empty_runtime_entry_raw_fn =
+    SOME empty_runtime_entry_fn
+Proof
+  simp[empty_runtime_entry_fn_def, empty_runtime_entry_concretized_eval]
+QED
+
+Theorem empty_runtime_context_concretize_exact:
+  concretize_context_eval empty_runtime_raw_unit.cu_context =
+    SOME empty_runtime_concrete_unit.cu_context
+Proof
+  simp[empty_runtime_concrete_unit_def, empty_runtime_raw_context_exact,
+       concretize_context_eval_def, empty_runtime_entry_concretize_eval]
+QED
+Theorem empty_runtime_init_counter_zero[local]:
+  (init_plan_state 0 with ps_label_counter := 0) = init_plan_state 0
+Proof
+  EVAL_TAC
+QED
+Theorem empty_runtime_entry_plan_eval:
+  generate_fn_plan empty_runtime_entry_fn 0 0 =
+    SOME empty_runtime_entry_plan
+Proof
+  simp[stackPlanGenTheory.generate_fn_plan_def, empty_runtime_entry_canonical,
+       empty_runtime_entry_live_eval, empty_runtime_entry_dfg_eval,
+       empty_runtime_entry_cfg_eval, empty_runtime_entry_control_eval,
+       empty_runtime_init_counter_zero, empty_runtime_aux_plan,
+       empty_runtime_aux_result_def, empty_runtime_entry_plan_def,
+       empty_runtime_entry_plan_value_eval]
+QED
+
+Theorem empty_runtime_entry_live_fuel_eval[local]:
+  liveness_analyze_fuel 100000 empty_runtime_entry_fn =
+    empty_runtime_entry_live
+Proof
+  EVAL_TAC
+QED
+
+Theorem empty_runtime_aux_fuel_eval[local]:
+  !fuel.
+  generate_fn_plan_aux_fuel
+    (SUC (SUC (SUC (SUC (SUC (SUC (SUC (SUC (SUC (SUC fuel))))))))))
+    empty_runtime_entry_live empty_runtime_entry_dfg empty_runtime_entry_cfg
+    empty_runtime_entry_fn ["__entry"] [] (init_plan_state 0) =
+    empty_runtime_aux_result
+Proof
+  gen_tac >> EVAL_TAC
+QED
+
+Theorem empty_runtime_aux_fuel_100000_eval[local]:
+  generate_fn_plan_aux_fuel 100000
+    empty_runtime_entry_live empty_runtime_entry_dfg empty_runtime_entry_cfg
+    empty_runtime_entry_fn ["__entry"] [] (init_plan_state 0) =
+    empty_runtime_aux_result
+Proof
+  mp_tac (Q.SPEC `99990` empty_runtime_aux_fuel_eval) >> simp[]
+QED
+
+Theorem empty_runtime_entry_plan_fuel_eval:
+  generate_fn_plan_fuel 100000 empty_runtime_entry_fn 0 0 =
+    SOME empty_runtime_entry_plan
+Proof
+  simp[stackPlanGenTheory.generate_fn_plan_fuel_def,
+       empty_runtime_entry_canonical, empty_runtime_entry_live_fuel_eval,
+       empty_runtime_entry_dfg_eval, empty_runtime_entry_cfg_eval,
+       empty_runtime_entry_control_eval, empty_runtime_init_counter_zero,
+       empty_runtime_aux_fuel_100000_eval, empty_runtime_aux_result_def,
+       empty_runtime_entry_plan_def, empty_runtime_entry_plan_value_eval]
+QED
+Definition bytecode_unit_pipeline_for_testing_def:
+  bytecode_unit_pipeline_for_testing rpolicy unit =
+    case concretize_context_eval unit.cu_context of
+      NONE => NONE
+    | SOME ctx =>
+        SOME <| po_unit := unit with cu_context := ctx;
+                po_final_assembly := rpolicy.rpol_final_assembly |>
+End
+
+Definition bytecode_identity_finalizer_for_testing_def:
+  bytecode_identity_finalizer_for_testing
+    (rpolicy : resolved_compiler_policy) asm = SOME asm
+End
+
+Definition compile_vyper_o1_fuel_for_testing_def:
+  compile_vyper_o1_fuel_for_testing fuel (tops : toplevel list) =
+    compile_vyper_fuel_for_testing fuel
+      bytecode_unit_pipeline_for_testing
+      bytecode_identity_finalizer_for_testing
+      (o1_policy prague_capabilities) tops
+End
+
+Theorem empty_bytecode_matches_expected:
+  compile_vyper_o1_fuel_for_testing 100000 ([] : toplevel list) =
+    SOME ^(evalCompilerBytecodeLib.read_hex_bytes "empty.hex")
+Proof
+  EVAL_TAC >>
+  simp[finite_mapTheory.FEVERY_FEMPTY,
+       venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+QED
+
 Theorem noop_result_lengths:
-  compile_vyper noop_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 noop_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "noop.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem return_uint_result_lengths:
-  compile_vyper return_uint_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 return_uint_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "return_uint.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem return_arg_result_lengths:
-  compile_vyper return_arg_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 return_arg_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "return_arg.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem local_uint_result_lengths:
-  compile_vyper local_uint_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 local_uint_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "local_uint.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem add_arg_result_lengths:
-  compile_vyper add_arg_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 add_arg_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "add_arg.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem two_external_result_lengths:
-  compile_vyper two_external_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 two_external_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "two_external.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem storage_read_result_lengths:
-  compile_vyper storage_read_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 storage_read_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "storage_read.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem storage_write_result_lengths:
-  compile_vyper storage_write_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 storage_write_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "storage_write.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem deploy_storage_result_lengths:
-  compile_vyper deploy_storage_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 deploy_storage_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "deploy_storage.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem event_log_result_lengths:
-  compile_vyper event_log_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 event_log_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "event_log.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem indexed_event_log_result_lengths:
-  compile_vyper indexed_event_log_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 indexed_event_log_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "indexed_event_log.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem mixed_event_log_result_lengths:
-  compile_vyper mixed_event_log_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 mixed_event_log_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "mixed_event_log.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem hashmap_read_result_lengths:
-  compile_vyper hashmap_read_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 hashmap_read_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "hashmap_read.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem hashmap_write_result_lengths:
-  compile_vyper hashmap_write_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 hashmap_write_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "hashmap_write.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem if_bool_result_lengths:
-  compile_vyper if_bool_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 if_bool_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "if_bool.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem if_join_result_lengths:
-  compile_vyper if_join_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 if_join_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "if_join.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem for_pass_result_lengths:
-  compile_vyper for_pass_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 for_pass_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "for_pass.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem for_accum_result_lengths:
-  compile_vyper for_accum_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 for_accum_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "for_accum.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem for_continue_result_lengths:
-  compile_vyper for_continue_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 for_continue_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "for_continue.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem for_break_result_lengths:
-  compile_vyper for_break_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 for_break_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "for_break.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem internal_call_result_lengths:
-  compile_vyper internal_call_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 internal_call_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "internal_call.hex")
 Proof
   EVAL_TAC
 QED
 
 Theorem internal_call_arg_result_lengths:
-  compile_vyper internal_call_arg_program
-    concretize_context_eval Linear =
+  compile_vyper_o1_fuel_for_testing 100000 internal_call_arg_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "internal_call_arg.hex")
 Proof
   EVAL_TAC
