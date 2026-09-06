@@ -6158,6 +6158,147 @@ Proof
 QED
 
 
+Definition reorder_steps_spill_ready_def:
+  reorder_steps_spill_ready initial_fmp dfg pending lo [] ps = T /\
+  reorder_steps_spill_ready initial_fmp dfg pending lo ((idx,op)::items) ps =
+    let (step_ops,ps1) = reorder_one dfg pending idx op ps in
+      prefix_spill_wf initial_fmp lo step_ops ps /\
+      reorder_steps_spill_ready initial_fmp dfg pending lo items ps1
+End
+
+Theorem reorder_steps_spill_ready_two[local]:
+  !dfg pending lo idx1 op1 idx2 op2 ps.
+    let (ops1,ps1) = reorder_one dfg pending idx1 op1 ps in
+    let (ops2,ps2) = reorder_one dfg pending idx2 op2 ps1 in
+      reorder_steps_spill_ready initial_fmp dfg pending lo
+        [(idx1,op1); (idx2,op2)] ps =
+      (prefix_spill_wf initial_fmp lo ops1 ps /\
+       prefix_spill_wf initial_fmp lo ops2 ps1)
+Proof
+  rpt gen_tac >>
+  simp[reorder_steps_spill_ready_def, LET_THM] >>
+  pairarg_tac >> simp[] >> pairarg_tac >> simp[]
+QED
+
+Theorem plan_steps_cons_result[local]:
+  !step x xs ps ops ps'.
+    plan_steps step (x::xs) ps = (ops,ps') ==>
+    ?step_ops ps1 rest_ops.
+      step x ps = (step_ops,ps1) /\
+      plan_steps step xs ps1 = (rest_ops,ps') /\
+      ops = step_ops ++ rest_ops
+Proof
+  rpt gen_tac >>
+  simp[Once plan_steps_def, LET_THM] >>
+  pairarg_tac >> simp[] >>
+  pairarg_tac >> simp[]
+QED
+
+Theorem plan_steps_reorder_venom_asm_rel_residual[local]:
+  !items dfg pending ps ops ps' base lo o2pc prog vs st.
+    EVERY (\(idx,op). idx < LENGTH pending /\ MEM op pending) items /\
+    residual_budget_wf base pending ps /\
+    pending_inventory_wf pending ps /\
+    LENGTH pending <= LENGTH ps.ps_stack /\ LENGTH pending <= 16 /\
+    reorder_steps_spill_ready initial_fmp dfg pending lo items ps /\
+    plan_steps (\(idx,op) ps. reorder_one dfg pending idx op ps)
+      items ps = (ops,ps') /\
+    (!op1 at. operand_equiv dfg op1 at ==>
+              operand_val vs lo op1 = operand_val vs lo at) /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
+            AsmOK st' /\
+          venom_asm_rel lo ps' vs st' /\
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops) /\
+          residual_budget_wf base pending ps' /\
+          pending_inventory_wf pending ps'
+Proof
+  Induct
+  >- (rpt gen_tac >> strip_tac >> gvs[plan_steps_def] >>
+      qexists_tac `st` >> simp[execute_plan_def, asm_steps_def]) >>
+  rpt gen_tac >> PairCases_on `h` >> strip_tac >>
+  drule plan_steps_cons_result >> strip_tac >>
+  gvs[] >>
+  rename1 `reorder_one dfg pending h0 h1 ps = (step_ops,ps1)` >>
+  rename1 `plan_steps _ items ps1 = (rest_ops,ps')` >>
+  qpat_x_assum `reorder_steps_spill_ready _ _ _ _ (_::_) _` mp_tac >>
+  simp[Once reorder_steps_spill_ready_def, LET_THM] >>
+  ASM_REWRITE_TAC[] >> strip_tac >>
+  `asm_block_at prog st.as_pc (execute_plan initial_fmp step_ops) /\
+   asm_block_at prog
+     (st.as_pc + LENGTH (execute_plan initial_fmp step_ops))
+     (execute_plan initial_fmp rest_ops)` by
+    (qpat_x_assum `asm_block_at prog st.as_pc
+       (execute_plan initial_fmp (step_ops ++ rest_ops))` mp_tac >>
+     simp[execute_plan_append, asm_block_at_append]) >>
+  `?st1.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp step_ops)) st =
+        AsmOK st1 /\
+      venom_asm_rel lo ps1 vs st1 /\
+      st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp step_ops) /\
+      residual_budget_wf base' pending ps1 /\
+      pending_inventory_wf pending ps1` by
+    (qspecl_then [`dfg`, `pending`, `h0`, `h1`, `ps`, `step_ops`, `ps1`,
+                  `base'`, `lo`, `o2pc`, `prog`, `vs`, `st`]
+       mp_tac reorder_one_venom_asm_rel_residual >> ASM_REWRITE_TAC[]) >>
+  `LENGTH pending <= LENGTH ps1.ps_stack` by
+    metis_tac[reorder_one_residual_budget_wf] >>
+  `asm_block_at prog st1.as_pc (execute_plan initial_fmp rest_ops)` by
+    metis_tac[] >>
+  `?st2.
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp rest_ops)) st1 =
+        AsmOK st2 /\
+      venom_asm_rel lo ps' vs st2 /\
+      st2.as_pc = st1.as_pc + LENGTH (execute_plan initial_fmp rest_ops) /\
+      residual_budget_wf base' pending ps' /\
+      pending_inventory_wf pending ps'` by
+    (first_x_assum (qspecl_then
+       [`dfg`, `pending`, `ps1`, `rest_ops`, `ps'`, `base'`, `lo`, `o2pc`,
+        `prog`, `vs`, `st1`] mp_tac) >> ASM_REWRITE_TAC[] >>
+     metis_tac[ADD_ASSOC, ADD_COMM]) >>
+  qexists_tac `st2` >>
+  ASM_REWRITE_TAC[execute_plan_append, LENGTH_APPEND, asm_steps_add] >>
+  simp[]
+QED
+
+Theorem reorder_plan_venom_asm_rel_residual:
+  !dfg target_ops ps ops ps' base lo o2pc prog vs st.
+    residual_budget_wf base target_ops ps /\
+    pending_inventory_wf target_ops ps /\
+    LENGTH target_ops <= LENGTH ps.ps_stack /\ LENGTH target_ops <= 16 /\
+    reorder_steps_spill_ready initial_fmp dfg target_ops lo
+      (MAPi (\i op. (i,op)) target_ops) ps /\
+    reorder_plan dfg target_ops ps = (ops,ps') /\
+    (!op1 at. operand_equiv dfg op1 at ==>
+              operand_val vs lo op1 = operand_val vs lo at) /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
+            AsmOK st' /\
+          venom_asm_rel lo ps' vs st' /\
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops) /\
+          residual_budget_wf base target_ops ps' /\
+          pending_inventory_wf target_ops ps'
+Proof
+  rpt gen_tac >> strip_tac >>
+  `EVERY (\(idx,op). idx < LENGTH target_ops /\ MEM op target_ops)
+     (MAPi (\i op. (i,op)) target_ops)` by
+    (simp[EVERY_MEM, pairTheory.FORALL_PROD,
+          indexedListsTheory.MEM_MAPi] >>
+     rpt strip_tac >> gvs[] >>
+     simp[MEM_EL] >> qexists_tac `p_1` >> simp[]) >>
+  `plan_steps (\(idx,op) ps. reorder_one dfg target_ops idx op ps)
+     (MAPi (\i op. (i,op)) target_ops) ps = (ops,ps')` by
+    (qpat_x_assum `reorder_plan dfg target_ops ps = (ops,ps')` mp_tac >>
+     simp[reorder_plan_eq_plan_steps]) >>
+  qspecl_then
+    [`MAPi (\i op. (i,op)) target_ops`, `dfg`, `target_ops`, `ps`, `ops`,
+     `ps'`, `base'`, `lo`, `o2pc`, `prog`, `vs`, `st`]
+    mp_tac plan_steps_reorder_venom_asm_rel_residual >>
+  ASM_REWRITE_TAC[] >> metis_tac[ADD_COMM]
+QED
+
 Theorem reorder_plan_exact_two_venom_asm_rel:
   !base dfg h h' ps ops ps' lo o2pc prog vs st.
     exact_two_planner_ready base h h' ps /\
