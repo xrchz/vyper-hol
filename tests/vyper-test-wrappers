@@ -1,12 +1,12 @@
 #!/bin/sh
-# Regenerate or verify the functional Vyper wrapper inventory.
+# Regenerate or verify the functional Vyper wrapper inventory and provenance.
 # Usage (from any repository directory):
 #   sh tests/vyper-test-wrappers [--check]
 set -eu
 
 case $#:$* in
-  0:) mode=generate ;;
-  1:--check) mode=check ;;
+  0:) mode=generate ; provenance_args= ;;
+  1:--check) mode=check ; provenance_args=--check ;;
   *) echo "usage: sh tests/vyper-test-wrappers [--check]" >&2; exit 2 ;;
 esac
 
@@ -25,5 +25,24 @@ if [ -z "${hol:-}" ] || [ ! -x "$hol" ]; then
   echo "vyper-test-wrappers: HOL executable not found; set HOLBUILD_HOLDIR or HOLDIR" >&2
   exit 2
 fi
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "vyper-test-wrappers: python3 executable not found" >&2
+  exit 2
+fi
+if [ ! -d vyper-test-exports ] || [ ! -d generated ]; then
+  echo "vyper-test-wrappers: expected tests/vyper-test-exports and tests/generated" >&2
+  exit 2
+fi
 
-VYPER_TEST_WRAPPER_MODE=$mode exec "$hol" --use vyperTestWrapperMain.sml
+count_file=${TMPDIR:-/tmp}/vyper-test-wrapper-count.$$
+trap 'rm -f "$count_file"' EXIT HUP INT TERM
+VYPER_TEST_WRAPPER_MODE=$mode \
+VYPER_TEST_WRAPPER_COUNT_FILE=$count_file \
+  "$hol" --use vyperTestWrapperMain.sml
+
+if [ ! -s "$count_file" ]; then
+  echo "vyper-test-wrappers: HOL driver did not report an inventory count" >&2
+  exit 1
+fi
+selected_count=$(cat "$count_file")
+python3 vyper-test-provenance.py $provenance_args "$selected_count"

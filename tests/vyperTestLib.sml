@@ -634,6 +634,8 @@ in
   files
 end
 
+fun selected_test_count () = List.length (validated_test_files ())
+
 fun definition_wrapper (id, json_path) = let
   val thyname = String.concat ["vyperTestDefs_", id]
   val filename = String.concat [thyname, "Script.sml"]
