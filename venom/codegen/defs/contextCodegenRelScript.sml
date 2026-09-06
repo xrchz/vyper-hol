@@ -24,6 +24,38 @@ Definition context_memory_rel_def:
     !i. ~context_spill_byte cp i ==>
         read_byte i venom_mem = read_byte i asm_mem
 End
+(* Context-facing Venom/assembly relation.  Unlike venom_asm_rel, its memory
+   mask covers every spill region in the complete context plan. *)
+Definition context_venom_asm_rel_def:
+  context_venom_asm_rel cp label_offsets ps vs as <=>
+    plan_stack_rel label_offsets vs ps.ps_stack as.as_stack /\
+    plan_spill_rel label_offsets vs ps.ps_spilled as.as_memory /\
+    context_memory_rel cp vs.vs_memory as.as_memory /\
+    as.as_accounts = vs.vs_accounts /\
+    as.as_transient = vs.vs_transient /\
+    as.as_returndata = vs.vs_returndata /\
+    as.as_logs = vs.vs_logs /\
+    as.as_call_ctx = vs.vs_call_ctx /\
+    as.as_tx_ctx = vs.vs_tx_ctx /\
+    as.as_block_ctx = vs.vs_block_ctx /\
+    as.as_code = vs.vs_code /\
+    as.as_prev_hashes = vs.vs_prev_hashes
+End
+
+Theorem context_venom_asm_rel_terminal:
+  context_venom_asm_rel cp lo ps vs as ==>
+  venom_asm_terminal_rel vs as
+Proof
+  simp[context_venom_asm_rel_def, venom_asm_terminal_rel_def]
+QED
+
+Theorem context_venom_asm_rel_memory:
+  context_venom_asm_rel cp lo ps vs as ==>
+  context_memory_rel cp vs.vs_memory as.as_memory
+Proof
+  simp[context_venom_asm_rel_def]
+QED
+
 
 (* A source step preserves every byte reserved for compiler spills. *)
 Definition context_spill_step_safe_def:
