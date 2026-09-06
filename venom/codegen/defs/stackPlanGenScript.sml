@@ -887,12 +887,67 @@ Proof
   simp[SUBSET_DEF]
 QED
 
-(* Visited monotonicity: set visited ⊆ set visited' after fn_plan_aux *)
+(* Visited monotonicity for the clean mutually recursive functions. *)
+Theorem generate_plan_visited_mono:
+  (!liveness dfg cfg fn worklist visited ps ops visited' ps'.
+     generate_fn_plan_aux liveness dfg cfg fn worklist visited ps =
+       SOME (ops,visited',ps') ==>
+     set visited SUBSET set visited') /\
+  (!liveness dfg cfg fn saved_stack saved_spilled succs visited ps ops
+      visited' ps'.
+     generate_succs_plan liveness dfg cfg fn saved_stack saved_spilled
+       succs visited ps = SOME (ops,visited',ps') ==>
+     set visited SUBSET set visited')
+Proof
+  ho_match_mp_tac generate_fn_plan_aux_ind >> rpt conj_tac
+  >- (rpt gen_tac >> simp[Once generate_fn_plan_aux_def])
+  >- (rpt gen_tac >> strip_tac >>
+      Cases_on `MEM lbl visited`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> Cases_on `lookup_block lbl fn.fn_blocks`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `lookup_block lbl fn.fn_blocks = SOME bb` >>
+      Cases_on `generate_block_plan liveness dfg cfg fn bb ps`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `generate_block_plan liveness dfg cfg fn bb ps = SOME bp` >>
+      PairCases_on `bp` >>
+      Cases_on `generate_succs_plan liveness dfg cfg fn bp1.ps_stack
+                  bp1.ps_spilled (cfg_succs_of cfg lbl) (lbl::visited) bp1`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `generate_succs_plan _ _ _ _ _ _ _ _ _ = SOME sr` >>
+      PairCases_on `sr` >>
+      Cases_on `generate_fn_plan_aux liveness dfg cfg fn worklist sr1 sr2`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `generate_fn_plan_aux _ _ _ _ _ _ _ = SOME rr` >>
+      PairCases_on `rr` >>
+      gvs[Once generate_fn_plan_aux_def] >>
+      irule SUBSET_TRANS >> qexists `set (lbl::visited)` >> conj_tac
+      >- (MATCH_ACCEPT_TAC visited_subset_cons)
+      >> irule SUBSET_TRANS >> qexists `set sr1` >> conj_tac >> simp[])
+  >- (rpt gen_tac >> simp[Once generate_fn_plan_aux_def])
+  >> rpt gen_tac >> strip_tac >>
+     Cases_on `generate_fn_plan_aux liveness dfg cfg fn [succ] visited
+                 (ps with <| ps_stack := saved_stack;
+                             ps_spilled := saved_spilled |>)`
+     >- gvs[Once (cj 4 generate_fn_plan_aux_def)]
+     >> rename1 `generate_fn_plan_aux _ _ _ _ _ _ _ = SOME sr` >>
+     PairCases_on `sr` >>
+     Cases_on `generate_succs_plan liveness dfg cfg fn saved_stack
+                 saved_spilled succs sr1
+                 (ps with <| ps_alloc := sr2.ps_alloc;
+                             ps_label_counter := sr2.ps_label_counter |>)`
+     >- gvs[Once (cj 4 generate_fn_plan_aux_def)]
+     >> rename1 `generate_succs_plan _ _ _ _ _ _ _ _ _ = SOME rr` >>
+     PairCases_on `rr` >>
+     gvs[Once (cj 4 generate_fn_plan_aux_def)] >>
+     irule SUBSET_TRANS >> qexists `set sr1` >> conj_tac >> simp[]
+QED
+
 Theorem generate_fn_plan_aux_visited_mono =
-  REWRITE_RULE [GSYM fn_plan_aux_def] fn_plan_mono_inl
+  CONJUNCT1 generate_plan_visited_mono
 
 Theorem generate_succs_plan_visited_mono =
-  REWRITE_RULE [GSYM fn_plan_aux_def] fn_plan_mono_inr
+  CONJUNCT2 generate_plan_visited_mono
 
 Definition generate_fn_plan_aux_fuel_def:
   generate_fn_plan_aux_fuel 0 liveness dfg cfg fn worklist visited ps =
