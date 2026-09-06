@@ -939,6 +939,53 @@ Definition lower_vyper_deploy_unit_def:
 End
 
 
+(* Run one complete compilation unit through a resolved-policy pipeline and
+   reject any output whose final-assembly policy disagrees with that policy. *)
+Definition checked_unit_pipeline_def:
+  checked_unit_pipeline
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (rpolicy : resolved_compiler_policy)
+    (unit : compilation_unit) =
+    case pipeline rpolicy unit of
+      NONE => NONE
+    | SOME out =>
+        if out.po_final_assembly <> rpolicy.rpol_final_assembly then NONE
+        else finalize_codegen finalizer rpolicy out.po_unit
+End
+
+(* Bounded planning is deliberately exposed only as a testing boundary. *)
+Definition finalize_codegen_fuel_for_testing_def:
+  finalize_codegen_fuel_for_testing fuel
+    (finalizer : assembly_finalizer)
+    (rpolicy : resolved_compiler_policy)
+    (unit : compilation_unit) =
+    case codegen_assembly_fuel fuel rpolicy unit of
+      NONE => NONE
+    | SOME asm =>
+        case finalizer rpolicy asm of
+          NONE => NONE
+        | SOME finalized_asm =>
+            if assembly_target_safe rpolicy.rpol_target finalized_asm
+            then SOME (assemble finalized_asm)
+            else NONE
+End
+
+Definition checked_unit_pipeline_fuel_for_testing_def:
+  checked_unit_pipeline_fuel_for_testing fuel
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (rpolicy : resolved_compiler_policy)
+    (unit : compilation_unit) =
+    case pipeline rpolicy unit of
+      NONE => NONE
+    | SOME out =>
+        if out.po_final_assembly <> rpolicy.rpol_final_assembly then NONE
+        else finalize_codegen_fuel_for_testing fuel finalizer rpolicy out.po_unit
+End
+
 (* Closed executable probes for the checked complete-unit boundary. *)
 Theorem lower_vyper_runtime_unit_empty_prague:
   IS_SOME
@@ -984,144 +1031,76 @@ Theorem lower_vyper_runtime_unit_rejects_malformed_dispatch:
 Proof
   EVAL_TAC
 QED
-Definition compile_vyper_def:
-  compile_vyper (tops : toplevel list)
-                (pipeline : venom_context -> venom_context)
-                dispatch_strategy =
-    let tenv = type_env tops in
-    let sft = make_struct_fields_map tops in
-    let sft_fn = get_struct_fields sft in
-    let immutables_len = compute_immutables_len sft_fn tops in
-    let nkey_map = assign_nkeys tops 0 in
-    let use_trans = F in
-    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
-    (* Phase 1: Runtime *)
-    let selectors = build_selectors tenv ext_fns in
-    let external_fns = MAP (package_external_fn tops use_trans nkey_map)
-                           ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F 0)
-                              int_fns in
-    let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
-    let entry_label = "__entry" in
-    (* Compute dispatch parameters based on strategy *)
-    let method_ids = MAP FST selectors in
-    let entry_info = build_dense_entry_info selectors external_fns in
-    let (bucket_count, fn_meta_bytes, dense_buckets) =
-      (case dispatch_strategy of
-         Dense =>
-           let min_cds_values = MAP (λ(_, _, _, min_cds, _, _, _, _, _, _, _).
-                                      min_cds) external_fns in
-           let fn_mb = compute_fn_metadata_bytes min_cds_values in
-           (case generate_dense_jumptable_info method_ids of
-              NONE => (1, fn_mb, ([] : dense_bucket list))
-            | SOME (nb, buckets) => (nb, fn_mb, buckets))
-       | Sparse =>
-           let (nb, _) = generate_sparse_jumptable_buckets method_ids in
-           (nb, 0, [])
-       | Linear =>
-           (0, 0, [])) in
-    let (runtime_ctx, runtime_data) =
-      run_lowering_pair_compat selectors external_fns runtime_int_fns
-        fallback_fn dispatch_strategy bucket_count fn_meta_bytes
-        dense_buckets entry_info entry_label in
-    let runtime_ctx' = pipeline runtime_ctx in
-    case codegen runtime_ctx' FEMPTY runtime_data of
+Definition compile_vyper_with_def:
+  compile_vyper_with
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (policy : compiler_policy)
+    (tops : toplevel list) =
+    case resolve_o1_policy policy of
       NONE => NONE
-    | SOME runtime_bytecode =>
-    (* Phase 2: Deploy *)
-    let has_constructor = IS_SOME ctor_fn in
-    (* Deploy internal fns: is_ctor_context = T
-       Conservative: all internal fns are ctor-reachable.
-       TODO: compute actual reachability from __init__. *)
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T immutables_len)
-                             int_fns in
-    let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
-         ctor_trans, ctor_body, ctor_ret) =
-      case ctor_fn of
-        SOME cf => package_constructor tops use_trans nkey_map cf
-      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
-                 F, F, 0n, F, ([] : stmt list), NoneT) in
-    let (deploy_ctx, deploy_data_base) =
-      run_deploy_lowering_pair_compat has_constructor
-        (LENGTH runtime_bytecode) immutables_len
-        ctor_args 0 deploy_int_fns
-        ctor_cenv ctor_body ctor_payable ctor_nr
-        ctor_nkey ctor_trans "__deploy" in
-    let deploy_ctx' = pipeline deploy_ctx in
-    let deploy_data =
-      deploy_data_base ++
-      [<| ds_label := "runtime_begin";
-          ds_items := [DataBytes runtime_bytecode] |>] in
-    case codegen deploy_ctx' FEMPTY deploy_data of
-      NONE => NONE
-    | SOME deploy_bytecode =>
-      SOME (deploy_bytecode, runtime_bytecode)
+    | SOME rpolicy =>
+        case lower_vyper_runtime_unit tops rpolicy of
+          NONE => NONE
+        | SOME runtime_unit =>
+            case checked_unit_pipeline pipeline finalizer rpolicy runtime_unit of
+              NONE => NONE
+            | SOME runtime_bytecode =>
+                case lower_vyper_deploy_unit tops rpolicy runtime_bytecode of
+                  NONE => NONE
+                | SOME deploy_unit =>
+                    case checked_unit_pipeline pipeline finalizer rpolicy deploy_unit of
+                      NONE => NONE
+                    | SOME deploy_bytecode =>
+                        SOME (deploy_bytecode, runtime_bytecode)
 End
 
-Definition compile_vyper_eval_def:
-  compile_vyper_eval fuel (tops : toplevel list)
-                     (pipeline : venom_context -> venom_context)
-                     dispatch_strategy =
-    let tenv = type_env tops in
-    let sft = make_struct_fields_map tops in
-    let sft_fn = get_struct_fields sft in
-    let immutables_len = compute_immutables_len sft_fn tops in
-    let nkey_map = assign_nkeys tops 0 in
-    let use_trans = F in
-    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
-    let selectors = build_selectors tenv ext_fns in
-    let external_fns = MAP (package_external_fn tops use_trans nkey_map)
-                           ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F 0)
-                              int_fns in
-    let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
-    let entry_label = "__entry" in
-    let method_ids = MAP FST selectors in
-    let entry_info = build_dense_entry_info selectors external_fns in
-    let (bucket_count, fn_meta_bytes, dense_buckets) =
-      (case dispatch_strategy of
-         Dense =>
-           let min_cds_values = MAP (λ(_, _, _, min_cds, _, _, _, _, _, _, _).
-                                      min_cds) external_fns in
-           let fn_mb = compute_fn_metadata_bytes min_cds_values in
-           (case generate_dense_jumptable_info method_ids of
-              NONE => (1, fn_mb, ([] : dense_bucket list))
-            | SOME (nb, buckets) => (nb, fn_mb, buckets))
-       | Sparse =>
-           let (nb, _) = generate_sparse_jumptable_buckets method_ids in
-           (nb, 0, [])
-       | Linear =>
-           (0, 0, [])) in
-    let (runtime_ctx, runtime_data) =
-      run_lowering_pair_compat selectors external_fns runtime_int_fns
-        fallback_fn dispatch_strategy bucket_count fn_meta_bytes
-        dense_buckets entry_info entry_label in
-    let runtime_ctx' = pipeline runtime_ctx in
-    case codegen_fuel fuel runtime_ctx' FEMPTY runtime_data of
+(* The bounded wrapper mirrors the normative unit sequencing exactly, but is
+   named explicitly as a testing-only interface. *)
+Definition compile_vyper_fuel_for_testing_def:
+  compile_vyper_fuel_for_testing fuel
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (policy : compiler_policy)
+    (tops : toplevel list) =
+    case resolve_o1_policy policy of
       NONE => NONE
-    | SOME runtime_bytecode =>
-    let has_constructor = IS_SOME ctor_fn in
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T immutables_len)
-                             int_fns in
-    let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
-         ctor_trans, ctor_body, ctor_ret) =
-      case ctor_fn of
-        SOME cf => package_constructor tops use_trans nkey_map cf
-      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
-                 F, F, 0n, F, ([] : stmt list), NoneT) in
-    let (deploy_ctx, deploy_data_base) =
-      run_deploy_lowering_pair_compat has_constructor
-        (LENGTH runtime_bytecode) immutables_len
-        ctor_args 0 deploy_int_fns
-        ctor_cenv ctor_body ctor_payable ctor_nr
-        ctor_nkey ctor_trans "__deploy" in
-    let deploy_ctx' = pipeline deploy_ctx in
-    let deploy_data =
-      deploy_data_base ++
-      [<| ds_label := "runtime_begin";
-          ds_items := [DataBytes runtime_bytecode] |>] in
-    case codegen_fuel fuel deploy_ctx' FEMPTY deploy_data of
-      NONE => NONE
-    | SOME deploy_bytecode =>
-      SOME (deploy_bytecode, runtime_bytecode)
+    | SOME rpolicy =>
+        case lower_vyper_runtime_unit tops rpolicy of
+          NONE => NONE
+        | SOME runtime_unit =>
+            case checked_unit_pipeline_fuel_for_testing fuel pipeline finalizer
+                    rpolicy runtime_unit of
+              NONE => NONE
+            | SOME runtime_bytecode =>
+                case lower_vyper_deploy_unit tops rpolicy runtime_bytecode of
+                  NONE => NONE
+                | SOME deploy_unit =>
+                    case checked_unit_pipeline_fuel_for_testing fuel pipeline finalizer
+                            rpolicy deploy_unit of
+                      NONE => NONE
+                    | SOME deploy_bytecode =>
+                        SOME (deploy_bytecode, runtime_bytecode)
+End
+
+(* The shortest generic compiler fixes the exact O1 pipeline but leaves target
+   policy and final assembly implementation explicit. *)
+Definition compile_vyper_def:
+  compile_vyper (finalizer : assembly_finalizer)
+                (policy : compiler_policy)
+                (tops : toplevel list) =
+    compile_vyper_with
+      (\rpolicy unit.
+         run_venom_pipeline (K T) (K T) (K T)
+           rpolicy o1_pipeline_spec unit)
+      finalizer policy tops
+End
+
+(* Prague is only the exact O1 target specialization. *)
+Definition compile_vyper_o1_def:
+  compile_vyper_o1 (finalizer : assembly_finalizer)
+                   (tops : toplevel list) =
+    compile_vyper finalizer (o1_policy prague_capabilities) tops
 End
