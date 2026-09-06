@@ -911,7 +911,10 @@ fun d_json_stmt () : term decoder = achoose "stmt" [
   check_ast_type "Log" $
     field "value" $
     check_ast_type "Call" $
-    JSONDecode.map (fn ((name, src_id_opt), args) => mk_JS_Log(mk_nsid(src_id_opt, name), args)) $
+    JSONDecode.map
+      (fn ((name, src_id_opt), (keywords, args)) =>
+        mk_JS_Log(mk_nsid(src_id_opt, name),
+                  if List.null keywords then args else keywords)) $
     tuple2 (field "func" $ achoose "log func" [
               (* Same-module event: log MyEvent(...) *)
               check_ast_type "Name" $
@@ -924,10 +927,9 @@ fun d_json_stmt () : term decoder = achoose "stmt" [
                       orElse (field "value" $ field "type" $
                                 field "type_decl_node" $ field "source_id" source_ref_tm,
                               succeed JMissingSource_tm))],
-            achoose "log args" [
-              field "keywords" (array (field "value" json_expr)),
-              field "args" (array json_expr)
-            ]),
+            tuple2
+              (field "keywords" (array (field "value" json_expr)),
+               field "args" (array json_expr))),
 
   (* If *)
   check_ast_type "If" $

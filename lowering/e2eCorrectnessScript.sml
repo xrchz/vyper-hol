@@ -528,8 +528,8 @@ Proof
   irule LIST_REL_mono >>
   qexists_tac `log_entry_equiv cenv cx.txn.target` >>
   conj_tac >-
-   (rpt gen_tac >> PairCases_on `x` >>
-    simp[log_entry_equiv_def, log_entry_corresponds_def]) >>
+   (rpt gen_tac >>
+    simp[log_entry_equiv_concrete_event, log_entry_corresponds_def]) >>
   simp[]
 QED
 

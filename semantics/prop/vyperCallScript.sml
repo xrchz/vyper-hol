@@ -27,9 +27,9 @@ Definition extcall_call_def:
     case run_ext_call cx.txn.target target_addr calldata value_opt
                       accounts tStorage (vyper_to_tx_params cx.txn) of
     | NONE => NONE
-    | SOME (success, returnData, accounts', tStorage') =>
+    | SOME (success, returnData, accounts', tStorage', emitted_logs) =>
       if ¬success then NONE
-      else SOME (returnData, accounts', tStorage')
+      else SOME (returnData, accounts', tStorage', emitted_logs)
 End
 
 Definition extcall_result_def:
@@ -38,11 +38,11 @@ Definition extcall_result_def:
     case extcall_call cx is_static (func_name, arg_types, ret_type) vs
                       accounts tStorage of
     | NONE => NONE
-    | SOME (returnData, accounts', tStorage') =>
+    | SOME (returnData, accounts', tStorage', emitted_logs) =>
       case evaluate_abi_decode_return (get_tenv cx) ret_type returnData of
       | INR _ => NONE
       | INL ret_val =>
-        SOME (ret_val, accounts', tStorage')
+        SOME (ret_val, accounts', tStorage', emitted_logs)
 End
 
 Theorem eval_expr_intcall_drv:
@@ -71,6 +71,68 @@ Proof
   strip_tac >> res_tac
 QED
 
+(* ===== Log Lifecycle Boundaries (issue #439) ===== *)
+
+Theorem push_log_logs[simp]:
+  push_log ev st = (INL (), st with logs := st.logs ++ [ev])
+Proof
+  simp[push_log_def, vyperStateTheory.return_def]
+QED
+
+Theorem append_logs_logs[simp]:
+  append_logs events st = (INL (), st with logs := st.logs ++ events)
+Proof
+  simp[append_logs_def, vyperStateTheory.return_def]
+QED
+
+Theorem extract_call_result_success_logs:
+  final_state.contexts = [(ctxt, rollback)] ⇒
+  extract_call_result orig_accounts orig_tStorage (INR NONE, final_state) =
+    SOME (T, ctxt.returnData, final_state.rollback.accounts,
+          final_state.rollback.tStorage, ctxt.logs)
+Proof
+  simp[extract_call_result_def]
+QED
+
+Theorem extract_call_result_reverted_logs:
+  final_state.contexts = [(ctxt, rollback)] ⇒
+  extract_call_result orig_accounts orig_tStorage
+    (INR (SOME Reverted), final_state) =
+    SOME (F, ctxt.returnData, orig_accounts, orig_tStorage, [])
+Proof
+  simp[extract_call_result_def]
+QED
+
+Theorem initial_state_logs[simp]:
+  (initial_state am scopes).logs = am.logs
+Proof
+  simp[initial_state_def]
+QED
+
+Theorem clear_machine_logs_logs[simp]:
+  (clear_machine_logs am).logs = []
+Proof
+  simp[clear_machine_logs_def]
+QED
+
+Theorem clear_machine_logs_preserves_machine:
+  (clear_machine_logs am).sources = am.sources ∧
+  (clear_machine_logs am).exports = am.exports ∧
+  (clear_machine_logs am).immutables = am.immutables ∧
+  (clear_machine_logs am).accounts = am.accounts ∧
+  (clear_machine_logs am).layouts = am.layouts ∧
+  (clear_machine_logs am).tStorage = am.tStorage
+Proof
+  simp[clear_machine_logs_def]
+QED
+
+Theorem call_external_transaction_clears_input_logs:
+  call_external_transaction (am with logs := logs) tx =
+  call_external_transaction am tx
+Proof
+  simp[call_external_transaction_def, clear_machine_logs_def]
+QED
+
 (* ===== Error Rollback Properties (issue #180) ===== *)
 
 Theorem call_external_function_error_rollback:
@@ -87,6 +149,14 @@ Theorem call_external_error_rollback:
   am' = am
 Proof
   simp[Once call_external_def] >> strip_tac >> gvs[AllCaseEqs()] >> imp_res_tac call_external_function_error_rollback
+QED
+
+Theorem call_external_transaction_error_logs_empty:
+  call_external_transaction am tx = (INR e, am') ⇒ am'.logs = []
+Proof
+  rw[call_external_transaction_def] >>
+  drule call_external_error_rollback >>
+  simp[]
 QED
 
 Theorem call_external_error_no_state_change:

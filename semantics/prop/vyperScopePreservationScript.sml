@@ -192,6 +192,12 @@ Proof
   rw[push_log_def, return_def] >> simp[]
 QED
 
+Theorem append_logs_scopes:
+  ∀logs st res st'. append_logs logs st = (res, st') ⇒ st'.scopes = st.scopes
+Proof
+  rw[append_logs_def, return_def] >> simp[]
+QED
+
 Theorem transfer_value_scopes:
   !f t a st res st'. transfer_value f t a st = (res, st') ==> st'.scopes = st.scopes
 Proof

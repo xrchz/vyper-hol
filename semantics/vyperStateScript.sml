@@ -1,7 +1,7 @@
 Theory vyperState
 Ancestors
   arithmetic alist combin option list finite_map pair rich_list
-  cv cv_std vfmState vfmContext vfmExecution[ignore_grammar]
+  cv cv_std vfmTypes vfmState vfmContext vfmExecution[ignore_grammar]
   vyperAST vyperMisc vyperValue vyperValueOperation
   vyperStorage vyperContext
 Libs
@@ -108,7 +108,8 @@ End
 
 val () = cv_auto_trans find_containing_scope_def;
 
-Type log = “:nsid # (value list)”;
+(* Transaction-level, externally observable EVM event. *)
+Type log = “:event”;
 
 (* Module-aware immutables: keyed by source_id *)
 (* NONE = main contract, SOME n = module with source_id n *)

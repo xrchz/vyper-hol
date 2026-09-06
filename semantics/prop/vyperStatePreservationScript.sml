@@ -221,6 +221,25 @@ Proof
   rw[push_log_def, return_def] >> gvs[]
 QED
 
+Theorem append_logs_immutables:
+  ∀logs st res st'.
+    append_logs logs st = (res, st') ⇒ st'.immutables = st.immutables
+Proof
+  rw[append_logs_def, return_def] >> gvs[]
+QED
+
+Theorem append_logs_accounts:
+  ∀logs st res st'. append_logs logs st = (res, st') ⇒ st'.accounts = st.accounts
+Proof
+  rw[append_logs_def, return_def] >> gvs[]
+QED
+
+Theorem append_logs_tStorage:
+  ∀logs st res st'. append_logs logs st = (res, st') ⇒ st'.tStorage = st.tStorage
+Proof
+  rw[append_logs_def, return_def] >> gvs[]
+QED
+
 Theorem acquire_nonreentrant_lock_immutables:
   !addr slot is_view st res st'.
     acquire_nonreentrant_lock addr slot is_view st = (res, st') ==>

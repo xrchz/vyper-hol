@@ -735,7 +735,8 @@ Proof
   qpat_x_assum `eval_stmt _ _ _ = _` mp_tac >>
   simp[Once evaluate_def, bind_def, AllCaseEqs(), return_def, raise_def,
        ignore_bind_def, push_log_def] >>
-  rpt strip_tac >> gvs[preserves_immutables_dom_refl] >>
+  rpt strip_tac >> imp_res_tac lift_option_state >>
+  gvs[preserves_immutables_dom_refl] >>
   irule preserves_immutables_dom_trans >> qexists_tac `s''` >>
   gvs[preserves_immutables_dom_eq]
 QED
@@ -1682,7 +1683,7 @@ QED
 
 (* Helper: inner pipeline after run_ext_call result destructuring *)
 Theorem extcall_inner_pipeline_imm_dom[local]:
-  ∀cx drv tenv ret_type success returnData accounts' tStorage' s res s'.
+  ∀cx drv tenv ret_type success returnData accounts' tStorage' emitted_logs s res s'.
     (success ∧ returnData = [] ∧ IS_SOME drv ⇒
        ∀st res st'. eval_expr cx (THE drv) st = (res,st') ⇒
          preserves_immutables_dom cx st st') ⇒
@@ -1690,6 +1691,7 @@ Theorem extcall_inner_pipeline_imm_dom[local]:
       x <- check success "ExtCall reverted";
       x <- update_accounts (K accounts');
       x <- update_transient (K tStorage');
+      x <- append_logs emitted_logs;
       if returnData = [] ∧ IS_SOME drv then eval_expr cx (THE drv)
       else
         do
@@ -1701,7 +1703,7 @@ Theorem extcall_inner_pipeline_imm_dom[local]:
     preserves_immutables_dom cx s s'
 Proof
   rw[bind_def, ignore_bind_def, check_def, type_check_def, assert_def,
-     update_accounts_def, update_transient_def, return_def,
+     update_accounts_def, update_transient_def, append_logs_def, return_def,
      raise_def, lift_sum_def, lift_sum_runtime_def]
   \\ rpt strip_tac \\ gvs[AllCaseEqs(), preserves_immutables_dom_refl]
   \\ TRY (irule preserves_immutables_dom_eq
@@ -1719,12 +1721,12 @@ QED
 Theorem extcall_pipeline_preserves_imm_dom[local]:
   ∀cx drv func_name arg_types ret_type target_addr value_opt arg_vals
      caller txParams s res s'.
-    (∀ts calldata accounts tStorage success returnData accounts' tStorage'.
+    (∀ts calldata accounts tStorage success returnData accounts' tStorage' emitted_logs.
        get_self_code cx = SOME ts ⇒
        build_ext_calldata (type_env ts) func_name arg_types arg_vals =
          SOME calldata ⇒
        run_ext_call caller target_addr calldata value_opt accounts tStorage
-         txParams = SOME (success, returnData, accounts', tStorage') ⇒
+         txParams = SOME (success, returnData, accounts', tStorage', emitted_logs) ⇒
        success ∧ returnData = [] ∧ IS_SOME drv ⇒
        ∀st res st'. eval_expr cx (THE drv) st = (res,st') ⇒
          preserves_immutables_dom cx st st') ⇒
@@ -1740,11 +1742,12 @@ Theorem extcall_pipeline_preserves_imm_dom[local]:
         lift_option
           (run_ext_call caller target_addr calldata value_opt accounts
              tStorage txParams) "ExtCall run failed";
-      (λ(success,returnData,accounts',tStorage').
+      (λ(success,returnData,accounts',tStorage',emitted_logs).
            do
              x <- check success "ExtCall reverted";
              x <- update_accounts (K accounts');
              x <- update_transient (K tStorage');
+             x <- append_logs emitted_logs;
              if returnData = [] ∧ IS_SOME drv then eval_expr cx (THE drv)
              else
                do
@@ -1777,7 +1780,7 @@ Proof
   \\ rpt strip_tac
   \\ first_x_assum irule \\ simp[]
   \\ qexists_tac `s.accounts` \\ qexists_tac `x''2`
-  \\ qexists_tac `s.tStorage` \\ qexists_tac `x''3`
+  \\ qexists_tac `x''4` \\ qexists_tac `s.tStorage` \\ qexists_tac `x''3`
   \\ gvs[]
 QED
 
@@ -3223,10 +3226,11 @@ QED
 
 Theorem raw_call_callback_preserves_immutables_dom[local]:
   ∀cx flags result st res st'.
-    ((λ(success,returnData,accounts',tStorage').
+    ((λ(success,returnData,accounts',tStorage',emitted_logs).
         do
           x <- update_accounts (K accounts');
           x <- update_transient (K tStorage');
+          x <- append_logs emitted_logs;
           if flags.rcf_revert_on_failure then
             do
               x <- assert success (Error (RuntimeError "raw_call reverted"));
@@ -3244,12 +3248,12 @@ Proof
   rpt strip_tac >>
   PairCases_on `result` >>
   qpat_x_assum `_ = (res,st')` mp_tac >>
-  simp[update_accounts_def, update_transient_def, bind_def, ignore_bind_def,
-      return_def, raise_def, assert_def, check_def, type_check_def,
+  simp[update_accounts_def, update_transient_def, append_logs_def,
+      bind_def, ignore_bind_def, return_def, raise_def, assert_def, check_def, type_check_def,
       AllCaseEqs()] >>
   rpt IF_CASES_TAC >>
-  simp[update_accounts_def, update_transient_def, bind_def, ignore_bind_def,
-      return_def, raise_def, assert_def, check_def, type_check_def,
+  simp[update_accounts_def, update_transient_def, append_logs_def,
+      bind_def, ignore_bind_def, return_def, raise_def, assert_def, check_def, type_check_def,
       AllCaseEqs()] >>
   rpt strip_tac >> gvs[] >>
   irule preserves_immutables_dom_eq >> gvs[]
@@ -3517,6 +3521,10 @@ Resume immutables_dom_mutual[ExtCall]:
   \\ gvs[bind_def, CaseEq"prod", CaseEq"sum"]
   \\ gvs[update_accounts_def, update_transient_def, return_def,
          check_def, type_check_def, raise_def, assert_def]
+  \\ strip_tac
+  \\ first_x_assum irule
+  \\ (conj_tac >- (qexists_tac `r` >> simp[append_logs_def, return_def]))
+  \\ simp[]
 QED
 
 Finalise immutables_dom_mutual

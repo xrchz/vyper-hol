@@ -4,17 +4,22 @@ Ancestors
   rich_list cv cv_std vfmState vfmContext vfmCompute[ignore_grammar]
   vfmExecution[ignore_grammar] vyperAST vyperABI
   vyperMisc vyperValue vyperValueOperation vyperStorage vyperContext vyperState
-  vyperCreate
+  vyperEvent vyperCreate
 Libs
   cv_transLib wordsLib monadsyntax
 
 (* writing logs *)
 
 Definition push_log_def:
-  push_log log st = return () $ st with logs updated_by CONS log
+  push_log log st = return () $ st with logs := st.logs ++ [log]
+End
+
+Definition append_logs_def:
+  append_logs logs st = return () $ st with logs := st.logs ++ logs
 End
 
 val () = cv_auto_trans push_log_def;
+val () = cv_auto_trans append_logs_def;
 
 (* manipulating (internal call) function stack *)
 
@@ -732,9 +737,9 @@ Definition extract_call_result_def:
          | INR NONE =>  (* success - no exception *)
              SOME (T, ctxt.returnData,
                    final_state.rollback.accounts,
-                   final_state.rollback.tStorage)
-         | INR (SOME Reverted) =>  (* revert - return original state *)
-             SOME (F, ctxt.returnData, orig_accounts, orig_tStorage)
+                   final_state.rollback.tStorage, ctxt.logs)
+         | INR (SOME Reverted) =>  (* revert - discard callee effects *)
+             SOME (F, ctxt.returnData, orig_accounts, orig_tStorage, [])
          | _ => NONE)  (* other exception or still running *)
     | _ => NONE  (* shouldn't happen for single-context call *)
 End
@@ -878,7 +883,8 @@ End
    - tStorage: current transient storage
    - txParams: transaction parameters (preserves tx.origin, block info)
 
-   Returns SOME (success, returnData, accounts', tStorage') or NONE on error. *)
+   Returns SOME (success, returnData, accounts', tStorage', emitted_logs)
+   or NONE on error. Reverted calls return an empty emitted-log list. *)
 Definition run_ext_call_def:
   run_ext_call caller callee calldata value_opt
                accounts tStorage txParams =
@@ -1012,10 +1018,13 @@ Definition evaluate_def:
        od)
   od ∧
   eval_stmt cx (Log id es) = do
-    (* TODO(semantic-limitation): event argument length/type checking is
-       currently delegated to frontend/type-system assumptions. *)
+    (* Checked programs guarantee that the declaration exists and that its
+       evaluated arguments can be encoded using the declared types. *)
     vs <- eval_exprs cx es;
-    push_log (id, vs)
+    event <- lift_option
+      (encode_source_event (get_tenv cx) cx.sources cx.txn.target id vs)
+      "Log encode event";
+    push_log event
   od ∧
   eval_stmt cx (AnnAssign id typ e) = do
     tenv <<- get_tenv cx;
@@ -1232,10 +1241,11 @@ Definition evaluate_def:
     result <- lift_option
       (run_ext_call caller target_addr calldata value_opt accounts tStorage txParams)
       "ExtCall run failed";
-    (success, returnData, accounts', tStorage') <<- result;
+    (success, returnData, accounts', tStorage', emitted_logs) <<- result;
     check success "ExtCall reverted";
     update_accounts (K accounts');
     update_transient (K tStorage');
+    append_logs emitted_logs;
     if returnData = [] ∧ IS_SOME drv then
       eval_expr cx (THE drv)
     else do
@@ -1309,9 +1319,10 @@ Definition evaluate_def:
     result <- lift_option
       (run_ext_call caller target_addr calldata value_opt accounts tStorage txParams)
       "raw_call run failed";
-    (success, returnData, accounts', tStorage') <<- result;
+    (success, returnData, accounts', tStorage', emitted_logs) <<- result;
     update_accounts (K accounts');
     update_transient (K tStorage');
+    append_logs emitted_logs;
     if flags.rcf_revert_on_failure then do
       check success "raw_call reverted";
       if flags.rcf_max_outsize = 0 then return $ Value NoneV
@@ -1331,8 +1342,7 @@ Definition evaluate_def:
     topic_vals <<- (case topics of
        TupleV vs => vs | DynArrayV vs => vs | _ => []);
     type_check (LENGTH topic_vals ≤ 4) "raw_log too many topics";
-    (* Store as raw log: nsid = (NONE,"raw_log"), values = topic bytes ++ [data] *)
-    push_log ((NONE,"raw_log"), topic_vals ++ [BytesV data]);
+    push_log (encode_raw_event_values cx.txn.target topic_vals data);
     return $ Value NoneV
   od ∧
   (* raw_revert(data) — terminus *)
@@ -1536,7 +1546,7 @@ Definition initial_state_def:
   initial_state (am: abstract_machine) scs : evaluation_state =
   <| accounts := am.accounts
    ; immutables := am.immutables
-   ; logs := []
+   ; logs := am.logs
    ; scopes := scs
    ; tStorage := am.tStorage
    |>
@@ -1744,6 +1754,17 @@ Definition call_external_def:
   of NONE => (INR $ Error (RuntimeError "call lookup_function"), am)
    | SOME (mut, nr, args, dflts, ret, body) =>
        call_external_function am cx nr mut ts all_mods args dflts tx.args body ret
+End
+
+(* Explicit transaction boundary. Ordinary function entry preserves accumulated
+   logs so that nested and sequential calls can share one transaction trace;
+   callers use this wrapper when starting a fresh top-level transaction. *)
+Definition clear_machine_logs_def:
+  clear_machine_logs (am: abstract_machine) = am with logs := []
+End
+
+Definition call_external_transaction_def:
+  call_external_transaction am tx = call_external (clear_machine_logs am) tx
 End
 
 (* Vyper-level deployment abstraction.  The target address is supplied by the

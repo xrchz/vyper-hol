@@ -84,9 +84,10 @@ Theorem extract_call_result_success_exposes_bad_accounts:
                       rollback updated_by (\rb. rb with accounts := bad_accounts) in
     accounts_well_typed good_accounts /\
     ~accounts_well_typed bad_accounts /\
-    ?retData tStorage'.
+    ?retData tStorage' emitted_logs.
       extract_call_result good_accounts empty_transient_storage
-        (INR NONE, final_state) = SOME (T, retData, bad_accounts, tStorage')
+        (INR NONE, final_state) =
+        SOME (T, retData, bad_accounts, tStorage', emitted_logs)
 Proof
   EVAL_TAC >> conj_tac
   >- (gen_tac >>
@@ -97,6 +98,7 @@ Proof
       first_x_assum (qspec_then `1w:address` mp_tac) >> EVAL_TAC) >>
   qexists_tac `[]` >>
   qexists_tac `empty_transient_storage` >>
+  qexists_tac `[]` >>
   EVAL_TAC
 QED
 
@@ -136,13 +138,13 @@ QED
 
 Theorem extract_call_result_accounts_well_typed:
   !orig_accounts orig_tStorage result final_state
-   success retData accounts' tStorage'.
+   success retData accounts' tStorage' emitted_logs.
     accounts_well_typed orig_accounts /\
     (case result of
      | INR NONE => accounts_well_typed final_state.rollback.accounts
      | _ => T) /\
     extract_call_result orig_accounts orig_tStorage (result, final_state) =
-      SOME (success, retData, accounts', tStorage') ==>
+      SOME (success, retData, accounts', tStorage', emitted_logs) ==>
     accounts_well_typed accounts'
 Proof
   rw[extract_call_result_def] >>
@@ -151,10 +153,10 @@ QED
 
 Theorem run_ext_call_accounts_well_typed:
   !caller callee calldata value_opt accounts tStorage txParams
-   success retData accounts' tStorage'.
+   success retData accounts' tStorage' emitted_logs.
     accounts_well_typed accounts /\
     run_ext_call caller callee calldata value_opt accounts tStorage txParams =
-      SOME (success, retData, accounts', tStorage') ==>
+      SOME (success, retData, accounts', tStorage', emitted_logs) ==>
     accounts_well_typed accounts'
 Proof
   rw[run_ext_call_def] >>
@@ -319,6 +321,26 @@ Proof
   qspecl_then [`env.type_defs`, `ret_type`, `returnData`, `x`, `ret_tv`]
     mp_tac evaluate_abi_decode_return_well_typed >>
   simp[toplevel_value_typed_def]
+QED
+
+Theorem runtime_consistent_logs_append:
+  !env cx st ls.
+    runtime_consistent env cx st ==>
+    runtime_consistent env cx (st with logs := st.logs ++ ls)
+Proof
+  rw[runtime_consistent_def, env_consistent_def, env_scopes_consistent_def,
+     env_immutables_consistent_def, state_well_typed_def] >>
+  metis_tac[]
+QED
+
+Theorem append_logs_runtime_consistent:
+  !env cx logs st res st'.
+    runtime_consistent env cx st /\
+    append_logs logs st = (res,st') ==>
+    runtime_consistent env cx st'
+Proof
+  rw[append_logs_def, return_def] >>
+  metis_tac[runtime_consistent_logs_append]
 QED
 
 Theorem extcall_after_state_update_tail_sound:
@@ -819,6 +841,9 @@ Proof
   Cases_on `evaluate_type env.type_defs ret_type` >> gvs[] >>
   `get_tenv cx = env.type_defs` by metis_tac[env_consistent_get_tenv] >>
   gvs[] >>
+  `runtime_consistent env cx
+     (args_st with logs := args_st.logs ++ x'4)` by
+    metis_tac[runtime_consistent_logs_append] >>
   `state_well_typed st' /\ env_consistent env cx st' /\
    accounts_well_typed st'.accounts /\ no_type_error_result res /\
    case res of
@@ -826,7 +851,10 @@ Proof
    | INR _ => T` by (
     irule extcall_after_state_update_tail_sound >>
     simp[] >>
-    metis_tac[]) >>
+    conj_tac >- first_assum ACCEPT_TAC >>
+    qexistsl [`x'2`, `args_st with logs := args_st.logs ++ x'4`,
+              `x'1`, `x'3`] >>
+    gvs[append_logs_def, return_def]) >>
   simp[]
 QED
 
@@ -901,29 +929,42 @@ Proof
   Cases_on `result` >> gvs[] >>
   Cases_on `r` >> gvs[] >>
   Cases_on `r''` >> gvs[] >>
+  Cases_on `r` >> gvs[] >>
   Cases_on `q` >>
   gvs[assert_def, bind_def, return_def, raise_def,
       update_accounts_def, update_transient_def] >>
-  rename1 `run_ext_call _ _ _ _ _ _ _ = SOME (T, returnData, accounts', tStorage')` >>
+  rename1 `run_ext_call _ _ _ _ _ _ _ =
+             SOME (T, returnData, accounts', tStorage', emitted_logs)` >>
   `accounts_well_typed accounts'` by (
     drule_all run_ext_call_accounts_well_typed >>
     simp[]) >>
   `runtime_consistent env cx args_st` by simp[runtime_consistent_def] >>
+  `runtime_consistent env cx
+     (args_st with logs := args_st.logs ++ emitted_logs)` by
+    metis_tac[runtime_consistent_logs_append] >>
   qpat_x_assum `well_formed_type env.type_defs ret_type` mp_tac >>
   simp[well_formed_type_def] >> strip_tac >>
   Cases_on `evaluate_type env.type_defs ret_type` >> gvs[] >>
   rename1 `evaluate_type env.type_defs ret_type = SOME ret_tv` >>
   `get_tenv cx = env.type_defs` by metis_tac[env_consistent_get_tenv] >>
   gvs[] >>
-  qspecl_then [`env`, `cx`, `es`, `T`, `func_name`, `arg_types`, `ret_type`,
-               `ret_tv`, `drv`, `returnData`, `args_st`, `accounts'`, `tStorage'`,
-               `res`, `st'`]
-    mp_tac extcall_after_state_update_tail_sound >>
-  simp[] >>
-  (impl_tac >- (
+  `!env0 st0 res0 st0'.
+      env_consistent env0 cx st0 /\ state_well_typed st0 /\
+      accounts_well_typed st0.accounts /\
+      eval_expr cx (THE drv) st0 = (res0,st0') ==>
+      well_typed_expr env0 (THE drv) ==>
+      state_well_typed st0' /\ env_consistent env0 cx st0' /\
+      accounts_well_typed st0'.accounts /\ no_type_error_result res0 /\
+      case res0 of INL tv => expr_result_typed env0 (THE drv) tv | INR _ => T` by (
     rpt strip_tac >>
     asm "drv_ih" (qspecl_then [`env0`, `st0`, `res0`, `st0'`] mp_tac) >>
-    simp[])) >>
+    simp[]) >>
+  qspecl_then [`env`, `cx`, `es`, `T`, `func_name`, `arg_types`, `ret_type`,
+               `ret_tv`, `drv`, `returnData`,
+               `args_st with logs := args_st.logs ++ emitted_logs`,
+               `accounts'`, `tStorage'`, `res`, `st'`]
+    mp_tac extcall_after_state_update_tail_sound >>
+  gvs[append_logs_def, return_def] >>
   strip_tac >>
   metis_tac[no_type_error_result_def]
 QED
@@ -985,12 +1026,19 @@ Proof
     drule_all run_ext_call_accounts_well_typed >>
     simp[]) >>
   `runtime_consistent env cx args_st` by simp[runtime_consistent_def] >>
+  `runtime_consistent env cx
+     (args_st with logs := args_st.logs ++ x'4)` by
+    metis_tac[runtime_consistent_logs_append] >>
   irule extcall_success_continuation_state_well_typed >>
-  qexistsl [`x'2`, `args_st`, `cx`, `drv`, `env`, `res`, `ret_type`, `x'1`, `x'3`] >>
+  qexistsl [`x'2`, `args_st with logs := args_st.logs ++ x'4`,
+            `cx`, `drv`, `env`, `res`, `ret_type`, `x'1`, `x'3`] >>
   simp[assert_def, bind_def, return_def,
-       update_accounts_def, update_transient_def] >>
-  strip_tac >>
-  qpat_x_assum `!env0 st0 res0 st0'. _` ACCEPT_TAC
+       update_accounts_def, update_transient_def]
+  >> gvs[append_logs_def, return_def] >>
+  rpt strip_tac >>
+  qpat_x_assum `!env0 st0 res0 st0'. _`
+    (qspecl_then [`env0`, `st0`, `res0`, `st0'`] mp_tac) >>
+  simp[]
 QED
 
 Theorem extcall_nonstatic_runtime_error_sound:
@@ -1326,6 +1374,10 @@ Proof
       Cases_on `call_result0` >> gvs[return_def, raise_def]
       >- (
         `accounts_well_typed call_result2` by (drule_all run_ext_call_accounts_well_typed >> simp[]) >>
+        `runtime_consistent env cx args_st` by simp[runtime_consistent_def] >>
+        `runtime_consistent env cx
+           (args_st with logs := args_st.logs ++ call_result4)` by
+          metis_tac[runtime_consistent_logs_append] >>
         strip_tac >>
         qpat_x_assum `(do _ od) args_st = (res,st')` mp_tac >>
         simp[bind_def, ignore_bind_def, return_def, assert_def,
@@ -1333,14 +1385,18 @@ Proof
         strip_tac >>
         rewrite_tac[GSYM no_type_error_result_def] >>
         irule extcall_success_continuation_sound >>
-        (conj_tac >- simp[runtime_consistent_def]) >>
+        (conj_tac >-
+          metis_tac[runtime_consistent_logs_append, runtime_consistent_def]) >>
         (conj_tac >- (rpt strip_tac >> first_x_assum drule_all >> simp[no_type_error_result_def])) >>
         (conj_tac >- (qpat_assum `functions_well_typed cx` ACCEPT_TAC)) >>
         (conj_tac >- (qpat_assum `well_formed_type env.type_defs ret_type` ACCEPT_TAC)) >>
         (conj_tac >- (qpat_assum `well_typed_opt env drv` ACCEPT_TAC)) >>
-        qexistsl [`call_result2`, `args_st`, `call_result1`, `call_result3`] >>
-        simp[runtime_consistent_def, assert_def, bind_def, ignore_bind_def,
-             return_def, update_accounts_def, update_transient_def]) >>
+        qexistsl [`call_result2`,
+                   `args_st with logs := args_st.logs ++ call_result4`,
+                   `call_result1`, `call_result3`] >>
+        gvs[runtime_consistent_def, assert_def, bind_def, ignore_bind_def,
+            return_def, append_logs_def,
+            update_accounts_def, update_transient_def]) >>
       strip_tac >> gvs[assert_def, bind_def, return_def, raise_def, get_accounts_def, get_transient_storage_def, no_type_error_result_def]) >>
     drule_all extcall_nonstatic_args_runtime_typed_dest >> strip_tac >> gvs[] >>
     `vs <> [] /\ TL vs <> []` by (Cases_on `vs` >> gvs[exprs_runtime_typed_def] >> Cases_on `t` >> gvs[exprs_runtime_typed_def]) >>
@@ -1368,6 +1424,10 @@ Proof
     Cases_on `call_result0` >> gvs[return_def, raise_def]
     >- (
       `accounts_well_typed call_result2` by (drule_all run_ext_call_accounts_well_typed >> simp[]) >>
+      `runtime_consistent env cx args_st` by simp[runtime_consistent_def] >>
+      `runtime_consistent env cx
+         (args_st with logs := args_st.logs ++ call_result4)` by
+        metis_tac[runtime_consistent_logs_append] >>
       strip_tac >>
       qpat_x_assum `(do calldata <- return calldata_nonstatic; _ od) args_st = (res,st')` mp_tac >>
       simp[bind_def, return_def, get_accounts_def, get_transient_storage_def, assert_def] >>
@@ -1375,14 +1435,17 @@ Proof
       gvs[update_accounts_def, update_transient_def, bind_def, return_def] >>
       rewrite_tac[GSYM no_type_error_result_def] >>
       irule extcall_success_continuation_sound >>
-      (conj_tac >- simp[runtime_consistent_def]) >>
+      (conj_tac >-
+        metis_tac[runtime_consistent_logs_append, runtime_consistent_def]) >>
       (conj_tac >- (rpt strip_tac >> first_x_assum drule_all >> simp[no_type_error_result_def])) >>
       (conj_tac >- (qpat_assum `functions_well_typed cx` ACCEPT_TAC)) >>
       (conj_tac >- (qpat_assum `well_formed_type env.type_defs ret_type` ACCEPT_TAC)) >>
       (conj_tac >- (qpat_assum `well_typed_opt env drv` ACCEPT_TAC)) >>
-      qexistsl [`call_result2`, `args_st`, `call_result1`, `call_result3`] >>
-      simp[runtime_consistent_def, assert_def, bind_def, return_def,
-           update_accounts_def, update_transient_def]) >>
+      qexistsl [`call_result2`,
+                 `args_st with logs := args_st.logs ++ call_result4`,
+                 `call_result1`, `call_result3`] >>
+      gvs[runtime_consistent_def, assert_def, bind_def, return_def,
+          append_logs_def, update_accounts_def, update_transient_def]) >>
     strip_tac >> gvs[assert_def, bind_def, return_def, raise_def, get_accounts_def, get_transient_storage_def, no_type_error_result_def]) >>
   strip_tac >> gvs[]
 QED
@@ -1577,6 +1640,23 @@ Proof
      env_immutables_consistent_def, state_well_typed_def] >>
   metis_tac[]
 QED
+Theorem state_well_typed_logs_append:
+  !st ls. state_well_typed st ==>
+          state_well_typed (st with logs := st.logs ++ ls)
+Proof
+  simp[state_well_typed_def]
+QED
+
+Theorem env_consistent_logs_append:
+  !env cx st ls. env_consistent env cx st ==>
+                 env_consistent env cx (st with logs := st.logs ++ ls)
+Proof
+  rw[env_consistent_def, env_scopes_consistent_def,
+     env_immutables_consistent_def] >>
+  metis_tac[]
+QED
+
+
 Theorem push_log_runtime_consistent:
   !env cx l st.
     runtime_consistent env cx st ==>
@@ -2002,7 +2082,7 @@ Theorem raw_log_tail_sound:
                topic_vals <<- (case topics of
                   TupleV vs => vs | DynArrayV vs => vs | _ => []);
                type_check (LENGTH topic_vals <= 4) "raw_log too many topics";
-               push_log ((NONE,"raw_log"), topic_vals ++ [BytesV data]);
+               push_log (encode_raw_event_values cx.txn.target topic_vals data);
                return (Value NoneV)
              od) st)) /\
     (!s. FST ((do
@@ -2012,7 +2092,7 @@ Theorem raw_log_tail_sound:
                  topic_vals <<- (case topics of
                     TupleV vs => vs | DynArrayV vs => vs | _ => []);
                  type_check (LENGTH topic_vals <= 4) "raw_log too many topics";
-                 push_log ((NONE,"raw_log"), topic_vals ++ [BytesV data]);
+                 push_log (encode_raw_event_values cx.txn.target topic_vals data);
                  return (Value NoneV)
                od) st) <> INR (Error (TypeError s)))
 Proof
@@ -2021,9 +2101,7 @@ Proof
   Cases_on `topics` >>
   rw[bind_def, ignore_bind_def, type_check_def, check_def, assert_def,
      raise_def, return_def, lift_option_type_def, push_log_def] >>
-  TRY (qmatch_goalsub_rename_tac `runtime_consistent env cx (st with logs updated_by CONS log)` >>
-       qspecl_then [`env`, `cx`, `st`] mp_tac runtime_consistent_logs_cons >>
-       simp[]) >>
+  TRY (irule runtime_consistent_logs_append >> simp[]) >>
   qpat_x_assum `FST _ = INR (Error (TypeError s))` mp_tac >>
   rw[bind_def, ignore_bind_def, type_check_def, check_def, assert_def,
      raise_def, return_def, lift_option_type_def, push_log_def]
@@ -2044,7 +2122,7 @@ Theorem raw_log_tail_result_sound:
         topic_vals <<- (case topics of
            TupleV vs => vs | DynArrayV vs => vs | _ => []);
         type_check (LENGTH topic_vals <= 4) "raw_log too many topics";
-        push_log ((NONE,"raw_log"), topic_vals ++ [BytesV data]);
+        push_log (encode_raw_event_values cx.txn.target topic_vals data);
         return (Value NoneV)
       od) st = (res, st')) ==>
     state_well_typed st' /\ env_consistent env cx st' /\ accounts_well_typed st'.accounts /\
@@ -2093,11 +2171,11 @@ Theorem raw_log_tail_result_sound_simp:
                             | DynArrayV vs' => vs'
                             | _ => []) <= 4) "raw_log too many topics";
                       x <- push_log
-                        ((NONE,"raw_log"),
-                         (case topics' of
-                          | TupleV vs => vs
-                          | DynArrayV vs' => vs'
-                          | _ => []) ++ [BytesV data]);
+                        (encode_raw_event_values cx.txn.target
+                          (case topics' of
+                           | TupleV vs => vs
+                           | DynArrayV vs' => vs'
+                           | _ => []) data);
                       return (Value NoneV)
                     od s''
                 | (INR e,s'') => (INR e,s''))
@@ -2121,9 +2199,9 @@ Proof
      evaluate_type_def, is_HashMapRef_def] >>
   fs[type_check_def, bind_def, ignore_bind_def, assert_def, return_def,
      push_log_def] >>
-  TRY (qmatch_goalsub_rename_tac `st with logs updated_by CONS log` >>
-       qspecl_then [`env`, `cx`, `st`, `log`] mp_tac runtime_consistent_logs_cons >>
-       simp[runtime_consistent_def]) >>
+  TRY (irule runtime_consistent_logs_append >> simp[]) >>
+  TRY (irule state_well_typed_logs_append >> simp[]) >>
+  TRY (irule env_consistent_logs_append >> simp[]) >>
   gvs[runtime_consistent_def] >>
   qpat_x_assum `(case check _ _ _ of _ => _) = _` mp_tac >>
   rw[bind_def, ignore_bind_def, check_def, assert_def, raise_def, return_def,

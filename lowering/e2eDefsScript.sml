@@ -21,6 +21,7 @@ Theory e2eDefs
 Ancestors
   vfmExecution
   vyperABI
+  vyperEvent
   vyperInterpreter
   compileEnv
   selectorDispatch
@@ -42,41 +43,161 @@ End
 
 (* ===== Log Correspondence ===== *)
 
-(* Single log entry correspondence. Relates a Vyper log (nsid, values)
-   to an EVM event, given:
-   - event_info: maps event name to SOME (hash, arg_types, indexed_flags)
-   - tenv: type environment for ABI encoding
-   - addr: contract address (logger)
-
-   EVM event structure:
-   - ev.logger = contract address
-   - ev.topics = event hash followed by indexed topics
-   - ev.data = ABI-encode of non-indexed values as tuple
-
-   Static indexed args are encoded as val_to_w256. Indexed bytes/string
-   args are encoded as keccak256(raw bytes), matching compileEnv$logs_rel. *)
+(* Source execution now records the concrete EVM event directly. The metadata
+   parameters remain temporarily for compatibility with the e2e API. *)
 Definition log_entry_corresponds_def:
-  log_entry_corresponds event_info tenv (addr : address)
-    ((eid, vals) : log) (ev : event) <=>
-    let event_name = nsid_to_string eid in
-    case event_info event_name of
-      NONE => F
-    | SOME (event_hash, arg_types, indexed_flags) =>
-        let idx_vals = indexed_values indexed_flags vals in
-        let idx_bs = indexed_topic_flags indexed_flags (MAP is_bytestring_type arg_types) in
-        let nidx_vals = log_non_indexed_values indexed_flags vals in
-        let nidx_types = log_non_indexed_types indexed_flags arg_types in
-          LENGTH indexed_flags = LENGTH vals /\
-          LENGTH arg_types = LENGTH vals /\
-          ev.logger = addr /\
-          (?topic_tail.
-             ev.topics = n2w event_hash :: topic_tail /\
-             log_indexed_topics_equiv idx_bs idx_vals topic_tail) /\
-          (?abi_vals.
-             vyper_to_abi_list tenv nidx_types nidx_vals = SOME abi_vals /\
-             ev.data = enc (Tuple (vyper_to_abi_types tenv nidx_types))
-                           (ListV abi_vals))
+  log_entry_corresponds _ _ _ (source_event : log) (ev : event) <=>
+    source_event = ev
 End
+
+(* Compatibility lemmas between the executable semantics encoder and the
+   pre-existing relational log specification in compileEnv. *)
+Theorem event_value_to_word_eq_val_to_w256:
+  event_value_to_word v = val_to_w256 v
+Proof
+  Cases_on `v` >>
+  simp[event_value_to_word_def, valueEncodingTheory.val_to_w256_def]
+QED
+
+Theorem encode_event_topic_eq_log_topic_equiv:
+  encode_event_topic is_bytestring v = SOME topic <=>
+  log_topic_equiv is_bytestring v topic
+Proof
+  Cases_on `is_bytestring` >> Cases_on `v` >>
+  simp[encode_event_topic_def, log_topic_equiv_def,
+       log_bytestring_topic_def, event_value_to_word_eq_val_to_w256,
+       byteTheory.word_of_bytes_be_def] >>
+  metis_tac[]
+QED
+
+Theorem encode_indexed_event_topics_characterization:
+  encode_indexed_event_topics flags tys vals = SOME topics <=>
+  LENGTH flags = LENGTH tys /\
+  LENGTH flags = LENGTH vals /\
+  log_indexed_topics_equiv
+    (indexed_topic_flags flags (MAP is_bytestring_type tys))
+    (indexed_values flags vals) topics
+Proof
+  `!ty. is_event_bytestring_type ty = is_bytestring_type ty` by
+    (gen_tac >> Cases_on `ty` >> simp[is_event_bytestring_type_def,
+                                      is_bytestring_type_def] >>
+     Cases_on `b` >> simp[is_event_bytestring_type_def,
+                          is_bytestring_type_def] >>
+     Cases_on `b'` >> simp[is_event_bytestring_type_def,
+                           is_bytestring_type_def]) >>
+  qid_spec_tac `topics` >> qid_spec_tac `vals` >> qid_spec_tac `tys` >>
+  Induct_on `flags`
+  >- (Cases_on `tys` >> Cases_on `vals` >> Cases_on `topics` >>
+      simp[encode_indexed_event_topics_def, indexed_topic_flags_def,
+           indexed_values_def, log_indexed_topics_equiv_def])
+  >> qx_gen_tac `flag` >> qx_gen_tac `tys` >>
+  qx_gen_tac `vals` >> qx_gen_tac `topics` >>
+  Cases_on `tys` >> Cases_on `vals` >> Cases_on `flag` >>
+  Cases_on `topics` >>
+  gvs[encode_indexed_event_topics_def, indexed_topic_flags_def,
+      indexed_values_def, log_indexed_topics_equiv_def,
+      is_event_bytestring_type_def, is_bytestring_type_def,
+      encode_event_topic_eq_log_topic_equiv, AllCaseEqs()] >>
+  metis_tac[]
+QED
+
+Theorem non_indexed_event_args_characterization:
+  non_indexed_event_args flags tys vals = SOME typed_vals <=>
+  LENGTH flags = LENGTH tys /\
+  LENGTH flags = LENGTH vals /\
+  MAP FST typed_vals = log_non_indexed_types flags tys /\
+  MAP SND typed_vals = log_non_indexed_values flags vals
+Proof
+  qid_spec_tac `typed_vals` >> qid_spec_tac `vals` >>
+  qid_spec_tac `tys` >> Induct_on `flags`
+  >- (Cases_on `tys` >> Cases_on `vals` >> Cases_on `typed_vals` >>
+      simp[non_indexed_event_args_def, log_non_indexed_types_def,
+           log_non_indexed_values_def])
+  >> qx_gen_tac `flag` >> qx_gen_tac `tys` >>
+  qx_gen_tac `vals` >> qx_gen_tac `typed_vals` >>
+  Cases_on `tys` >> Cases_on `vals` >> Cases_on `flag` >>
+  Cases_on `typed_vals` >>
+  gvs[non_indexed_event_args_def, log_non_indexed_types_def,
+      log_non_indexed_values_def, AllCaseEqs()] >>
+  PairCases_on `h''` >> gvs[] >>
+  simp[AC CONJ_ASSOC CONJ_COMM]
+QED
+Theorem non_indexed_event_args_exists:
+  LENGTH flags = LENGTH tys /\
+  LENGTH flags = LENGTH vals ==>
+  ?typed_vals.
+    non_indexed_event_args flags tys vals = SOME typed_vals /\
+    MAP FST typed_vals = log_non_indexed_types flags tys /\
+    MAP SND typed_vals = log_non_indexed_values flags vals
+Proof
+  qid_spec_tac `vals` >> qid_spec_tac `tys` >> Induct_on `flags`
+  >- (Cases_on `tys` >> Cases_on `vals` >>
+      simp[non_indexed_event_args_def, log_non_indexed_types_def,
+           log_non_indexed_values_def])
+  >> qx_gen_tac `flag` >> qx_gen_tac `tys` >> qx_gen_tac `vals` >>
+  Cases_on `tys` >> Cases_on `vals` >> Cases_on `flag` >>
+  gvs[non_indexed_event_args_def, log_non_indexed_types_def,
+      log_non_indexed_values_def] >>
+  strip_tac >> first_x_assum drule >> disch_then drule >> strip_tac >>
+  qexists `(h,h')::typed_vals` >> simp[]
+QED
+
+
+(* OBSOLETE after source logs became concrete events. Preserved until the
+   surrounding legacy compatibility package is removed deliberately.
+Theorem log_entry_equiv_encode_vyper_event:
+  log_entry_equiv cenv addr (eid, vals) ev <=>
+  encode_vyper_event cenv.ce_event_info cenv.ce_type_env addr
+    (nsid_to_string eid) vals = SOME ev
+Proof
+  Cases_on `cenv.ce_event_info (nsid_to_string eid)`
+  >- simp[log_entry_equiv_def, encode_vyper_event_def]
+  >> PairCases_on `x` >>
+  simp[log_entry_equiv_def, encode_vyper_event_def,
+       encode_vyper_event_metadata_def] >>
+  eq_tac
+  >- (strip_tac >>
+      `encode_indexed_event_topics x2 x1 vals = SOME topic_tail` by
+        (simp[encode_indexed_event_topics_characterization] >> metis_tac[]) >>
+      `?typed_vals.
+         non_indexed_event_args x2 x1 vals = SOME typed_vals /\
+         MAP FST typed_vals = log_non_indexed_types x2 x1 /\
+         MAP SND typed_vals = log_non_indexed_values x2 vals` by
+        (irule non_indexed_event_args_exists >> metis_tac[]) >>
+      Cases_on `ev` >> gvs[vfmTypesTheory.event_component_equality])
+  >> Cases_on `encode_indexed_event_topics x2 x1 vals`
+  >- simp[]
+  >> Cases_on `non_indexed_event_args x2 x1 vals`
+  >- simp[]
+  >> Cases_on `vyper_to_abi_list cenv.ce_type_env (MAP FST x') (MAP SND x')`
+  >- simp[]
+  >> simp[] >> strip_tac >>
+  gvs[encode_indexed_event_topics_characterization,
+      non_indexed_event_args_characterization,
+      vfmTypesTheory.event_component_equality] >>
+  qexists `x` >> simp[]
+QED
+
+Theorem log_entry_corresponds_encode:
+  log_entry_corresponds event_info tenv addr (eid, vals) ev <=>
+  encode_vyper_event event_info tenv addr (nsid_to_string eid) vals = SOME ev
+Proof
+  simp[log_entry_corresponds_def]
+QED
+*)
+
+Theorem log_entry_equiv_concrete_event:
+  log_entry_equiv cenv addr source_event ev <=> source_event = ev
+Proof
+  simp[log_entry_equiv_def]
+QED
+
+Theorem log_entry_corresponds_concrete_event:
+  log_entry_corresponds event_info tenv addr source_event ev <=>
+  source_event = ev
+Proof
+  simp[log_entry_corresponds_def]
+QED
 
 (* Vyper logs correspond to EVM events (ordered, same-length).
    event_info maps event name -> SOME (hash, arg_types, indexed_flags)

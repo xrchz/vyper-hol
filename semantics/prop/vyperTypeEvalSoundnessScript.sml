@@ -813,6 +813,7 @@ Proof
   TRY (imp_res_tac no_control_exc_no_loop_control >> NO_TAC) >>
   TRY (imp_res_tac check_no_control >> gvs[no_control_exc_def] >> NO_TAC) >>
   TRY (imp_res_tac type_check_no_control >> gvs[no_control_exc_def] >> NO_TAC) >>
+  TRY (imp_res_tac lift_option_no_control >> gvs[no_control_exc_def] >> NO_TAC) >>
   TRY (imp_res_tac lift_option_type_no_control >> gvs[no_control_exc_def] >> NO_TAC) >>
   TRY (imp_res_tac lift_sum_no_control >> gvs[no_control_exc_def] >> NO_TAC) >>
   TRY (imp_res_tac push_scope_no_control >> gvs[no_control_exc_def] >> NO_TAC) >>
@@ -2164,8 +2165,10 @@ Resume eval_all_type_sound_mutual[Log]:
   Cases_on `exprs_res` >> gvs[no_type_error_result_def]
   >- (
     strip_tac >> gvs[state_well_typed_def, accounts_well_typed_def] >>
-    irule env_consistent_preserved_by_frame >>
-    qexists_tac `st1` >> simp[preserves_tv_eq]) >>
+    Cases_on `encode_source_event (get_tenv cx) cx.sources cx.txn.target id x` >>
+    gvs[lift_option_def, return_def, raise_def] >>
+    drule_all env_consistent_logs_append >>
+    simp[return_exception_typed_def]) >>
   strip_tac >> gvs[] >>
   drule eval_exprs_exception_return_typed >> simp[]
 QED
@@ -9442,6 +9445,9 @@ Resume eval_all_type_sound_mutual[Expr_Call_ExtCall_result_static]:
     drule_all run_ext_call_accounts_well_typed >>
     simp[]) >>
   `runtime_consistent env cx args_st` by simp[runtime_consistent_def] >>
+  `runtime_consistent env cx
+     (args_st with logs := args_st.logs ++ pr4)` by
+    metis_tac[runtime_consistent_logs_append] >>
   `get_tenv cx = env.type_defs` by metis_tac[env_consistent_get_tenv] >>
   qpat_x_assum `get_tenv cx = env.type_defs` (fn th => rewrite_tac[th]) >>
   strip_tac >>
@@ -9451,24 +9457,31 @@ Resume eval_all_type_sound_mutual[Expr_Call_ExtCall_result_static]:
    | INL tv => expr_result_typed env (Call ret_type (ExtCall T (func_name,arg_types,ret_type)) es drv) tv
    | INR v1 => T` suffices_by simp[no_type_error_result_def] >>
   qspecl_then [`env`, `cx`, `es`, `T`, `func_name`, `arg_types`, `ret_type`,
-               `drv`, `pr1`, `args_st`, `pr2`, `pr3`, `res`, `st'`]
+               `drv`, `pr1`, `args_st with logs := args_st.logs ++ pr4`,
+               `pr2`, `pr3`, `res`, `st'`]
     mp_tac extcall_after_state_update_tail_sound_cond_driver_ih >>
   disch_then irule >>
   conj_tac >- first_assum ACCEPT_TAC >>
   conj_tac >- first_assum ACCEPT_TAC >>
   conj_tac >- first_assum ACCEPT_TAC >>
-  conj_tac >- first_assum ACCEPT_TAC >>
+  conj_tac >- (pop_assum mp_tac >>
+                simp[append_logs_def, return_def]) >>
   conj_tac >- (
     rpt strip_tac >>
     `call_evaluation_safe cx (int_calls_expr (THE drv))` by
       (qpat_x_assum `IS_SOME drv` mp_tac >>
        Cases_on `drv` >> simp[] >>
        drule extcall_call_evaluation_safe_driver >> simp[]) >>
-    qpat_x_assum `!env' st'' res' st'''. _`
-      (qspecl_then [`env0`, `st0`, `res0`, `st0'`] mp_tac) >>
-    impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+    `append_logs pr4
+       (args_st with <|accounts := pr2; tStorage := pr3|>) =
+       (INL (), args_st with
+          <|accounts := pr2; tStorage := pr3;
+            logs := args_st.logs ++ pr4|>)` by
+      simp[append_logs_def, return_def] >>
+    first_x_assum drule_all >>
     strip_tac >>
-    metis_tac[]) >>
+    qpat_x_assum `well_typed_expr env0 (THE drv) ==> _` mp_tac >>
+    simp[]) >>
   rpt conj_tac >>
   first_assum ACCEPT_TAC
 QED
@@ -9641,6 +9654,21 @@ Resume eval_all_type_sound_mutual[Expr_Call_ExtCall_nonstatic_success]:
     drule_all run_ext_call_accounts_well_typed >>
     simp[]) >>
   `runtime_consistent env cx args_st` by simp[runtime_consistent_def] >>
+  `runtime_consistent env cx
+     (args_st with logs := args_st.logs ++ pr4)` by (
+    qspecl_then [`env`, `cx`, `args_st`, `pr4`]
+      mp_tac runtime_consistent_logs_append >>
+    simp[]) >>
+  `runtime_consistent env cx
+     (args_st with <|accounts := pr2; tStorage := pr3|>)` by
+    metis_tac[update_accounts_transient_runtime_consistent] >>
+  `runtime_consistent env cx
+     ((args_st with <|accounts := pr2; tStorage := pr3|>) with
+        logs := args_st.logs ++ pr4)` by (
+    qspecl_then [`env`, `cx`,
+                 `args_st with <|accounts := pr2; tStorage := pr3|>`, `pr4`]
+      mp_tac runtime_consistent_logs_append >>
+    simp[]) >>
   `!err.
      (do
         assert T err;
@@ -9658,27 +9686,47 @@ Resume eval_all_type_sound_mutual[Expr_Call_ExtCall_nonstatic_success]:
   Cases_on `pr1 = [] /\ IS_SOME drv`
   >- (
     qpat_x_assum `pr1 = [] /\ IS_SOME drv` strip_assume_tac >>
-    qpat_x_assum `(if _ then _ else _) _ = _` mp_tac >>
+    qpat_x_assum `_ = (res,st')` mp_tac >>
     qpat_assum `pr1 = []` (fn th => rewrite_tac[th]) >>
     qpat_assum `IS_SOME drv` (fn th => rewrite_tac[th]) >>
-    rewrite_tac[boolTheory.COND_CLAUSES] >> strip_tac >>
+    pure_rewrite_tac[append_logs_def, return_def,
+                     pairTheory.pair_case_thm, sumTheory.sum_case_def,
+                     boolTheory.COND_CLAUSES] >>
+    strip_tac >>
     `well_typed_expr env (THE drv)` by metis_tac[well_typed_opt_THE] >>
     `call_evaluation_safe cx (int_calls_expr (THE drv))` by
       (qpat_x_assum `IS_SOME drv` mp_tac >>
        Cases_on `drv` >> simp[] >>
        drule extcall_call_evaluation_safe_driver >> simp[]) >>
-    qpat_x_assum `!s1 t1 s2 value_opt arg_vals t2 s3 calldata t3 s4 s5 s6 t4 accounts tStorage env0 st0 res0 st1. _`
+    qpat_x_assum `!s1 t1 s2 value_opt arg_vals t2 s3 calldata t3 s4 s5 s6 t4
+                     accounts tStorage emitted_logs s7 t5 env0 st0 res0 st1. _`
       (qspecl_then [`args_st`, `args_st`, `args_st`, `SOME amount`,
                     `TL (TL x)`, `args_st`, `args_st`, `x'`, `args_st`,
                     `args_st`, `args_st`, `args_st`, `args_st`, `pr2`, `pr3`,
-                    `env`, `args_st with <|accounts := pr2; tStorage := pr3|>`,
+                    `pr4`, `args_st with <|accounts := pr2; tStorage := pr3|>`,
+                    `(args_st with <|accounts := pr2; tStorage := pr3|>) with
+                       logs := args_st.logs ++ pr4`,
+                    `env`, `(args_st with <|accounts := pr2; tStorage := pr3|>) with
+                              logs := args_st.logs ++ pr4`,
                     `res`, `st'`] mp_tac) >>
     impl_tac >- (
       conj_tac >-
         simp[type_check_def, assert_def, bind_def, ignore_bind_def,
-             return_def, raise_def] >>
-      drule_all update_accounts_transient_runtime_consistent >>
-      simp[runtime_consistent_def]) >>
+             return_def, raise_def, append_logs_def] >>
+      conj_tac >- (
+        qpat_assum `runtime_consistent env cx
+          (args_st with <|logs := args_st.logs ++ pr4;
+                         accounts := pr2; tStorage := pr3|>)` mp_tac >>
+        pure_rewrite_tac[runtime_consistent_def] >>
+        strip_tac >> first_assum ACCEPT_TAC) >>
+      conj_tac >- (
+        qpat_assum `runtime_consistent env cx
+          (args_st with <|logs := args_st.logs ++ pr4;
+                         accounts := pr2; tStorage := pr3|>)` mp_tac >>
+        pure_rewrite_tac[runtime_consistent_def] >>
+        strip_tac >> first_assum ACCEPT_TAC) >>
+      qpat_x_assum `_ = (res,st')` mp_tac >>
+      simp[]) >>
     strip_tac >>
     qpat_x_assum `well_typed_expr env (THE drv) ==> _` mp_tac >>
     simp[] >> strip_tac >>
@@ -9686,7 +9734,8 @@ Resume eval_all_type_sound_mutual[Expr_Call_ExtCall_nonstatic_success]:
     Cases_on `res` >> gvs[expr_result_typed_def, expr_runtime_typed_def, expr_type_def] >>
     metis_tac[well_typed_expr_not_hashmap_place]) >>
   qspecl_then [`env`, `cx`, `es`, `func_name`, `arg_types`, `ret_type`,
-               `drv`, `args_st`, `pr1`, `pr2`, `pr3`, `res`, `st'`]
+               `drv`, `args_st with logs := args_st.logs ++ pr4`,
+               `pr1`, `pr2`, `pr3`, `res`, `st'`]
     mp_tac extcall_nonstatic_success_tail_sound_cond_driver_ih >>
   impl_tac >- (
     conj_tac >- first_assum ACCEPT_TAC >>
@@ -9696,7 +9745,9 @@ Resume eval_all_type_sound_mutual[Expr_Call_ExtCall_nonstatic_success]:
     conj_tac >- first_assum ACCEPT_TAC >>
     conj_tac >- metis_tac[] >>
     conj_tac >- (strip_tac >> metis_tac[]) >>
-    qpat_x_assum `(if _ then _ else _) _ = _` mp_tac >>
+    qpat_x_assum `_ = (res,st')` mp_tac >>
+    pure_rewrite_tac[append_logs_def, return_def,
+                     pairTheory.pair_case_thm, sumTheory.sum_case_def] >>
     simp[]) >>
   simp[]
 QED
@@ -9789,10 +9840,17 @@ Resume eval_all_type_sound_mutual[Expr_Call_RawCallTarget]:
       strip_tac >> gvs[update_accounts_def, update_transient_def, bind_def, return_def] >>
       `runtime_consistent env cx (args_st with <|accounts := x2; tStorage := x3|>)` by
         metis_tac[update_accounts_transient_runtime_consistent, runtime_consistent_def] >>
+      `runtime_consistent env cx
+         ((args_st with <|accounts := x2; tStorage := x3|>) with
+            logs := args_st.logs ++ x4)` by (
+        qspecl_then [`env`, `cx`,
+                     `args_st with <|accounts := x2; tStorage := x3|>`, `x4`]
+          mp_tac runtime_consistent_logs_append >>
+        simp[]) >>
       Cases_on `x0` >> Cases_on `flags.rcf_revert_on_failure` >>
       Cases_on `flags.rcf_max_outsize = 0` >>
       gvs[check_def, assert_def, bind_def, return_def, raise_def,
-          runtime_consistent_def, no_type_error_result_def,
+          append_logs_def, runtime_consistent_def, no_type_error_result_def,
           expr_result_typed_def, expr_runtime_typed_def, expr_type_def,
           toplevel_value_typed_def, value_has_type_def, raw_call_return_type_def,
           evaluate_type_def, is_HashMapRef_def] >>

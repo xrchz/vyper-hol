@@ -1,6 +1,6 @@
 Theory vyperSemanticsHol
 Ancestors
-  vyperCall
+  vyperLogPreservation
   vyperEvalBinop
   vyperEvalPreservesImmutablesDom
   vyperEvalPreservesNameTarget

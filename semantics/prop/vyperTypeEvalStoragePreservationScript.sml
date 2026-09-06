@@ -1544,6 +1544,8 @@ Resume eval_all_storage_preservation_mutual[Log]:
   rename1 `eval_exprs cx es st = (exprs_res,st1)` >>
   first_x_assum drule_all >> strip_tac >>
   Cases_on `exprs_res` >> gvs[bind_def, return_def, push_log_def] >>
+  Cases_on `encode_source_event (get_tenv cx) cx.sources cx.txn.target id x` >>
+  gvs[lift_option_def, raise_def, return_def, push_log_def] >>
   rpt strip_tac >>
   pop_assum (SUBST1_TAC o SYM) >>
   metis_tac[contract_storage_well_formed_logs]
@@ -1792,11 +1794,16 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_RawCallTarget]:
          (args_st with <|accounts := x2; tStorage := x3|>)` by
         metis_tac[protected_storage_calls_preserve_run_ext_call,
                   runtime_storage_consistent_storage] >>
+      `contract_storage_well_formed cx
+         ((args_st with <|accounts := x2; tStorage := x3|>) with
+            logs := args_st.logs ++ x4)` by
+        metis_tac[contract_storage_well_formed_logs] >>
       strip_tac >>
       gvs[update_accounts_def, update_transient_def, bind_def, return_def] >>
       Cases_on `x0` >> Cases_on `flags.rcf_revert_on_failure` >>
       Cases_on `flags.rcf_max_outsize = 0` >>
-      gvs[check_def, assert_def, bind_def, return_def, raise_def]) >>
+      gvs[check_def, assert_def, bind_def, return_def, raise_def,
+          append_logs_def]) >>
     rpt strip_tac >> gvs[]) >>
   rpt strip_tac >> gvs[Once well_typed_expr_def]
 QED
@@ -3175,6 +3182,22 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
                  (args_st with <| accounts := result2; tStorage := result3 |>)` by
                 metis_tac[runtime_storage_consistent_intro,
                           runtime_storage_consistent_layout] >>
+              `runtime_consistent env cx
+                 ((args_st with <|accounts := result2; tStorage := result3|>) with
+                    logs := args_st.logs ++ result4)` by (
+                qspecl_then [`env`, `cx`,
+                  `args_st with <|accounts := result2; tStorage := result3|>`,
+                  `result4`] mp_tac runtime_consistent_logs_append >>
+                simp[]) >>
+              `contract_storage_well_formed cx
+                 ((args_st with <|accounts := result2; tStorage := result3|>) with
+                    logs := args_st.logs ++ result4)` by
+                metis_tac[contract_storage_well_formed_logs] >>
+              `runtime_storage_consistent env cx
+                 ((args_st with <|accounts := result2; tStorage := result3|>) with
+                    logs := args_st.logs ++ result4)` by
+                metis_tac[runtime_storage_consistent_intro,
+                          runtime_storage_consistent_layout] >>
               Cases_on `result1 = [] /\ IS_SOME drv` >> gvs[]
               >- (Cases_on `drv` >> gvs[Once well_typed_expr_def] >> strip_tac >>
                   `call_evaluation_safe cx (int_calls_expr x)` by (
@@ -3182,12 +3205,19 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
                       (int_calls_expr (Call _ (ExtCall T _) es (SOME x)))` mp_tac >>
                     pure_rewrite_tac[int_calls_expr_def] >>
                     metis_tac[call_evaluation_safe_append_right]) >>
-                  qpat_x_assum `!env' st'' res' st'''. _`
+                  qpat_x_assum `!s0 t0 env' st'' res' st'''. _`
                     (qspecl_then
-                      [`env`,
-                       `args_st with <| accounts := result2; tStorage := result3 |>`,
+                      [`args_st with <|accounts := result2; tStorage := result3|>`,
+                       `(args_st with <|accounts := result2; tStorage := result3|>) with
+                          logs := args_st.logs ++ result4`,
+                       `env`,
+                       `(args_st with <|accounts := result2; tStorage := result3|>) with
+                          logs := args_st.logs ++ result4`,
                        `res`, `st'`] mp_tac) >>
-                  simp[] >> metis_tac[]) >>
+                  simp[append_logs_def, return_def] >>
+                  qpat_x_assum `_ = (res,st')` mp_tac >>
+                  simp[append_logs_def, return_def] >>
+                  metis_tac[]) >>
               strip_tac >> Cases_on `drv` >> gvs[] >>
               qpat_x_assum `(do _ od) _ = (res,st')` mp_tac >>
               simp[lift_sum_runtime_def, bind_def, return_def, raise_def] >>
@@ -3196,6 +3226,8 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
               Cases_on
                 `evaluate_abi_decode_return env.type_defs decode_ty result1` >>
               gvs[return_def, raise_def] >> strip_tac >> gvs[] >>
+              qpat_x_assum `_ = (res,st')` mp_tac >>
+              simp[append_logs_def, return_def] >>
               metis_tac[runtime_storage_consistent_storage]) >>
           qpat_x_assum
             `if F then _ else MAP expr_type es =
@@ -3286,9 +3318,12 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
               (qspecl_then
                 [`args_st`, `SOME amount`, `TL (TL vs)`, `args_st`,
                  `args_st`, `calldata`, `args_st`, `args_st`, `args_st`,
-                 `args_st`, `args_st`, `result2`, `result3`,
+                 `args_st`, `args_st`, `result2`, `result3`, `result4`,
+                 `args_st with <|accounts := result2; tStorage := result3|>`,
+                 `(args_st with <|accounts := result2; tStorage := result3|>) with
+                    logs := args_st.logs ++ result4`,
                  `env0`, `st0`, `res0`, `st0'`] mp_tac) >>
-            simp[assert_def, bind_def, return_def, raise_def] >>
+            simp[assert_def, bind_def, return_def, raise_def, append_logs_def] >>
             (impl_tac >- EVAL_TAC) >> strip_tac >> metis_tac[]) >>
           qpat_x_assum `!s' value_opt arg_vals. _` kall_tac >>
           unabbrev_all_tac >>
@@ -3307,6 +3342,22 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
              (args_st with <| accounts := result2; tStorage := result3 |>)` by
             metis_tac[runtime_storage_consistent_intro,
                       runtime_storage_consistent_layout] >>
+          `runtime_consistent env cx
+             ((args_st with <|accounts := result2; tStorage := result3|>) with
+                logs := args_st.logs ++ result4)` by (
+            qspecl_then [`env`, `cx`,
+              `args_st with <|accounts := result2; tStorage := result3|>`,
+              `result4`] mp_tac runtime_consistent_logs_append >>
+            simp[]) >>
+          `contract_storage_well_formed cx
+             ((args_st with <|accounts := result2; tStorage := result3|>) with
+                logs := args_st.logs ++ result4)` by
+            metis_tac[contract_storage_well_formed_logs] >>
+          `runtime_storage_consistent env cx
+             ((args_st with <|accounts := result2; tStorage := result3|>) with
+                logs := args_st.logs ++ result4)` by
+            metis_tac[runtime_storage_consistent_intro,
+                      runtime_storage_consistent_layout] >>
           Cases_on `result1 = [] /\ IS_SOME drv` >> gvs[]
           >- (Cases_on `drv` >> gvs[Once well_typed_expr_def] >> strip_tac >>
               `call_evaluation_safe cx (int_calls_expr x)` by (
@@ -3317,9 +3368,13 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
               qpat_x_assum `!env0 st0 res0 st0'. _`
                 (qspecl_then
                   [`env`,
-                   `args_st with <| accounts := result2; tStorage := result3 |>`,
+                   `(args_st with <|accounts := result2; tStorage := result3|>) with
+                      logs := args_st.logs ++ result4`,
                    `res`, `st'`] mp_tac) >>
-              simp[] >> metis_tac[]) >>
+              simp[append_logs_def, return_def] >>
+              qpat_x_assum `_ = (res,st')` mp_tac >>
+              simp[append_logs_def, return_def] >>
+              metis_tac[]) >>
           strip_tac >> Cases_on `drv` >> gvs[] >>
           qpat_x_assum `(do _ od) _ = (res,st')` mp_tac >>
           simp[lift_sum_runtime_def, bind_def, return_def, raise_def] >>
@@ -3328,6 +3383,8 @@ Resume eval_all_storage_preservation_mutual[Expr_Call_ExtCall]:
           Cases_on
             `evaluate_abi_decode_return env.type_defs decode_ty result1` >>
           gvs[return_def, raise_def] >> strip_tac >> gvs[] >>
+          qpat_x_assum `_ = (res,st')` mp_tac >>
+          simp[append_logs_def, return_def] >>
           metis_tac[runtime_storage_consistent_storage]) >>
       qpat_x_assum `!s'' vs t. _` kall_tac >>
       gvs[] >>

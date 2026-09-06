@@ -724,17 +724,13 @@ Definition is_bytestring_type_def:
 End
 
 (* ===== Log Equivalence ===== *)
-(* Single log entry equivalence.
-   Interpreter log: (nsid, value list) where nsid = (num option, string).
-   Venom event: <| logger; topics : bytes32 list; data : byte list |>.
-   The lowering (compile_stmt Log) computes:
-   - event_hash from ce_event_info → first topic
-   - indexed static args → ABI word topics
-   - indexed bytes/string args → keccak256(raw bytes) topics
-   - non-indexed args → ABI-encoded data buffer
-   logger = contract address (cc_address).
-
-   The relation uses ce_event_info to determine which args are indexed. *)
+(* Both the source interpreter and Venom state carry concrete EVM events:
+   <| logger; topics : bytes32 list; data : byte list |>.
+   Event declarations are encoded by the source semantics when Log executes,
+   using the same signature hash, indexed-topic encoding, and ABI data encoding
+   as compile_stmt. Consequently the authoritative state relation below is
+   concrete event equality. The extraction helpers in this section characterize
+   the shared encoder and remain useful to lowering compatibility proofs. *)
 (* Extract indexed values from args based on flags *)
 Definition indexed_values_def:
   indexed_values [] [] = ([] : value list) ∧
@@ -793,28 +789,7 @@ Definition log_non_indexed_types_def:
 End
 
 Definition log_entry_equiv_def:
-  log_entry_equiv cenv (addr:address) ((event_nsid, args) : log) (ev : event) ⇔
-    let event_name = nsid_to_string event_nsid in
-    case cenv.ce_event_info event_name of
-      NONE => F
-    | SOME (event_hash, arg_types, indexed_flags) =>
-        let idx_vals = indexed_values indexed_flags args in
-        let idx_bs = indexed_topic_flags indexed_flags (MAP is_bytestring_type arg_types) in
-        let nidx_vals = log_non_indexed_values indexed_flags args in
-        let nidx_types = log_non_indexed_types indexed_flags arg_types in
-          LENGTH indexed_flags = LENGTH args ∧
-          LENGTH arg_types = LENGTH args ∧
-          ev.logger = addr ∧
-          (* First topic is the event selector hash. Static indexed args match
-             val_to_w256; indexed bytes/string args match keccak256(raw bytes). *)
-          (∃topic_tail.
-             ev.topics = n2w event_hash :: topic_tail ∧
-             log_indexed_topics_equiv idx_bs idx_vals topic_tail) ∧
-          (* Non-indexed args are ABI-encoded into LOG data. *)
-          (?abi_vals.
-             vyper_to_abi_list cenv.ce_type_env nidx_types nidx_vals = SOME abi_vals ∧
-             ev.data = enc (Tuple (vyper_to_abi_types cenv.ce_type_env nidx_types))
-                           (ListV abi_vals))
+  log_entry_equiv _ _ (source_event : log) (ev : event) ⇔ source_event = ev
 End
 
 (* Logs relation: pairwise equivalence *)

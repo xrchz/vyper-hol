@@ -135,6 +135,7 @@ Theorem case_Log_dom[local]:
 Proof
   rpt strip_tac >> irule map_fdom_eq_preserves_dom >>
   gvs[evaluate_def, bind_def, AllCaseEqs()] >>
+  imp_res_tac lift_option_scopes >>
   imp_res_tac push_log_scopes >> gvs[]
 QED
 
@@ -928,6 +929,7 @@ Proof
       simp[Once evaluate_def, bind_def, AllCaseEqs()] >>
       rpt strip_tac >>
       imp_res_tac eval_exprs_preserves_scopes_dom >>
+      imp_res_tac lift_option_scopes >>
       imp_res_tac push_log_scopes >> gvs[]) >>
     Cases_on`st.scopes` >> Cases_on`st'.scopes` >> gvs[])
   >> conj_tac >- ( (* AnnAssign *)
@@ -1212,6 +1214,16 @@ Theorem preserves_tv_eq:
     preserves_tv cx st st'
 Proof
   simp[preserves_tv_def]
+QED
+
+Theorem append_logs_preserves_tv:
+  ∀cx logs st res st'.
+    append_logs logs st = (res,st') ⇒ preserves_tv cx st st'
+Proof
+  rpt strip_tac >> irule preserves_tv_eq >>
+  imp_res_tac append_logs_scopes >>
+  imp_res_tac append_logs_immutables >>
+  simp[]
 QED
 
 Theorem preserves_tv_stk_update[local]:
@@ -1559,6 +1571,7 @@ Proof
     metis_tac[preserves_tv_trans] ) >>
   conj_tac >- (
     rw[evaluate_def, bind_apply, AllCaseEqs(), push_log_def, return_def] >>
+    imp_res_tac lift_option_state >> gvs[] >>
     first_x_assum drule >>
     gvs[preserves_tv_def] ) >>
   conj_tac >- (
@@ -1957,12 +1970,19 @@ Proof
     imp_res_tac update_transient_immutables >>
     reverse BasicProvers.TOP_CASE_TAC >- (
       rw[] >> gvs[preserves_tv_def] ) >>
+    imp_res_tac append_logs_preserves_tv >>
+    gvs[append_logs_def, return_def] >>
     reverse IF_CASES_TAC >- (
       simp[bind_apply, AllCaseEqs(), return_def] >>
       rw[] >> imp_res_tac lift_sum_runtime_state >> gvs[] >>
       irule preserves_tv_trans >>
       goal_assum drule >>
-      gvs[preserves_tv_def] ) >>
+      irule preserves_tv_trans >>
+      qexists_tac `r'` >>
+      (conj_tac >- (irule preserves_tv_eq >> gvs[])) >>
+      irule append_logs_preserves_tv >>
+      qexists_tac `p4` >> qexists_tac `INL ()` >>
+      simp[append_logs_def, return_def] ) >>
     strip_tac >> gvs[] >>
     first_x_assum drule_all >>
     rw[] >>
@@ -2045,7 +2065,9 @@ Proof
     imp_res_tac update_accounts_scopes >>
     imp_res_tac update_accounts_immutables >>
     imp_res_tac update_transient_scopes >>
-    imp_res_tac update_transient_immutables >> gvs[] >>
+    imp_res_tac update_transient_immutables >>
+    imp_res_tac append_logs_scopes >>
+    imp_res_tac append_logs_immutables >> gvs[] >>
     first_x_assum drule >> rw[] >>
     gvs[preserves_tv_def]) >>
   (* RawLog *)
