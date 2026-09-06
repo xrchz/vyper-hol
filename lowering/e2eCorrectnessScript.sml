@@ -246,6 +246,29 @@ Proof
   rw[valid_function_call_def] >> metis_tac[]
 QED
 
+Theorem log_entry_equiv_log_entry_corresponds[local]:
+  !cenv event_info tenv addr l ev.
+    cenv.ce_type_env = tenv /\ cenv.ce_event_info = event_info ==>
+    (log_entry_equiv cenv addr l ev <=>
+     log_entry_corresponds event_info tenv addr l ev)
+Proof
+  rpt strip_tac >> PairCases_on `l` >>
+  gvs[log_entry_equiv_def, log_entry_corresponds_def]
+QED
+
+Theorem external_logs_rel_logs_correspond[local]:
+  !cenv event_info tenv addr am ss.
+    cenv.ce_type_env = tenv /\ cenv.ce_event_info = event_info ==>
+    (external_logs_rel cenv addr am ss <=>
+     logs_correspond event_info tenv addr am.logs ss.vs_logs)
+Proof
+  rw[external_logs_rel_def, logs_correspond_def] >>
+  `log_entry_equiv cenv addr =
+   log_entry_corresponds cenv.ce_event_info cenv.ce_type_env addr`
+    by simp[FUN_EQ_THM, log_entry_equiv_log_entry_corresponds] >>
+  simp[]
+QED
+
 (* The source semantics of the exact packaged compilation unit is an explicit
    boundary obligation.  In particular, it is not reconstructed from the
    weaker observable equivalence used by generic transform correctness. *)
