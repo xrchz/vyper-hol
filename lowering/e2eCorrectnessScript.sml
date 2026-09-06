@@ -290,8 +290,61 @@ Theorem source_unit_execution_correct:
 Proof
   simp[source_unit_execution_correct_def]
 QED
+Theorem run_context_zero_error[local]:
+  !ctx vs. ?e. run_context 0 ctx vs = Error e
+Proof
+  rpt gen_tac >> Cases_on `ctx.ctx_entry`
+  >- simp[run_context_def]
+  >> rename1 `ctx.ctx_entry = SOME entry` >>
+     Cases_on `lookup_function entry ctx.ctx_functions`
+  >- simp[run_context_def]
+  >> rename1 `lookup_function entry ctx.ctx_functions = SOME fn` >>
+     Cases_on `fn_entry_label fn`
+  >- simp[run_context_def, run_function_def]
+  >> simp[run_context_def, run_function_def, Once run_blocks_def]
+QED
 
-Theorem compile_vyper_evm_correspondence[local]:
+Theorem source_unit_execution_through_pipeline[local]:
+  !tenv cenv am tx ret unit vs pipeline rpolicy out R_ok R_term.
+    source_unit_execution_correct tenv cenv am tx ret unit vs /\
+    pipeline rpolicy unit = SOME out /\
+    checked_unit_transform_correct pipeline rpolicy R_ok R_term unit vs /\
+    (!s1 s2. R_ok s1 s2 ==> observable_equiv s1 s2) /\
+    (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2)
+    ==>
+    ?fuel fuel'.
+      external_call_result_rel tenv cenv
+        (initial_evaluation_context am.sources am.layouts tx
+          (find_function_module am tx.target tx.function_name))
+        ret (call_external am tx) (run_context fuel unit.cu_context vs) /\
+      observable_result_equiv
+        (run_context fuel unit.cu_context vs)
+        (run_context fuel' out.po_unit.cu_context vs)
+Proof
+  rpt strip_tac >>
+  gvs[source_unit_execution_correct_def,
+      checked_unit_transform_correct_def,
+      ctx_transform_correct_def, pass_correct_def] >>
+  `!r1 r2. lift_result R_ok R_term R_term r1 r2 ==>
+           observable_result_equiv r1 r2` by
+    (rpt gen_tac >> Cases_on `r1` >> Cases_on `r2` >>
+     fs[lift_result_def, observable_result_equiv_def,
+        observable_equiv_def, revert_equiv_def] >>
+     metis_tac[]) >>
+  Cases_on `terminates (run_context fuel unit.cu_context vs)`
+  >- (`?fuel'. terminates
+          (run_context fuel' out.po_unit.cu_context vs)` by metis_tac[] >>
+      qexistsl [`fuel`, `fuel'`] >>
+      metis_tac[])
+  >> Cases_on `run_context fuel unit.cu_context vs` >>
+     gvs[terminates_def] >>
+     qspecl_then [`out.po_unit.cu_context`, `vs`] strip_assume_tac
+       run_context_zero_error >>
+     qexistsl [`fuel`, `0`] >>
+     gvs[observable_result_equiv_def]
+QED
+
+Theorem e2e_vyper_to_evm:
   !tops pipeline finalizer policy rpolicy unit out prog deploy_bc runtime_bc
    cp name i r fn off Inv cenv am tx tenv ret ctxt rb rest es vs R_ok R_term.
     resolve_o1_policy policy = SOME rpolicy /\
@@ -304,6 +357,7 @@ Theorem compile_vyper_evm_correspondence[local]:
     compile_vyper_with pipeline finalizer policy tops
       = SOME (deploy_bc, runtime_bc) /\
     source_deployment_rel tops am tx cenv /\
+    source_unit_execution_correct tenv cenv am tx ret unit vs /\
     generate_context_plan out.po_unit.cu_context = SOME cp /\
     out.po_unit.cu_context.ctx_entry = SOME name /\
     lookup_function name out.po_unit.cu_context.ctx_functions = SOME fn /\
@@ -318,11 +372,14 @@ Theorem compile_vyper_evm_correspondence[local]:
     contextCodegenRel$codegen_reachability_package
       Inv out.po_unit.cu_context vs /\
     initial_codegen_state_rel cp vs /\
+    codegenCorrectness$initial_ctx_rel cp prog off
+      out.po_unit.cu_context vs es /\
     asm_pc_to_offset prog off = 0 /\
     es.contexts = (ctxt, rb) :: rest /\
     call_state_rel tops runtime_bc am tx tenv ctxt rb es.txParams /\
     valid_vyper_call am tx tenv ctxt.msgParams.data ret /\
     cenv.ce_type_env = tenv /\
+    cenv.ce_event_info = compiled_event_info tops /\
     checked_unit_transform_correct pipeline rpolicy R_ok R_term unit vs /\
     (!s1 s2. R_ok s1 s2 ==> observable_equiv s1 s2) /\
     (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2) /\
@@ -388,6 +445,7 @@ Theorem vyper_call_correct:
     compile_vyper_with pipeline finalizer policy tops
       = SOME (deploy_bc, runtime_bc) /\
     source_deployment_rel tops am tx cenv /\
+    source_unit_execution_correct tenv cenv am tx ret unit vs /\
     generate_context_plan out.po_unit.cu_context = SOME cp /\
     out.po_unit.cu_context.ctx_entry = SOME name /\
     lookup_function name out.po_unit.cu_context.ctx_functions = SOME fn /\
@@ -402,11 +460,14 @@ Theorem vyper_call_correct:
     contextCodegenRel$codegen_reachability_package
       Inv out.po_unit.cu_context vs /\
     initial_codegen_state_rel cp vs /\
+    codegenCorrectness$initial_ctx_rel cp prog off
+      out.po_unit.cu_context vs es /\
     asm_pc_to_offset prog off = 0 /\
     es.contexts = (ctxt, rb) :: rest /\
     call_state_rel tops runtime_bc am tx tenv ctxt rb es.txParams /\
     valid_vyper_call am tx tenv ctxt.msgParams.data ret /\
     cenv.ce_type_env = tenv /\
+    cenv.ce_event_info = compiled_event_info tops /\
     checked_unit_transform_correct pipeline rpolicy R_ok R_term unit vs /\
     (!s1 s2. R_ok s1 s2 ==> observable_equiv s1 s2) /\
     (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2) /\
@@ -414,17 +475,9 @@ Theorem vyper_call_correct:
     ==>
     ?gas_needed.
       ctxt.msgParams.gasLimit >= gas_needed ==>
-      ?call_res es_final.
-        run_call es = SOME (call_res, es_final) /\
-        call_result_matches tenv (compiled_event_info tops)
-          am tx ret call_res es es_final
+      vyper_evm_correspondence tenv (compiled_event_info tops) ret am tx es
 Proof
-  rpt strip_tac >>
-  drule_all compile_vyper_evm_correspondence >> strip_tac >>
-  qexists `gas_needed` >> strip_tac >>
-  `vyper_evm_correspondence tenv (compiled_event_info tops) ret am tx es` by
-    metis_tac[] >>
-  drule evm_correspondence_to_call_result >> simp[]
+  rpt strip_tac >> drule_all e2e_vyper_to_evm >> simp[]
 QED
 
 (* ===================================================================== *)
