@@ -3163,8 +3163,10 @@ Proof
   qexistsl [`dfg`, `1`, `h'`, `step_ops`, `ps''`] >> simp[]
 QED
 
-(* Comprehensive per-instruction OK simulation.
+(* Comprehensive local non-call per-instruction OK simulation.
    Stronger than venomToAsmProps.gen_inst_simulation:
+   - excludes INVOKE, whose atomic source semantics require context-wide
+     callee and return invariants absent from this local theorem
    - requires inst_wf, operand bound, label resolution, prefix_spill_wf
    - provides PC tracking (as'.as_pc = as.as_pc + LENGTH (execute_plan initial_fmp ops))
    These extra preconditions are derivable at block level from
@@ -3173,6 +3175,7 @@ Theorem gen_inst_ok_sim:
   !fuel ctx lo o2pc prog
    liveness dfg cfg fn inst next_liveness is_halting
    next_is_term bb_label base ps vs as ops ps'.
+    inst.inst_opcode <> INVOKE /\
     generated_plan_state_wf base ps /\
     codegen_ready_fn fn /\
     MEM inst (fn_insts fn) /\
@@ -3270,7 +3273,7 @@ Proof
     qexistsl_tac [`0`, `as`] >> simp[asm_steps_def, execute_plan_def]
   ) >>
   (* Regular instruction: dispatch by opcode family *)
-  Cases_on `inst.inst_opcode = INVOKE` >- (gvs[] >> suspend "invoke") >>
+  Cases_on `inst.inst_opcode = INVOKE` >- gvs[] >>
   Cases_on `venom_to_evm_name inst.inst_opcode`
   >- (
     (* NONE case: ASSIGN, ISTORE, JMP, JNZ, DJMP, LOG, ASSERT, etc. *)
@@ -5379,10 +5382,6 @@ Resume gen_inst_ok_sim[bump]:
   simp[execute_plan_def, exec_stack_op_def] >> decide_tac
 
 QED
-Resume gen_inst_ok_sim[invoke]:
-  fs[is_pre_codegen_opcode_def, is_unlowered_internal_call_opcode_def]
-QED
-
 Resume gen_inst_ok_sim[none]:
   Cases_on `inst.inst_opcode` >>
   gvs[venom_to_evm_name_def, is_pre_codegen_opcode_def,
