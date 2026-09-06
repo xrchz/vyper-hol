@@ -58,7 +58,7 @@ def expected_provenance(selected_count: int) -> dict[str, object]:
         "explicit_exclusions": [
             {
                 "path": "functional/codegen/features/test_custom_errors.json",
-                "status": "excluded",
+                "status": "excluded_no_wrappers",
                 "reason": "top-level ErrorDef is unsupported by frontend/jsonASTLib.sml",
             }
         ],

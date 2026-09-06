@@ -9,7 +9,7 @@
     {
       "path": "functional/codegen/features/test_custom_errors.json",
       "reason": "top-level ErrorDef is unsupported by frontend/jsonASTLib.sml",
-      "status": "excluded"
+      "status": "excluded_no_wrappers"
     }
   ],
   "inventory": {
