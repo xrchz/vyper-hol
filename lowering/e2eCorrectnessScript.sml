@@ -223,7 +223,8 @@ End
 
    Each gap is at the same level as the existing cheated Props theorems. *)
 Theorem call_state_rel_initial_evm_rel[local]:
-  !program bytecode am tx tenv ctxt rb rest es vs.
+  !program cp bytecode am tx tenv ctxt rb rest es vs.
+    initial_codegen_state_rel cp vs /\
     es.contexts = (ctxt, rb) :: rest /\
     call_state_rel program bytecode am tx tenv ctxt rb es.txParams /\
     rb.accounts = vs.vs_accounts /\
@@ -233,7 +234,7 @@ Theorem call_state_rel_initial_evm_rel[local]:
     (!i. read_byte i vs.vs_memory = read_byte i ctxt.memory) /\
     ctxt.msgParams.data = vs.vs_call_ctx.cc_calldata
     ==>
-    initial_evm_rel bytecode vs es
+    initial_evm_rel cp bytecode vs es
 Proof
   rw[call_state_rel_def, initial_evm_rel_def] >> metis_tac[]
 QED
@@ -403,7 +404,7 @@ QED
 (* Codegen correctness: Venom execution corresponds to EVM execution.
    Wraps codegen_correct with initial_evm_rel. *)
 Theorem e2e_venom_to_evm:
-  !ctx fn_eom_map data_seg bytecode spill_hwm vs fuel.
+  !ctx cp fn_eom_map data_seg bytecode spill_hwm vs fuel.
     codegen_ready ctx /\
     ctx_wf ctx /\
     (!name efn. ctx.ctx_entry = SOME name /\
@@ -418,7 +419,7 @@ Theorem e2e_venom_to_evm:
                         sa_free_slots := [] |> vs1 vs2)
     ==>
     ?gas_needed.
-      !es. initial_evm_rel bytecode vs es /\
+      !es. initial_evm_rel cp bytecode vs es /\
            ~NULL es.contexts /\
            (let (ctxt, rb) = HD es.contexts in
               ctxt.msgParams.gasLimit >= gas_needed)
@@ -585,7 +586,7 @@ QED
 Theorem e2e_vyper_to_evm:
   !tenv event_info pipeline selectors ext_fns int_fns fb_fn
     dispatch bucket_count fn_meta_bytes dense_buckets entry_info
-    entry_label fn_eom_map bytecode cenv spill_hwm
+    entry_label fn_eom_map cp bytecode cenv spill_hwm
     (R_ok : venom_state -> venom_state -> bool) R_term
     am tx vs args ret.
   let (ctx, _) = run_lowering_pair_compat selectors ext_fns int_fns fb_fn
@@ -609,7 +610,7 @@ Theorem e2e_vyper_to_evm:
     (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2)
     ==>
     ?gas_needed.
-      !es. initial_evm_rel bytecode vs es /\
+      !es. initial_evm_rel cp bytecode vs es /\
            ~NULL es.contexts /\
            (let (ctxt, rb) = HD es.contexts in
               ctxt.msgParams.gasLimit >= gas_needed)
@@ -652,7 +653,7 @@ Proof
    \\ gvs[observable_result_equiv_def]
    (* Now: Halt ss2' with observable_equiv ss' ss2' *)
    \\ drule_all (SRULE [] e2e_venom_to_evm)
-   \\ disch_then $ qspecl_then [`vs`, `fuel'`] strip_assume_tac
+   \\ disch_then $ qspecl_then [`cp`, `vs`, `fuel'`] strip_assume_tac
    \\ qexists `gas_needed` \\ rpt strip_tac
    \\ first_x_assum (qspec_then `es` mp_tac)
    \\ simp[pairTheory.UNCURRY]
@@ -690,7 +691,7 @@ Proof
   \\ Cases_on `run_context fuel' (pipeline ctx) vs`
   \\ gvs[observable_result_equiv_def]
   \\ drule_all (SRULE [] e2e_venom_to_evm)
-  \\ disch_then $ qspecl_then [`vs`, `fuel'`] strip_assume_tac
+  \\ disch_then $ qspecl_then [`cp`, `vs`, `fuel'`] strip_assume_tac
   \\ qexists `gas_needed` \\ rpt strip_tac
   \\ first_x_assum (qspec_then `es` mp_tac)
   \\ simp[pairTheory.UNCURRY]
@@ -723,7 +724,7 @@ Theorem e2e_vyper_to_evm_O2:
     entry_label
     ircf_global ricf_global threshold
     make_ssa ircf ricf dse_analysis amap live_at
-    fn_eom_map bytecode cenv spill_hwm
+    fn_eom_map cp bytecode cenv spill_hwm
     am tx vs args ret.
   let pipeline = venom_pipeline ircf_global ricf_global threshold
         (o2_fn_passes make_ssa ircf ricf dse_analysis amap live_at) in
@@ -740,7 +741,7 @@ Theorem e2e_vyper_to_evm_O2:
       dispatch bucket_count fn_meta_bytes dense_buckets entry_info entry_label))) spill_hwm
     ==>
     ?gas_needed.
-      !es. initial_evm_rel bytecode vs es /\
+      !es. initial_evm_rel cp bytecode vs es /\
            ~NULL es.contexts /\
            (let (ctxt, rb) = HD es.contexts in
               ctxt.msgParams.gasLimit >= gas_needed)
@@ -752,12 +753,12 @@ Proof
   \\ CONV_TAC (DEPTH_CONV PairRules.PBETA_CONV)
   \\ strip_tac
   \\ qsuff_tac `?gas_needed. !es.
-       initial_evm_rel bytecode vs es /\ ~NULL es.contexts /\
+       initial_evm_rel cp bytecode vs es /\ ~NULL es.contexts /\
        (FST (HD es.contexts)).msgParams.gasLimit >= gas_needed ==>
        vyper_evm_correspondence tenv event_info ret am tx es`
   >- simp[]
   \\ drule (expand_pair_let e2e_vyper_to_evm |> SRULE [])
-  \\ disch_then (qspecl_then [`cenv`, `spill_hwm`,
+  \\ disch_then (qspecl_then [`cp`, `cenv`, `spill_hwm`,
        `observable_equiv`, `observable_equiv`,
        `am`, `tx`, `vs`, `args`, `ret`] mp_tac)
   \\ simp[o2_pipeline_ctx_pass_correct]

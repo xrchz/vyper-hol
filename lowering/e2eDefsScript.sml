@@ -201,7 +201,8 @@ End
    with the bytecode loading condition.
    Calldata: EVM msgParams.data = Venom cc_calldata (selector+ABI args). *)
 Definition initial_evm_rel_def:
-  initial_evm_rel bytecode vs es <=>
+  initial_evm_rel cp bytecode vs es <=>
+    initial_codegen_state_rel cp vs /\
     ~NULL es.contexts /\
     let (ctxt, rb) = HD es.contexts in
       rb.accounts = vs.vs_accounts /\
