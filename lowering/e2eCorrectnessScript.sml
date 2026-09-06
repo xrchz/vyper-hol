@@ -246,6 +246,28 @@ Proof
   rw[valid_function_call_def] >> metis_tac[]
 QED
 
+(* The source semantics of the exact packaged compilation unit is an explicit
+   boundary obligation.  In particular, it is not reconstructed from the
+   weaker observable equivalence used by generic transform correctness. *)
+Definition source_unit_execution_correct_def:
+  source_unit_execution_correct tenv cenv am tx ret
+    (unit : compilation_unit) vs <=>
+    ?fuel. external_call_result_rel tenv cenv
+      (initial_evaluation_context am.sources am.layouts tx
+        (find_function_module am tx.target tx.function_name))
+      ret (call_external am tx) (run_context fuel unit.cu_context vs)
+End
+
+Theorem source_unit_execution_correct:
+  source_unit_execution_correct tenv cenv am tx ret unit vs <=>
+  ?fuel. external_call_result_rel tenv cenv
+    (initial_evaluation_context am.sources am.layouts tx
+      (find_function_module am tx.target tx.function_name))
+    ret (call_external am tx) (run_context fuel unit.cu_context vs)
+Proof
+  simp[source_unit_execution_correct_def]
+QED
+
 Theorem compile_vyper_evm_correspondence[local]:
   !tops pipeline finalizer policy rpolicy unit out prog deploy_bc runtime_bc
    cp name i r fn off Inv cenv am tx tenv ret ctxt rb rest es vs R_ok R_term.
