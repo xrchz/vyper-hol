@@ -63,9 +63,19 @@ End
 
 Theorem task045_bump_emit_trace:
   generate_emit_ops task045_bump_inst 0 task045_bump_state =
-    ([SODup 2; SOEmit "ADD"], task045_bump_state) /\
-  execute_plan 0 [SODup 2; SOEmit "ADD"] =
-    [AsmOp "DUP2"; AsmOp "ADD"]
+    ([SOPush (Lit 31w); SOEmit "ADD";
+      SOPush (Lit 5w); SOEmit "SHR";
+      SOPush (Lit 5w); SOEmit "SHL";
+      SODup 2; SOEmit "ADD"], task045_bump_state) /\
+  execute_plan 0
+    [SOPush (Lit 31w); SOEmit "ADD";
+     SOPush (Lit 5w); SOEmit "SHR";
+     SOPush (Lit 5w); SOEmit "SHL";
+     SODup 2; SOEmit "ADD"] =
+    [AsmPush [31w]; AsmOp "ADD";
+     AsmPush [5w]; AsmOp "SHR";
+     AsmPush [5w]; AsmOp "SHL";
+     AsmOp "DUP2"; AsmOp "ADD"]
 Proof
   EVAL_TAC
 QED
@@ -74,7 +84,10 @@ Theorem task045_bump_plan_trace:
   generate_regular_inst_plan task045_param_live dfg_empty
     (cfg_analyze task045_valid_fn) task045_valid_fn task045_bump_inst
     ["ptr"; "next"] F F "entry" task045_bump_state =
-  ([SODup 2; SOEmit "ADD"],
+  ([SOPush (Lit 31w); SOEmit "ADD";
+    SOPush (Lit 5w); SOEmit "SHR";
+    SOPush (Lit 5w); SOEmit "SHL";
+    SODup 2; SOEmit "ADD"],
    task045_bump_state with ps_stack := [Var "ptr"; Var "next"])
 Proof
   EVAL_TAC >> simp[listTheory.SET_TO_LIST_EMPTY]
