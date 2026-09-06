@@ -350,6 +350,37 @@ Definition compile_internal_params_def:
     od
 End
 
+(* Internal entry parameters must be declared as one contiguous prefix.  Keep
+   declaration separate from environment/materialization effects so callers can
+   append the return-PC declaration before emitting any stores. *)
+Definition compile_internal_param_decls_def:
+  compile_internal_param_decls [] (idx:num) = return ([], idx) /\
+  compile_internal_param_decls ((name, is_stack)::rest) idx =
+    do param_op <- emit_op PARAM [Lit (n2w idx)];
+       rest_result <- compile_internal_param_decls rest (idx + 1);
+       return ((name, is_stack, param_op) :: FST rest_result,
+               SND rest_result)
+    od
+End
+
+Definition materialize_internal_params_def:
+  materialize_internal_params cenv [] = return cenv /\
+  materialize_internal_params cenv ((name, is_stack, param_op)::rest) =
+    if is_stack then
+      do (case FLOOKUP cenv.ce_vars name of
+            SOME (MemLoc offset _) =>
+              emit_void MSTORE [Lit (n2w offset); param_op]
+          | _ => return ());
+         materialize_internal_params cenv rest
+      od
+    else
+      let mem_size = (case FLOOKUP cenv.ce_vars name of
+                        SOME (MemLoc _ sz) => sz | _ => 0) in
+      let cenv' = cenv with ce_vars updated_by
+                    (\m. m |+ (name, PtrVar param_op mem_size)) in
+      materialize_internal_params cenv' rest
+End
+
 (* ===== Constructor ===== *)
 Definition compile_constructor_epilogue_def:
   compile_constructor_epilogue runtime_size immutables_len immutables_buf =
@@ -535,8 +566,19 @@ Definition compile_internal_function_def:
                                  nkey use_transient is_view
                                  is_ctor_context immutables_len
                                  body ret_type =
-    do (* Reserve immutables region for ctor-context internal functions.
-          Return the ALLOCA instruction ID for owner-tagged static metadata. *)
+    do (* Declare the complete physical entry prefix before any materialization. *)
+       return_buf_var <-
+         (if has_return_buf then
+            do param_op <- emit_op PARAM [Lit 0w];
+               return (SOME param_op)
+            od
+          else return NONE);
+       param_idx_start <- return (if has_return_buf then 1 else 0);
+       params_result <- compile_internal_param_decls params param_idx_start;
+       captured_params <- return (FST params_result);
+       next_idx <- return (SND params_result);
+       return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+       (* Reserve immutables only after the canonical parameter prefix. *)
        forced_alloc_id <-
          (if is_ctor_context ∧ immutables_len > 0 then
             let touch_offset = if immutables_len > 32 then immutables_len - 32
@@ -546,24 +588,14 @@ Definition compile_internal_function_def:
                return (SOME (FST alloc_result))
             od
           else return NONE);
-       (* Return buffer pointer if memory return *)
-       return_buf_var <-
-         (if has_return_buf then
-            do param_op <- emit_op PARAM [Lit 0w];
-               (case FLOOKUP cenv.ce_vars "__return_buf__" of
-                  SOME (MemLoc rbuf_off _) =>
-                    emit_void MSTORE [Lit (n2w rbuf_off); param_op]
-                | _ => return ());
-               return (SOME param_op)
-            od
-          else return NONE);
-       (* Params in declaration order *)
-       param_idx_start <- return (if has_return_buf then 1 else 0);
-       params_result <- compile_internal_params cenv params param_idx_start;
-       cenv2 <- return (FST params_result);
-       next_idx <- return (SND params_result);
-       (* Return PC is last param *)
-       return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+       (case return_buf_var of
+          SOME param_op =>
+            (case FLOOKUP cenv.ce_vars "__return_buf__" of
+               SOME (MemLoc rbuf_off _) =>
+                 emit_void MSTORE [Lit (n2w rbuf_off); param_op]
+             | _ => return ())
+        | NONE => return ());
+       cenv2 <- materialize_internal_params cenv captured_params;
        (case FLOOKUP cenv2.ce_vars "__return_pc__" of
           SOME (MemLoc rpc_off _) =>
             emit_void MSTORE [Lit (n2w rpc_off); return_pc]
@@ -637,7 +669,10 @@ Definition compile_internal_fn_bodies_def:
        return
          (case forced_id of
             NONE => rest_forced
-          | SOME id => (fn_lbl, id, 0) :: rest_forced)
+          | SOME id =>
+              (fn_lbl, id,
+               (if has_ret_buf then 1 else 0) + LENGTH params + 1) ::
+              rest_forced)
     od
 End
 

@@ -123,8 +123,8 @@ Definition internal_call_arg_bar_def:
   internal_call_arg_bar = HD (TL internal_call_arg_trace_context.ctx_functions)
 End
 
-Theorem internal_call_arg_bar_not_canonical:
-  ~canonical_param_prefix internal_call_arg_bar
+Theorem internal_call_arg_bar_canonical:
+  canonical_param_prefix internal_call_arg_bar
 Proof
   EVAL_TAC
 QED
@@ -135,11 +135,10 @@ Proof
   EVAL_TAC
 QED
 
-Theorem internal_call_arg_bar_fn_plan_none:
-  generate_fn_plan_fuel 100000 internal_call_arg_bar 64 1 = NONE
+Theorem internal_call_arg_bar_fn_plan_some:
+  IS_SOME (generate_fn_plan_fuel 100000 internal_call_arg_bar 64 1)
 Proof
-  simp[stackPlanGenTheory.generate_fn_plan_fuel_def,
-       internal_call_arg_bar_not_canonical]
+  EVAL_TAC
 QED
 
 val internal_call_arg_bar_entry_insts_eval =
@@ -224,18 +223,18 @@ Proof
 QED
 
 Theorem internal_call_parameter_prefix_comparison:
-  LENGTH (get_params (HD internal_call_arg_bar.fn_blocks).bb_instructions) = 1 /\
+  LENGTH (get_params (HD internal_call_arg_bar.fn_blocks).bb_instructions) = 2 /\
   LENGTH (get_params (HD internal_call_bar.fn_blocks).bb_instructions) = 1 /\
-  ~canonical_param_prefix internal_call_arg_bar /\
+  canonical_param_prefix internal_call_arg_bar /\
   canonical_param_prefix internal_call_bar
 Proof
   EVAL_TAC
 QED
 
-Theorem internal_call_arg_guard_precedes_callee_prepare:
+Theorem internal_call_entry_parameter_layouts:
   MAP (\inst. inst.inst_opcode)
       (TAKE 4 (HD internal_call_arg_bar.fn_blocks).bb_instructions) =
-    [PARAM; MSTORE; PARAM; MSTORE] /\
+    [PARAM; PARAM; MSTORE; MSTORE] /\
   MAP (\inst. inst.inst_opcode)
       (TAKE 4 (HD internal_call_bar.fn_blocks).bb_instructions) =
     [PARAM; MSTORE; MLOAD; RET] /\

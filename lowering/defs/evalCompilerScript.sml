@@ -1121,10 +1121,11 @@ QED
 Definition nested_leaf_entry_stage_def:
   nested_leaf_entry_stage =
     do new_block "leaf";
-       params_result <- compile_internal_params nested_leaf_cenv [("z", T)] 0;
-       cenv2 <- return (FST params_result);
+       params_result <- compile_internal_param_decls [("z", T)] 0;
+       captured_params <- return (FST params_result);
        next_idx <- return (SND params_result);
        return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+       cenv2 <- materialize_internal_params nested_leaf_cenv captured_params;
        (case FLOOKUP cenv2.ce_vars "__return_pc__" of
           SOME (MemLoc rpc_off _) =>
             emit_void MSTORE [Lit (n2w rpc_off); return_pc]
@@ -1149,8 +1150,8 @@ Definition nested_after_leaf_entry_state_def:
          cs_current_bb := "leaf";
          cs_current_insts :=
            [mk_inst 29 PARAM [Lit 0w] ["%18"];
-            mk_inst 30 MSTORE [Lit 0w; nested_leaf_z_operand] [];
-            mk_inst 31 PARAM [Lit 1w] ["%19"];
+            mk_inst 30 PARAM [Lit 1w] ["%19"];
+            mk_inst 31 MSTORE [Lit 0w; nested_leaf_z_operand] [];
             mk_inst 32 MSTORE [Lit 32w; nested_leaf_return_pc_operand] []];
          cs_blocks :=
            <| bb_label := nested_after_fallback_state.cs_current_bb;
@@ -1164,7 +1165,8 @@ Theorem nested_leaf_entry_stage_eq:
      nested_after_leaf_entry_state)
 Proof
   simp[nested_leaf_entry_stage_def,
-       moduleLoweringTheory.compile_internal_params_def,
+       moduleLoweringTheory.compile_internal_param_decls_def,
+       moduleLoweringTheory.materialize_internal_params_def,
        nested_leaf_cenv_entry_facts,
        compileEnvTheory.new_block_def,
        emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
@@ -1212,8 +1214,8 @@ Theorem nested_after_leaf_entry_state_facts:
   nested_after_leaf_entry_state.cs_next_id = 33 /\
   nested_after_leaf_entry_state.cs_current_insts =
     [mk_inst 29 PARAM [Lit 0w] ["%18"];
-     mk_inst 30 MSTORE [Lit 0w; nested_leaf_z_operand] [];
-     mk_inst 31 PARAM [Lit 1w] ["%19"];
+     mk_inst 30 PARAM [Lit 1w] ["%19"];
+     mk_inst 31 MSTORE [Lit 0w; nested_leaf_z_operand] [];
      mk_inst 32 MSTORE [Lit 32w; nested_leaf_return_pc_operand] []] /\
   ~block_is_terminated nested_after_leaf_entry_state
 Proof
@@ -1276,67 +1278,33 @@ Proof
 QED
 
 
-Theorem nested_leaf_entry_continuation_eq:
-  !k.
-    (do new_block "leaf";
-        return ();
-        return_buf_var <- return (NONE : operand option);
-        param_idx_start <- return 0;
-        params_result <-
-          compile_internal_params nested_leaf_cenv [("z", T)] param_idx_start;
-        cenv2 <- return (FST params_result);
-        next_idx <- return (SND params_result);
-        return_pc <- emit_op PARAM [Lit (n2w next_idx)];
-        (case FLOOKUP cenv2.ce_vars "__return_pc__" of
-           SOME (MemLoc rpc_off _) =>
-             emit_void MSTORE [Lit (n2w rpc_off); return_pc]
-         | _ => return ());
-        return ();
-        k cenv2 return_pc
-     od) nested_after_fallback_state =
-    k nested_leaf_cenv nested_leaf_return_pc_operand
-      nested_after_leaf_entry_state
-Proof
-  gen_tac
-  >> simp[moduleLoweringTheory.compile_internal_params_def,
-       nested_leaf_cenv_entry_facts,
-       compileEnvTheory.new_block_def,
-       emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
-       emitHelperTheory.emit_inst_def,
-       compileEnvTheory.fresh_id_def, compileEnvTheory.fresh_var_def,
-       compileEnvTheory.emit_def,
-       compileEnvTheory.comp_return_def, compileEnvTheory.comp_bind_def,
-       compileEnvTheory.comp_ignore_bind_def,
-       nested_leaf_z_operand_def,
-       nested_leaf_return_pc_operand_def,
-       nested_after_leaf_entry_state_def,
-       nested_after_fallback_state_def,
-       nested_after_foo_body_state_def]
-QED
 
 Theorem nested_leaf_applied_entry_continuation_eq:
   !k.
     (\(_0, cs').
        (\(params_result, cs').
           (\(return_pc, cs').
-             (\(_0, cs').
-                k (FST params_result) return_pc cs')
-               ((case FLOOKUP (FST params_result).ce_vars "__return_pc__" of
-                   NONE => comp_return ()
-                 | SOME (MemLoc rpc_off _) =>
-                     emit_void MSTORE [Lit (n2w rpc_off); return_pc]
-                 | SOME (StorageLoc _) => comp_return ()
-                 | SOME (TransientLoc _) => comp_return ()
-                 | SOME (ImmutableLoc _) => comp_return ()
-                 | SOME (PtrVar _ _) => comp_return ()) cs'))
+             (\(cenv2, cs').
+                (\(_0, cs'). k cenv2 return_pc cs')
+                  ((case FLOOKUP cenv2.ce_vars "__return_pc__" of
+                      NONE => comp_return ()
+                    | SOME (MemLoc rpc_off _) =>
+                        emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+                    | SOME (StorageLoc _) => comp_return ()
+                    | SOME (TransientLoc _) => comp_return ()
+                    | SOME (ImmutableLoc _) => comp_return ()
+                    | SOME (PtrVar _ _) => comp_return ()) cs'))
+               (materialize_internal_params nested_leaf_cenv
+                  (FST params_result) cs'))
             (emit_op PARAM [Lit (n2w (SND params_result))] cs'))
-         (compile_internal_params nested_leaf_cenv [("z", T)] 0 cs'))
+         (compile_internal_param_decls [("z", T)] 0 cs'))
       (new_block "leaf" nested_after_fallback_state) =
     k nested_leaf_cenv nested_leaf_return_pc_operand
       nested_after_leaf_entry_state
 Proof
   gen_tac
-  >> simp[moduleLoweringTheory.compile_internal_params_def,
+  >> simp[moduleLoweringTheory.compile_internal_param_decls_def,
+       moduleLoweringTheory.materialize_internal_params_def,
        nested_leaf_cenv_entry_facts,
        compileEnvTheory.new_block_def,
        emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
@@ -1424,8 +1392,8 @@ Definition nested_after_mid_entry_state_def:
          cs_current_bb := "mid";
          cs_current_insts :=
            [mk_inst 36 PARAM [Lit 0w] ["%22"];
-            mk_inst 37 MSTORE [Lit 0w; nested_mid_y_operand] [];
-            mk_inst 38 PARAM [Lit 1w] ["%23"];
+            mk_inst 37 PARAM [Lit 1w] ["%23"];
+            mk_inst 38 MSTORE [Lit 0w; nested_mid_y_operand] [];
             mk_inst 39 MSTORE [Lit 32w; nested_mid_return_pc_operand] []];
          cs_blocks :=
            <| bb_label := nested_after_leaf_body_state.cs_current_bb;
@@ -1436,11 +1404,11 @@ End
 Definition nested_mid_entry_stage_def:
   nested_mid_entry_stage =
     do new_block "mid";
-       params_result <-
-         compile_internal_params nested_mid_cenv [("y", T)] 0;
-       cenv2 <- return (FST params_result);
+       params_result <- compile_internal_param_decls [("y", T)] 0;
+       captured_params <- return (FST params_result);
        next_idx <- return (SND params_result);
        return_pc <- emit_op PARAM [Lit (n2w next_idx)];
+       cenv2 <- materialize_internal_params nested_mid_cenv captured_params;
        (case FLOOKUP cenv2.ce_vars "__return_pc__" of
           SOME (MemLoc rpc_off _) =>
             emit_void MSTORE [Lit (n2w rpc_off); return_pc]
@@ -1455,7 +1423,8 @@ Theorem nested_mid_entry_stage_eq:
      nested_after_mid_entry_state)
 Proof
   simp[nested_mid_entry_stage_def,
-       moduleLoweringTheory.compile_internal_params_def,
+       moduleLoweringTheory.compile_internal_param_decls_def,
+       moduleLoweringTheory.materialize_internal_params_def,
        nested_mid_cenv_entry_facts,
        compileEnvTheory.new_block_def,
        emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
@@ -1745,24 +1714,27 @@ Theorem nested_mid_applied_entry_continuation_eq:
     (\(_0, cs').
        (\(params_result, cs').
           (\(return_pc, cs').
-             (\(_0, cs').
-                k (FST params_result) return_pc cs')
-               ((case FLOOKUP (FST params_result).ce_vars "__return_pc__" of
-                   NONE => comp_return ()
-                 | SOME (MemLoc rpc_off _) =>
-                     emit_void MSTORE [Lit (n2w rpc_off); return_pc]
-                 | SOME (StorageLoc _) => comp_return ()
-                 | SOME (TransientLoc _) => comp_return ()
-                 | SOME (ImmutableLoc _) => comp_return ()
-                 | SOME (PtrVar _ _) => comp_return ()) cs'))
+             (\(cenv2, cs').
+                (\(_0, cs'). k cenv2 return_pc cs')
+                  ((case FLOOKUP cenv2.ce_vars "__return_pc__" of
+                      NONE => comp_return ()
+                    | SOME (MemLoc rpc_off _) =>
+                        emit_void MSTORE [Lit (n2w rpc_off); return_pc]
+                    | SOME (StorageLoc _) => comp_return ()
+                    | SOME (TransientLoc _) => comp_return ()
+                    | SOME (ImmutableLoc _) => comp_return ()
+                    | SOME (PtrVar _ _) => comp_return ()) cs'))
+               (materialize_internal_params nested_mid_cenv
+                  (FST params_result) cs'))
             (emit_op PARAM [Lit (n2w (SND params_result))] cs'))
-         (compile_internal_params nested_mid_cenv [("y", T)] 0 cs'))
+         (compile_internal_param_decls [("y", T)] 0 cs'))
       (new_block "mid" nested_after_leaf_body_state) =
     k nested_mid_cenv nested_mid_return_pc_operand
       nested_after_mid_entry_state
 Proof
   gen_tac
-  >> simp[moduleLoweringTheory.compile_internal_params_def,
+  >> simp[moduleLoweringTheory.compile_internal_param_decls_def,
+       moduleLoweringTheory.materialize_internal_params_def,
        nested_mid_cenv_entry_facts,
        compileEnvTheory.new_block_def,
        emitHelperTheory.emit_op_def, emitHelperTheory.emit_void_def,
@@ -1775,7 +1747,6 @@ Proof
        nested_after_mid_entry_state_def,
        nested_after_leaf_body_state_def]
 QED
-
 
 Theorem nested_after_mid_entry_state_not_terminated:
   ~block_is_terminated nested_after_mid_entry_state
@@ -1856,7 +1827,7 @@ Proof
               comp_return
                 (case forced_id of
                    NONE => rest_forced
-                 | SOME id => ("leaf", id, 0) :: rest_forced)))` by
+                 | SOME id => ("leaf", id, 2) :: rest_forced)))` by
     simp[moduleLoweringTheory.compile_internal_fn_bodies_def,
          nested_leaf_package_def, nested_leaf_stage_def,
          GSYM comp_ignore_bind_then_bind]
@@ -1870,7 +1841,7 @@ Proof
                 comp_return
                   (case forced_id of
                      NONE => rest_forced
-                   | SOME id => ("mid", id, 0) :: rest_forced)))` by
+                   | SOME id => ("mid", id, 2) :: rest_forced)))` by
        simp[moduleLoweringTheory.compile_internal_fn_bodies_def,
             nested_mid_package_def, nested_mid_stage_def,
             GSYM comp_ignore_bind_then_bind]
@@ -2234,9 +2205,9 @@ Theorem immutable_multi_deploy_static_inputs:
       EVERY function_forced_metadata_ok u.cu_context.ctx_functions /\
       MAP (\fn. (fn.fn_name,
                   FLOOKUP fn.fn_forced_alloc_positions 3,
-                  FLOOKUP fn.fn_forced_alloc_positions 11))
+                  FLOOKUP fn.fn_forced_alloc_positions 12))
         u.cu_context.ctx_functions =
-        [("__deploy", SOME 0, NONE); ("helper", NONE, SOME 0)] /\
+        [("__deploy", SOME 0, NONE); ("helper", NONE, SOME 1)] /\
       LENGTH u.cu_context.ctx_functions = 2 /\
       EVERY (\fn. fn.fn_eom = NONE) u.cu_context.ctx_functions
 Proof
@@ -2269,8 +2240,8 @@ Proof
           >> simp[])
       >> first_x_assum
            (qspec_then
-             `<| inst_id := 11; inst_opcode := ALLOCA;
-                 inst_operands := [Lit 32w]; inst_outputs := ["%7"] |>`
+             `<| inst_id := 12; inst_opcode := ALLOCA;
+                 inst_operands := [Lit 32w]; inst_outputs := ["%8"] |>`
              mp_tac)
       >> simp[])
   >> gvs[]
@@ -2282,8 +2253,8 @@ Proof
       >> simp[])
   >> first_x_assum
        (qspec_then
-         `<| inst_id := 11; inst_opcode := ALLOCA;
-             inst_operands := [Lit 32w]; inst_outputs := ["%7"] |>`
+         `<| inst_id := 12; inst_opcode := ALLOCA;
+             inst_operands := [Lit 32w]; inst_outputs := ["%8"] |>`
          mp_tac)
   >> simp[]
 QED
