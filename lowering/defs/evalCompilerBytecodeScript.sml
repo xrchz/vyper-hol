@@ -493,11 +493,68 @@ Proof
   FAIL_TAC "empty fixture after deploy evaluation"
 QED
 
+
+val fn_plan_aux_fuel_tm = ``generate_fn_plan_aux_fuel``
+
+fun closed_fn_plan_aux_success_conv tm =
+  let
+    val (head, args) = strip_comb tm
+    val _ = if aconv head fn_plan_aux_fuel_tm andalso length args = 8
+            then () else raise UNCHANGED
+    val target_fuel = hd args
+    val target_n = numSyntax.int_of_term target_fuel
+    fun seek [] = raise Fail "no successful planner run within bounded fuel"
+      | seek (n :: ns) =
+          let
+            val low_fuel = numSyntax.term_of_int n
+            val low_tm = list_mk_comb (head, low_fuel :: tl args)
+            val low_thm = computeLib.EVAL_CONV low_tm
+            val low_rhs = rhs (concl low_thm)
+          in
+            if optionSyntax.is_some low_rhs then (n, low_fuel, low_thm,
+                                                  optionSyntax.dest_some low_rhs)
+            else seek ns
+          end
+    val (n, low_fuel, low_thm, result) = seek [16, 32, 64, 128, 256]
+    val _ = if n <= target_n then ()
+            else raise Fail "successful probe fuel exceeds target fuel"
+    val extra = numSyntax.term_of_int (target_n - n)
+    val stable = SPECL (low_fuel :: tl args @ [result, extra])
+      generate_fn_plan_aux_fuel_success_stable
+    val lifted = MATCH_MP stable low_thm
+    val normalized = SIMP_RULE (srw_ss()) [] lifted
+    val _ = if aconv (lhs (concl normalized)) tm then ()
+            else raise Fail "lifted planner theorem does not match target"
+  in
+    normalized
+  end
+
+fun closed_compiler_eval tm =
+  let
+    val partial = RESTR_EVAL_CONV [``generate_fn_plan_aux_fuel``] tm
+    val simplified =
+      SIMP_RULE (srw_ss())
+        [finite_mapTheory.FEVERY_FEMPTY,
+         venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+        partial
+    val staged =
+      CONV_RULE
+        (RAND_CONV (RESTR_EVAL_CONV [``generate_fn_plan_aux_fuel``]))
+        simplified
+    val planners =
+      CONV_RULE (RAND_CONV (DEPTH_CONV closed_fn_plan_aux_success_conv))
+        staged
+  in
+    CONV_RULE (RAND_CONV computeLib.EVAL_CONV) planners
+  end
+
+val noop_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 noop_program``
 Theorem noop_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 noop_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "noop.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[noop_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem return_uint_result_lengths:
