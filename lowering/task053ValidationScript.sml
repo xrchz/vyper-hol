@@ -3,6 +3,7 @@
 Theory task053Validation
 Ancestors
   e2eDefs
+  codegen
 Libs
   BasicProvers
 
@@ -30,6 +31,20 @@ Proof
        asmTargetSafetyTheory.asm_opcode_target_supported_def,
        symbolResolveTheory.evm_opcode_byte_def,
        symbolResolveTheory.evm_opcode_table_def]
+QED
+
+Theorem finalizer_correct_preserve_codegen_bytecode:
+  rpolicy.rpol_final_assembly = FAP_Preserve /\
+  finalizer_correct rpolicy finalizer /\
+  codegen_assembly rpolicy unit = SOME prog /\
+  finalize_codegen finalizer rpolicy unit = SOME bytecode ==>
+  bytecode = assemble prog
+Proof
+  rw[codegenTheory.finalize_codegen_def] >>
+  Cases_on `finalizer rpolicy prog` >> gvs[] >>
+  qpat_x_assum `finalizer_correct rpolicy finalizer` mp_tac >>
+  simp[finalizer_correct_def] >>
+  disch_then (qspecl_then [`prog`, `x`] mp_tac) >> simp[]
 QED
 
 val _ = export_theory ();
