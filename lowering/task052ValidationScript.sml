@@ -6,13 +6,20 @@ Ancestors
 Libs
   BasicProvers
 
+Theorem checked_unit_transform_correct_exists:
+  checked_unit_transform_correct pipeline rpolicy R_ok R_term unit s ==>
+  ?out. pipeline rpolicy unit = SOME out
+Proof
+  simp[checked_unit_transform_correct_def] >> metis_tac[]
+QED
+
 Theorem checked_unit_transform_correct_success:
   checked_unit_transform_correct pipeline rpolicy R_ok R_term unit s /\
   pipeline rpolicy unit = SOME out ==>
   ctx_transform_correct R_ok R_term
     unit.cu_context out.po_unit.cu_context s
 Proof
-  simp[checked_unit_transform_correct_def]
+  rw[checked_unit_transform_correct_def] >> gvs[]
 QED
 
 Theorem source_deployment_rel_target:

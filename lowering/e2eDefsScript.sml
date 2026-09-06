@@ -53,7 +53,7 @@ Definition checked_unit_transform_correct_def:
     (pipeline : resolved_compiler_policy -> compilation_unit ->
                 pipeline_output option)
     rpolicy R_ok R_term (unit : compilation_unit) s <=>
-    !out. pipeline rpolicy unit = SOME out ==>
+    ?out. pipeline rpolicy unit = SOME out /\
       ctx_transform_correct R_ok R_term
         unit.cu_context out.po_unit.cu_context s
 End
