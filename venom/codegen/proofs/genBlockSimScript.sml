@@ -12,7 +12,7 @@
 
 Theory genBlockSim
 Ancestors
-  blockSimHelpers stackOpSim stackOpAsmSim planWf prefixExec prefixSim mixedPrefixSim planSim asmSem planExec codegenRel asmIR stackPlanGen stackPlanTypes stackModel stackPlanOps venomExecSemantics venomInstProofs1 venomState venomInst venomWf venomEffects list rich_list arithmetic indexedLists instSimHelpers opcodeClass strongPrefixSim reorderSim emitInputSim planAlign doSwapSim emitSim asmOpSim spillSim allocMono cleanOpsSim planSpillBounds
+  blockSimHelpers stackOpSim stackOpAsmSim planWf prefixExec prefixSim mixedPrefixSim planSim asmSem planExec codegenRel asmIR stackPlanGen stackPlanTypes stackModel stackPlanOps venomExecSemantics venomInstProofs1 venomState venomInst venomWf venomEffects list rich_list arithmetic indexedLists instSimHelpers opcodeClass strongPrefixSim reorderSim emitInputSim planAlign doSwapSim emitSim asmOpSim spillSim allocMono cleanOpsSim planSpillBounds contextCodegenRelProps
 Libs
   BasicProvers
 
@@ -2858,7 +2858,7 @@ Theorem gen_inst_sim_param:
            ~MEM (Var out) ps.ps_stack /\
            Var out NOTIN FDOM ps.ps_spilled) ==>
     !vs'. step_inst fuel ctx inst vs = OK vs' /\
-          inst_memory_safe ps.ps_alloc inst vs vs' ==>
+          inst_memory_safe ps'.ps_alloc inst vs vs' ==>
       ops = [] /\ ps' = ps /\
       ?n as'.
         asm_steps lo o2pc prog n as = AsmOK as' /\
@@ -3146,6 +3146,23 @@ Proof
      gvs[finite_mapTheory.flookup_thm]
 QED
 
+Theorem reorder_plan_exact_two_ready_local[local]:
+  exact_two_planner_ready spill_base h h' ps /\
+  reorder_plan dfg [h;h'] ps = (ops,ps') ==>
+  exact_two_planner_ready spill_base h h' ps'
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `reorder_plan _ _ _ = _` mp_tac >>
+  simp[reorder_plan_def, indexedListsTheory.MAPi_def,
+       indexedListsTheory.MAPi_ACC_def, LET_THM] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  `exact_two_planner_ready spill_base h h' ps''` by
+    (irule reorder_one_exact_two_planner_ready >>
+     qexistsl [`dfg`, `0`, `h`, `ops'`, `ps`] >> simp[]) >>
+  irule reorder_one_exact_two_planner_ready >>
+  qexistsl [`dfg`, `1`, `h'`, `step_ops`, `ps''`] >> simp[]
+QED
+
 (* Comprehensive per-instruction OK simulation.
    Stronger than venomToAsmProps.gen_inst_simulation:
    - requires inst_wf, operand bound, label resolution, prefix_spill_wf
@@ -3218,11 +3235,12 @@ Theorem gen_inst_ok_sim:
       SOME (ops, ps') /\
     asm_block_at prog as.as_pc (execute_plan initial_fmp ops) ==>
     !vs'. step_inst fuel ctx inst vs = OK vs' /\
-          inst_memory_safe ps.ps_alloc inst vs vs' ==>
+          inst_memory_safe ps'.ps_alloc inst vs vs' ==>
       ?n as'.
         asm_steps lo o2pc prog n as = AsmOK as' /\
         venom_asm_rel lo ps' vs' as' /\
-        as'.as_pc = as.as_pc + LENGTH (execute_plan initial_fmp ops)
+        (~is_terminator inst.inst_opcode ==>
+         as'.as_pc = as.as_pc + LENGTH (execute_plan initial_fmp ops))
 Proof
   rpt strip_tac >>
   `plan_slots_bounded base' ps` by fs[generated_plan_state_wf_def] >>
@@ -5430,8 +5448,226 @@ Proof
   qpat_x_assum `SUC (SUC _) < 2` mp_tac >> simp[]
 QED
 
+Theorem istore_asm_step_op_mstore[local]:
+  !o2pc st. asm_step_op o2pc "MSTORE" st = asm_mstore st
+Proof
+  simp[asm_step_op_def, asm_step_arith_def, asm_step_compare_def,
+       asm_step_bitwise_def, asm_step_memory_def]
+QED
+
+Theorem inst_memory_safe_alloc_fields[local]:
+  !alloc1 alloc2 inst vs vs'.
+    alloc1.sa_spill_base = alloc2.sa_spill_base /\
+    alloc1.sa_next_offset = alloc2.sa_next_offset /\
+    inst_memory_safe alloc1 inst vs vs' ==>
+    inst_memory_safe alloc2 inst vs vs'
+Proof
+  rpt strip_tac >>
+  gvs[inst_memory_safe_def, step_mem_safe_def,
+      source_memory_writes_disjoint_def]
+QED
+
+
+Theorem istore_emit_steps[local]:
+  !lo o2pc prog st off value rest.
+    st.as_stack = value::off::rest /\
+    asm_block_at prog st.as_pc [AsmOp "SWAP1"; AsmOp "MSTORE"] ==>
+    asm_steps lo o2pc prog 2 st =
+      AsmOK (st with <| as_stack := rest;
+                       as_memory := mem_write32 (w2n off) value st.as_memory;
+                       as_pc := st.as_pc + 2 |>)
+Proof
+  rpt strip_tac >> fs[asm_block_at_def] >>
+  `EL st.as_pc prog = AsmOp "SWAP1"` by
+    (first_x_assum (qspec_then `0` mp_tac) >> simp[]) >>
+  `EL (st.as_pc + 1) prog = AsmOp "MSTORE"` by
+    (first_x_assum (qspec_then `1` mp_tac) >> simp[]) >>
+  `LUPDATE value 1 (LUPDATE off 0 (value::off::rest)) =
+     off::value::rest` by
+    (simp[LIST_EQ_REWRITE, EL_LUPDATE] >> gen_tac >>
+     Cases_on `x` >> simp[] >> Cases_on `n` >> simp[]) >>
+  `LUPDATE (HD st.as_stack) 1
+      (LUPDATE (EL 1 st.as_stack) 0 st.as_stack) = off::value::rest` by
+    (simp[] >> ASM_REWRITE_TAC[]) >>
+  `asm_step lo o2pc (AsmOp "SWAP1") st =
+     AsmOK (asm_next (st with as_stack := off::value::rest))` by
+    (qspecl_then [`lo`, `o2pc`, `1n`, `st`] mp_tac asm_step_swap_ok >>
+     (impl_tac >- simp[]) >>
+     pure_rewrite_tac[swap_name_def] >> ASM_REWRITE_TAC[]) >>
+  SUBST1_TAC (DECIDE ``2 = SUC (SUC 0)``) >>
+  SUBST1_TAC (DECIDE ``1 = SUC 0``) >>
+  simp[Once asm_steps_def] >>
+  rewrite_tac[DECIDE ``1 = SUC 0``] >>
+  pure_once_rewrite_tac[asm_steps_def] >>
+  simp[asm_step_def, istore_asm_step_op_mstore, asm_mstore_def,
+       asm_next_def, mem_write32_def, asm_state_component_equality]
+QED
+
 Resume gen_inst_ok_sim[istore]:
-  cheat
+  fs[inst_wf_def] >>
+  qpat_x_assum `step_inst _ _ _ _ = OK _` mp_tac >>
+  simp[step_inst_non_invoke, Once step_inst_base_def] >>
+  Cases_on `inst.inst_operands` >> gvs[] >>
+  Cases_on `t` >> gvs[] >>
+  Cases_on `eval_operand h vs` >> gvs[] >>
+  Cases_on `eval_operand h' vs` >> gvs[] >>
+  strip_tac >> gvs[] >>
+  qpat_x_assum `generate_regular_inst_plan _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
+  simp[generate_regular_inst_plan_def, compute_operands_def,
+       generate_emit_ops_def, is_commutative_def, venom_to_evm_name_def] >>
+  rpt (pairarg_tac >> gvs[]) >> strip_tac >> gvs[] >>
+  `exact_two_planner_ready base' h h' ps1` by
+    (irule istore_input_ownership_ready_probe >>
+     qexistsl [`input_ops`, `next_liveness`, `ps`] >>
+     ASM_REWRITE_TAC[] >> rpt strip_tac >>
+     qpat_assum `!x. MEM x (compute_operands inst) /\ is_var_operand x ==> _`
+       (qspec_then `op` mp_tac) >>
+     (impl_tac >- gvs[compute_operands_def]) >> simp[]) >>
+  `emit_input_plan BUMP [h;h'] next_liveness ps = (input_ops,ps1)` by
+    (qpat_x_assum `emit_input_plan ISTORE _ _ _ = _` mp_tac >>
+     simp[emit_input_plan_def, emit_one_input_def]) >>
+  `prefix_spill_wf initial_fmp lo (input_ops ++ reorder_ops) ps` by
+    (irule prefix_spill_wf_prefix >>
+     qexists `[SOEmit "SWAP1"]` >>
+     qpat_x_assum `prefix_spill_wf initial_fmp lo (FRONT _) ps` mp_tac >>
+     simp[FRONT_APPEND_NOT_NIL]) >>
+  `asm_block_at prog as.as_pc
+     (execute_plan initial_fmp (input_ops ++ reorder_ops))` by
+    (qpat_x_assum `asm_block_at prog as.as_pc (execute_plan initial_fmp _)` mp_tac >>
+     simp[execute_plan_append, asm_block_at_append]) >>
+  qspecl_then [`base'`, `h`, `h'`, `next_liveness`, `ps`, `input_ops`, `ps1`,
+    `dfg`, `reorder_ops`, `ps4`, `initial_fmp`, `lo`, `o2pc`, `prog`, `vs`,
+    `as`] mp_tac bump_input_reorder_venom_asm_rel >>
+  (impl_tac >- (ASM_REWRITE_TAC[] >>
+    rpt conj_tac
+    >- (rpt strip_tac >>
+        qpat_assum `!x. MEM x (compute_operands inst) /\ is_var_operand x ==> _`
+          (qspec_then `op` mp_tac) >>
+        (impl_tac >- gvs[compute_operands_def]) >> simp[])
+    >- (rpt strip_tac >>
+        qpat_assum `!l. MEM (Label l) (compute_operands inst) ==> _`
+          (qspec_then `l` mp_tac) >> gvs[compute_operands_def])
+    >- fs[exact_two_planner_ready_def])) >>
+  strip_tac >>
+  `ps4.ps_stack = stack_pop 2 ps4.ps_stack ++ [h;h'] /\
+   generated_plan_state_wf base'
+     (ps4 with ps_stack := stack_pop 2 ps4.ps_stack)` by
+    (irule bump_reorder_postpop_generated_wf >>
+     qexistsl [`dfg`, `input_ops`, `next_liveness`, `ps`, `ps1`,
+                `reorder_ops`] >>
+     ASM_REWRITE_TAC[] >> fs[exact_two_planner_ready_def]) >>
+  `operand_val vs lo h = SOME x /\ operand_val vs lo h' = SOME x'` by
+    (conj_tac
+     >- (qpat_assum `!op. MEM op (compute_operands inst) ==> _`
+           (qspec_then `h` mp_tac) >> gvs[compute_operands_def])
+     >> qpat_assum `!op. MEM op (compute_operands inst) ==> _`
+          (qspec_then `h'` mp_tac) >> gvs[compute_operands_def]) >>
+  `2 <= LENGTH ps4.ps_stack` by
+    (qpat_assum `ps4.ps_stack = stack_pop 2 ps4.ps_stack ++ [h;h']`
+       (mp_tac o AP_TERM ``LENGTH : operand list -> num``) >>
+     pure_rewrite_tac[LENGTH_APPEND, LENGTH] >> decide_tac) >>
+  `2 <= LENGTH as'.as_stack` by
+    (fs[venom_asm_rel_def, plan_stack_rel_def] >> decide_tac) >>
+  `plan_stack_rel lo vs (stack_pop 2 ps4.ps_stack)
+     (DROP 2 as'.as_stack)` by
+    (simp[stack_pop_def] >> irule plan_stack_rel_pop >>
+     fs[venom_asm_rel_def]) >>
+  `EL 0 as'.as_stack = x'` by
+    (qspecl_then [`lo`, `vs`, `ps4.ps_stack`, `as'.as_stack`, `0`]
+       mp_tac plan_stack_rel_el >>
+     (impl_tac >- fs[venom_asm_rel_def]) >>
+     qpat_assum `ps4.ps_stack = stack_pop 2 ps4.ps_stack ++ [h;h']`
+       (fn th => once_rewrite_tac[th]) >>
+     simp[REVERSE_APPEND]) >>
+  `EL 1 as'.as_stack = x` by
+    (qspecl_then [`lo`, `vs`, `ps4.ps_stack`, `as'.as_stack`, `1`]
+       mp_tac plan_stack_rel_el >>
+     (impl_tac >- fs[venom_asm_rel_def]) >>
+     qpat_assum `ps4.ps_stack = stack_pop 2 ps4.ps_stack ++ [h;h']`
+       (fn th => once_rewrite_tac[th]) >>
+     simp[REVERSE_APPEND]) >>
+  `?rest. as'.as_stack = x'::x::rest /\
+          plan_stack_rel lo vs (stack_pop 2 ps4.ps_stack) rest` by
+    (qexists `DROP 2 as'.as_stack` >> ASM_REWRITE_TAC[] >>
+     Cases_on `as'.as_stack` >- gvs[] >>
+     Cases_on `t` >- gvs[] >> gvs[]) >>
+  `as'.as_pc = as.as_pc +
+     (LENGTH (FLAT (MAP (exec_stack_op initial_fmp) input_ops)) +
+      LENGTH (FLAT (MAP (exec_stack_op initial_fmp) reorder_ops)))` by
+    (qpat_assum `as'.as_pc = _` mp_tac >>
+     simp[execute_plan_append, execute_plan_def]) >>
+  `asm_block_at prog as'.as_pc [AsmOp "SWAP1"; AsmOp "MSTORE"]` by
+    (qpat_assum `asm_block_at prog as.as_pc
+       (execute_plan initial_fmp
+         (input_ops ++ reorder_ops ++ [SOEmit "SWAP1"; SOEmit "MSTORE"]))`
+       mp_tac >>
+     PURE_REWRITE_TAC[APPEND_ASSOC, execute_plan_append,
+       asm_block_at_append] >> strip_tac >>
+     qpat_assum `asm_block_at prog (as.as_pc + LENGTH (_ ++ _)) _`
+       (fn th => mp_tac (SIMP_RULE (srw_ss())
+         [execute_plan_def, exec_stack_op_def, LENGTH_APPEND] th)) >>
+     qpat_assum `as'.as_pc = _` (fn th => rewrite_tac[GSYM th]) >>
+     simp[]) >>
+  qabbrev_tac `as2 = as' with <|
+    as_stack := rest;
+    as_memory := mem_write32 (w2n x) x' as'.as_memory;
+    as_pc := as'.as_pc + 2 |>` >>
+  `asm_steps lo o2pc prog 2 as' = AsmOK as2` by
+    (unabbrev_all_tac >> irule istore_emit_steps >> ASM_REWRITE_TAC[]) >>
+  `inst_memory_safe ps4.ps_alloc inst vs (istore (w2n x) x' vs)` by
+    (irule inst_memory_safe_alloc_fields >>
+     qexists `(release_dead_spills next_liveness
+       (ps4 with ps_stack := stack_pop 2 ps4.ps_stack)).ps_alloc` >>
+     simp[release_dead_spills_spill_base,
+          release_dead_spills_next_offset] >>
+     first_assum ACCEPT_TAC) >>
+  `w2n x + 32 <= ps4.ps_alloc.sa_spill_base \/
+   ps4.ps_alloc.sa_next_offset <= w2n x` by
+    (qpat_x_assum `inst_memory_safe ps4.ps_alloc inst vs _` mp_tac >>
+     simp[inst_memory_safe_def, source_memory_writes_disjoint_def,
+          source_memory_write_ranges_def, fixed_source_write_range_def]) >>
+  `!op. operand_val (istore (w2n x) x' vs) lo op = operand_val vs lo op` by
+    (Cases >> simp[operand_val_def, istore_def, mstore_def]) >>
+  `plan_spill_rel lo vs ps4.ps_spilled as'.as_memory` by
+    (qpat_assum `venom_asm_rel lo ps4 vs as'`
+       (fn th => ACCEPT_TAC (cj 2 (REWRITE_RULE[venom_asm_rel_def] th)))) >>
+  `venom_asm_rel lo
+     (ps4 with ps_stack := stack_pop 2 ps4.ps_stack)
+     (istore (w2n x) x' vs) as2` by
+    (unabbrev_all_tac >> simp[venom_asm_rel_def] >>
+     conj_tac
+     >- (qpat_x_assum `plan_stack_rel lo vs (stack_pop 2 ps4.ps_stack) rest`
+           mp_tac >> simp[plan_stack_rel_def]) >>
+     conj_tac
+     >- (irule plan_spill_rel_preserved >>
+         qexistsl [`as'.as_memory`, `vs`] >>
+         conj_tac
+         >- (rpt strip_tac >> irule mem_write32_read32_disjoint >>
+             `ps4.ps_alloc.sa_spill_base <= off /\
+              off + 32 <= ps4.ps_alloc.sa_next_offset` by
+               (qpat_x_assum `generated_plan_state_wf base'
+                    (ps4 with ps_stack := stack_pop 2 ps4.ps_stack)` mp_tac >>
+                simp[generated_plan_state_wf_def, spill_alloc_layout_wf_def] >>
+                metis_tac[]) >>
+             decide_tac) >>
+         simp[]) >>
+     conj_tac
+     >- (irule memory_rel_mstore_mem_write32 >>
+         qpat_assum `venom_asm_rel lo ps4 vs as'`
+           (fn th => ACCEPT_TAC (cj 3 (REWRITE_RULE[venom_asm_rel_def] th)))) >>
+     qpat_assum `venom_asm_rel lo ps4 vs as'`
+       (fn th => STRIP_ASSUME_TAC (REWRITE_RULE[venom_asm_rel_def] th)) >>
+     ASM_REWRITE_TAC[]) >>
+  `venom_asm_rel lo
+     (release_dead_spills next_liveness
+       (ps4 with ps_stack := stack_pop 2 ps4.ps_stack))
+     (istore (w2n x) x' vs) as2` by
+    (irule venom_asm_rel_release_dead_spills >> ASM_REWRITE_TAC[]) >>
+  qexistsl [`LENGTH (execute_plan initial_fmp (input_ops ++ reorder_ops)) + 2`,
+             `as2`] >>
+  gvs[asm_steps_add, execute_plan_append, LENGTH_APPEND,
+      execute_plan_def, exec_stack_op_def] >>
+  simp[Abbr `as2`]
 QED
 
 Theorem istore_spill_overlap_mismatch[local]:

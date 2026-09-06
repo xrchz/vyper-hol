@@ -45,7 +45,7 @@ Theorem gen_inst_simulation:
       SOME (ops, ps') ∧
     asm_block_at prog as.as_pc (execute_plan initial_fmp ops) ⇒
     ∀vs'. step_inst fuel ctx inst vs = OK vs' ∧
-          inst_memory_safe ps.ps_alloc inst vs vs' ⇒
+          inst_memory_safe ps'.ps_alloc inst vs vs' ⇒
       ∃n as'.
         asm_steps label_offsets offset_to_pc prog n as = AsmOK as' ∧
         venom_asm_rel label_offsets ps' vs' as'
