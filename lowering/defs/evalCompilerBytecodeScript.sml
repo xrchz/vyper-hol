@@ -330,6 +330,46 @@ Proof
        empty_runtime_entry_plan_value_eval]
 QED
 
+Theorem fn_plan_fuel_success_stable:
+  (!fuel liveness dfg cfg fn worklist visited ps result extra.
+    generate_fn_plan_aux_fuel fuel liveness dfg cfg fn worklist visited ps =
+      SOME result ==>
+    generate_fn_plan_aux_fuel (fuel + extra) liveness dfg cfg fn
+      worklist visited ps = SOME result) /\
+  (!fuel liveness dfg cfg fn ss sp succs visited ps result extra.
+    generate_succs_plan_fuel fuel liveness dfg cfg fn ss sp succs visited ps =
+      SOME result ==>
+    generate_succs_plan_fuel (fuel + extra) liveness dfg cfg fn ss sp succs
+      visited ps = SOME result)
+Proof
+  ho_match_mp_tac stackPlanGenTheory.generate_fn_plan_aux_fuel_ind >>
+  rpt conj_tac >> rpt gen_tac >>
+  simp[Ntimes stackPlanGenTheory.generate_fn_plan_aux_fuel_def 2] >>
+  rpt strip_tac >> BasicProvers.every_case_tac >> gvs[] >>
+  simp[arithmeticTheory.ADD_CLAUSES, Once stackPlanGenTheory.generate_fn_plan_aux_fuel_def] >>
+  metis_tac[]
+QED
+
+Theorem generate_fn_plan_aux_fuel_success_stable:
+  !fuel liveness dfg cfg fn worklist visited ps result extra.
+    generate_fn_plan_aux_fuel fuel liveness dfg cfg fn worklist visited ps =
+      SOME result ==>
+    generate_fn_plan_aux_fuel (fuel + extra) liveness dfg cfg fn
+      worklist visited ps = SOME result
+Proof
+  metis_tac[fn_plan_fuel_success_stable]
+QED
+
+Theorem generate_succs_plan_fuel_success_stable:
+  !fuel liveness dfg cfg fn ss sp succs visited ps result extra.
+    generate_succs_plan_fuel fuel liveness dfg cfg fn ss sp succs visited ps =
+      SOME result ==>
+    generate_succs_plan_fuel (fuel + extra) liveness dfg cfg fn ss sp succs
+      visited ps = SOME result
+Proof
+  metis_tac[fn_plan_fuel_success_stable]
+QED
+
 Theorem empty_runtime_entry_live_fuel_eval[local]:
   liveness_analyze_fuel 100000 empty_runtime_entry_fn =
     empty_runtime_entry_live
