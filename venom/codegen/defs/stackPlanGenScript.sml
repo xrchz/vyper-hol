@@ -881,6 +881,12 @@ val (fn_plan_aux_eqs, fn_plan_aux_ind) =
 Theorem generate_fn_plan_aux_def[compute] = fn_plan_aux_eqs
 Theorem generate_fn_plan_aux_ind = fn_plan_aux_ind
 
+Theorem visited_subset_cons:
+  !lbl visited. set visited SUBSET set (lbl :: visited)
+Proof
+  simp[SUBSET_DEF]
+QED
+
 (* Visited monotonicity: set visited ⊆ set visited' after fn_plan_aux *)
 Theorem generate_fn_plan_aux_visited_mono =
   REWRITE_RULE [GSYM fn_plan_aux_def] fn_plan_mono_inl
