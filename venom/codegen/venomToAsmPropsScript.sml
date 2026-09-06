@@ -160,8 +160,8 @@ Theorem gen_fn_simulation:
     codegen_context_obligations Inv ctx cp ∧
     codegen_reachability_package Inv ctx vs ∧
     codegen_ready_fn fn ∧
-    venom_asm_rel label_offsets (fn_init_ps fn r.sr_spill_base) vs as ∧
-    context_memory_rel cp vs.vs_memory as.as_memory ∧
+    context_venom_asm_rel cp label_offsets
+      (fn_init_ps fn r.sr_spill_base) vs as ∧
     asm_block_at prog as.as_pc
       (execute_plan cp.cp_initial_fmp r.sr_plan) ⇒
     (* Halt case *)
