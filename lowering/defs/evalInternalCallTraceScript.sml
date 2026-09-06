@@ -247,4 +247,47 @@ Proof
   EVAL_TAC
 QED
 
+val internal_call_caller_opcodes_eval =
+  EVAL ``MAP (\inst. inst.inst_opcode) (fn_insts internal_call_caller)``
+
+Theorem internal_call_caller_opcodes_exact:
+  MAP (\inst. inst.inst_opcode) (fn_insts internal_call_caller) =
+    ^(rhs (concl internal_call_caller_opcodes_eval))
+Proof
+  ACCEPT_TAC internal_call_caller_opcodes_eval
+QED
+
+Theorem internal_call_no_alloca_before_invoke:
+  TAKE 15 (MAP (\inst. inst.inst_opcode) (fn_insts internal_call_caller)) =
+    [CALLDATASIZE; LT; ISZERO; JNZ; CALLDATALOAD; SHR; EQ; JNZ; JMP; JMP;
+     CALLVALUE; ISZERO; ASSERT; CALLDATASIZE; INVOKE]
+Proof
+  EVAL_TAC
+QED
+
+Theorem internal_call_invoke_decode_boundaries:
+  IS_SOME (decode_invoke
+    (HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+      (fn_insts internal_call_caller)))) /\
+  IS_SOME (decode_invoke
+    (HD (FILTER (\inst. inst.inst_opcode = INVOKE)
+      (fn_insts internal_call_arg_caller)))) /\
+  decode_invoke (mk_inst 0 INVOKE [] []) = NONE /\
+  decode_invoke (mk_inst 0 INVOKE [Lit 0w] []) = NONE
+Proof
+  EVAL_TAC
+QED
+
+Theorem internal_call_context_plan_some:
+  IS_SOME (generate_context_plan_fuel 100000 internal_call_trace_context)
+Proof
+  EVAL_TAC
+QED
+
+Theorem internal_call_arg_context_plan_some:
+  IS_SOME (generate_context_plan_fuel 100000 internal_call_arg_trace_context)
+Proof
+  EVAL_TAC
+QED
+
 val _ = export_theory()

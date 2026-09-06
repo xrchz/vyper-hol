@@ -327,7 +327,15 @@ Definition is_unlowered_fmp_opcode_def:
 End
 
 Definition is_unlowered_internal_call_opcode_def:
-  is_unlowered_internal_call_opcode opc ⇔ (opc = INVOKE)
+  is_unlowered_internal_call_opcode opc ⇔ F
+End
+
+(* INVOKE is planned directly, but only after decoding its label-headed
+   operand shape.  Context-level call-layout checks establish callee
+   resolution and exact input/output arities before codegen. *)
+Definition invoke_operands_wf_def:
+  invoke_operands_wf inst ⇔
+    case inst.inst_operands of Label callee_name :: args => T | _ => F
 End
 
 (* Opcodes that should never appear at legacy codegen time. *)
@@ -342,7 +350,7 @@ Theorem task063_extended_pre_codegen_eval:
   MAP is_pre_codegen_opcode
     [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
      INVOKE; FMP_PARAM; RETPC_PARAM] =
-    [T; T; T; T; T; F; F; T; F; F]
+    [T; T; T; T; T; F; F; F; F; F]
 Proof
   EVAL_TAC
 QED
@@ -360,7 +368,9 @@ QED
 
 (* Per-instruction: no pre-codegen opcodes *)
 Definition codegen_ready_inst_def:
-  codegen_ready_inst inst ⇔ ¬ is_pre_codegen_opcode inst.inst_opcode
+  codegen_ready_inst inst ⇔
+    ¬ is_pre_codegen_opcode inst.inst_opcode ∧
+    (inst.inst_opcode = INVOKE ==> invoke_operands_wf inst)
 End
 
 (* Per-function: structural WF + SSA + SUE + normalized CFG + no bad opcodes *)
@@ -387,6 +397,7 @@ Definition generate_inst_plan_def:
   generate_inst_plan liveness dfg cfg fn inst
     next_liveness is_halting next_is_terminator cur_bb_label ps =
     if is_pre_codegen_opcode inst.inst_opcode then NONE
+    else if inst.inst_opcode = INVOKE /\ ~invoke_operands_wf inst then NONE
     else if inst.inst_opcode = PHI then
       SOME (generate_phi_plan inst next_liveness ps)
     else if inst.inst_opcode = OFFSET then
@@ -408,6 +419,23 @@ Theorem generate_inst_plan_pre_codegen_none:
     next_is_terminator cur_bb_label ps = NONE
 Proof
   simp[generate_inst_plan_def]
+QED
+
+Theorem generate_inst_plan_malformed_invoke_none:
+  inst.inst_opcode = INVOKE /\ ~invoke_operands_wf inst ==>
+  generate_inst_plan liveness dfg cfg fn inst next_liveness is_halting
+    next_is_terminator cur_bb_label ps = NONE
+Proof
+  simp[generate_inst_plan_def]
+QED
+
+Theorem invoke_operands_wf_eval:
+  invoke_operands_wf (mk_inst 0 INVOKE [Label "callee"] []) /\
+  invoke_operands_wf (mk_inst 1 INVOKE [Label "callee"; Lit 7w] ["out"]) /\
+  ~invoke_operands_wf (mk_inst 2 INVOKE [] []) /\
+  ~invoke_operands_wf (mk_inst 3 INVOKE [Lit 0w] [])
+Proof
+  EVAL_TAC
 QED
 
 (* =========================================================================

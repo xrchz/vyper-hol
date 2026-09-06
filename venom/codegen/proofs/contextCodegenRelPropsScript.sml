@@ -115,11 +115,13 @@ Proof
   simp[source_memory_write_ranges_def]
 QED
 
-Theorem INVOKE_is_pre_codegen_opcode:
-  is_pre_codegen_opcode INVOKE
+Theorem INVOKE_not_pre_codegen_opcode:
+  ~is_pre_codegen_opcode INVOKE
 Proof
   simp[stackPlanGenTheory.is_pre_codegen_opcode_def,
-       stackPlanGenTheory.is_unlowered_internal_call_opcode_def]
+       stackPlanGenTheory.is_unlowered_internal_call_opcode_def,
+       stackPlanGenTheory.is_unlowered_fmp_opcode_def,
+       venomInstTheory.is_raw_fmp_opcode_def]
 QED
 
 Theorem source_memory_writes_disjoint_range_excludes_spill:
