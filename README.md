@@ -71,8 +71,8 @@ tracked wrappers from any repository directory with
 `sh tests/vyper-test-wrappers`.  Run
 `sh tests/vyper-test-wrappers --check` in CI or before committing to verify
 both wrapper families and their exact contents without modifying them.  The
-command uses HOL's noninteractive `--use` interface and requires `HOLDIR` or
-`HOLBUILD_HOLDIR` when `hol` is not on `PATH`.
+command executes a fresh disposable theory through the repository-supported
+`holbuild` interface and requires `holbuild` on `PATH`.
 
 The decoding of JSON into our AST type is somewhat ad-hoc, in part because the JSON format is not fully specified. In future work, we might formalise more of the front-end or elaboration process, including parsing and type-checking, so that we can run source code directly. For now, we rely on an external front-end (e.g., as used in Vyper's test export process) and decode its output to construct terms in our formal syntax.
 

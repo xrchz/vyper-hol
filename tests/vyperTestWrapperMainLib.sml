@@ -1,7 +1,6 @@
-(* Noninteractive driver for tests/vyper-test-wrappers. *)
-val () = load "vyperTestLib";
+structure vyperTestWrapperMainLib :> vyperTestWrapperMainLib = struct
 
-fun wrapper_main () =
+fun generate_or_check () =
   case OS.Process.getEnv "VYPER_TEST_WRAPPER_MODE" of
       SOME "generate" => vyperTestLib.generate_tests ()
     | SOME "check" => vyperTestLib.check_generated_tests ()
@@ -20,9 +19,6 @@ fun write_selected_count () =
         ()
       end;
 
-val () =
-  (wrapper_main (); write_selected_count (); OS.Process.exit OS.Process.success)
-  handle e =>
-    (TextIO.output (TextIO.stdErr,
-       "vyper-test-wrappers: " ^ General.exnMessage e ^ "\n");
-     OS.Process.exit OS.Process.failure);
+fun run () = (generate_or_check (); write_selected_count ());
+
+end
