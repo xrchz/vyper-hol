@@ -339,7 +339,22 @@ Proof
   >- (gvs[sue_expand_ops_supply_def, listTheory.EVERY_MEM,
           venomInstTheory.operand_vars_def] >>
       rpt strip_tac >> Cases_on `venomInst$operand_var newop` >>
-      gvs[] >> metis_tac[])
+      FIRST_PROVE
+        [qpat_x_assum `MEM v (inst_ir_vars a)` mp_tac >>
+         qpat_assum `!x. MEM x (inst_ir_vars a) ==> MEM x _` mp_tac >>
+         POP_ASSUM_LIST (K all_tac) >> simp[],
+         qpat_x_assum `MEM v _` mp_tac >>
+         qpat_assum
+           `!x. MEM x (case _ of NONE => [] | SOME y => [y]) ==> MEM x _`
+           mp_tac >>
+         qpat_assum
+           `!x. MEM x (venomInst$operand_vars more_ops) ==> MEM x _`
+           mp_tac >>
+         qpat_assum
+           `!x. MEM x (FLAT (MAP inst_ir_vars more_assigns)) ==> MEM x _`
+           mp_tac >>
+         qpat_assum `!x. MEM x s1.irs_used_vars ==> MEM x _` mp_tac >>
+         POP_ASSUM_LIST (K all_tac) >> simp[] >> metis_tac[]])
   >- (Cases_on `LENGTH (dfg_get_uses dfg s'') = 1 /\
                  sue_count_remaining (Var s'') ops = 0`
       >- (gvs[sue_expand_ops_supply_def,
