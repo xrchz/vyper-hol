@@ -12,8 +12,8 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 EXPORT_ROOT = HERE / "vyper-test-exports"
+SETTINGS = HERE / "vyper-test-export-settings.json"
 PROVENANCE = HERE / "vyper-test-export-provenance.json"
-
 
 def aggregate_exports() -> tuple[int, str]:
     if not EXPORT_ROOT.is_dir():
@@ -39,10 +39,14 @@ def expected_provenance(selected_count: int) -> dict[str, object]:
         raise RuntimeError(
             f"invalid selected JSON count {selected_count} for {json_count} exports"
         )
+    if not SETTINGS.is_file():
+        raise RuntimeError(f"settings file not found: {SETTINGS}")
+    settings_hash = hashlib.sha256(SETTINGS.read_bytes()).hexdigest()
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "pin_file": "../VYPER_PIN",
-        "settings_file": "vyper-test-export-settings.json",
+        "settings_file": SETTINGS.name,
+        "settings_sha256": settings_hash,
         "aggregate": {
             "algorithm": "sha256",
             "framing": "sorted UTF-8 POSIX relative path; each path and file is prefixed by its unsigned 8-byte big-endian length",
@@ -51,7 +55,8 @@ def expected_provenance(selected_count: int) -> dict[str, object]:
         },
         "inventory": {
             "selected_json_count": selected_count,
-            "excluded_json_count": json_count - selected_count,
+            "nonselected_json_count": json_count - selected_count,
+            "explicit_exclusion_count": 1,
             "definition_wrapper_count": selected_count,
             "test_wrapper_count": selected_count,
         },

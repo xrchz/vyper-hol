@@ -14,11 +14,13 @@
   ],
   "inventory": {
     "definition_wrapper_count": 123,
-    "excluded_json_count": 129,
+    "explicit_exclusion_count": 1,
+    "nonselected_json_count": 129,
     "selected_json_count": 123,
     "test_wrapper_count": 123
   },
   "pin_file": "../VYPER_PIN",
-  "schema_version": 1,
-  "settings_file": "vyper-test-export-settings.json"
+  "schema_version": 2,
+  "settings_file": "vyper-test-export-settings.json",
+  "settings_sha256": "2f0e1f41597e4e8724fef3e5244bb86398b8f68d738ee70a976251c9bc414ff7"
 }
