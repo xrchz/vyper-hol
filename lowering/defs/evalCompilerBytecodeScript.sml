@@ -609,60 +609,77 @@ Proof
   rewrite_tac[two_external_compiler_eval] >> EVAL_TAC
 QED
 
+val storage_read_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 storage_read_program``
+val storage_write_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 storage_write_program``
+val deploy_storage_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 deploy_storage_program``
+val event_log_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 event_log_program``
+val indexed_event_log_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 indexed_event_log_program``
+val mixed_event_log_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 mixed_event_log_program``
+val hashmap_read_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 hashmap_read_program``
+val hashmap_write_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 hashmap_write_program``
+
 Theorem storage_read_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 storage_read_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "storage_read.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[storage_read_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem storage_write_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 storage_write_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "storage_write.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[storage_write_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem deploy_storage_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 deploy_storage_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "deploy_storage.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[deploy_storage_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem event_log_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 event_log_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "event_log.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[event_log_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem indexed_event_log_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 indexed_event_log_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "indexed_event_log.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[indexed_event_log_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem mixed_event_log_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 mixed_event_log_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "mixed_event_log.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[mixed_event_log_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem hashmap_read_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 hashmap_read_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "hashmap_read.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[hashmap_read_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem hashmap_write_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 hashmap_write_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "hashmap_write.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[hashmap_write_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem if_bool_result_lengths:
