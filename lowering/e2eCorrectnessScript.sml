@@ -256,20 +256,45 @@ Proof
 QED
 
 Theorem compile_vyper_evm_correspondence[local]:
-  !program pipeline dispatch_strategy deploy_bc runtime_bc
-   am tx tenv ret ctxt rb rest es R_ok R_term.
-    compile_vyper program pipeline dispatch_strategy
+  !tops pipeline finalizer policy rpolicy unit out prog deploy_bc runtime_bc
+   cp name i r fn off Inv cenv am tx tenv ret ctxt rb rest es vs R_ok R_term.
+    resolve_o1_policy policy = SOME rpolicy /\
+    lower_vyper_runtime_unit tops rpolicy = SOME unit /\
+    pipeline rpolicy unit = SOME out /\
+    out.po_final_assembly = rpolicy.rpol_final_assembly /\
+    finalize_codegen finalizer rpolicy out.po_unit = SOME runtime_bc /\
+    codegen_assembly rpolicy out.po_unit = SOME prog /\
+    runtime_bc = assemble prog /\
+    compile_vyper_with pipeline finalizer policy tops
       = SOME (deploy_bc, runtime_bc) /\
+    source_deployment_rel tops am tx cenv /\
+    generate_context_plan out.po_unit.cu_context = SOME cp /\
+    out.po_unit.cu_context.ctx_entry = SOME name /\
+    lookup_function name out.po_unit.cu_context.ctx_functions = SOME fn /\
+    i < LENGTH out.po_unit.cu_context.ctx_functions /\
+    EL i out.po_unit.cu_context.ctx_functions = fn /\
+    EL i cp.cp_regions = r /\
+    ops_contain_at off
+      (execute_plan cp.cp_initial_fmp (context_plan_ops cp))
+      (execute_plan cp.cp_initial_fmp r.sr_plan) /\
+    contextCodegenRel$codegen_context_obligations
+      Inv out.po_unit.cu_context cp /\
+    contextCodegenRel$codegen_reachability_package
+      Inv out.po_unit.cu_context vs /\
+    initial_codegen_state_rel cp vs /\
+    asm_pc_to_offset prog off = 0 /\
     es.contexts = (ctxt, rb) :: rest /\
-    call_state_rel program runtime_bc am tx tenv ctxt rb es.txParams /\
+    call_state_rel tops runtime_bc am tx tenv ctxt rb es.txParams /\
     valid_vyper_call am tx tenv ctxt.msgParams.data ret /\
-    (!ctx vs. ctx_pass_correct pipeline R_ok R_term ctx vs) /\
+    cenv.ce_type_env = tenv /\
+    checked_unit_transform_correct pipeline rpolicy R_ok R_term unit vs /\
     (!s1 s2. R_ok s1 s2 ==> observable_equiv s1 s2) /\
-    (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2)
+    (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2) /\
+    finalizer_correct rpolicy finalizer
     ==>
     ?gas_needed.
       ctxt.msgParams.gasLimit >= gas_needed ==>
-      vyper_evm_correspondence tenv (compiled_event_info program) ret am tx es
+      vyper_evm_correspondence tenv (compiled_event_info tops) ret am tx es
 Proof
   cheat
 QED
@@ -315,37 +340,55 @@ QED
    Gas is existential: there exists a gas bound such that with enough
    gas, EVM execution produces the correct result. *)
 Theorem vyper_call_correct:
-  ∀program pipeline dispatch_strategy runtime_bc
-   am tx tenv ret ctxt rb rest es R_ok R_term.
-    (∃deploy_bc.
-       compile_vyper program pipeline dispatch_strategy
-         = SOME (deploy_bc, runtime_bc)) ∧
-    es.contexts = (ctxt, rb) :: rest ∧
-    call_state_rel program runtime_bc am tx tenv
-      ctxt rb es.txParams ∧
-    valid_vyper_call am tx tenv ctxt.msgParams.data ret ∧
-    (!ctx vs. ctx_pass_correct pipeline R_ok R_term ctx vs) ∧
-    (!s1 s2. R_ok s1 s2 ==> observable_equiv s1 s2) ∧
-    (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2)
-    ⇒
-    ∃gas_needed.
-      ctxt.msgParams.gasLimit ≥ gas_needed ⇒
-      ∃r es_final.
-        run_call es = SOME (r, es_final) ∧
-        call_result_matches tenv (compiled_event_info program) am tx ret r es es_final
+  !tops pipeline finalizer policy rpolicy unit out prog deploy_bc runtime_bc
+   cp name i r fn off Inv cenv am tx tenv ret ctxt rb rest es vs R_ok R_term.
+    resolve_o1_policy policy = SOME rpolicy /\
+    lower_vyper_runtime_unit tops rpolicy = SOME unit /\
+    pipeline rpolicy unit = SOME out /\
+    out.po_final_assembly = rpolicy.rpol_final_assembly /\
+    finalize_codegen finalizer rpolicy out.po_unit = SOME runtime_bc /\
+    codegen_assembly rpolicy out.po_unit = SOME prog /\
+    runtime_bc = assemble prog /\
+    compile_vyper_with pipeline finalizer policy tops
+      = SOME (deploy_bc, runtime_bc) /\
+    source_deployment_rel tops am tx cenv /\
+    generate_context_plan out.po_unit.cu_context = SOME cp /\
+    out.po_unit.cu_context.ctx_entry = SOME name /\
+    lookup_function name out.po_unit.cu_context.ctx_functions = SOME fn /\
+    i < LENGTH out.po_unit.cu_context.ctx_functions /\
+    EL i out.po_unit.cu_context.ctx_functions = fn /\
+    EL i cp.cp_regions = r /\
+    ops_contain_at off
+      (execute_plan cp.cp_initial_fmp (context_plan_ops cp))
+      (execute_plan cp.cp_initial_fmp r.sr_plan) /\
+    contextCodegenRel$codegen_context_obligations
+      Inv out.po_unit.cu_context cp /\
+    contextCodegenRel$codegen_reachability_package
+      Inv out.po_unit.cu_context vs /\
+    initial_codegen_state_rel cp vs /\
+    asm_pc_to_offset prog off = 0 /\
+    es.contexts = (ctxt, rb) :: rest /\
+    call_state_rel tops runtime_bc am tx tenv ctxt rb es.txParams /\
+    valid_vyper_call am tx tenv ctxt.msgParams.data ret /\
+    cenv.ce_type_env = tenv /\
+    checked_unit_transform_correct pipeline rpolicy R_ok R_term unit vs /\
+    (!s1 s2. R_ok s1 s2 ==> observable_equiv s1 s2) /\
+    (!s1 s2. R_term s1 s2 ==> observable_equiv s1 s2) /\
+    finalizer_correct rpolicy finalizer
+    ==>
+    ?gas_needed.
+      ctxt.msgParams.gasLimit >= gas_needed ==>
+      ?call_res es_final.
+        run_call es = SOME (call_res, es_final) /\
+        call_result_matches tenv (compiled_event_info tops)
+          am tx ret call_res es es_final
 Proof
-  rpt strip_tac
-  (* Step 1: compile_vyper gives vyper_evm_correspondence with gas bound *)
-  \\ drule_all compile_vyper_evm_correspondence
-  \\ strip_tac
-  \\ qexists `gas_needed`
-  \\ strip_tac
-  (* Step 2: Apply gas condition to get vyper_evm_correspondence *)
-  \\ `vyper_evm_correspondence tenv (compiled_event_info program) ret am tx es` by
-       metis_tac[]
-  (* Step 3: Bridge to run_call + call_result_matches *)
-  \\ drule evm_correspondence_to_call_result
-  \\ simp[]
+  rpt strip_tac >>
+  drule_all compile_vyper_evm_correspondence >> strip_tac >>
+  qexists `gas_needed` >> strip_tac >>
+  `vyper_evm_correspondence tenv (compiled_event_info tops) ret am tx es` by
+    metis_tac[] >>
+  drule evm_correspondence_to_call_result >> simp[]
 QED
 
 (* ===================================================================== *)
@@ -401,30 +444,30 @@ Proof
   metis_tac[]
 QED
 
-(* Codegen correctness: Venom execution corresponds to EVM execution.
-   Wraps codegen_correct with initial_evm_rel. *)
+(* Codegen correctness for a checked compilation unit, exposing exactly the
+   plan, positioning, obligation, and reachability premises of codegen_correct. *)
 Theorem e2e_venom_to_evm:
-  !ctx cp fn_eom_map data_seg bytecode spill_hwm vs fuel.
-    codegen_ready ctx /\
-    ctx_wf ctx /\
-    (!name efn. ctx.ctx_entry = SOME name /\
-                lookup_function name ctx.ctx_functions = SOME efn ==>
-                entry_fn_no_ret efn) /\
-    codegen ctx fn_eom_map data_seg = SOME bytecode /\
-    (!fn inst vs1 vs2 fuel'.
-       MEM fn ctx.ctx_functions /\
-       step_inst fuel' ctx inst vs1 = OK vs2 ==>
-       step_mem_safe <| sa_spill_base := 0;
-                        sa_next_offset := spill_hwm;
-                        sa_free_slots := [] |> vs1 vs2)
+  !fuel rpolicy unit cp prog name i r fn off Inv vs.
+    generate_context_plan unit.cu_context = SOME cp /\
+    codegen_assembly rpolicy unit = SOME prog /\
+    unit.cu_context.ctx_entry = SOME name /\
+    lookup_function name unit.cu_context.ctx_functions = SOME fn /\
+    i < LENGTH unit.cu_context.ctx_functions /\
+    EL i unit.cu_context.ctx_functions = fn /\
+    EL i cp.cp_regions = r /\
+    ops_contain_at off
+      (execute_plan cp.cp_initial_fmp (context_plan_ops cp))
+      (execute_plan cp.cp_initial_fmp r.sr_plan) /\
+    codegen_context_obligations Inv unit.cu_context cp /\
+    codegen_reachability_package Inv unit.cu_context vs /\
+    asm_pc_to_offset prog off = 0
     ==>
     ?gas_needed.
-      !es. initial_evm_rel cp bytecode vs es /\
-           ~NULL es.contexts /\
+      !es. initial_evm_rel cp (assemble prog) vs es /\
            (let (ctxt, rb) = HD es.contexts in
               ctxt.msgParams.gasLimit >= gas_needed)
       ==>
-      (case run_context fuel ctx vs of
+      (case run_context fuel unit.cu_context vs of
          Halt vs' =>
            ?es'. run es = SOME (INR NONE, es') /\
                  final_state_rel vs' es'
@@ -440,29 +483,15 @@ Theorem e2e_venom_to_evm:
        | Error _ => T)
 Proof
   rpt strip_tac >>
-  qsuff_tac `?gas_needed. !es.
-    initial_ctx_rel ctx vs es /\
-    (case es.contexts of
-       [] => F
-     | (ctxt,rb)::_ =>
-       ctxt.msgParams.gasLimit >= gas_needed /\
-       ctxt.msgParams.code = bytecode /\
-       ctxt.msgParams.parsed = parse_code 0 FEMPTY bytecode) ==>
-    (case run_context fuel ctx vs of
-       OK _ => F
-     | Halt vs' => ?es'. run es = SOME (INR NONE, es') /\ final_state_rel vs' es'
-     | Abort Revert_abort vs' => ?es'. run es = SOME (INR (SOME Reverted), es') /\ final_state_rel vs' es'
-     | Abort ExHalt_abort vs' => ?es' exc. run es = SOME (INR (SOME exc), es') /\ exc <> Reverted /\ final_state_rel vs' es'
-     | IntRet _ _ => F
-     | Error _ => T)`
-  >- (strip_tac >> qexists `gas_needed` >> rpt strip_tac >>
-      first_x_assum irule >>
-      Cases_on `es.contexts` >> gvs[initial_evm_rel_def, initial_ctx_rel_def] >>
-      PairCases_on `h` >> gvs[]) >>
-  mp_tac (Q.SPECL [`fuel`, `ctx`, `fn_eom_map`, `data_seg`,
-    `bytecode`, `spill_hwm`, `vs`] codegen_correct) >>
+  mp_tac (Q.SPECL [`fuel`, `rpolicy`, `unit`, `cp`, `prog`, `name`,
+                    `i`, `r`, `fn`, `off`, `Inv`, `vs`] codegen_correct) >>
   impl_tac >- (rpt conj_tac >> first_assum MATCH_ACCEPT_TAC) >>
-  simp[]
+  strip_tac >>
+  qexists `gas_needed` >> rpt strip_tac >>
+  first_x_assum (qspec_then `es` mp_tac) >>
+  Cases_on `es.contexts` >>
+  gvs[initial_evm_rel_def, initial_codegen_state_rel_def,
+      initial_ctx_rel_def, context_memory_rel_def]
 QED
 
 (* ===== Codegen Obligations ===== *)
@@ -773,8 +802,8 @@ QED
    - RETURNs it
    The deployed code equals runtime_bc. *)
 Theorem e2e_deploy_correctness:
-  !tops pipeline dispatch_strategy deploy_bc runtime_bc.
-    compile_vyper tops pipeline dispatch_strategy
+  !tops pipeline finalizer policy deploy_bc runtime_bc.
+    compile_vyper_with pipeline finalizer policy tops
       = SOME (deploy_bc, runtime_bc)
     ==>
     (* The deploy bytecode, when executed in creation context,
@@ -786,36 +815,22 @@ QED
 
 (* ===== Two-Phase compile_vyper ===== *)
 
-(* compile_vyper runtime phase produces the same bytecode as
-   compile_vyper_raw with matching arguments. This connects
-   the high-level two-phase API to the existing e2e correctness. *)
+(* Successful generic compilation exposes the concrete runtime lowering,
+   pipeline output, matching final-assembly policy, and finalization result. *)
 Theorem compile_vyper_runtime_bytecode:
-  !tops pipeline dispatch_strategy deploy_bc runtime_bc.
-    compile_vyper tops pipeline dispatch_strategy
+  !tops pipeline finalizer policy deploy_bc runtime_bc.
+    compile_vyper_with pipeline finalizer policy tops
       = SOME (deploy_bc, runtime_bc)
     ==>
-    let tenv = type_env tops in
-    let nkey_map = assign_nkeys tops 0 in
-    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
-    let selectors = build_selectors tenv ext_fns in
-    let external_fns = MAP (package_external_fn tops F nkey_map) ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops F nkey_map F 0) int_fns in
-    let fallback_fn = package_fallback_fn tops F nkey_map fb_fn in
-      ?bucket_count fn_meta_bytes dense_buckets entry_info.
-        compile_vyper_raw selectors external_fns runtime_int_fns fallback_fn
-          dispatch_strategy bucket_count fn_meta_bytes
-          dense_buckets entry_info "__entry" pipeline FEMPTY
-          = SOME runtime_bc
+    ?rpolicy runtime_unit out.
+      resolve_o1_policy policy = SOME rpolicy /\
+      lower_vyper_runtime_unit tops rpolicy = SOME runtime_unit /\
+      pipeline rpolicy runtime_unit = SOME out /\
+      out.po_final_assembly = rpolicy.rpol_final_assembly /\
+      finalize_codegen finalizer rpolicy out.po_unit = SOME runtime_bc
 Proof
-  simp[compile_vyper_def, compile_vyper_raw_def, pairTheory.UNCURRY]
-  \\ rpt strip_tac
-  \\ rpt (pairarg_tac \\ gvs[])
-  \\ gvs[AllCaseEqs()]
-  \\ rpt (FIRST [pairarg_tac \\ gvs[AllCaseEqs()],
-                CASE_TAC \\ gvs[AllCaseEqs()]])
-  (* The hypothesis contains run_lowering_pair_compat with specific computed params.
-     Extract them as witnesses for the existential. *)
-  \\ qmatch_assum_abbrev_tac `codegen (pipeline (FST (run_lowering_pair_compat _ _ _ _ _ bc fmb db ei _))) _ _ = _`
-  \\ MAP_EVERY qexists_tac [`bc`, `fmb`, `db`, `ei`]
-  \\ gvs[]
+  simp[compile_vyper_with_def, checked_unit_pipeline_def] >>
+  rpt strip_tac >>
+  gvs[AllCaseEqs()] >>
+  goal_assum $ drule_at Any
 QED
