@@ -549,7 +549,7 @@ QED
  *   Vyper success (INL v)       => EVM normal halt, returndata =
  *                                  ABI encoding of v, accounts,
  *                                  transient storage, and logs match
- *   Vyper revert (AssertExc)    => EVM REVERT, state_unchanged
+ *   Vyper revert (AssertExc)    => outermost EVM execution reports REVERT
  *   Vyper error                 => T (indicates source-level error;
  *                                  could be strengthened to F under
  *                                  well-formedness of am/tx)
