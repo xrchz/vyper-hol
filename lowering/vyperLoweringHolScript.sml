@@ -9,4 +9,4 @@ Ancestors
   (* compiler + correctness *)
   vyperCompiler
   vyperLoweringCorrect
-  e2eCorrectness
+  configuredE2ECorrectness
