@@ -389,7 +389,31 @@ Theorem e2e_vyper_to_evm:
       ctxt.msgParams.gasLimit >= gas_needed ==>
       vyper_evm_correspondence tenv (compiled_event_info tops) ret am tx es
 Proof
-  cheat
+  rpt strip_tac >>
+  drule_all source_unit_execution_through_pipeline >> strip_tac >>
+  drule_all codegen_correct >> strip_tac >>
+  qpat_x_assum `!fuel. ?gas_needed. _`
+    (qspec_then `fuel'` strip_assume_tac) >>
+  qexists `gas_needed` >> strip_tac >>
+  first_x_assum (qspec_then `es` mp_tac) >>
+  (impl_tac >- (gvs[call_state_rel_def])) >>
+  strip_tac >>
+  Cases_on `call_external am tx` >>
+  rename1 `call_external am tx = (src_result, am')` >>
+  Cases_on `src_result` >>
+  Cases_on `run_context fuel unit.cu_context vs` >>
+  Cases_on `run_context fuel' out.po_unit.cu_context vs` >>
+  gvs[external_call_result_rel_def, observable_result_equiv_def,
+      observable_equiv_def, revert_equiv_def,
+      vyper_evm_correspondence_def] >>
+  gvs[return_data_encodes_def, state_effects_match_def,
+      final_state_rel_def, external_call_state_rel_def,
+      initial_evaluation_context_def]
+  >- (Cases_on `es'.contexts` >> gvs[] >> PairCases_on `h` >>
+      gvs[] >> metis_tac[external_logs_rel_logs_correspond])
+  >- (Cases_on `y` >> Cases_on `a` >>
+      gvs[external_call_result_rel_def])
+  >> Cases_on `y` >> gvs[external_call_result_rel_def]
 QED
 
 (* Bridge from vyper_evm_correspondence to run_call + call_result_matches.
