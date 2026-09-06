@@ -923,9 +923,11 @@ Definition lower_vyper_deploy_unit_def:
     let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
     let has_constructor = IS_SOME ctor_fn in
     let deploy_int_fns =
-          MAP (set_internal_package_target rpolicy.rpol_target o
-               package_internal_fn tops use_trans nkey_map T immutables_len)
-              int_fns in
+          if has_constructor then
+            MAP (set_internal_package_target rpolicy.rpol_target o
+                 package_internal_fn tops use_trans nkey_map T immutables_len)
+                int_fns
+          else [] in
     let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
          ctor_trans, ctor_body, ctor_ret) =
       set_constructor_package_target rpolicy.rpol_target
