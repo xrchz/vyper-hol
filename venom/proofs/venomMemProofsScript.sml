@@ -877,6 +877,13 @@ Proof
   rpt strip_tac >> alloca_field_finish_tac
 QED
 
+Triviality istore_preserves_alloca_fields[local,simp]:
+  (istore offset value s).vs_allocas = s.vs_allocas /\
+  (istore offset value s).vs_alloca_next = s.vs_alloca_next
+Proof
+  simp[istore_def, mstore_def]
+QED
+
 Triviality step_inst_base_istore_alloca_fields[local]:
   !inst (s:venom_state) s'.
     (step_inst_base inst s = OK s' \/ step_inst_base inst s = Halt s' \/
