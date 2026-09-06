@@ -496,6 +496,9 @@ QED
 
 val fn_plan_aux_fuel_tm = ``generate_fn_plan_aux_fuel``
 
+fun rator_n_conv 0 conv = conv
+  | rator_n_conv n conv = RATOR_CONV (rator_n_conv (n - 1) conv)
+
 fun closed_fn_plan_aux_success_conv tm =
   let
     val (head, args) = strip_comb tm
@@ -522,7 +525,10 @@ fun closed_fn_plan_aux_success_conv tm =
     val stable = SPECL (low_fuel :: tl args @ [result, extra])
       generate_fn_plan_aux_fuel_success_stable
     val lifted = MATCH_MP stable low_thm
-    val normalized = SIMP_RULE (srw_ss()) [] lifted
+    val normalized =
+      CONV_RULE
+        (LHS_CONV (rator_n_conv 7 (RAND_CONV computeLib.EVAL_CONV)))
+        lifted
     val _ = if aconv (lhs (concl normalized)) tm then ()
             else raise Fail "lifted planner theorem does not match target"
   in
@@ -557,39 +563,50 @@ Proof
   rewrite_tac[noop_compiler_eval] >> EVAL_TAC
 QED
 
+val return_uint_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 return_uint_program``
+val return_arg_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 return_arg_program``
+val local_uint_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 local_uint_program``
+val add_arg_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 add_arg_program``
+val two_external_compiler_eval = closed_compiler_eval
+  ``compile_vyper_o1_fuel_for_testing 100000 two_external_program``
+
 Theorem return_uint_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 return_uint_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "return_uint.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[return_uint_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem return_arg_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 return_arg_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "return_arg.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[return_arg_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem local_uint_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 local_uint_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "local_uint.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[local_uint_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem add_arg_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 add_arg_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "add_arg.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[add_arg_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem two_external_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 two_external_program =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "two_external.hex")
 Proof
-  EVAL_TAC
+  rewrite_tac[two_external_compiler_eval] >> EVAL_TAC
 QED
 
 Theorem storage_read_result_lengths:
