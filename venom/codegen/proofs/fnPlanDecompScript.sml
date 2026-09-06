@@ -95,9 +95,8 @@ QED
    generate_fn_plan_aux only adds to the visited set, never removes.
    visited is now a string list; monotonicity is set visited ⊆ set visited'. *)
 
-(* Visited monotonicity: MEM lbl visited ==> MEM lbl visited'
-   Proved by induction on the clean function (the UNION_aux export
-   from stackPlanGenTheory uses a mismatched Hilbert-choice relation). *)
+(* Visited monotonicity: MEM lbl visited ==> MEM lbl visited', derived
+   directly from stackPlanGenTheory's clean subset boundary. *)
 Theorem fn_plan_aux_visited_mem:
   (!liveness dfg cfg fn worklist visited ps ops visited' ps'.
     generate_fn_plan_aux liveness dfg cfg fn worklist visited ps =
@@ -108,13 +107,13 @@ Theorem fn_plan_aux_visited_mem:
       SOME (ops, visited', ps') ==>
     !lbl. MEM lbl visited ==> MEM lbl visited')
 Proof
-  ho_match_mp_tac generate_fn_plan_aux_ind >> rpt conj_tac >>
-  rpt gen_tac >> strip_tac >> rpt gen_tac >> strip_tac >>
-  TRY (gvs[Once generate_fn_plan_aux_def] >> NO_TAC) >>
-  qpat_x_assum `_ = SOME _` mp_tac >>
-  simp[Once generate_fn_plan_aux_def] >>
-  every_case_tac >> gvs[] >> rpt strip_tac >> gvs[MEM] >>
-  res_tac >> res_tac
+  conj_tac
+  >- (rpt strip_tac >>
+      drule generate_fn_plan_aux_visited_mono >>
+      simp[SUBSET_DEF])
+  >> rpt strip_tac >>
+     drule generate_succs_plan_visited_mono >>
+     simp[SUBSET_DEF]
 QED
 
 (* ===== Per-block plan extraction =====
