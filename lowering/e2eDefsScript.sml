@@ -173,7 +173,8 @@ End
 (* Full Vyper-EVM correspondence for a single external call.
    Packages the case split on call_external result:
    - Success: EVM halts, returndata + state effects match
-   - Assert/revert: EVM reverts, rollback state unchanged
+   - Assert/revert: outermost EVM execution reports REVERT; rollback is
+     applied by the caller rather than by this run boundary
    - Error: T (could be F under well-formedness)
    - Break/Continue/Return: F (never escape call_external) *)
 Definition vyper_evm_correspondence_def:
@@ -185,8 +186,7 @@ Definition vyper_evm_correspondence_def:
            return_data_encodes tenv ret v es' /\
            state_effects_match event_info tx.target tenv am' es'
      | (INR (AssertException _), _) =>
-         ?es'. run es = SOME (INR (SOME Reverted), es') /\
-               state_unchanged es es'
+         ?es'. run es = SOME (INR (SOME Reverted), es')
      | (INR (Error _), _) => T
      | (INR BreakException, _) => F
      | (INR ContinueException, _) => F

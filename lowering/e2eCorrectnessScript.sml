@@ -533,20 +533,6 @@ QED
  *                                  never escapes call_external
  *)
 
-(* EVM REVERT preserves the call-boundary rollback state: committed accounts
-   and transient storage in es.rollback are unchanged. Per-frame rollback
-   snapshots are intentionally not compared here; CREATE/gas-accounting paths
-   may update them internally without committing effects. *)
-Theorem evm_revert_state_unchanged[local]:
-  !es es'. run es = SOME (INR (SOME Reverted), es') /\
-           ~NULL es.contexts
-           ==>
-           state_unchanged es es'
-Proof
-  cheat
-QED
-
-
 (* ===== Concrete Pipeline Instances ===== *)
 
 (* The O2 pipeline preserves observable semantics.
