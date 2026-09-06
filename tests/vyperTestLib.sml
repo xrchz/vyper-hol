@@ -665,7 +665,7 @@ fun desired_wrapper_inventory () = let
   val artifacts =
     List.concat (List.map (fn entry =>
       [definition_wrapper entry, test_wrapper entry]) files)
-    |> Lib.sort (fn ((name1, _), (name2, _)) => lexless name1 name2)
+    |> Lib.sort (fn (name1, _) => fn (name2, _) => lexless name1 name2)
   val () =
     case duplicate_by #1 artifacts of
         NONE => ()
