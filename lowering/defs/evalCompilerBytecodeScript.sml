@@ -402,13 +402,55 @@ Definition compile_vyper_o1_fuel_for_testing_def:
       (o1_policy prague_capabilities) tops
 End
 
+
+
+Theorem empty_runtime_raw_data_exact[local]:
+  empty_runtime_raw_unit.cu_data_segment = []
+Proof
+  simp[empty_runtime_raw_unit_def, empty_runtime_raw_unit_value_eval,
+       finite_mapTheory.FEVERY_FEMPTY,
+       venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+QED
+
+val empty_runtime_max_live_eom_eval = EVAL
+  ``max_live_eom
+      <| ctx_functions := [empty_runtime_entry_fn];
+         ctx_entry := SOME "__entry";
+         ctx_global_reserved := [] |>``
+Theorem resolve_empty_prague_policy[local]:
+  resolve_o1_policy (o1_policy prague_capabilities) =
+    SOME empty_prague_rpolicy
+Proof
+  simp[venomPipelineDriverTheory.o1_policy_def,
+       venomCompilerTypesTheory.resolve_o1_policy_def,
+       empty_prague_rpolicy_def,
+       venomPolicyTypesTheory.target_capabilities_wf_def,
+       venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
 Theorem empty_bytecode_matches_expected:
   compile_vyper_o1_fuel_for_testing 100000 ([] : toplevel list) =
     SOME ^(evalCompilerBytecodeLib.read_hex_bytes "empty.hex")
 Proof
+  simp[compile_vyper_o1_fuel_for_testing_def,
+       compileVyperTheory.compile_vyper_fuel_for_testing_def,
+       resolve_empty_prague_policy, empty_runtime_lowering_exact,
+       compileVyperTheory.checked_unit_pipeline_fuel_for_testing_def,
+       empty_bytecode_unit_pipeline_exact,
+       compileVyperTheory.finalize_codegen_fuel_for_testing_def,
+       bytecode_identity_finalizer_for_testing_def] >>
+  simp[codegenTheory.codegen_assembly_fuel_def,
+       stackPlanGenTheory.generate_context_plan_fuel_def,
+       stackPlanGenTheory.generate_context_plan_with_def,
+       stackPlanGenTheory.generate_context_regions_def,
+       empty_runtime_concrete_unit_def, empty_runtime_raw_context_exact,
+       empty_runtime_raw_data_exact, empty_runtime_max_live_eom_eval,
+       empty_runtime_entry_plan_fuel_eval] >>
   EVAL_TAC >>
   simp[finite_mapTheory.FEVERY_FEMPTY,
-       venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+       venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM] >>
+  EVAL_TAC >>
+  FAIL_TAC "empty fixture after deploy evaluation"
 QED
 
 Theorem noop_result_lengths:
