@@ -22,7 +22,7 @@
 
 Theory venomToAsmProps
 Ancestors
-  codegenRel blockSimHelpers cleanOpsSim genBlockSim
+  codegenRel contextCodegenRelProps fnPlanDecomp blockSimHelpers cleanOpsSim genBlockSim
 
 (* ===== Per-Instruction Simulation ===== *)
 
@@ -146,31 +146,24 @@ QED
 
 (* ===== Function-Level Simulation ===== *)
 
-(* Full function simulation.
-   Initial state: venom_asm_rel holds with fn_init_ps (params on stack).
-   Terminal results: only observable effects (venom_asm_terminal_rel).
-
-   fn_init_ps has PARAM operands in ps_stack matching the asm stack.
-   The proof establishes the full venom_asm_rel invariant after the
-   entry block's prepare_params_plan processes dead params.
-
-   Spill safety: inst_memory_safe is required for every Venom step during
-   function execution. Uses fn_init_ps alloc (sa_spill_base = fn_eom).
-   spill_mem_covered: initial memory covers spill high-water mark
-   so MEMTOP agrees between Venom and asm from the start. *)
+(* Full function simulation for the region assigned by a successful context
+   plan.  The ambient context relation masks every caller/callee spill region;
+   the active function's local plan state starts at its assigned region base.
+   The semantic proof gap is intentionally retained. *)
 Theorem gen_fn_simulation:
-  ∀fuel ctx label_offsets offset_to_pc prog fn fn_eom fn_ops
-   ps_final vs as.
+  ∀fuel ctx cp i r fn label_offsets offset_to_pc prog
+   vs as Inv.
+    generate_context_plan ctx = SOME cp ∧
+    i < LENGTH ctx.ctx_functions ∧
+    EL i ctx.ctx_functions = fn ∧
+    EL i cp.cp_regions = r ∧
+    codegen_context_obligations Inv ctx cp ∧
+    codegen_reachability_package Inv ctx vs ∧
     codegen_ready_fn fn ∧
-    generate_fn_plan fn fn_eom 0 = SOME (fn_ops, ps_final) ∧
-    venom_asm_rel label_offsets (fn_init_ps fn fn_eom) vs as ∧
-    asm_block_at prog as.as_pc (execute_plan fn_eom fn_ops) ∧
-    (* Spill safety *)
-    (∀inst vs1 vs2 fuel'.
-       step_inst fuel' ctx inst vs1 = OK vs2 ⇒
-       inst_memory_safe (fn_init_ps fn fn_eom).ps_alloc inst vs1 vs2) ∧
-    (* MEMTOP: initial memory covers max spill offset *)
-    spill_mem_covered ps_final.ps_alloc.sa_next_offset vs.vs_memory ⇒
+    venom_asm_rel label_offsets (fn_init_ps fn r.sr_spill_base) vs as ∧
+    context_memory_rel cp vs.vs_memory as.as_memory ∧
+    asm_block_at prog as.as_pc
+      (execute_plan cp.cp_initial_fmp r.sr_plan) ⇒
     (* Halt case *)
     (∀vs'. run_blocks fuel ctx fn vs = Halt vs' ⇒
       ∃n as'.
