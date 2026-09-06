@@ -613,7 +613,8 @@ Proof
   `s1.vs_immutables = s2.vs_immutables` by
     fs[state_equiv_def, execution_equiv_def] >>
   rpt CASE_TAC >> gvs[result_equiv_def, revert_equiv_def,
-    state_equiv_def, execution_equiv_def, lookup_var_def]
+    state_equiv_def, execution_equiv_def, lookup_var_def,
+    istore_def, mstore_def]
 QED
 
 (* DLOADBYTES/CODECOPY: copy from data section/code to memory, 3 operands *)
