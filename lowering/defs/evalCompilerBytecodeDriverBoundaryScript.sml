@@ -6,6 +6,7 @@ open HolKernel Parse boolLib bossLib
 
 fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
 fun has_head c t = head_is c t orelse can (find_term (head_is c)) t
+fun find_head c t = if head_is c t then t else find_term (head_is c) t
 
 val pre_runner_tm =
   lhs (concl evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result)
@@ -374,28 +375,68 @@ Proof
   ACCEPT_TAC runtime_spec_wf_th
 QED
 
-val runtime_after_graph =
+val runtime_outer_pre_walk_tm = find_head ``run_pipeline_stages``
+  (rhs (concl runtime_driver_one))
+val (_, runtime_outer_pre_walk_args) = strip_comb runtime_outer_pre_walk_tm
+val runtime_initial_supply_tm = List.nth (runtime_outer_pre_walk_args, 3)
+val runtime_initial_supply_th =
+  eval_closed "runtime initial IR supply" runtime_initial_supply_tm
+val (_, exact_pre_walk_args) = strip_comb pre_runner_tm
+val exact_pre_walk_supply_tm = List.nth (exact_pre_walk_args, 3)
+val _ =
+  if aconv (rhs (concl runtime_initial_supply_th)) exact_pre_walk_supply_tm then ()
+  else raise Fail "evaluated runtime initial supply does not match pre-walk boundary"
+
+Theorem exact_empty_runtime_initial_supply[local]:
+  ^(concl runtime_initial_supply_th)
+Proof
+  ACCEPT_TAC runtime_initial_supply_th
+QED
+
+val runtime_outer_pre_walk_shape =
+  SIMP_CONV (srw_ss ())
+    [venomPassScheduleTheory.o1_pipeline_spec_exact,
+     exact_empty_runtime_initial_supply]
+    runtime_outer_pre_walk_tm
+val _ =
+  if aconv (rhs (concl runtime_outer_pre_walk_shape)) pre_runner_tm then ()
+  else raise Fail "normalized runtime pre-walk runner does not match exact boundary LHS"
+val runtime_driver_normalized =
   CONV_RULE
     (RAND_CONV
-      (SIMP_CONV (srw_ss ())
-        [exact_empty_runtime_pipeline_spec_wf,
-         exact_empty_runtime_input_unit_wf,
-         exact_empty_runtime_raw_static_inputs_wf,
-         evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result,
-         exact_empty_runtime_frozen_fcg,
-         exact_o1_prune_unreachable_flag,
-         exact_empty_runtime_prune_walk_unit,
-         exact_empty_runtime_reachable_fcg_acyclic,
-         exact_empty_runtime_pre_walk_entry,
-         exact_empty_runtime_fcg_postorder]))
+      (ONCE_DEPTH_CONV (REWR_CONV runtime_outer_pre_walk_shape)))
     runtime_driver_one
+val runtime_after_pre_walk =
+  CONV_RULE
+    (RAND_CONV
+      (ONCE_DEPTH_CONV
+        (REWR_CONV
+          evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result)))
+    runtime_driver_normalized
+val runtime_after_graph =
+  SIMP_RULE (boss_ss ())
+    [exact_empty_runtime_pipeline_spec_wf,
+     exact_empty_runtime_input_unit_wf,
+     exact_empty_runtime_raw_static_inputs_wf,
+     exact_empty_runtime_frozen_fcg,
+     exact_o1_prune_unreachable_flag,
+     exact_empty_runtime_prune_walk_unit,
+     exact_empty_runtime_reachable_fcg_acyclic,
+     exact_empty_runtime_pre_walk_entry,
+     exact_empty_runtime_fcg_postorder]
+    runtime_after_pre_walk
 
 val _ =
   if aconv (lhs (concl runtime_after_graph)) runtime_driver_tm then ()
   else raise Fail "callee-first boundary changed the runtime driver LHS"
+val closed_callee_first_tm = find_head ``run_callee_first``
+  (rhs (concl runtime_after_graph))
 val _ =
-  if has_head ``run_callee_first`` (rhs (concl runtime_after_graph)) then ()
-  else raise Fail "runtime driver did not reach run_callee_first"
+  if null (free_vars closed_callee_first_tm) then ()
+  else raise Fail
+    ("runtime driver callee-first boundary is not closed: " ^
+     term_to_string closed_callee_first_tm ^ " ; full RHS: " ^
+     term_to_string (rhs (concl runtime_after_graph)))
 val pre_walk_call_tm =
   lhs (concl
     evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result)
