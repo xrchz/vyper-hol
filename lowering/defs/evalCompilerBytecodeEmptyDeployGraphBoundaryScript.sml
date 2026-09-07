@@ -224,4 +224,90 @@ Theorem exact_empty_deploy_driver_first_make_ssa_fold:
 Proof
   ACCEPT_TAC exact_driver_first_fold
 QED
+
+val first_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    first_fold_tm
+val unit_with_current_fn_tm = find_head ``unit_with_current_fn``
+  (rhs (concl first_fold_one))
+val _ = assert_closed "empty deploy unit_with_current_fn call" unit_with_current_fn_tm
+val exact_unit_with_current_fn = computeLib.EVAL_CONV unit_with_current_fn_tm
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_unit_with_current_fn)) andalso
+     null (free_vars (rhs (concl exact_unit_with_current_fn)))
+  then ()
+  else raise Fail "empty deploy current-function lookup did not return closed SOME"
+fun is_dispatch_option_case t =
+  head_is ``option_CASE`` t andalso has_head ``execute_configured_fn_pass`` t
+val first_dispatch_case_tm =
+  find_term is_dispatch_option_case (rhs (concl first_fold_one))
+val _ = assert_closed "empty deploy enclosing first-dispatch option case"
+  first_dispatch_case_tm
+val exact_first_dispatch_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    first_dispatch_case_tm
+val first_fold_observed =
+  PURE_REWRITE_RULE [exact_first_dispatch_case] first_fold_one
+val driver_first_dispatch =
+  PURE_REWRITE_RULE [first_fold_observed] exact_driver_first_fold
+val first_dispatch_tm = find_closed_head_arity ``execute_configured_fn_pass`` 5
+  (rhs (concl driver_first_dispatch))
+val (_, first_dispatch_args) = strip_comb first_dispatch_tm
+val _ =
+  if aconv (List.nth (first_dispatch_args, 1)) ``CFP_Simple VP_MakeSSA``
+  then () else raise Fail "empty deploy first dispatcher is not MakeSSA"
+
+val first_dispatch_one =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_make_ssa
+    first_dispatch_tm
+val make_ssa_tm = find_head ``make_ssa_current_fn``
+  (rhs (concl first_dispatch_one))
+val _ = assert_closed "empty deploy make_ssa_current_fn call" make_ssa_tm
+val exact_make_ssa = computeLib.EVAL_CONV make_ssa_tm
+val exact_first_dispatch_result =
+  CONV_RULE
+    (RAND_CONV (SIMP_CONV (srw_ss ()) [exact_make_ssa]))
+    first_dispatch_one
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_first_dispatch_result)) then ()
+  else raise Fail "empty deploy exact MakeSSA dispatcher result is not SOME"
+
+fun is_first_dispatch_case t =
+  head_is ``option_CASE`` t andalso
+  can (find_term (fn u => aconv u first_dispatch_tm)) t
+val first_result_case_tm =
+  find_term is_first_dispatch_case (rhs (concl driver_first_dispatch))
+val _ = assert_closed "empty deploy first MakeSSA result case" first_result_case_tm
+val after_make_ssa_case_rewritten =
+  REWRITE_CONV [exact_first_dispatch_result] first_result_case_tm
+val after_make_ssa_case_reduced =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    (rhs (concl after_make_ssa_case_rewritten))
+val after_make_ssa_case =
+  TRANS after_make_ssa_case_rewritten after_make_ssa_case_reduced
+val after_make_ssa_context =
+  PURE_REWRITE_RULE [after_make_ssa_case] driver_first_dispatch
+val residual_fold_tm = find_closed_head_arity ``run_configured_fn_pass_fold`` 7
+  (rhs (concl after_make_ssa_context))
+val (_, residual_fold_args) = strip_comb residual_fold_tm
+val residual_passes_tm = List.nth (residual_fold_args, 2)
+val (residual_passes, _) = listSyntax.dest_list residual_passes_tm
+val _ =
+  if not (null residual_passes) andalso
+     aconv (hd residual_passes) ``CFP_Simple VP_LowerDload``
+  then () else raise Fail "empty deploy residual fold is not headed by LowerDload"
+val _ =
+  if aconv (lhs (concl after_make_ssa_context))
+       (lhs (concl exact_driver_first_fold)) andalso
+     null (free_vars (rhs (concl after_make_ssa_context)))
+  then () else raise Fail "empty deploy post-MakeSSA driver boundary is malformed"
+
+Theorem exact_empty_deploy_after_make_ssa_to_lower_dload:
+  ^(concl after_make_ssa_context)
+Proof
+  ACCEPT_TAC after_make_ssa_context
+QED
+
 val _ = export_theory()
