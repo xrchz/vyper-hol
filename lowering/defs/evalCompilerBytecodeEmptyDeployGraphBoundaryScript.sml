@@ -659,4 +659,28 @@ Proof
   ACCEPT_TAC exact_empty_deploy_fmp_analysis
 QED
 
+val fmp_lower_input_tm = list_mk_comb
+  (``fmp_lower_input``, [fmp_infos_tm, fmp_context_tm, fmp_function_tm])
+val exact_fmp_lower_input_raw = computeLib.EVAL_CONV fmp_lower_input_tm
+val exact_fmp_lower_input =
+  REWRITE_RULE [GSYM empty_deploy_fmp_infos_def] exact_fmp_lower_input_raw
+
+Theorem exact_empty_deploy_fmp_lower_input:
+  ^(concl exact_fmp_lower_input)
+Proof
+  ACCEPT_TAC exact_fmp_lower_input
+QED
+
+val fmp_lookup_tm =
+  ``FLOOKUP ^fmp_infos_tm (^fmp_function_tm).fn_name``
+val exact_fmp_lookup_raw = computeLib.EVAL_CONV fmp_lookup_tm
+val exact_fmp_lookup =
+  REWRITE_RULE [GSYM empty_deploy_fmp_infos_def] exact_fmp_lookup_raw
+
+Theorem exact_empty_deploy_fmp_bottom_lookup:
+  ^(concl exact_fmp_lookup)
+Proof
+  ACCEPT_TAC exact_fmp_lookup
+QED
+
 val _ = export_theory()
