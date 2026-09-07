@@ -370,4 +370,85 @@ Theorem empty_runtime_fmp_bb0_instructions_wf[local]:
 Proof
   EVAL_TAC >> simp[]
 QED
+
+Theorem exact_empty_runtime_fmp_function_not_well_formed:
+  ~wf_function ^fmp_function_tm
+Proof
+  simp[venomWfTheory.wf_function_def,
+       venomWfTheory.fn_has_entry_def,
+       venomWfTheory.fn_succs_closed_def,
+       venomWfTheory.fn_inst_ids_distinct_def,
+       venomInstTheory.fn_labels_def,
+       empty_runtime_fmp_blocks_shape,
+       empty_runtime_fmp_bb0_well_formed,
+       empty_runtime_fmp_bb0_succs_shape] >>
+  qexists `"@fallback_0"` >> simp[]
+QED
+
+
+Theorem exact_empty_runtime_fmp_reclaims_rejected:
+  analyze_fmp_reclaims empty_runtime_fmp_infos
+    ^fmp_context_tm ^fmp_function_tm = NONE
+Proof
+  simp[fmpReclaimDefsTheory.analyze_fmp_reclaims_def,
+       exact_empty_runtime_fmp_function_not_well_formed]
+QED
+
+Theorem exact_empty_runtime_fmp_with_info_rejected:
+  fmp_lower_function_with_info empty_runtime_fmp_infos
+    ^fmp_context_tm ^fmp_supply_tm ^fmp_function_tm = NONE
+Proof
+  simp[fmpLowerDefsTheory.fmp_lower_function_with_info_def,
+       exact_empty_runtime_fmp_info_valid,
+       exact_empty_runtime_fmp_lower_input,
+       exact_empty_runtime_fmp_bottom_lookup,
+       exact_empty_runtime_fmp_reclaims_rejected]
+QED
+
+
+val exact_fmp_lower_rejected =
+  REWR_CONV fmpLowerDefsTheory.fmp_lower_function_def fmp_lower_tm
+  |> CONV_RULE (RAND_CONV (REWRITE_CONV
+       [exact_fmp_analysis, exact_empty_runtime_fmp_with_info_rejected]))
+
+Theorem exact_empty_runtime_fmp_lower_rejected:
+  ^(concl exact_fmp_lower_rejected)
+Proof
+  ACCEPT_TAC exact_fmp_lower_rejected
+QED
+
+val exact_fmp_dispatch_rejected =
+  fmp_dispatch_unfold
+  |> CONV_RULE (RAND_CONV (REWRITE_CONV [exact_fmp_lower_rejected]))
+
+Theorem exact_empty_runtime_fmp_dispatch_rejected:
+  ^(concl exact_fmp_dispatch_rejected)
+Proof
+  ACCEPT_TAC exact_fmp_dispatch_rejected
+QED
+
+val fmp_dispatch_case_tm =
+  find_term (is_exact_dispatch_case fmp_dispatch_tm)
+    (rhs (concl fmp_context_exposed))
+val _ = assert_closed "FmpLowering result option case" fmp_dispatch_case_tm
+val fmp_dispatch_case_rewritten =
+  REWRITE_CONV [exact_fmp_dispatch_rejected] fmp_dispatch_case_tm
+val fmp_dispatch_case_reduced = computeLib.RESTR_EVAL_CONV
+  [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+  (rhs (concl fmp_dispatch_case_rewritten))
+val fmp_dispatch_case_rejected =
+  TRANS fmp_dispatch_case_rewritten fmp_dispatch_case_reduced
+val after_fmp_rejected =
+  PURE_REWRITE_RULE [fmp_dispatch_case_rejected] fmp_context_exposed
+val after_fmp_rejected_closed =
+  CONV_RULE
+    (RAND_CONV (computeLib.RESTR_EVAL_CONV
+      [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]))
+    after_fmp_rejected
+
+Theorem exact_empty_runtime_after_fmp_lowering_rejected:
+  ^(concl after_fmp_rejected_closed)
+Proof
+  ACCEPT_TAC after_fmp_rejected_closed
+QED
 val _ = export_theory()
