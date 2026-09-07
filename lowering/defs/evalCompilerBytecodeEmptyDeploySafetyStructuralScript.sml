@@ -194,4 +194,54 @@ Proof
   simp[empty_deploy_final_blocks_exact] >> rpt strip_tac >>
   gvs[empty_deploy_final_block_insts_wf]
 QED
+
+val final_fn_name = computeLib.EVAL_CONV ``empty_deploy_final_fn.fn_name``
+
+Theorem empty_deploy_final_context_wf[local]:
+  ctx_wf empty_deploy_final_compilation_unit.cu_context
+Proof
+  simp[venomWfTheory.ctx_wf_def,
+       venomWfTheory.ctx_distinct_fn_names_def,
+       venomWfTheory.ctx_has_entry_def,
+       venomInstTheory.ctx_fn_names_def,
+       empty_deploy_final_functions_exact,
+       empty_deploy_final_context_entry_exact,
+       final_fn_name]
+QED
+
+Theorem empty_deploy_final_invoke_targets_wf[local]:
+  wf_invoke_targets empty_deploy_final_compilation_unit.cu_context
+Proof
+  rw[venomWfTheory.wf_invoke_targets_def] >> rpt strip_tac >>
+  gvs[empty_deploy_final_functions_exact,
+      venomInstTheory.fn_insts_def,
+      venomInstTheory.fn_insts_blocks_def,
+      empty_deploy_final_blocks_exact,
+      empty_deploy_final_block_instructions_exact]
+QED
+
+Theorem empty_deploy_final_inst_ids_distinct[local]:
+  ctx_inst_ids_distinct empty_deploy_final_compilation_unit.cu_context
+Proof
+  simp[venomWfTheory.ctx_inst_ids_distinct_def,
+       empty_deploy_final_functions_exact,
+       empty_deploy_final_blocks_exact,
+       empty_deploy_final_block_instructions_exact]
+QED
+
+Theorem empty_deploy_final_labels_wf:
+  unit_labels_wf empty_deploy_final_compilation_unit
+Proof
+  simp[venomCompilerWfTheory.unit_labels_wf_def,
+       venomCompilerWfTheory.unit_label_namespace_def,
+       venomCompilerWfTheory.unit_data_labels_consistent_def,
+       venomCompilerWfTheory.unit_data_label_refs_def,
+       venomCompilerWfTheory.data_section_label_refs_def,
+       venomCompilerWfTheory.data_item_label_refs_def,
+       venomInstTheory.fn_labels_def,
+       empty_deploy_final_functions_exact,
+       empty_deploy_final_blocks_exact,
+       empty_deploy_final_data_segment_exact,
+       final_block_label]
+QED
 val _ = export_theory()
