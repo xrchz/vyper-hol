@@ -76,7 +76,8 @@ End
 Definition fix_phis_in_block_def:
   fix_phis_in_block actual_preds bb =
     let insts' = MAP (fix_phi_inst actual_preds) bb.bb_instructions in
-    let (phis, non_phis) = PARTITION (λi. i.inst_opcode = PHI) insts' in
+    let phis = FILTER (λi. i.inst_opcode = PHI) insts' in
+    let non_phis = FILTER (λi. i.inst_opcode ≠ PHI) insts' in
     bb with bb_instructions := phis ++ non_phis
 End
 
