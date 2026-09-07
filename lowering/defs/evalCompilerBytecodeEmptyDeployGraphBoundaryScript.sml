@@ -773,5 +773,73 @@ Proof
   rpt strip_tac >>
   gvs[fmp_blocks_th, empty_deploy_fmp_bb_instructions_wf]
 QED
+val fmp_reclaim_states_tm =
+  ``fmp_reclaim_states ^fmp_function_tm``
+val exact_fmp_reclaim_states_raw =
+  eval_fmp_closed "empty-deploy FMP reclaim states" fmp_reclaim_states_tm
+val fmp_reclaim_states_rhs = rhs (concl exact_fmp_reclaim_states_raw)
+val (_, fmp_reclaim_states_result_args) = strip_comb fmp_reclaim_states_rhs
+val _ =
+  if head_is ``SOME`` fmp_reclaim_states_rhs andalso
+     length fmp_reclaim_states_result_args = 1
+  then () else raise Fail "empty-deploy FMP reclaim states did not return SOME"
+val fmp_states_tm = hd fmp_reclaim_states_result_args
+val _ = assert_closed "empty-deploy FMP reclaim-state payload" fmp_states_tm
+
+Definition empty_deploy_fmp_states_def:
+  empty_deploy_fmp_states = ^fmp_states_tm
+End
+
+val exact_fmp_reclaim_states =
+  REWRITE_RULE [GSYM empty_deploy_fmp_states_def]
+    exact_fmp_reclaim_states_raw
+
+Theorem exact_empty_deploy_fmp_reclaim_states:
+  ^(concl exact_fmp_reclaim_states)
+Proof
+  ACCEPT_TAC exact_fmp_reclaim_states
+QED
+
+val fmp_candidate_tm = list_mk_comb
+  (``fmp_candidate_plan``,
+   [fmp_infos_tm, fmp_context_tm, fmp_function_tm, fmp_states_tm])
+val exact_fmp_candidate_raw =
+  eval_fmp_closed "empty-deploy FMP candidate plan" fmp_candidate_tm
+val _ =
+  if fst (dest_const (rhs (concl exact_fmp_candidate_raw))) = "FEMPTY"
+  then () else raise Fail
+    ("empty-deploy FMP candidate result: " ^
+     term_to_string (rhs (concl exact_fmp_candidate_raw)))
+val exact_fmp_candidate =
+  REWRITE_RULE [GSYM empty_deploy_fmp_infos_def,
+                GSYM empty_deploy_fmp_states_def]
+    exact_fmp_candidate_raw
+
+Theorem exact_empty_deploy_fmp_candidate_empty:
+  ^(concl exact_fmp_candidate)
+Proof
+  ACCEPT_TAC exact_fmp_candidate
+QED
+
+Theorem exact_empty_deploy_fmp_reclaim_result:
+  analyze_fmp_reclaims empty_deploy_fmp_infos ^fmp_context_tm
+    ^fmp_function_tm = SOME FEMPTY
+Proof
+  irule fmpReclaimPropsTheory.analyze_fmp_reclaims_ready >>
+  simp[exact_empty_deploy_fmp_info_valid,
+       exact_empty_deploy_fmp_function_well_formed,
+       exact_empty_deploy_fmp_function_inst_wf,
+       exact_empty_deploy_fmp_reclaim_states,
+       exact_empty_deploy_fmp_candidate_empty,
+       fmpReclaimDefsTheory.fmp_reclaim_plan_ok_def] >>
+  EVAL_TAC
+QED
+
+Theorem exact_empty_deploy_fmp_reclaim_input:
+  fmp_reclaim_input ^fmp_function_tm FEMPTY
+Proof
+  simp[fmpLowerDefsTheory.fmp_reclaim_input_def]
+QED
+
 
 val _ = export_theory()
