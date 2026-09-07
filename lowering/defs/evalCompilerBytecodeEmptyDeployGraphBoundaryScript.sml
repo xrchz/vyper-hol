@@ -310,4 +310,79 @@ Proof
   ACCEPT_TAC after_make_ssa_context
 QED
 
+val () = computeLib.upd_compset
+  (computeLib.add_thms [alistTheory.fmap_to_alist_FEMPTY])
+val () = computeLib.upd_compset
+  (computeLib.add_thms [integer_wordTheory.i2w_pos])
+
+val lower_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    residual_fold_tm
+val lower_unit_case_tm =
+  find_term is_dispatch_option_case (rhs (concl lower_fold_one))
+val _ = assert_closed "empty deploy LowerDload unit option case" lower_unit_case_tm
+val lower_unit_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    lower_unit_case_tm
+val lower_fold_exposed = PURE_REWRITE_RULE [lower_unit_case] lower_fold_one
+val lower_context_exposed =
+  PURE_REWRITE_RULE [lower_fold_exposed] after_make_ssa_context
+val lower_dispatch_tm = find_closed_head_arity ``execute_configured_fn_pass`` 5
+  (rhs (concl lower_context_exposed))
+val (_, lower_dispatch_args) = strip_comb lower_dispatch_tm
+val _ =
+  if aconv (List.nth (lower_dispatch_args, 1))
+       ``CFP_Simple VP_LowerDload``
+  then () else raise Fail "empty deploy residual dispatcher is not LowerDload"
+val exact_lower_dispatch = computeLib.EVAL_CONV lower_dispatch_tm
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_lower_dispatch)) then ()
+  else raise Fail "empty deploy LowerDload dispatcher result is not SOME"
+
+val lower_dispatch_case_tm =
+  find_term
+    (fn t => head_is ``option_CASE`` t andalso
+      can (find_term (fn u => aconv u lower_dispatch_tm)) t)
+    (rhs (concl lower_context_exposed))
+val _ = assert_closed "empty deploy LowerDload result option case"
+  lower_dispatch_case_tm
+val lower_dispatch_case_rewritten =
+  REWRITE_CONV [exact_lower_dispatch] lower_dispatch_case_tm
+val lower_dispatch_case_reduced =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    (rhs (concl lower_dispatch_case_rewritten))
+val lower_dispatch_case =
+  TRANS lower_dispatch_case_rewritten lower_dispatch_case_reduced
+val after_lower_dload =
+  PURE_REWRITE_RULE [lower_dispatch_case] lower_context_exposed
+val concretize_fold_tm = find_closed_head_arity ``run_configured_fn_pass_fold`` 7
+  (rhs (concl after_lower_dload))
+val (_, concretize_fold_args) = strip_comb concretize_fold_tm
+val (concretize_passes, _) =
+  listSyntax.dest_list (List.nth (concretize_fold_args, 2))
+val _ =
+  if not (null concretize_passes) andalso
+     aconv (hd concretize_passes) ``CFP_Simple VP_ConcretizeMemLoc``
+  then () else raise Fail
+    "empty deploy post-LowerDload fold is not headed by ConcretizeMemLoc"
+val _ =
+  if aconv (lhs (concl after_lower_dload))
+       (lhs (concl after_make_ssa_context)) andalso
+     null (free_vars (rhs (concl after_lower_dload)))
+  then () else raise Fail "empty deploy post-LowerDload boundary is malformed"
+
+Theorem exact_empty_deploy_lower_dload_dispatch:
+  ^(concl exact_lower_dispatch)
+Proof
+  ACCEPT_TAC exact_lower_dispatch
+QED
+
+Theorem exact_empty_deploy_after_lower_dload:
+  ^(concl after_lower_dload)
+Proof
+  ACCEPT_TAC after_lower_dload
+QED
+
 val _ = export_theory()
