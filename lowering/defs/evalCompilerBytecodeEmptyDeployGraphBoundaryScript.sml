@@ -424,14 +424,16 @@ val _ = assert_closed "empty deploy complete allocation positions"
   complete_positions_tm
 val exact_complete_positions_raw = computeLib.EVAL_CONV complete_positions_tm
 val exact_complete_positions =
-  SIMP_RULE (srw_ss ())
-    [wordsTheory.dimword_def,
-     concretizeMemLocDefsTheory.checked_first_fit_def,
-     concretizeMemLocDefsTheory.checked_first_fit_scan_def,
-     concretizeMemLocDefsTheory.sort_reserved_by_pos_def,
-     concretizeMemLocDefsTheory.insert_reserved_by_pos_def,
-     staticLayoutDefsTheory.reserved_intervals_wf_def,
-     staticLayoutDefsTheory.reserved_interval_wf_def]
+  CONV_RULE
+    (RAND_CONV
+      (SIMP_CONV (srw_ss ())
+        [wordsTheory.dimword_def,
+         concretizeMemLocDefsTheory.checked_first_fit_def,
+         concretizeMemLocDefsTheory.checked_first_fit_scan_def,
+         concretizeMemLocDefsTheory.sort_reserved_by_pos_def,
+         concretizeMemLocDefsTheory.insert_reserved_by_pos_def,
+         staticLayoutDefsTheory.reserved_intervals_wf_def,
+         staticLayoutDefsTheory.reserved_interval_wf_def]))
     exact_complete_positions_raw
 val complete_positions_rhs = rhs (concl exact_complete_positions)
 val _ =
@@ -445,6 +447,58 @@ Theorem exact_empty_deploy_complete_alloc_positions:
   ^(concl exact_complete_positions)
 Proof
   ACCEPT_TAC exact_complete_positions
+QED
+
+val deploy_layout_tm =
+  ``compute_function_layout_eval ^deploy_reserved_tm ^deploy_fn_tm``
+val deploy_layout_one =
+  REWR_CONV concretizeMemLocDefsTheory.compute_function_layout_eval_def
+    deploy_layout_tm
+val deploy_layout_after_positions =
+  CONV_RULE (RAND_CONV (REWRITE_CONV [exact_complete_positions]))
+    deploy_layout_one
+val deploy_layout_simplified =
+  CONV_RULE
+    (RAND_CONV
+      (SIMP_CONV (srw_ss ())
+        [wordsTheory.w2n_n2w, wordsTheory.dimword_def,
+         venomMemPropsTheory.dimindex_256,
+         staticLayoutDefsTheory.mk_concretize_layout_def,
+         staticLayoutDefsTheory.global_reserved_end_def,
+         staticLayoutDefsTheory.allocation_eom_fold_def,
+         staticLayoutDefsTheory.allocation_end_def]))
+    deploy_layout_after_positions
+val allocation_eom_tm =
+  find_closed_head_arity ``allocation_eom_fold`` 3
+    (rhs (concl deploy_layout_simplified))
+val exact_allocation_eom_raw = computeLib.EVAL_CONV allocation_eom_tm
+val exact_allocation_eom =
+  CONV_RULE
+    (RAND_CONV
+      (SIMP_CONV (srw_ss ())
+        [wordsTheory.w2n_n2w, wordsTheory.dimword_def,
+         venomMemPropsTheory.dimindex_256]))
+    exact_allocation_eom_raw
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_allocation_eom)) then ()
+  else raise Fail "empty deploy allocation eom is not literal SOME"
+val deploy_layout_with_eom =
+  PURE_REWRITE_RULE [exact_allocation_eom] deploy_layout_simplified
+val exact_deploy_layout =
+  CONV_RULE (RAND_CONV computeLib.EVAL_CONV) deploy_layout_with_eom
+val deploy_layout_rhs = rhs (concl exact_deploy_layout)
+val _ =
+  if head_is ``SOME`` deploy_layout_rhs andalso
+     null (free_vars deploy_layout_rhs) andalso
+     not (has_head ``FLOOKUP`` deploy_layout_rhs)
+  then () else raise Fail
+    ("empty deploy static layout is not closed literal SOME: " ^
+     term_to_string deploy_layout_rhs)
+
+Theorem exact_empty_deploy_compute_function_layout:
+  ^(concl exact_deploy_layout)
+Proof
+  ACCEPT_TAC exact_deploy_layout
 QED
 
 val _ = export_theory()
