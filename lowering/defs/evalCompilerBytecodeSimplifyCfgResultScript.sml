@@ -108,6 +108,40 @@ Proof
   ACCEPT_TAC post_first_stage
 QED
 
+val post_first_stage_rhs = rhs (concl post_first_stage)
+val (_, post_first_stage_case_args) = strip_comb post_first_stage_rhs
+val post_first_stage_scrutinee = hd post_first_stage_case_args
+val _ =
+  if null (free_vars post_first_stage_scrutinee) then ()
+  else raise Fail "post-first-stage outer scrutinee is not closed"
+val post_first_stage_scrutinee_result =
+  computeLib.EVAL_CONV post_first_stage_scrutinee
+val closed_runner_boundary =
+  SIMP_RULE (srw_ss ()) [post_first_stage_scrutinee_result] post_first_stage
+val _ =
+  if aconv (concl closed_runner_boundary) (concl post_first_stage) then
+    raise Fail "closed outer stage case did not reduce"
+  else ()
+val _ =
+  if null (free_vars (concl closed_runner_boundary)) then ()
+  else raise Fail "closed runner boundary theorem is not closed"
+val closed_runner_tm = find_head ``run_pipeline_stages``
+  (rhs (concl closed_runner_boundary))
+val _ =
+  if null (free_vars closed_runner_tm) then ()
+  else raise Fail "residual Dret pipeline runner is not independently closed"
+val _ =
+  if has_head ``VP_DretDesugar`` closed_runner_tm andalso
+     not (has_head ``simplify_cfg_fn_with_labels`` closed_runner_tm)
+  then ()
+  else raise Fail "closed runner payload has the wrong remaining pipeline"
+
+Theorem exact_post_first_stage_closed_runner_boundary:
+  ^(concl closed_runner_boundary)
+Proof
+  ACCEPT_TAC closed_runner_boundary
+QED
+
 val exact_first_named_result =
   SIMP_RULE (srw_ss ()) [exact_first_configured_simplify_cfg_transaction]
     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_named_context
