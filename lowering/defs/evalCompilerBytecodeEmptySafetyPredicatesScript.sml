@@ -317,6 +317,22 @@ Proof
   irule rich_listTheory.LAST_MEM >> simp[]
 QED
 
+Theorem empty_runtime_final_insts_codegen_ready[local]:
+  EVERY (\bb. EVERY codegen_ready_inst bb.bb_instructions)
+    empty_runtime_final_fn.fn_blocks
+Proof
+  simp[stackPlanGenTheory.codegen_ready_inst_def,
+       stackPlanGenTheory.is_pre_codegen_opcode_def,
+       stackPlanGenTheory.is_unlowered_fmp_opcode_def,
+       stackPlanGenTheory.is_unlowered_internal_call_opcode_def,
+       venomInstTheory.is_raw_fmp_opcode_def,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
+QED
+
 Theorem empty_runtime_final_codegen_ready:
   codegen_ready empty_runtime_final_unit.cu_context
 Proof
@@ -432,6 +448,37 @@ Proof
        evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact,
        evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact] >>
   gen_tac >> rpt IF_CASES_TAC >> gvs[]
+QED
+
+val exact_empty_runtime_final_cfg = computeLib.EVAL_CONV
+  ``cfg_analyze empty_runtime_final_fn``
+
+Theorem empty_runtime_final_cfg_exact[local]:
+  ^(concl exact_empty_runtime_final_cfg)
+Proof
+  ACCEPT_TAC exact_empty_runtime_final_cfg
+QED
+
+Theorem empty_runtime_final_cfg_normalized[local]:
+  cfg_is_normalized (cfg_analyze empty_runtime_final_fn)
+    empty_runtime_final_fn
+Proof
+  rewrite_tac[empty_runtime_final_cfg_exact] >>
+  simp[cfgDefsTheory.cfg_is_normalized_def,
+       cfgDefsTheory.cfg_preds_of_def,
+       cfgDefsTheory.cfg_succs_of_def,
+       cfgDefsTheory.fmap_lookup_list_def,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+       empty_runtime_final_block0_label,
+       empty_runtime_final_block1_label,
+       empty_runtime_final_block2_label,
+       empty_runtime_final_block3_label] >>
+  rpt strip_tac >>
+  gvs[empty_runtime_final_block0_label,
+      empty_runtime_final_block1_label,
+      empty_runtime_final_block2_label,
+      empty_runtime_final_block3_label] >>
+  EVAL_TAC >> rpt strip_tac >> gvs[] >> EVAL_TAC
 QED
 
 Theorem empty_runtime_final_mem_ok:
