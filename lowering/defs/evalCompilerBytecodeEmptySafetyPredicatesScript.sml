@@ -365,6 +365,14 @@ Proof
   simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact]
 QED
 
+Theorem empty_runtime_final_block3_defs_before_uses[local]:
+  block_defs_before_uses empty_runtime_final_block3
+Proof
+  rewrite_tac[block_defs_before_uses_def] >>
+  rpt strip_tac >>
+  gvs[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
+QED
+
 Theorem empty_runtime_final_mem_ok:
   (K T) empty_runtime_final_unit.cu_context
 Proof
