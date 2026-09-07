@@ -6,12 +6,16 @@
   },
   "purpose": "HOL compiler self-regression bytecode fixtures",
   "formal_compiler": {
-    "ir_optimization": "o1",
-    "assembly_optimization": "disabled_identity_finalizer"
+    "ir_schedule": "formal_o1",
+    "frontend_scope": "lowering_only",
+    "frontend_dispatch": "Linear",
+    "requested_final_assembly": "FAP_Optimize",
+    "executed_finalizer": "identity"
   },
   "target": {
     "evm_version": "prague",
-    "metadata": "default"
+    "capabilities": ["MCOPY"],
+    "metadata": "disabled_no_cbor"
   },
-  "comparison_contract": "self_regression_not_python_o1_golden"
+  "comparison_contract": "hol_self_regression_not_python_or_upstream_o1_byte_parity"
 }
