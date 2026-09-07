@@ -5,6 +5,7 @@ open HolKernel Parse boolLib bossLib
 
 fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
 fun has_head c t = head_is c t orelse can (find_term (head_is c)) t
+fun find_head c t = if head_is c t then t else find_term (head_is c) t
 
 val exact_first_simplify_cfg_literal =
   REWRITE_RULE
@@ -73,6 +74,38 @@ Theorem exact_post_first_simplify_cfg_runtime_pre_one:
   ^(concl post_first_simplify_cfg_runtime_pre_one)
 Proof
   ACCEPT_TAC post_first_simplify_cfg_runtime_pre_one
+QED
+
+val first_stage_tail_fold_tm = find_head ``run_configured_fn_pass_fold``
+  (rhs (concl post_first_simplify_cfg_runtime_pre_one))
+val _ =
+  if null (free_vars first_stage_tail_fold_tm) then ()
+  else raise Fail "completed first-stage fold tail is not closed"
+val first_stage_tail_fold_done =
+  FIRST_CONV
+    [REWR_CONV (cj 1 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def),
+     REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)]
+    first_stage_tail_fold_tm
+val post_first_stage =
+  SIMP_RULE (srw_ss ()) [first_stage_tail_fold_done]
+    post_first_simplify_cfg_runtime_pre_one
+val _ =
+  if null (free_vars (concl post_first_stage)) then ()
+  else raise Fail "post-first-stage runtime equation is not closed"
+val _ =
+  if has_head ``simplify_cfg_fn_with_labels`` (concl post_first_stage)
+  then raise Fail "SimplifyCFG remained after completing first stage"
+  else ()
+val _ =
+  if has_head ``run_pipeline_stages`` (concl post_first_stage) andalso
+     has_head ``VP_DretDesugar`` (concl post_first_stage)
+  then ()
+  else raise Fail "post-first-stage boundary lacks remaining Dret pipeline"
+
+Theorem exact_post_first_stage_runtime_pre_one:
+  ^(concl post_first_stage)
+Proof
+  ACCEPT_TAC post_first_stage
 QED
 
 val exact_first_named_result =
