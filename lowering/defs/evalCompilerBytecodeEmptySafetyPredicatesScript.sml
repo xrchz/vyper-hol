@@ -243,6 +243,20 @@ Proof
        evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
 QED
 
+Definition block_defs_before_uses_def[local]:
+  block_defs_before_uses bb <=>
+    !inst v.
+      MEM inst bb.bb_instructions /\
+      MEM (Var v) inst.inst_operands ==>
+      ?def_inst i j.
+        MEM def_inst bb.bb_instructions /\
+        MEM v def_inst.inst_outputs /\
+        i < j /\
+        j < LENGTH bb.bb_instructions /\
+        EL i bb.bb_instructions = def_inst /\
+        EL j bb.bb_instructions = inst
+End
+
 Theorem empty_runtime_final_codegen_ready:
   codegen_ready empty_runtime_final_unit.cu_context
 Proof
