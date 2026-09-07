@@ -272,4 +272,81 @@ Proof
   ACCEPT_TAC exact_fmp_lookup
 QED
 
+
+Theorem empty_runtime_bb_well_formed_snoc[local]:
+  is_terminator term.inst_opcode /\
+  EVERY (\i. ~is_terminator i.inst_opcode) prefix /\
+  EVERY (\i. i.inst_opcode <> PHI) (prefix ++ [term]) ==>
+  bb_well_formed
+    <| bb_label := lbl; bb_instructions := prefix ++ [term] |>
+Proof
+  rw[venomWfTheory.bb_well_formed_def] >>
+  rpt strip_tac >> simp[]
+  >- (Cases_on `i < LENGTH prefix`
+      >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+      >> `i = LENGTH prefix` by decide_tac
+      >> simp[listTheory.EL_APPEND_EQN])
+  >> Cases_on `j < LENGTH prefix`
+  >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+  >> `j = LENGTH prefix` by decide_tac
+  >> gvs[listTheory.EL_APPEND_EQN]
+QED
+
+Theorem empty_runtime_fn_inst_wf_from_blocks[local]:
+  (!bb. MEM bb fn.fn_blocks ==>
+        EVERY inst_wf bb.bb_instructions) ==>
+  fn_inst_wf fn
+Proof
+  rw[venomWfTheory.fn_inst_wf_def] >>
+  first_x_assum drule >>
+  simp[listTheory.EVERY_MEM]
+QED
+
+fun eval_fmp_closed label tm =
+  let
+    val _ = assert_closed label tm
+  in
+    computeLib.EVAL_CONV tm
+  end
+
+val fmp_blocks_th = eval_fmp_closed "FMP function block projection"
+  ``(^fmp_function_tm).fn_blocks``
+val fmp_blocks = fst (listSyntax.dest_list (rhs (concl fmp_blocks_th)))
+val _ = if length fmp_blocks = 1 then ()
+        else raise Fail ("FMP function block count: " ^
+          Int.toString (length fmp_blocks))
+val fmp_bb0_tm = hd fmp_blocks
+fun fmp_block_instructions label bb =
+  let
+    val th = eval_fmp_closed label ``(^bb).bb_instructions``
+    val insts = fst (listSyntax.dest_list (rhs (concl th)))
+  in
+    (th, insts)
+  end
+
+val (fmp_bb0_insts_th, fmp_bb0_insts) =
+  fmp_block_instructions "FMP block 0 instruction projection" fmp_bb0_tm
+val _ = if length fmp_bb0_insts = 4 then ()
+        else raise Fail "FMP block 0 does not have exactly four instructions"
+
+val fmp_bb0_succs_th = eval_fmp_closed "FMP block 0 successors"
+  ``bb_succs ^fmp_bb0_tm``
+
+Theorem empty_runtime_fmp_blocks_shape[local]:
+  ^(concl fmp_blocks_th)
+Proof
+  ACCEPT_TAC fmp_blocks_th
+QED
+
+Theorem empty_runtime_fmp_bb0_instructions_shape[local]:
+  ^(concl fmp_bb0_insts_th)
+Proof
+  ACCEPT_TAC fmp_bb0_insts_th
+QED
+
+Theorem empty_runtime_fmp_bb0_succs_shape[local]:
+  ^(concl fmp_bb0_succs_th)
+Proof
+  ACCEPT_TAC fmp_bb0_succs_th
+QED
 val _ = export_theory()
