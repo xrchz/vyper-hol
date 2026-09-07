@@ -237,4 +237,95 @@ Proof
   EVAL_TAC >> simp[]
 QED
 
+Theorem runtime_function_well_formed[local]:
+  wf_function ^runtime_fn_tm
+Proof
+  simp[venomWfTheory.wf_function_def,
+       venomWfTheory.fn_has_entry_def,
+       venomWfTheory.fn_succs_closed_def,
+       venomWfTheory.fn_inst_ids_distinct_def,
+       venomInstTheory.fn_labels_def,
+       runtime_bb0_well_formed,
+       runtime_bb1_well_formed,
+       runtime_bb2_well_formed,
+       runtime_bb0_succs_shape,
+       runtime_bb1_succs_shape,
+       runtime_bb2_succs_shape] >>
+  conj_tac
+  >- (rpt strip_tac >>
+      gvs[runtime_bb0_well_formed,
+          runtime_bb1_well_formed,
+          runtime_bb2_well_formed])
+  >> rpt strip_tac >>
+  gvs[runtime_bb0_succs_shape,
+      runtime_bb1_succs_shape,
+      runtime_bb2_succs_shape]
+QED
+
+Theorem runtime_function_instructions_wf[local]:
+  fn_inst_wf ^runtime_fn_tm
+Proof
+  irule runtime_fn_inst_wf_from_blocks >>
+  simp[] >> rpt strip_tac >>
+  gvs[runtime_bb0_instructions_wf,
+      runtime_bb1_instructions_wf,
+      runtime_bb2_instructions_wf]
+QED
+
+Theorem runtime_context_functions_wf[local]:
+  !fn. MEM fn (^runtime_input_unit_tm).cu_context.ctx_functions ==>
+        wf_function fn /\ fn_inst_wf fn
+Proof
+  simp[runtime_functions_shape,
+       runtime_function_well_formed,
+       runtime_function_instructions_wf]
+QED
+
+
+Theorem runtime_context_wf[local]:
+  ctx_wf (^runtime_input_unit_tm).cu_context
+Proof
+  simp[venomWfTheory.ctx_wf_def,
+       venomWfTheory.ctx_distinct_fn_names_def,
+       venomWfTheory.ctx_has_entry_def,
+       venomInstTheory.ctx_fn_names_def,
+       runtime_functions_shape]
+QED
+
+Theorem runtime_invoke_targets_wf[local]:
+  wf_invoke_targets (^runtime_input_unit_tm).cu_context
+Proof
+  rw[venomWfTheory.wf_invoke_targets_def] >> rpt strip_tac >>
+  gvs[runtime_functions_shape,
+      venomInstTheory.fn_insts_def,
+      venomInstTheory.fn_insts_blocks_def,
+      runtime_blocks_shape,
+      runtime_bb0_instructions_shape,
+      runtime_bb1_instructions_shape,
+      runtime_bb2_instructions_shape]
+QED
+
+Theorem runtime_context_inst_ids_distinct[local]:
+  ctx_inst_ids_distinct (^runtime_input_unit_tm).cu_context
+Proof
+  simp[venomWfTheory.ctx_inst_ids_distinct_def,
+       runtime_functions_shape,
+       runtime_blocks_shape,
+       runtime_bb0_instructions_shape,
+       runtime_bb1_instructions_shape,
+       runtime_bb2_instructions_shape]
+QED
+
+Theorem runtime_unit_labels_wf[local]:
+  unit_labels_wf ^runtime_input_unit_tm
+Proof
+  simp[venomCompilerWfTheory.unit_labels_wf_def,
+       venomCompilerWfTheory.unit_label_namespace_def,
+       venomCompilerWfTheory.unit_data_labels_consistent_def,
+       venomCompilerWfTheory.unit_data_label_refs_def,
+       venomInstTheory.fn_labels_def,
+       runtime_functions_shape,
+       runtime_blocks_shape,
+       runtime_data_segment_shape]
+QED
 val _ = export_theory()
