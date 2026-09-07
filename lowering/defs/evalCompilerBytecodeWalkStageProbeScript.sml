@@ -489,4 +489,106 @@ Proof
 QED
 
 
+val fmp_checked_seal_tm = list_mk_comb
+  (``fmp_checked_seal``,
+   [fmp_context_tm, fmp_function_tm, ``fmp_info_bottom``,
+    ``(^fmp_function_tm).fn_blocks``])
+val exact_fmp_checked_seal_raw =
+  eval_fmp_closed "empty-runtime FMP checked seal" fmp_checked_seal_tm
+val fmp_checked_seal_rhs = rhs (concl exact_fmp_checked_seal_raw)
+val (_, fmp_checked_seal_result_args) = strip_comb fmp_checked_seal_rhs
+val _ =
+  if head_is ``SOME`` fmp_checked_seal_rhs andalso
+     length fmp_checked_seal_result_args = 1
+  then () else raise Fail "empty-runtime FMP checked seal did not return SOME"
+val fmp_sealed_function_tm = hd fmp_checked_seal_result_args
+val _ = assert_closed "empty-runtime sealed FMP function" fmp_sealed_function_tm
+
+Definition empty_runtime_fmp_sealed_function_def:
+  empty_runtime_fmp_sealed_function = ^fmp_sealed_function_tm
+End
+
+val exact_fmp_checked_seal =
+  exact_fmp_checked_seal_raw
+  |> SIMP_RULE (srw_ss ()) [fmpAnalysisDefsTheory.fmp_info_bottom_def]
+  |> REWRITE_RULE [GSYM empty_runtime_fmp_sealed_function_def]
+
+Theorem exact_empty_runtime_fmp_checked_seal:
+  ^(concl exact_fmp_checked_seal)
+Proof
+  ACCEPT_TAC exact_fmp_checked_seal
+QED
+
+Theorem exact_empty_runtime_fmp_with_info:
+  fmp_lower_function_with_info empty_runtime_fmp_infos ^fmp_context_tm
+    ^fmp_supply_tm ^fmp_function_tm =
+  SOME (empty_runtime_fmp_sealed_function,^fmp_supply_tm)
+Proof
+  simp[fmpLowerDefsTheory.fmp_lower_function_with_info_def,
+       exact_empty_runtime_fmp_info_valid,
+       exact_empty_runtime_fmp_lower_input,
+       exact_empty_runtime_fmp_bottom_lookup,
+       exact_empty_runtime_fmp_reclaim_result,
+       exact_empty_runtime_fmp_reclaim_input,
+       exact_empty_runtime_fmp_checked_seal,
+       fmpAnalysisDefsTheory.fmp_info_bottom_def]
+QED
+
+val exact_fmp_with_info_normalized =
+  SIMP_RULE (srw_ss ()) [] exact_empty_runtime_fmp_with_info
+
+Theorem exact_empty_runtime_fmp_lower:
+  fmp_lower_function ^fmp_context_tm ^fmp_supply_tm ^fmp_function_tm =
+  SOME (empty_runtime_fmp_sealed_function,^fmp_supply_tm)
+Proof
+  simp[fmpLowerDefsTheory.fmp_lower_function_def,
+       exact_empty_runtime_fmp_analysis,
+       exact_fmp_with_info_normalized]
+QED
+
+val exact_fmp_dispatch =
+  fmp_dispatch_unfold
+  |> CONV_RULE (RAND_CONV (REWRITE_CONV [exact_empty_runtime_fmp_lower]))
+  |> CONV_RULE (RAND_CONV (computeLib.RESTR_EVAL_CONV
+       [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]))
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_fmp_dispatch)) then ()
+  else raise Fail ("corrected FMP dispatcher did not return SOME: " ^
+    term_to_string (rhs (concl exact_fmp_dispatch)))
+
+Theorem exact_empty_runtime_fmp_dispatch:
+  ^(concl exact_fmp_dispatch)
+Proof
+  ACCEPT_TAC exact_fmp_dispatch
+QED
+
+val fmp_dispatch_case_tm =
+  find_term (is_exact_dispatch_case fmp_dispatch_tm)
+    (rhs (concl fmp_context_exposed))
+val _ = assert_closed "FmpLowering result option case" fmp_dispatch_case_tm
+val fmp_dispatch_case_rewritten =
+  REWRITE_CONV [exact_fmp_dispatch] fmp_dispatch_case_tm
+val fmp_dispatch_case_reduced = computeLib.RESTR_EVAL_CONV
+  [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+  (rhs (concl fmp_dispatch_case_rewritten))
+val fmp_dispatch_case =
+  TRANS fmp_dispatch_case_rewritten fmp_dispatch_case_reduced
+val after_fmp = PURE_REWRITE_RULE [fmp_dispatch_case] fmp_context_exposed
+val after_fmp_closed = normalize_residual_context "post-FMP" after_fmp
+val next_fold_tm = find_head_arity ``run_configured_fn_pass_fold`` 7
+  (rhs (concl after_fmp_closed))
+val _ = assert_closed "post-FMP residual fold" next_fold_tm
+val (_, next_fold_args) = strip_comb next_fold_tm
+val (next_passes, _) = listSyntax.dest_list (List.nth (next_fold_args, 2))
+val _ =
+  if not (null next_passes) andalso
+     aconv (hd next_passes) ``CFP_Simple VP_MakeSSA``
+  then () else raise Fail "post-FMP residual fold is not headed by MakeSSA"
+
+Theorem exact_empty_runtime_after_fmp_lowering:
+  ^(concl after_fmp_closed)
+Proof
+  ACCEPT_TAC after_fmp_closed
+QED
+
 val _ = export_theory();
