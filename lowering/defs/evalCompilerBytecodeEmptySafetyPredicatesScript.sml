@@ -333,12 +333,6 @@ Proof
        evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
 QED
 
-Theorem empty_runtime_final_codegen_ready:
-  codegen_ready empty_runtime_final_unit.cu_context
-Proof
-  cheat
-QED
-
 Theorem empty_runtime_final_block0_defs_before_uses[local]:
   block_defs_before_uses empty_runtime_final_block0
 Proof
@@ -479,6 +473,29 @@ Proof
       empty_runtime_final_block2_label,
       empty_runtime_final_block3_label] >>
   EVAL_TAC >> rpt strip_tac >> gvs[] >> EVAL_TAC
+QED
+
+Theorem empty_runtime_final_codegen_ready_fn[local]:
+  codegen_ready_fn empty_runtime_final_fn
+Proof
+  simp[stackPlanGenTheory.codegen_ready_fn_def,
+       evalCompilerBytecodeEmptySafetyStructuralTheory.empty_runtime_final_fn_wf,
+       evalCompilerBytecodeEmptySafetyStructuralTheory.empty_runtime_final_fn_inst_wf,
+       empty_runtime_final_canonical_params,
+       empty_runtime_final_ssa_form,
+       empty_runtime_final_def_dominates_uses,
+       empty_runtime_final_single_use,
+       empty_runtime_final_cfg_normalized,
+       empty_runtime_final_insts_codegen_ready]
+QED
+
+Theorem empty_runtime_final_codegen_ready:
+  codegen_ready empty_runtime_final_unit.cu_context
+Proof
+  rewrite_tac[stackPlanGenTheory.codegen_ready_def] >>
+  rewrite_tac[
+    evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_functions_exact] >>
+  simp[empty_runtime_final_codegen_ready_fn]
 QED
 
 Theorem empty_runtime_final_mem_ok:
