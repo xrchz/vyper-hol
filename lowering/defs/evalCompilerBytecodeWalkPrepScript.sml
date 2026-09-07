@@ -141,4 +141,98 @@ Theorem exact_empty_runtime_fcg_postorder:
 Proof
   ACCEPT_TAC exact_postorder
 QED
+
+fun first_unit_function label unit_tm =
+  let
+    val functions_th = computeLib.EVAL_CONV
+      ``(^unit_tm).cu_context.ctx_functions``
+    val (functions, _) = listSyntax.dest_list (rhs (concl functions_th))
+  in
+    if length functions = 1 then hd functions
+    else raise Fail (label ^ " does not contain exactly one function")
+  end
+
+val pre_walk_function_tm = first_unit_function "pre-walk unit"
+  ``empty_runtime_pre_walk_unit``
+val selected_walk_function_tm = first_unit_function "selected walk unit"
+  ``empty_runtime_walk_unit``
+val _ =
+  if null (free_vars selected_walk_function_tm) then ()
+  else raise Fail "selected walk function is not closed"
+
+Definition empty_runtime_walk_function_def:
+  empty_runtime_walk_function = ^selected_walk_function_tm
+End
+
+fun eval_cfg_projection fn_tm =
+  let
+    fun normalize th =
+      CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss ()) [])) th
+    val labels = normalize (computeLib.EVAL_CONV
+      ``MAP bb_label (^fn_tm).fn_blocks``)
+    val succs = normalize (computeLib.EVAL_CONV
+      ``MAP bb_succs (^fn_tm).fn_blocks``)
+    val closed = normalize (computeLib.EVAL_CONV ``fn_succs_closed ^fn_tm``)
+    val blocks = computeLib.EVAL_CONV ``LENGTH (^fn_tm).fn_blocks``
+  in
+    (labels, succs, closed, blocks)
+  end
+
+val (pre_walk_labels, pre_walk_succs, pre_walk_closed,
+     pre_walk_block_count) = eval_cfg_projection pre_walk_function_tm
+val (selected_walk_labels, selected_walk_succs, selected_walk_closed,
+     selected_walk_block_count) = eval_cfg_projection selected_walk_function_tm
+val _ =
+  if aconv (rhs (concl pre_walk_block_count)) ``3`` andalso
+     aconv (rhs (concl selected_walk_block_count)) ``3``
+  then ()
+  else raise Fail "corrected walk preparation did not preserve three CFG blocks"
+val selected_walk_blocks_th = computeLib.EVAL_CONV
+  ``(^selected_walk_function_tm).fn_blocks``
+val (selected_walk_blocks, _) =
+  listSyntax.dest_list (rhs (concl selected_walk_blocks_th))
+val selected_walk_block_succs = map (fn bb => computeLib.EVAL_CONV
+  ``bb_succs ^bb``) selected_walk_blocks
+val _ =
+  if length selected_walk_blocks = 3 then ()
+  else raise Fail "selected walk function does not have three blocks"
+
+Theorem exact_empty_runtime_walk_function:
+  empty_runtime_walk_function = ^selected_walk_function_tm
+Proof
+  simp[empty_runtime_walk_function_def]
+QED
+
+
+Theorem empty_runtime_walk_function_succs_closed:
+  fn_succs_closed empty_runtime_walk_function
+Proof
+  simp[empty_runtime_walk_function_def,
+       venomWfTheory.fn_succs_closed_def,
+       venomInstTheory.bb_succs_def,
+       venomInstTheory.get_successors_def,
+       venomInstTheory.is_terminator_def,
+       venomStateTheory.get_label_def,
+       venomInstTheory.fn_labels_def,
+       listTheory.nub_def] >>
+  rpt strip_tac >>
+  gvs[LIST_CONJ selected_walk_block_succs,
+      venomInstTheory.is_terminator_def,
+      venomStateTheory.get_label_def]
+QED
+Theorem exact_empty_runtime_walk_cfg_provenance:
+  ^(concl pre_walk_labels) /\
+  ^(concl pre_walk_succs) /\
+  ^(concl pre_walk_closed) /\
+  ^(concl pre_walk_block_count) /\
+  ^(concl selected_walk_labels) /\
+  ^(concl selected_walk_succs) /\
+  ^(concl selected_walk_closed) /\
+  ^(concl selected_walk_block_count)
+Proof
+  ACCEPT_TAC (LIST_CONJ
+    [pre_walk_labels, pre_walk_succs, pre_walk_closed, pre_walk_block_count,
+     selected_walk_labels, selected_walk_succs, selected_walk_closed,
+     selected_walk_block_count])
+QED
 val _ = export_theory()

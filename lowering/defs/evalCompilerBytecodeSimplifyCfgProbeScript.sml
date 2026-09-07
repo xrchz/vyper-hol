@@ -168,38 +168,165 @@ Proof
   ACCEPT_TAC first_fix_all_phis_th
 QED
 
+val first_phi_fixed_blocks_th =
+  computeLib.EVAL_CONV ``first_simplify_cfg_phi_fixed.fn_blocks``
+val first_phi_fixed_blocks =
+  fst (listSyntax.dest_list (rhs (concl first_phi_fixed_blocks_th)))
+val _ =
+  if length first_phi_fixed_blocks = 3 then ()
+  else raise Fail "stable PHI fix changed the fixture block count"
+fun eval_last_opcode bb = computeLib.EVAL_CONV
+  ``(LAST (^bb).bb_instructions).inst_opcode``
+val first_phi_fixed_last_opcodes = map eval_last_opcode first_phi_fixed_blocks
+val _ =
+  if ListPair.allEq (fn (x,y) => aconv x y)
+       (map (rhs o concl) first_phi_fixed_last_opcodes,
+        [``JNZ``, ``JMP``, ``REVERT``])
+  then ()
+  else raise Fail "stable PHI fix did not preserve fixture terminators at LAST"
 
-fun rew_first_collapse tm = FIRST_CONV
-  [REWR_CONV (cj 1 simplifyCfgDefsTheory.collapse_dfs_def),
-   REWR_CONV (cj 2 simplifyCfgDefsTheory.collapse_dfs_def),
-   REWR_CONV (cj 3 simplifyCfgDefsTheory.collapse_dfs_def)] tm
-
-val first_collapse_start_tm =
-  ``collapse_dfs first_simplify_cfg_phi_fixed [] [] "__entry"``
-val first_collapse_step_1_raw = rew_first_collapse first_collapse_start_tm
-val first_collapse_step_1 =
-  CONV_RULE
-    (RAND_CONV (computeLib.RESTR_EVAL_CONV
-      [``collapse_dfs``, ``collapse_dfs_succs``]))
-    first_collapse_step_1_raw
-
-Theorem exact_first_collapse_step_1:
-  ^(concl first_collapse_step_1)
+Theorem exact_first_fix_all_phis_last_opcodes:
+  ^(concl (List.nth (first_phi_fixed_last_opcodes, 0))) /\
+  ^(concl (List.nth (first_phi_fixed_last_opcodes, 1))) /\
+  ^(concl (List.nth (first_phi_fixed_last_opcodes, 2)))
 Proof
-  ACCEPT_TAC first_collapse_step_1
-QED
-val first_collapse_step_2_local =
-  rew_first_collapse (rhs (concl first_collapse_step_1))
-val first_collapse_final =
-  TRANS first_collapse_step_1 first_collapse_step_2_local
-
-Theorem exact_first_collapse_step_2:
-  ^(concl first_collapse_final)
-Proof
-  ACCEPT_TAC first_collapse_final
+  ACCEPT_TAC (LIST_CONJ first_phi_fixed_last_opcodes)
 QED
 
-val first_collapse_result_tm = rhs (concl first_collapse_final)
+val first_entry_bb_tm = List.nth (first_phi_fixed_blocks, 0)
+val first_dispatch_bb_tm = List.nth (first_phi_fixed_blocks, 1)
+val first_fallback_bb_tm = List.nth (first_phi_fixed_blocks, 2)
+
+Definition first_simplify_cfg_entry_bb_def:
+  first_simplify_cfg_entry_bb = ^first_entry_bb_tm
+End
+
+Definition first_simplify_cfg_dispatch_bb_def:
+  first_simplify_cfg_dispatch_bb = ^first_dispatch_bb_tm
+End
+
+Definition first_simplify_cfg_fallback_bb_def:
+  first_simplify_cfg_fallback_bb = ^first_fallback_bb_tm
+End
+
+val first_entry_lookup_th = computeLib.EVAL_CONV
+  ``lookup_block "__entry" first_simplify_cfg_phi_fixed.fn_blocks``
+val first_dispatch_lookup_th = computeLib.EVAL_CONV
+  ``lookup_block "@dispatch_1" first_simplify_cfg_phi_fixed.fn_blocks``
+val first_fallback_lookup_th = computeLib.EVAL_CONV
+  ``lookup_block "@fallback_0" first_simplify_cfg_phi_fixed.fn_blocks``
+val first_entry_succs_th = computeLib.EVAL_CONV
+  ``bb_succs first_simplify_cfg_entry_bb``
+val first_dispatch_succs_th = computeLib.EVAL_CONV
+  ``bb_succs first_simplify_cfg_dispatch_bb``
+val first_entry_succs_named_th =
+  PURE_REWRITE_RULE [GSYM first_simplify_cfg_entry_bb_def]
+    first_entry_succs_th
+val first_fallback_succs_th = computeLib.EVAL_CONV
+  ``bb_succs first_simplify_cfg_fallback_bb``
+val first_fallback_preds_th = computeLib.EVAL_CONV
+  ``num_preds first_simplify_cfg_phi_fixed "@fallback_0"``
+val first_entry_try_bypass_th = computeLib.EVAL_CONV
+  ``try_bypass first_simplify_cfg_phi_fixed [] first_simplify_cfg_entry_bb
+      ["@fallback_0"; "@dispatch_1"]``
+val first_dispatch_merge_fallback_th = computeLib.EVAL_CONV
+  ``can_merge_blocks first_simplify_cfg_phi_fixed
+      first_simplify_cfg_dispatch_bb first_simplify_cfg_fallback_bb``
+
+Theorem exact_first_simplify_cfg_closed_decisions:
+  ^(concl first_entry_lookup_th) /\
+  ^(concl first_dispatch_lookup_th) /\
+  ^(concl first_fallback_lookup_th) /\
+  ^(concl first_entry_succs_th) /\
+  ^(concl first_dispatch_succs_th) /\
+  ^(concl first_fallback_succs_th) /\
+  ^(concl first_fallback_preds_th) /\
+  ^(concl first_entry_try_bypass_th) /\
+  ^(concl first_dispatch_merge_fallback_th)
+Proof
+  ACCEPT_TAC (LIST_CONJ
+    [first_entry_lookup_th, first_dispatch_lookup_th, first_fallback_lookup_th,
+     first_entry_succs_th, first_dispatch_succs_th, first_fallback_succs_th,
+     first_fallback_preds_th, first_entry_try_bypass_th,
+     first_dispatch_merge_fallback_th])
+QED
+
+Theorem exact_first_entry_try_bypass:
+  try_bypass first_simplify_cfg_phi_fixed [] first_simplify_cfg_entry_bb
+    ["@fallback_0"; "@dispatch_1"] =
+  (first_simplify_cfg_phi_fixed, [], F)
+Proof
+  rewrite_tac [first_entry_try_bypass_th] >>
+  simp[first_simplify_cfg_phi_fixed_def,
+       first_simplify_cfg_removed_eq_operand,
+       first_simplify_cfg_operand_def,
+       venomInstTheory.ir_function_component_equality]
+QED
+
+Theorem exact_first_entry_succs:
+  bb_succs first_simplify_cfg_entry_bb =
+    ["@fallback_0"; "@dispatch_1"]
+Proof
+  simp[first_simplify_cfg_entry_bb_def, venomInstTheory.bb_succs_def,
+       venomInstTheory.get_successors_def, venomInstTheory.is_terminator_def,
+       venomStateTheory.get_label_def, listTheory.nub_def]
+QED
+
+
+Theorem exact_first_collapse_fallback_fresh:
+  collapse_dfs first_simplify_cfg_phi_fixed [] ["__entry"] "@fallback_0" =
+    (first_simplify_cfg_phi_fixed, [], ["@fallback_0"; "__entry"])
+Proof
+  pure_once_rewrite_tac [cj 1 simplifyCfgDefsTheory.collapse_dfs_def] >>
+  simp[first_fallback_lookup_th,
+       GSYM first_simplify_cfg_fallback_bb_def,
+       first_fallback_succs_th, simplifyCfgDefsTheory.try_bypass_def,
+       cj 2 simplifyCfgDefsTheory.collapse_dfs_def]
+QED
+
+Theorem exact_first_collapse_fallback_visited:
+  collapse_dfs first_simplify_cfg_phi_fixed []
+    ["@dispatch_1"; "@fallback_0"; "__entry"] "@fallback_0" =
+  (first_simplify_cfg_phi_fixed, [],
+    ["@dispatch_1"; "@fallback_0"; "__entry"])
+Proof
+  pure_once_rewrite_tac [cj 1 simplifyCfgDefsTheory.collapse_dfs_def] >>
+  simp[first_fallback_lookup_th,
+       GSYM first_simplify_cfg_fallback_bb_def,
+       first_fallback_succs_th, simplifyCfgDefsTheory.try_bypass_def,
+       cj 2 simplifyCfgDefsTheory.collapse_dfs_def]
+QED
+
+Theorem exact_first_collapse_dispatch:
+  collapse_dfs first_simplify_cfg_phi_fixed []
+    ["@fallback_0"; "__entry"] "@dispatch_1" =
+  (first_simplify_cfg_phi_fixed, [],
+    ["@dispatch_1"; "@fallback_0"; "__entry"])
+Proof
+  pure_once_rewrite_tac [cj 1 simplifyCfgDefsTheory.collapse_dfs_def] >>
+  simp[first_dispatch_lookup_th,
+       GSYM first_simplify_cfg_dispatch_bb_def,
+       first_dispatch_succs_th, first_fallback_lookup_th,
+       GSYM first_simplify_cfg_fallback_bb_def,
+       first_dispatch_merge_fallback_th,
+       exact_first_collapse_fallback_visited]
+QED
+
+Theorem exact_first_collapse_entry_succs:
+  collapse_dfs_succs first_simplify_cfg_phi_fixed [] ["__entry"]
+    ["@fallback_0"; "@dispatch_1"] =
+  (first_simplify_cfg_phi_fixed, [],
+    ["@dispatch_1"; "@fallback_0"; "__entry"])
+Proof
+  pure_once_rewrite_tac [cj 3 simplifyCfgDefsTheory.collapse_dfs_def] >>
+  simp[exact_first_collapse_fallback_fresh] >>
+  pure_once_rewrite_tac [cj 3 simplifyCfgDefsTheory.collapse_dfs_def] >>
+  simp[exact_first_collapse_dispatch, cj 2 simplifyCfgDefsTheory.collapse_dfs_def]
+QED
+
+val first_collapse_result_tm =
+  ``(first_simplify_cfg_phi_fixed, ([] : (string # string) list),
+     ["@dispatch_1"; "@fallback_0"; "__entry"])``
 Definition first_simplify_cfg_collapse_result_def:
   first_simplify_cfg_collapse_result = ^first_collapse_result_tm
 End
@@ -208,8 +335,11 @@ Theorem exact_first_collapse_dfs:
   collapse_dfs first_simplify_cfg_phi_fixed [] [] "__entry" =
     first_simplify_cfg_collapse_result
 Proof
-  simp[first_simplify_cfg_collapse_result_def] >>
-  ACCEPT_TAC first_collapse_final
+  pure_once_rewrite_tac [cj 1 simplifyCfgDefsTheory.collapse_dfs_def] >>
+  simp[first_entry_lookup_th, GSYM first_simplify_cfg_entry_bb_def,
+       exact_first_entry_succs, exact_first_entry_try_bypass,
+       exact_first_collapse_entry_succs,
+       first_simplify_cfg_collapse_result_def]
 QED
 
 (* The DFS result is already a closed triple.  Project it once here so the
@@ -234,23 +364,24 @@ Definition first_simplify_cfg_substituted_def:
   first_simplify_cfg_substituted = ^first_substituted_tm
 End
 
-Theorem exact_first_substitution:
-  (if ^first_collapse_label_map_tm = [] then ^first_collapsed_fn_tm
-   else subst_block_labels_fn ^first_collapse_label_map_tm ^first_collapsed_fn_tm) =
-  first_simplify_cfg_substituted
-Proof
-  simp[first_simplify_cfg_substituted_def] >>
-  ACCEPT_TAC first_substitution_th
-QED
-
-
 Theorem exact_first_collapse_dfs_components:
   collapse_dfs first_simplify_cfg_phi_fixed [] [] "__entry" =
     (^first_collapsed_fn_tm, ^first_collapse_label_map_tm,
      ^first_collapse_visited_tm)
 Proof
-  simp[first_simplify_cfg_collapse_result_def] >>
-  ACCEPT_TAC first_collapse_final
+  simp[exact_first_collapse_dfs, first_simplify_cfg_collapse_result_def]
+QED
+
+Theorem exact_first_substitution:
+  (if ^first_collapse_label_map_tm = [] then ^first_collapsed_fn_tm
+   else subst_block_labels_fn ^first_collapse_label_map_tm ^first_collapsed_fn_tm) =
+  first_simplify_cfg_substituted
+Proof
+  simp[first_simplify_cfg_substituted_def,
+       first_simplify_cfg_phi_fixed_def,
+       first_simplify_cfg_removed_eq_operand,
+       first_simplify_cfg_operand_def,
+       venomInstTheory.ir_function_component_equality]
 QED
 
 
@@ -309,60 +440,87 @@ Proof
 QED
 
 Theorem first_simplify_cfg_substituted_dispatch_edge:
-  ~fn_succ first_simplify_cfg_substituted "__entry" "@dispatch_1"
+  fn_succ first_simplify_cfg_substituted "__entry" "@dispatch_1"
 Proof
   simp[cfgTransformTheory.fn_succ_def,
        venomInstTheory.lookup_block_def, venomInstTheory.bb_succs_def,
        venomInstTheory.get_successors_def, venomInstTheory.is_terminator_def,
        venomStateTheory.get_label_def, listTheory.FIND_def,
-       listTheory.INDEX_FIND_def, first_simplify_cfg_substituted_def]
+       listTheory.INDEX_FIND_def, first_simplify_cfg_substituted_def,
+       first_simplify_cfg_phi_fixed_def,
+       first_simplify_cfg_removed_eq_operand,
+       first_simplify_cfg_operand_def]
 QED
 
 Theorem first_simplify_cfg_substituted_fallback_edge:
-  ~fn_succ first_simplify_cfg_substituted "__entry" "@fallback_0"
+  fn_succ first_simplify_cfg_substituted "__entry" "@fallback_0"
 Proof
   simp[cfgTransformTheory.fn_succ_def,
        venomInstTheory.lookup_block_def, venomInstTheory.bb_succs_def,
        venomInstTheory.get_successors_def, venomInstTheory.is_terminator_def,
        venomStateTheory.get_label_def, listTheory.FIND_def,
-       listTheory.INDEX_FIND_def, first_simplify_cfg_substituted_def]
+       listTheory.INDEX_FIND_def, first_simplify_cfg_substituted_def,
+       first_simplify_cfg_phi_fixed_def,
+       first_simplify_cfg_removed_eq_operand,
+       first_simplify_cfg_operand_def]
 QED
 
-Theorem first_simplify_cfg_substituted_no_entry_succ:
-  !lbl. ~fn_succ first_simplify_cfg_substituted "__entry" lbl
+Theorem first_simplify_cfg_substituted_entry_reachable:
+  reachable first_simplify_cfg_substituted "__entry"
 Proof
-  simp[cfgTransformTheory.fn_succ_def,
-       venomInstTheory.lookup_block_def, venomInstTheory.bb_succs_def,
-       venomInstTheory.get_successors_def, venomInstTheory.is_terminator_def,
-       venomStateTheory.get_label_def, listTheory.FIND_def,
-       listTheory.INDEX_FIND_def, first_simplify_cfg_substituted_def]
+  simp[cfgTransformTheory.reachable_def,
+       first_simplify_cfg_substituted_entry]
 QED
 
-Theorem first_simplify_cfg_substituted_dispatch_unreachable:
-  ~RTC (fn_succ first_simplify_cfg_substituted) "__entry" "@dispatch_1"
+Theorem first_simplify_cfg_substituted_dispatch_reachable:
+  reachable first_simplify_cfg_substituted "@dispatch_1"
 Proof
-  simp[Once relationTheory.RTC_CASES1,
-       first_simplify_cfg_substituted_no_entry_succ]
+  simp[cfgTransformTheory.reachable_def,
+       first_simplify_cfg_substituted_entry] >>
+  metis_tac[relationTheory.RTC_SINGLE,
+            first_simplify_cfg_substituted_dispatch_edge]
 QED
 
-Theorem first_simplify_cfg_substituted_fallback_unreachable:
-  ~RTC (fn_succ first_simplify_cfg_substituted) "__entry" "@fallback_0"
+Theorem first_simplify_cfg_substituted_fallback_reachable:
+  reachable first_simplify_cfg_substituted "@fallback_0"
 Proof
-  simp[Once relationTheory.RTC_CASES1,
-       first_simplify_cfg_substituted_no_entry_succ]
+  simp[cfgTransformTheory.reachable_def,
+       first_simplify_cfg_substituted_entry] >>
+  metis_tac[relationTheory.RTC_SINGLE,
+            first_simplify_cfg_substituted_fallback_edge]
 QED
 
-val first_final_literal_reach_ths =
-  map (REWRITE_RULE [first_simplify_cfg_substituted_def])
-    [first_simplify_cfg_substituted_dispatch_unreachable,
-     first_simplify_cfg_substituted_fallback_unreachable]
+Theorem first_simplify_cfg_final_remove_retains_all:
+  remove_unreachable_blocks first_simplify_cfg_substituted =
+    first_simplify_cfg_substituted
+Proof
+  pure_rewrite_tac
+    [simplifyCfgDefsTheory.remove_unreachable_blocks_def,
+     first_simplify_cfg_substituted_entry,
+     first_simplify_cfg_substituted_blocks] >>
+  simp[Excl "reachable_def", Excl "fn_succ_def",
+       first_simplify_cfg_substituted_entry_reachable,
+       first_simplify_cfg_substituted_dispatch_reachable,
+       first_simplify_cfg_substituted_fallback_reachable,
+       venomInstTheory.ir_function_component_equality,
+       first_simplify_cfg_substituted_blocks]
+QED
+
+Theorem first_simplify_cfg_final_removed_eq_substituted:
+  first_simplify_cfg_final_removed = first_simplify_cfg_substituted
+Proof
+  metis_tac[exact_first_final_remove_unreachable,
+            first_simplify_cfg_final_remove_retains_all]
+QED
+
 val first_final_removed_normal_eq =
-  SIMP_RULE (srw_ss ()) first_final_literal_reach_ths
-    first_simplify_cfg_final_removed_def
+  first_simplify_cfg_final_removed_eq_substituted
 val first_final_removed_blocks_th =
-  SIMP_RULE (srw_ss ()) []
-    (AP_TERM ``\fn : ir_function. fn.fn_blocks``
-      first_final_removed_normal_eq)
+  TRANS
+    (CONV_RULE (DEPTH_CONV BETA_CONV)
+      (AP_TERM ``\fn : ir_function. fn.fn_blocks``
+        first_simplify_cfg_final_removed_eq_substituted))
+    first_substituted_blocks_th
 val first_final_removed_blocks =
   fst (listSyntax.dest_list (rhs (concl first_final_removed_blocks_th)))
 

@@ -1,5 +1,5 @@
 Theory evalCompilerBytecodeSimplifyCfgResult
-Ancestors evalCompilerBytecodeRound2Result
+Ancestors evalCompilerBytecodeSimplifyCfgProbe
 
 open HolKernel Parse boolLib bossLib
 
@@ -7,10 +7,30 @@ fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
 fun has_head c t = head_is c t orelse can (find_term (head_is c)) t
 fun find_head c t = if head_is c t then t else find_term (head_is c) t
 
+val first_round_rhs = rhs (concl
+  evalCompilerBytecodeSimplifyCfgProbeTheory.exact_first_simplify_cfg_round_with_labels)
+val (_, first_round_map_tm) = pairSyntax.dest_pair first_round_rhs
+
+val first_iter_unfold_th =
+  SIMP_RULE (srw_ss ()) []
+    (Q.SPECL [`2`, `first_simplify_cfg_operand`]
+      (cj 2 simplifyCfgDefsTheory.simplify_cfg_iter_with_labels_def))
+
+Theorem exact_first_simplify_cfg_fn_with_labels:
+  simplify_cfg_fn_with_labels first_simplify_cfg_operand =
+    (first_simplify_cfg_operand, ^first_round_map_tm)
+Proof
+  simp[simplifyCfgDefsTheory.simplify_cfg_fn_with_labels_def,
+       evalCompilerBytecodeSimplifyCfgProbeTheory.first_simplify_cfg_operand_block_count,
+       first_iter_unfold_th,
+       evalCompilerBytecodeSimplifyCfgProbeTheory.exact_first_simplify_cfg_round_with_labels,
+       evalCompilerBytecodeSimplifyCfgProbeTheory.exact_first_round_fixpoint_guard]
+QED
+
 val exact_first_simplify_cfg_literal =
   REWRITE_RULE
     [evalCompilerBytecodeStageProbeTheory.first_simplify_cfg_operand_def]
-    evalCompilerBytecodeRound2ResultTheory.exact_first_simplify_cfg_fn_with_labels
+    exact_first_simplify_cfg_fn_with_labels
 
 val exact_first_closed_fold_direct =
   SIMP_RULE (srw_ss ())

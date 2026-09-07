@@ -505,9 +505,9 @@ val pre_walk_blocks = fst (listSyntax.dest_list
 val selected_walk_blocks = fst (listSyntax.dest_list
   (rhs (concl (computeLib.EVAL_CONV ``(^selected_walk_function_tm).fn_blocks``))))
 val _ =
-  if map length [raw_runtime_blocks, pre_walk_blocks, selected_walk_blocks] = [3,1,1]
+  if map length [raw_runtime_blocks, pre_walk_blocks, selected_walk_blocks] = [3,3,3]
   then ()
-  else raise Fail "expected CFG block-count transition 3 -> 1 -> 1"
+  else raise Fail "corrected walk preparation did not preserve 3 -> 3 -> 3 blocks"
 val (pre_make_ssa_labels, pre_make_ssa_succs, pre_make_ssa_closed) =
   eval_cfg_projection "pre-MakeSSA" pre_make_ssa_function_tm
 val (post_make_ssa_labels, post_make_ssa_succs, post_make_ssa_closed) =
@@ -532,9 +532,9 @@ val first_simplify_output_blocks = fst (listSyntax.dest_list
   (rhs (concl (computeLib.EVAL_CONV
     ``first_simplify_cfg_round1_fn.fn_blocks``))))
 val _ =
-  if map length [first_simplify_input_blocks, first_simplify_output_blocks] = [3,1]
+  if map length [first_simplify_input_blocks, first_simplify_output_blocks] = [3,3]
   then ()
-  else raise Fail "first SimplifyCFG does not exhibit the 3 -> 1 block loss"
+  else raise Fail "corrected first SimplifyCFG did not preserve all three blocks"
 
 Theorem exact_empty_runtime_first_simplify_cfg_provenance:
   ^(concl first_simplify_input_labels) /\
@@ -552,12 +552,14 @@ Theorem exact_empty_runtime_walk_selection_cfg_provenance:
   ^(concl pre_walk_labels) /\
   ^(concl pre_walk_succs) /\
   ^(concl selected_walk_labels) /\
-  ^(concl selected_walk_succs)
+  ^(concl selected_walk_succs) /\
+  fn_succs_closed empty_runtime_walk_function
 Proof
   ACCEPT_TAC (LIST_CONJ
     [raw_runtime_labels, raw_runtime_succs,
      pre_walk_labels, pre_walk_succs,
-     selected_walk_labels, selected_walk_succs])
+     selected_walk_labels, selected_walk_succs,
+     evalCompilerBytecodeWalkPrepTheory.empty_runtime_walk_function_succs_closed])
 QED
 
 Theorem exact_empty_runtime_pre_make_ssa_cfg_projection:
@@ -600,4 +602,5 @@ Theorem exact_empty_runtime_after_fmp_lowering_rejected:
 Proof
   ACCEPT_TAC after_fmp_rejected_closed
 QED
+
 val _ = export_theory()
