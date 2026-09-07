@@ -179,29 +179,31 @@ Proof
   REFL_TAC
 QED
 
-val second_final_remove_th =
-  SIMP_CONV (srw_ss ())
-    (simplifyCfgDefsTheory.remove_unreachable_blocks_def ::
-     second_substituted_entry_th :: second_substituted_blocks_th ::
-     second_substituted_reachable_ths)
-    ``remove_unreachable_blocks second_simplify_cfg_substituted``
-val second_final_removed_tm = rhs (concl second_final_remove_th)
+Theorem exact_second_final_remove_identity:
+  remove_unreachable_blocks second_simplify_cfg_substituted =
+    second_simplify_cfg_substituted
+Proof
+  simp[simplifyCfgDefsTheory.remove_unreachable_blocks_def,
+       second_simplify_cfg_substituted_entry,
+       second_simplify_cfg_final_filter_all] >>
+  simp[venomInstTheory.ir_function_component_equality]
+QED
 
 Definition second_simplify_cfg_final_removed_def:
-  second_simplify_cfg_final_removed = ^second_final_removed_tm
+  second_simplify_cfg_final_removed = second_simplify_cfg_substituted
 End
 
 Theorem exact_second_final_remove_unreachable:
   remove_unreachable_blocks second_simplify_cfg_substituted =
     second_simplify_cfg_final_removed
 Proof
-  ACCEPT_TAC
-    (TRANS second_final_remove_th
-      (SYM second_simplify_cfg_final_removed_def))
+  simp[exact_second_final_remove_identity,
+       second_simplify_cfg_final_removed_def]
 QED
 
 val second_final_removed_blocks_th =
-  computeLib.EVAL_CONV ``second_simplify_cfg_final_removed.fn_blocks``
+  REWRITE_RULE [GSYM second_simplify_cfg_final_removed_def]
+    second_substituted_blocks_th
 
 Theorem second_simplify_cfg_final_removed_blocks:
   ^(concl second_final_removed_blocks_th)
