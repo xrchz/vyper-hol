@@ -201,6 +201,25 @@ val callee_to_first_fold_rhs =
   computeLib.RESTR_EVAL_CONV [``run_configured_fn_pass_fold``]
     (rhs (concl callee_shaped))
 val callee_to_first_fold = TRANS callee_shaped callee_to_first_fold_rhs
+val _ =
+  if aconv (lhs (concl callee_to_first_fold)) callee_first_tm
+  then () else raise Fail "standalone deploy callee-first LHS changed"
+val _ = assert_closed "standalone deploy callee-first first-fold equation"
+  (concl callee_to_first_fold)
+val _ =
+  if has_head ``run_configured_fn_pass_fold`` (rhs (concl callee_to_first_fold))
+  then () else raise Fail "standalone deploy callee-first RHS lacks configured fold"
+val _ =
+  if has_head ``run_pipeline_stages`` (rhs (concl callee_to_first_fold))
+  then raise Fail "standalone deploy callee-first RHS crossed into driver stages"
+  else ()
+
+Theorem exact_empty_deploy_callee_first_first_fold:
+  ^(concl callee_to_first_fold)
+Proof
+  ACCEPT_TAC callee_to_first_fold
+QED
+
 val first_fold_tm = find_closed_head_arity ``run_configured_fn_pass_fold`` 7
   (rhs (concl callee_to_first_fold))
 val _ = assert_closed "empty deploy first configured fold" first_fold_tm
