@@ -328,4 +328,21 @@ Proof
        runtime_blocks_shape,
        runtime_data_segment_shape]
 QED
+
+Theorem exact_empty_runtime_input_unit_wf:
+  unit_wf ^runtime_input_unit_tm
+Proof
+  irule runtime_unit_wf_intro >>
+  simp[runtime_context_wf,
+       runtime_invoke_targets_wf,
+       runtime_context_inst_ids_distinct,
+       runtime_context_functions_wf,
+       runtime_unit_labels_wf]
+QED
+
+val _ =
+  if aconv (concl exact_empty_runtime_input_unit_wf)
+       ``unit_wf ^runtime_input_unit_tm``
+  then ()
+  else raise Fail "exact runtime unit_wf guard has unexpected conclusion"
 val _ = export_theory()
