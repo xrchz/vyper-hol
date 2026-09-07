@@ -1051,4 +1051,96 @@ Proof
   ACCEPT_TAC after_second_make_ssa
 QED
 
+val simplify_cfg_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    simplify_cfg_fold_tm
+val simplify_cfg_unit_case_tm =
+  find_term is_dispatch_option_case (rhs (concl simplify_cfg_fold_one))
+val _ = assert_closed "empty deploy configured SimplifyCFG unit option case"
+  simplify_cfg_unit_case_tm
+val simplify_cfg_unit_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    simplify_cfg_unit_case_tm
+val simplify_cfg_fold_exposed =
+  PURE_REWRITE_RULE [simplify_cfg_unit_case] simplify_cfg_fold_one
+val simplify_cfg_context_exposed =
+  PURE_REWRITE_RULE [simplify_cfg_fold_exposed] after_second_make_ssa
+val simplify_cfg_dispatch_tm =
+  find_closed_head_arity ``execute_configured_fn_pass`` 5
+    (rhs (concl simplify_cfg_context_exposed))
+val (_, simplify_cfg_dispatch_args) = strip_comb simplify_cfg_dispatch_tm
+val _ =
+  if aconv (List.nth (simplify_cfg_dispatch_args, 1))
+       ``CFP_Simple VP_SimplifyCFG``
+  then () else raise Fail "empty deploy configured dispatcher is not SimplifyCFG"
+val simplify_cfg_dispatch_unfold =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_simplify_cfg
+    simplify_cfg_dispatch_tm
+val simplify_cfg_fn_tm =
+  find_closed_head_arity ``simplify_cfg_fn_with_labels`` 1
+    (rhs (concl simplify_cfg_dispatch_unfold))
+val (_, simplify_cfg_fn_args) = strip_comb simplify_cfg_fn_tm
+val simplify_cfg_operand_tm = hd simplify_cfg_fn_args
+val _ = assert_closed "empty deploy post-FMP SimplifyCFG operand"
+  simplify_cfg_operand_tm
+
+Definition empty_deploy_post_fmp_simplify_cfg_operand_def:
+  empty_deploy_post_fmp_simplify_cfg_operand = ^simplify_cfg_operand_tm
+End
+
+val simplify_cfg_dispatch_named =
+  REWRITE_RULE [GSYM empty_deploy_post_fmp_simplify_cfg_operand_def]
+    simplify_cfg_dispatch_unfold
+
+Theorem exact_empty_deploy_post_fmp_simplify_cfg_dispatcher_context:
+  ^(concl simplify_cfg_dispatch_named)
+Proof
+  ACCEPT_TAC simplify_cfg_dispatch_named
+QED
+
+val simplify_cfg_blocks_raw = computeLib.EVAL_CONV
+  ``(^simplify_cfg_operand_tm).fn_blocks``
+val simplify_cfg_blocks =
+  REWRITE_RULE [GSYM empty_deploy_post_fmp_simplify_cfg_operand_def]
+    simplify_cfg_blocks_raw
+val (simplify_cfg_blocks_list, _) =
+  listSyntax.dest_list (rhs (concl simplify_cfg_blocks))
+val _ =
+  if length simplify_cfg_blocks_list = 1 then ()
+  else raise Fail "empty deploy post-FMP SimplifyCFG operand is not singleton"
+
+Theorem exact_empty_deploy_post_fmp_simplify_cfg_blocks:
+  ^(concl simplify_cfg_blocks)
+Proof
+  ACCEPT_TAC simplify_cfg_blocks
+QED
+
+val simplify_cfg_count_raw = computeLib.EVAL_CONV
+  ``LENGTH (^simplify_cfg_operand_tm).fn_blocks``
+val _ =
+  if aconv (rhs (concl simplify_cfg_count_raw)) ``1`` then ()
+  else raise Fail "empty deploy post-FMP SimplifyCFG operand count is not one"
+val simplify_cfg_count =
+  REWRITE_RULE [GSYM empty_deploy_post_fmp_simplify_cfg_operand_def]
+    simplify_cfg_count_raw
+
+Theorem exact_empty_deploy_post_fmp_simplify_cfg_block_count:
+  ^(concl simplify_cfg_count)
+Proof
+  ACCEPT_TAC simplify_cfg_count
+QED
+
+val simplify_cfg_entry_raw = computeLib.EVAL_CONV
+  ``fn_entry_label ^simplify_cfg_operand_tm``
+val simplify_cfg_entry =
+  REWRITE_RULE [GSYM empty_deploy_post_fmp_simplify_cfg_operand_def]
+    simplify_cfg_entry_raw
+
+Theorem exact_empty_deploy_post_fmp_simplify_cfg_entry:
+  ^(concl simplify_cfg_entry)
+Proof
+  ACCEPT_TAC simplify_cfg_entry
+QED
+
 val _ = export_theory()
