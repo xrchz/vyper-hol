@@ -89,4 +89,22 @@ val _ =
   then ()
   else raise Fail "failed to isolate exact SimplifyCFG operation"
 
+Theorem exact_first_simplify_cfg_dispatcher_context:
+  ^(concl first_dispatcher_unfold)
+Proof
+  ACCEPT_TAC first_dispatcher_unfold
+QED
+
+Theorem exact_first_simplify_cfg_fold_context:
+  ^(concl first_fold_one)
+Proof
+  ACCEPT_TAC first_fold_one
+QED
+
+Theorem exact_first_simplify_cfg_call:
+  ^first_simplify_cfg_tm = ^first_simplify_cfg_tm
+Proof
+  REFL_TAC
+QED
+
 val _ = export_theory()
