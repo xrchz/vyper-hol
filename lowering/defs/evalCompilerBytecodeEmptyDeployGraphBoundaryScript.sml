@@ -920,4 +920,46 @@ Proof
   ACCEPT_TAC exact_fmp_dispatch
 QED
 
+val fmp_dispatch_case_tm =
+  find_term
+    (fn t => head_is ``option_CASE`` t andalso
+      can (find_term (fn u => aconv u fmp_dispatch_tm)) t)
+    (rhs (concl fmp_context_exposed))
+val _ = assert_closed "empty deploy FmpLowering result option case"
+  fmp_dispatch_case_tm
+val fmp_dispatch_case_rewritten =
+  REWRITE_CONV [exact_fmp_dispatch] fmp_dispatch_case_tm
+val fmp_dispatch_case_reduced =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    (rhs (concl fmp_dispatch_case_rewritten))
+val fmp_dispatch_case =
+  TRANS fmp_dispatch_case_rewritten fmp_dispatch_case_reduced
+val after_fmp_lowering =
+  PURE_REWRITE_RULE [fmp_dispatch_case] fmp_context_exposed
+val second_make_ssa_fold_tm =
+  find_closed_head_arity ``run_configured_fn_pass_fold`` 7
+    (rhs (concl after_fmp_lowering))
+val (_, second_make_ssa_fold_args) = strip_comb second_make_ssa_fold_tm
+val (second_make_ssa_passes, _) =
+  listSyntax.dest_list (List.nth (second_make_ssa_fold_args, 2))
+val _ =
+  if not (null second_make_ssa_passes) andalso
+     aconv (hd second_make_ssa_passes) ``CFP_Simple VP_MakeSSA``
+  then () else raise Fail
+    "empty deploy post-FmpLowering fold is not headed by MakeSSA"
+val _ =
+  if aconv (lhs (concl after_fmp_lowering))
+       (lhs (concl after_concretize)) andalso
+     null (free_vars (rhs (concl after_fmp_lowering))) andalso
+     not (has_head ``fmp_lower_function`` (rhs (concl after_fmp_lowering)))
+  then () else raise Fail
+    "empty deploy post-FmpLowering boundary is malformed"
+
+Theorem exact_empty_deploy_after_fmp_lowering:
+  ^(concl after_fmp_lowering)
+Proof
+  ACCEPT_TAC after_fmp_lowering
+QED
+
 val _ = export_theory()
