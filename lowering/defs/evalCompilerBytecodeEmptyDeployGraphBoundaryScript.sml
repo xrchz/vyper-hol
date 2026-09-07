@@ -683,4 +683,95 @@ Proof
   ACCEPT_TAC exact_fmp_lookup
 QED
 
+Theorem empty_deploy_bb_well_formed_snoc[local]:
+  is_terminator term.inst_opcode /\
+  EVERY (\i. ~is_terminator i.inst_opcode) prefix /\
+  EVERY (\i. i.inst_opcode <> PHI) (prefix ++ [term]) ==>
+  bb_well_formed
+    <| bb_label := lbl; bb_instructions := prefix ++ [term] |>
+Proof
+  rw[venomWfTheory.bb_well_formed_def] >>
+  rpt strip_tac >> simp[]
+  >- (Cases_on `i < LENGTH prefix`
+      >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+      >> `i = LENGTH prefix` by decide_tac
+      >> simp[listTheory.EL_APPEND_EQN])
+  >> Cases_on `j < LENGTH prefix`
+  >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+  >> `j = LENGTH prefix` by decide_tac
+  >> gvs[listTheory.EL_APPEND_EQN]
+QED
+
+Theorem empty_deploy_fn_inst_wf_from_blocks[local]:
+  (!bb. MEM bb fn.fn_blocks ==>
+        EVERY inst_wf bb.bb_instructions) ==>
+  fn_inst_wf fn
+Proof
+  rw[venomWfTheory.fn_inst_wf_def] >>
+  first_x_assum drule >>
+  simp[listTheory.EVERY_MEM]
+QED
+
+fun eval_fmp_closed label tm =
+  let val _ = assert_closed label tm
+  in computeLib.EVAL_CONV tm end
+
+val fmp_blocks_th = eval_fmp_closed "deploy FMP function block projection"
+  ``(^fmp_function_tm).fn_blocks``
+val (fmp_blocks, _) = listSyntax.dest_list (rhs (concl fmp_blocks_th))
+val _ = if length fmp_blocks = 1 then ()
+        else raise Fail ("deploy FMP function block count: " ^
+          Int.toString (length fmp_blocks))
+val fmp_bb_tm = hd fmp_blocks
+val fmp_bb_insts_th = eval_fmp_closed "deploy FMP block instructions"
+  ``(^fmp_bb_tm).bb_instructions``
+val (fmp_bb_insts, _) = listSyntax.dest_list (rhs (concl fmp_bb_insts_th))
+val _ = if length fmp_bb_insts = 4 then ()
+        else raise Fail ("deploy FMP block instruction count: " ^
+          Int.toString (length fmp_bb_insts))
+val fmp_bb_succs_th = eval_fmp_closed "deploy FMP block successors"
+  ``bb_succs ^fmp_bb_tm``
+
+Theorem empty_deploy_fmp_bb_snoc_shape[local]:
+  ^fmp_bb_tm =
+    <| bb_label := (^fmp_bb_tm).bb_label;
+       bb_instructions := FRONT ((^fmp_bb_tm).bb_instructions) ++
+                          [LAST ((^fmp_bb_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem empty_deploy_fmp_bb_well_formed[local]:
+  bb_well_formed ^fmp_bb_tm
+Proof
+  once_rewrite_tac[empty_deploy_fmp_bb_snoc_shape] >>
+  irule empty_deploy_bb_well_formed_snoc >> EVAL_TAC
+QED
+
+Theorem empty_deploy_fmp_bb_instructions_wf[local]:
+  EVERY inst_wf (^fmp_bb_tm).bb_instructions
+Proof
+  EVAL_TAC >> simp[]
+QED
+
+Theorem exact_empty_deploy_fmp_function_well_formed:
+  wf_function ^fmp_function_tm
+Proof
+  simp[venomWfTheory.wf_function_def,
+       venomWfTheory.fn_has_entry_def,
+       venomWfTheory.fn_succs_closed_def,
+       venomWfTheory.fn_inst_ids_distinct_def,
+       venomInstTheory.fn_labels_def,
+       empty_deploy_fmp_bb_well_formed,
+       fmp_bb_succs_th]
+QED
+
+Theorem exact_empty_deploy_fmp_function_inst_wf:
+  fn_inst_wf ^fmp_function_tm
+Proof
+  irule empty_deploy_fn_inst_wf_from_blocks >>
+  rpt strip_tac >>
+  gvs[fmp_blocks_th, empty_deploy_fmp_bb_instructions_wf]
+QED
+
 val _ = export_theory()
