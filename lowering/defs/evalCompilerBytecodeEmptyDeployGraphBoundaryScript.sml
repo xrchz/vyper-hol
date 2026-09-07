@@ -385,4 +385,66 @@ Proof
   ACCEPT_TAC after_lower_dload
 QED
 
+val concretize_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    concretize_fold_tm
+val concretize_unit_case_tm =
+  find_term is_dispatch_option_case (rhs (concl concretize_fold_one))
+val _ = assert_closed "empty deploy ConcretizeMemLoc unit option case"
+  concretize_unit_case_tm
+val concretize_unit_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    concretize_unit_case_tm
+val concretize_fold_exposed =
+  PURE_REWRITE_RULE [concretize_unit_case] concretize_fold_one
+val concretize_context_exposed =
+  PURE_REWRITE_RULE [concretize_fold_exposed] after_lower_dload
+val concretize_dispatch_tm =
+  find_closed_head_arity ``execute_configured_fn_pass`` 5
+    (rhs (concl concretize_context_exposed))
+val (_, concretize_dispatch_args) = strip_comb concretize_dispatch_tm
+val _ =
+  if aconv (List.nth (concretize_dispatch_args, 1))
+       ``CFP_Simple VP_ConcretizeMemLoc``
+  then () else raise Fail
+    "empty deploy residual dispatcher is not ConcretizeMemLoc"
+val concretize_dispatch_unfold =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_concretize
+    concretize_dispatch_tm
+val concretize_function_tm = find_closed_head_arity ``concretize_function_eval`` 2
+  (rhs (concl concretize_dispatch_unfold))
+val (_, concretize_function_args) = strip_comb concretize_function_tm
+val deploy_reserved_tm = List.nth (concretize_function_args, 0)
+val deploy_fn_tm = List.nth (concretize_function_args, 1)
+val complete_positions_tm =
+  ``complete_alloc_positions (^deploy_fn_tm).fn_forced_alloc_positions
+      ^deploy_reserved_tm ^deploy_fn_tm FEMPTY``
+val _ = assert_closed "empty deploy complete allocation positions"
+  complete_positions_tm
+val exact_complete_positions_raw = computeLib.EVAL_CONV complete_positions_tm
+val exact_complete_positions =
+  SIMP_RULE (srw_ss ())
+    [wordsTheory.dimword_def,
+     concretizeMemLocDefsTheory.checked_first_fit_def,
+     concretizeMemLocDefsTheory.checked_first_fit_scan_def,
+     concretizeMemLocDefsTheory.sort_reserved_by_pos_def,
+     concretizeMemLocDefsTheory.insert_reserved_by_pos_def,
+     staticLayoutDefsTheory.reserved_intervals_wf_def,
+     staticLayoutDefsTheory.reserved_interval_wf_def]
+    exact_complete_positions_raw
+val complete_positions_rhs = rhs (concl exact_complete_positions)
+val _ =
+  if head_is ``SOME`` complete_positions_rhs andalso
+     null (free_vars complete_positions_rhs)
+  then () else raise Fail
+    ("empty deploy allocation completion is not closed SOME: " ^
+     term_to_string complete_positions_rhs)
+
+Theorem exact_empty_deploy_complete_alloc_positions:
+  ^(concl exact_complete_positions)
+Proof
+  ACCEPT_TAC exact_complete_positions
+QED
+
 val _ = export_theory()
