@@ -501,4 +501,35 @@ Proof
   ACCEPT_TAC exact_deploy_layout
 QED
 
+val concretize_function_unfold =
+  REWR_CONV concretizeMemLocDefsTheory.concretize_function_eval_def
+    concretize_function_tm
+val concretize_function_with_layout_case =
+  PURE_REWRITE_RULE [exact_deploy_layout] concretize_function_unfold
+val concretize_function_with_layout =
+  CONV_RULE
+    (RAND_CONV
+      (computeLib.RESTR_EVAL_CONV [``apply_concretize_layout``]))
+    concretize_function_with_layout_case
+val apply_layout_tm = find_closed_head_arity ``apply_concretize_layout`` 2
+  (rhs (concl concretize_function_with_layout))
+val exact_apply_layout = computeLib.EVAL_CONV apply_layout_tm
+val concretize_function_result =
+  PURE_REWRITE_RULE [exact_apply_layout] concretize_function_with_layout
+val concretize_function_rhs = rhs (concl concretize_function_result)
+val _ =
+  if head_is ``SOME`` concretize_function_rhs andalso
+     null (free_vars concretize_function_rhs) andalso
+     not (has_head ``FLOOKUP`` concretize_function_rhs) andalso
+     not (has_head ``ALLOCA`` concretize_function_rhs)
+  then () else raise Fail
+    ("empty deploy concretize function is not closed literal SOME: " ^
+     term_to_string concretize_function_rhs)
+
+Theorem exact_empty_deploy_concretize_function_eval:
+  ^(concl concretize_function_result)
+Proof
+  ACCEPT_TAC concretize_function_result
+QED
+
 val _ = export_theory()
