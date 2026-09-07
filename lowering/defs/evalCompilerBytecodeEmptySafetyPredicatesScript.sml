@@ -516,4 +516,93 @@ Proof
   simp[]
 QED
 
+
+Theorem empty_runtime_final_safety[local]:
+  unit_wf empty_runtime_final_unit /\
+  unit_labels_wf empty_runtime_final_unit /\
+  context_target_safe (K T)
+    empty_runtime_final_unit.cu_context /\
+  concretized_static_layouts_wf empty_runtime_final_unit.cu_context /\
+  fmp_lowered_context_wf empty_runtime_final_unit.cu_context /\
+  (K T) empty_runtime_final_unit.cu_context /\
+  (K T) empty_runtime_final_unit.cu_context /\
+  (K T) empty_runtime_final_unit.cu_context /\
+  reachable_fcg_acyclic empty_runtime_final_unit.cu_context
+    (fcg_analyze empty_runtime_final_unit.cu_context) /\
+  codegen_ready empty_runtime_final_unit.cu_context
+Proof
+  simp[evalCompilerBytecodeEmptySafetyStructuralTheory.empty_runtime_final_unit_wf,
+       evalCompilerBytecodeEmptySafetyStructuralTheory.empty_runtime_final_labels_wf,
+       venomTargetSafetyTheory.context_target_safe_def,
+       venomTargetSafetyTheory.function_target_safe_def,
+       venomTargetSafetyTheory.basic_block_target_safe_def,
+       venomTargetSafetyTheory.instruction_target_safe_def,
+       venomTargetSafetyTheory.opcode_target_supported_def,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_functions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact,
+       empty_runtime_final_target_safe,
+       empty_runtime_final_concretized_layouts_wf,
+       empty_runtime_final_fmp_lowered_wf,
+       empty_runtime_final_mem_ok,
+       empty_runtime_final_calling_ok,
+       empty_runtime_final_post_ok,
+       empty_runtime_final_reachable_fcg_acyclic,
+       empty_runtime_final_codegen_ready]
+QED
+
+val empty_runtime_driver_after_callee =
+  PURE_REWRITE_RULE
+    [evalCompilerBytecodeEmptyResultTheory.exact_empty_runtime_callee_first_result]
+    evalCompilerBytecodeDriverBoundaryTheory.exact_empty_runtime_driver_to_callee_first
+fun is_post_walk_case t =
+  head_is ``option_CASE`` t andalso has_head ``run_pipeline_stages`` t
+val empty_runtime_post_walk_case_tm =
+  find_term is_post_walk_case (rhs (concl empty_runtime_driver_after_callee))
+val _ =
+  if null (free_vars empty_runtime_post_walk_case_tm) then ()
+  else raise Fail "empty runtime enclosing post-walk case is not closed"
+val exact_empty_runtime_post_walk_case =
+  computeLib.RESTR_EVAL_CONV
+    [``unit_wf``, ``unit_labels_wf``, ``context_target_safe``,
+     ``concretized_static_layouts_wf``, ``fmp_lowered_context_wf``,
+     ``reachable_fcg_acyclic``, ``codegen_ready``]
+    empty_runtime_post_walk_case_tm
+val exact_empty_runtime_final_context = computeLib.EVAL_CONV
+  ``empty_runtime_final_unit.cu_context``
+val exact_empty_runtime_post_walk_case_named =
+  PURE_REWRITE_RULE
+    [GSYM evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_unit_def,
+     GSYM evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_supply_def,
+     GSYM exact_empty_runtime_final_context,
+     GSYM empty_runtime_final_fcg_exact]
+    exact_empty_runtime_post_walk_case
+val empty_runtime_driver_after_post_walk =
+  PURE_REWRITE_RULE [exact_empty_runtime_post_walk_case_named]
+    empty_runtime_driver_after_callee
+val exact_empty_runtime_driver =
+  SIMP_RULE (srw_ss ()) [empty_runtime_final_safety]
+    empty_runtime_driver_after_post_walk
+
+val exact_empty_runtime_driver_rhs = rhs (concl exact_empty_runtime_driver)
+val _ =
+  if head_is ``SOME`` exact_empty_runtime_driver_rhs andalso
+     null (free_vars exact_empty_runtime_driver_rhs)
+  then ()
+  else raise Fail ("exact empty runtime driver result is not closed literal SOME: " ^
+                   term_to_string exact_empty_runtime_driver_rhs)
+val _ =
+  if has_head ``run_callee_first`` exact_empty_runtime_driver_rhs orelse
+     has_head ``run_pipeline_stages`` exact_empty_runtime_driver_rhs
+  then raise Fail "exact empty runtime driver result has residual driver stage"
+  else ()
+
+Theorem exact_empty_runtime_driver_result:
+  ^(concl exact_empty_runtime_driver)
+Proof
+  ACCEPT_TAC exact_empty_runtime_driver
+QED
 val _ = export_theory()
