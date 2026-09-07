@@ -226,6 +226,41 @@ Proof
   ACCEPT_TAC closed_discard_runner_boundary
 QED
 
+val discard_runner_one =
+  REWR_CONV (cj 2 venomPipelineRunnerTheory.run_pipeline_stages_def)
+    closed_discard_runner_tm
+val discard_stage_tm = find_head ``run_pipeline_stage``
+  (rhs (concl discard_runner_one))
+val _ =
+  if null (free_vars discard_stage_tm) then ()
+  else raise Fail "DiscardAnalyses stage call is not closed"
+val exact_discard_stage_result = computeLib.EVAL_CONV discard_stage_tm
+val exact_discard_runner_result =
+  CONV_RULE
+    (RAND_CONV
+      (SIMP_CONV (srw_ss ())
+        [exact_discard_stage_result,
+         venomPipelineRunnerTheory.run_pipeline_stages_def]))
+    discard_runner_one
+val _ =
+  if aconv (lhs (concl exact_discard_runner_result)) closed_discard_runner_tm
+  then ()
+  else raise Fail "exact Discard runner equation has a mismatched LHS"
+val exact_discard_runner_rhs = rhs (concl exact_discard_runner_result)
+val _ =
+  if head_is ``SOME`` exact_discard_runner_rhs then ()
+  else raise Fail "exact Discard runner result is not literal SOME"
+val _ =
+  if has_head ``run_pipeline_stages`` exact_discard_runner_rhs orelse
+     has_head ``run_pipeline_stage`` exact_discard_runner_rhs
+  then raise Fail "exact Discard runner result retains a pipeline call"
+  else ()
+
+Theorem exact_post_dret_discard_runner_result:
+  ^(concl exact_discard_runner_result)
+Proof
+  ACCEPT_TAC exact_discard_runner_result
+QED
 val exact_first_named_result =
   SIMP_RULE (srw_ss ()) [exact_first_configured_simplify_cfg_transaction]
     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_named_context
