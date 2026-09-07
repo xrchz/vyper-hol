@@ -962,4 +962,93 @@ Proof
   ACCEPT_TAC after_fmp_lowering
 QED
 
+val second_make_ssa_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    second_make_ssa_fold_tm
+val second_make_ssa_unit_case_tm =
+  find_term is_dispatch_option_case (rhs (concl second_make_ssa_fold_one))
+val _ = assert_closed "empty deploy second MakeSSA unit option case"
+  second_make_ssa_unit_case_tm
+val second_make_ssa_unit_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    second_make_ssa_unit_case_tm
+val second_make_ssa_fold_exposed =
+  PURE_REWRITE_RULE [second_make_ssa_unit_case] second_make_ssa_fold_one
+val second_make_ssa_context_exposed =
+  PURE_REWRITE_RULE [second_make_ssa_fold_exposed] after_fmp_lowering
+val second_make_ssa_dispatch_tm =
+  find_closed_head_arity ``execute_configured_fn_pass`` 5
+    (rhs (concl second_make_ssa_context_exposed))
+val (_, second_make_ssa_dispatch_args) = strip_comb second_make_ssa_dispatch_tm
+val _ =
+  if aconv (List.nth (second_make_ssa_dispatch_args, 1))
+       ``CFP_Simple VP_MakeSSA``
+  then () else raise Fail "empty deploy second dispatcher is not MakeSSA"
+val second_make_ssa_dispatch_one =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_make_ssa
+    second_make_ssa_dispatch_tm
+val second_make_ssa_tm = find_closed_head_arity ``make_ssa_current_fn`` 2
+  (rhs (concl second_make_ssa_dispatch_one))
+val exact_second_make_ssa = computeLib.EVAL_CONV second_make_ssa_tm
+val exact_second_make_ssa_dispatch =
+  CONV_RULE
+    (RAND_CONV (SIMP_CONV (srw_ss ()) [exact_second_make_ssa]))
+    second_make_ssa_dispatch_one
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_second_make_ssa_dispatch)) andalso
+     null (free_vars (rhs (concl exact_second_make_ssa_dispatch)))
+  then () else raise Fail
+    "empty deploy exact second MakeSSA dispatcher result is not closed SOME"
+
+Theorem exact_empty_deploy_second_make_ssa_dispatch:
+  ^(concl exact_second_make_ssa_dispatch)
+Proof
+  ACCEPT_TAC exact_second_make_ssa_dispatch
+QED
+
+val second_make_ssa_dispatch_case_tm =
+  find_term
+    (fn t => head_is ``option_CASE`` t andalso
+      can (find_term (fn u => aconv u second_make_ssa_dispatch_tm)) t)
+    (rhs (concl second_make_ssa_context_exposed))
+val _ = assert_closed "empty deploy second MakeSSA result option case"
+  second_make_ssa_dispatch_case_tm
+val second_make_ssa_dispatch_case_rewritten =
+  REWRITE_CONV [exact_second_make_ssa_dispatch]
+    second_make_ssa_dispatch_case_tm
+val second_make_ssa_dispatch_case_reduced =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    (rhs (concl second_make_ssa_dispatch_case_rewritten))
+val second_make_ssa_dispatch_case =
+  TRANS second_make_ssa_dispatch_case_rewritten
+    second_make_ssa_dispatch_case_reduced
+val after_second_make_ssa =
+  PURE_REWRITE_RULE [second_make_ssa_dispatch_case]
+    second_make_ssa_context_exposed
+val simplify_cfg_fold_tm =
+  find_closed_head_arity ``run_configured_fn_pass_fold`` 7
+    (rhs (concl after_second_make_ssa))
+val (_, simplify_cfg_fold_args) = strip_comb simplify_cfg_fold_tm
+val (simplify_cfg_passes, _) =
+  listSyntax.dest_list (List.nth (simplify_cfg_fold_args, 2))
+val _ =
+  if not (null simplify_cfg_passes) andalso
+     aconv (hd simplify_cfg_passes) ``CFP_Simple VP_SimplifyCFG``
+  then () else raise Fail
+    "empty deploy post-second-MakeSSA fold is not headed by SimplifyCFG"
+val _ =
+  if aconv (lhs (concl after_second_make_ssa))
+       (lhs (concl after_fmp_lowering)) andalso
+     null (free_vars (rhs (concl after_second_make_ssa)))
+  then () else raise Fail
+    "empty deploy post-second-MakeSSA boundary is malformed"
+
+Theorem exact_empty_deploy_after_second_make_ssa:
+  ^(concl after_second_make_ssa)
+Proof
+  ACCEPT_TAC after_second_make_ssa
+QED
+
 val _ = export_theory()
