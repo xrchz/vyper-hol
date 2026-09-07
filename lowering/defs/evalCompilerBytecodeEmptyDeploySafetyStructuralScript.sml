@@ -244,4 +244,30 @@ Proof
        empty_deploy_final_data_segment_exact,
        final_block_label]
 QED
+
+Theorem deploy_unit_wf_intro[local]:
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context /\
+  ctx_inst_ids_distinct unit.cu_context /\
+  (!fn. MEM fn unit.cu_context.ctx_functions ==>
+        wf_function fn /\ fn_inst_wf fn) /\
+  unit_labels_wf unit ==>
+  unit_wf unit
+Proof
+  rw[venomCompilerWfTheory.unit_wf_def,
+     venomWfTheory.venom_wf_def]
+QED
+
+Theorem empty_deploy_final_unit_wf:
+  unit_wf empty_deploy_final_compilation_unit
+Proof
+  irule deploy_unit_wf_intro >>
+  simp[empty_deploy_final_context_wf,
+       empty_deploy_final_invoke_targets_wf,
+       empty_deploy_final_inst_ids_distinct,
+       empty_deploy_final_functions_exact,
+       empty_deploy_final_fn_wf,
+       empty_deploy_final_fn_inst_wf,
+       empty_deploy_final_labels_wf]
+QED
 val _ = export_theory()
