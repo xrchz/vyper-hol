@@ -168,4 +168,109 @@ Proof
   ACCEPT_TAC first_fix_all_phis_th
 QED
 
+
+fun rew_first_collapse tm = FIRST_CONV
+  [REWR_CONV (cj 1 simplifyCfgDefsTheory.collapse_dfs_def),
+   REWR_CONV (cj 2 simplifyCfgDefsTheory.collapse_dfs_def),
+   REWR_CONV (cj 3 simplifyCfgDefsTheory.collapse_dfs_def)] tm
+
+val first_collapse_start_tm =
+  ``collapse_dfs first_simplify_cfg_phi_fixed [] [] "__entry"``
+val first_collapse_step_1_raw = rew_first_collapse first_collapse_start_tm
+val first_collapse_step_1 =
+  CONV_RULE
+    (RAND_CONV (computeLib.RESTR_EVAL_CONV
+      [``collapse_dfs``, ``collapse_dfs_succs``]))
+    first_collapse_step_1_raw
+
+Theorem exact_first_collapse_step_1:
+  ^(concl first_collapse_step_1)
+Proof
+  ACCEPT_TAC first_collapse_step_1
+QED
+val first_collapse_step_2_local =
+  rew_first_collapse (rhs (concl first_collapse_step_1))
+val first_collapse_final =
+  TRANS first_collapse_step_1 first_collapse_step_2_local
+
+Theorem exact_first_collapse_step_2:
+  ^(concl first_collapse_final)
+Proof
+  ACCEPT_TAC first_collapse_final
+QED
+
+val first_collapse_result_tm = rhs (concl first_collapse_final)
+Definition first_simplify_cfg_collapse_result_def:
+  first_simplify_cfg_collapse_result = ^first_collapse_result_tm
+End
+
+Theorem exact_first_collapse_dfs:
+  collapse_dfs first_simplify_cfg_phi_fixed [] [] "__entry" =
+    first_simplify_cfg_collapse_result
+Proof
+  simp[first_simplify_cfg_collapse_result_def] >>
+  ACCEPT_TAC first_collapse_final
+QED
+
+(* The DFS result is already a closed triple.  Project it once here so the
+   substitution guard and cleanup phases do not reopen collapse_dfs. *)
+val (first_collapsed_fn_tm, first_collapse_tail_tm) =
+  pairSyntax.dest_pair first_collapse_result_tm
+val (first_collapse_label_map_tm, first_collapse_visited_tm) =
+  pairSyntax.dest_pair first_collapse_tail_tm
+
+val first_substitution_tm =
+  mk_cond
+    (mk_eq (first_collapse_label_map_tm,
+            listSyntax.mk_list ([], listSyntax.dest_list_type
+              (type_of first_collapse_label_map_tm))),
+     first_collapsed_fn_tm,
+     list_mk_comb (``subst_block_labels_fn``,
+       [first_collapse_label_map_tm, first_collapsed_fn_tm]))
+val first_substitution_th = computeLib.EVAL_CONV first_substitution_tm
+val first_substituted_tm = rhs (concl first_substitution_th)
+
+Definition first_simplify_cfg_substituted_def:
+  first_simplify_cfg_substituted = ^first_substituted_tm
+End
+
+Theorem exact_first_substitution:
+  (if ^first_collapse_label_map_tm = [] then ^first_collapsed_fn_tm
+   else subst_block_labels_fn ^first_collapse_label_map_tm ^first_collapsed_fn_tm) =
+  first_simplify_cfg_substituted
+Proof
+  simp[first_simplify_cfg_substituted_def] >>
+  ACCEPT_TAC first_substitution_th
+QED
+
+
+Theorem exact_first_collapse_dfs_components:
+  collapse_dfs first_simplify_cfg_phi_fixed [] [] "__entry" =
+    (^first_collapsed_fn_tm, ^first_collapse_label_map_tm,
+     ^first_collapse_visited_tm)
+Proof
+  simp[first_simplify_cfg_collapse_result_def] >>
+  ACCEPT_TAC first_collapse_final
+QED
+
+
+val first_substituted_blocks_th =
+  computeLib.EVAL_CONV ``first_simplify_cfg_substituted.fn_blocks``
+val first_substituted_blocks =
+  fst (listSyntax.dest_list (rhs (concl first_substituted_blocks_th)))
+
+Theorem first_simplify_cfg_substituted_blocks:
+  ^(concl first_substituted_blocks_th)
+Proof
+  ACCEPT_TAC first_substituted_blocks_th
+QED
+
+val first_substituted_entry_th =
+  computeLib.EVAL_CONV ``fn_entry_label first_simplify_cfg_substituted``
+
+Theorem first_simplify_cfg_substituted_entry:
+  ^(concl first_substituted_entry_th)
+Proof
+  ACCEPT_TAC first_substituted_entry_th
+QED
 val _ = export_theory()
