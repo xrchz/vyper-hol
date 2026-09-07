@@ -176,6 +176,56 @@ Proof
   ACCEPT_TAC post_dret_boundary
 QED
 
+val post_dret_guard_normalized =
+  SIMP_RULE (srw_ss ())
+    [finite_mapTheory.FEVERY_FEMPTY,
+     venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
+    exact_post_dret_desugar_runtime_boundary
+
+fun reduce_closed_outer_cases 0 th =
+      raise Fail "post-Dret normalization exceeded the outer-case budget"
+  | reduce_closed_outer_cases n th =
+      let
+        val r = rhs (concl th)
+      in
+        if head_is ``run_pipeline_stages`` r then th
+        else
+          let
+            val (_, args) = strip_comb r
+            val scrutinee = hd args
+            val _ = if null (free_vars scrutinee) then ()
+                    else raise Fail "post-Dret outer case scrutinee is not closed"
+            val scrutinee_result = computeLib.EVAL_CONV scrutinee
+            val th' = SIMP_RULE (srw_ss ()) [scrutinee_result] th
+            val _ = if aconv (concl th') (concl th) then
+                      raise Fail "post-Dret outer case did not reduce"
+                    else ()
+          in
+            reduce_closed_outer_cases (n - 1) th'
+          end
+      end
+
+val closed_discard_runner_boundary =
+  reduce_closed_outer_cases 8 post_dret_guard_normalized
+val closed_discard_runner_tm = rhs (concl closed_discard_runner_boundary)
+val _ =
+  if head_is ``run_pipeline_stages`` closed_discard_runner_tm then ()
+  else raise Fail "post-Dret RHS is not a direct pipeline runner"
+val _ =
+  if null (free_vars closed_discard_runner_tm) then ()
+  else raise Fail "direct post-Dret Discard runner is not closed"
+val (_, discard_runner_args) = strip_comb closed_discard_runner_tm
+val discard_stage_list_tm = List.nth (discard_runner_args, 1)
+val _ =
+  if aconv discard_stage_list_tm ``[PS_DiscardAnalyses]`` then ()
+  else raise Fail "direct post-Dret runner is not singleton DiscardAnalyses"
+
+Theorem exact_post_dret_closed_discard_runner_boundary:
+  ^(concl closed_discard_runner_boundary)
+Proof
+  ACCEPT_TAC closed_discard_runner_boundary
+QED
+
 val exact_first_named_result =
   SIMP_RULE (srw_ss ()) [exact_first_configured_simplify_cfg_transaction]
     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_named_context
