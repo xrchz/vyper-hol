@@ -259,4 +259,73 @@ Proof
        deploy_context_functions_wf,
        deploy_unit_labels_wf]
 QED
+
+val empty_deploy_driver_after_guards =
+  SIMP_RULE (srw_ss ())
+    [empty_deploy_spec_wf, empty_deploy_unit_wf,
+     empty_deploy_raw_static_wf]
+    empty_deploy_driver_one
+val empty_deploy_pre_runner_tm = find_head ``run_pipeline_stages``
+  (rhs (concl empty_deploy_driver_after_guards))
+val _ = assert_closed "empty deploy pre-walk runner" empty_deploy_pre_runner_tm
+val (_, empty_deploy_pre_args) = strip_comb empty_deploy_pre_runner_tm
+val _ =
+  if length empty_deploy_pre_args = 4 then ()
+  else raise Fail "empty deploy pre-walk runner has unexpected arity"
+val empty_deploy_initial_supply_tm = List.nth (empty_deploy_pre_args, 3)
+val empty_deploy_initial_supply =
+  computeLib.EVAL_CONV empty_deploy_initial_supply_tm
+val empty_deploy_pre_runner_shape =
+  SIMP_CONV (srw_ss ())
+    [venomPassScheduleTheory.o1_pipeline_spec_exact,
+     empty_deploy_initial_supply]
+    empty_deploy_pre_runner_tm
+val empty_deploy_normalized_pre_tm = rhs (concl empty_deploy_pre_runner_shape)
+val _ = assert_closed "normalized empty deploy pre-walk runner"
+  empty_deploy_normalized_pre_tm
+val empty_deploy_pre_one =
+  rew_rec venomPipelineRunnerTheory.run_pipeline_stages_def
+    empty_deploy_normalized_pre_tm
+val empty_deploy_first_stage_tm = find_head ``run_pipeline_stage``
+  (rhs (concl empty_deploy_pre_one))
+val _ = assert_closed "empty deploy first pre-walk stage"
+  empty_deploy_first_stage_tm
+val (_, empty_deploy_first_stage_args) = strip_comb empty_deploy_first_stage_tm
+val _ =
+  if length empty_deploy_first_stage_args = 4 andalso
+     aconv (List.nth (empty_deploy_first_stage_args, 1))
+       ``PS_MapFunctions (CFP_Simple VP_SimplifyCFG)``
+  then ()
+  else raise Fail "empty deploy first pre-walk stage is not SimplifyCFG"
+
+val empty_deploy_driver_normalized =
+  CONV_RULE
+    (RAND_CONV
+      (ONCE_DEPTH_CONV (REWR_CONV empty_deploy_pre_runner_shape)))
+    empty_deploy_driver_after_guards
+val exact_empty_deploy_driver_to_first_stage =
+  CONV_RULE
+    (RAND_CONV (ONCE_DEPTH_CONV (REWR_CONV empty_deploy_pre_one)))
+    empty_deploy_driver_normalized
+val _ =
+  if aconv (lhs (concl exact_empty_deploy_driver_to_first_stage))
+       empty_deploy_driver_tm
+  then ()
+  else raise Fail "first-stage exposure changed the empty deploy driver LHS"
+val exact_empty_deploy_first_stage_rhs =
+  rhs (concl exact_empty_deploy_driver_to_first_stage)
+val exposed_empty_deploy_first_stage_tm = find_head ``run_pipeline_stage``
+  exact_empty_deploy_first_stage_rhs
+val _ = assert_closed "exposed empty deploy SimplifyCFG stage"
+  exposed_empty_deploy_first_stage_tm
+val _ =
+  if aconv exposed_empty_deploy_first_stage_tm empty_deploy_first_stage_tm
+  then ()
+  else raise Fail "driver context does not contain the exact first stage"
+
+Theorem exact_empty_deploy_driver_first_stage_context:
+  ^(concl exact_empty_deploy_driver_to_first_stage)
+Proof
+  ACCEPT_TAC exact_empty_deploy_driver_to_first_stage
+QED
 val _ = export_theory()
