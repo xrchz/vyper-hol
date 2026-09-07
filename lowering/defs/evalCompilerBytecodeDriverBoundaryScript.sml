@@ -361,4 +361,53 @@ val _ =
        ``raw_static_inputs_wf (^runtime_input_unit_tm).cu_context``
   then ()
   else raise Fail "exact runtime raw-static guard has unexpected conclusion"
+
+val runtime_spec_wf_th = eval_closed "runtime pipeline specification guard"
+  ``pipeline_spec_wf ^runtime_rpolicy_tm o1_pipeline_spec``
+val _ =
+  if aconv (rhs (concl runtime_spec_wf_th)) ``T`` then ()
+  else raise Fail "runtime pipeline specification is not well formed"
+
+Theorem exact_empty_runtime_pipeline_spec_wf[local]:
+  ^(concl runtime_spec_wf_th)
+Proof
+  ACCEPT_TAC runtime_spec_wf_th
+QED
+
+val runtime_after_graph =
+  CONV_RULE
+    (RAND_CONV
+      (SIMP_CONV (srw_ss ())
+        [exact_empty_runtime_pipeline_spec_wf,
+         exact_empty_runtime_input_unit_wf,
+         exact_empty_runtime_raw_static_inputs_wf,
+         evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result,
+         exact_empty_runtime_frozen_fcg,
+         exact_o1_prune_unreachable_flag,
+         exact_empty_runtime_prune_walk_unit,
+         exact_empty_runtime_reachable_fcg_acyclic,
+         exact_empty_runtime_pre_walk_entry,
+         exact_empty_runtime_fcg_postorder]))
+    runtime_driver_one
+
+val _ =
+  if aconv (lhs (concl runtime_after_graph)) runtime_driver_tm then ()
+  else raise Fail "callee-first boundary changed the runtime driver LHS"
+val _ =
+  if has_head ``run_callee_first`` (rhs (concl runtime_after_graph)) then ()
+  else raise Fail "runtime driver did not reach run_callee_first"
+val pre_walk_call_tm =
+  lhs (concl
+    evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result)
+val _ =
+  if can (find_term (aconv pre_walk_call_tm))
+      (rhs (concl runtime_after_graph))
+  then raise Fail "runtime driver still contains the exact pre-walk stage call"
+  else ()
+
+Theorem exact_empty_runtime_driver_to_callee_first:
+  ^(concl runtime_after_graph)
+Proof
+  ACCEPT_TAC runtime_after_graph
+QED
 val _ = export_theory()
