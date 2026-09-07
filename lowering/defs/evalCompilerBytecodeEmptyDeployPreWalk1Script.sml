@@ -328,4 +328,11 @@ Theorem exact_empty_deploy_driver_first_stage_context:
 Proof
   ACCEPT_TAC exact_empty_deploy_driver_to_first_stage
 QED
+
+Theorem exact_empty_deploy_complete_pre_walk_one_context:
+  ^(concl empty_deploy_pre_one)
+Proof
+  ACCEPT_TAC empty_deploy_pre_one
+QED
+
 val _ = export_theory()
