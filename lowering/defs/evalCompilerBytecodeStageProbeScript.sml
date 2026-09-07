@@ -101,10 +101,12 @@ Proof
   ACCEPT_TAC first_fold_one
 QED
 
-Theorem exact_first_simplify_cfg_call:
-  ^first_simplify_cfg_tm = ^first_simplify_cfg_tm
+Theorem first_simplify_cfg_operation_unfold:
+  !fn.
+    simplify_cfg_fn_with_labels fn =
+      simplify_cfg_iter_with_labels (LENGTH fn.fn_blocks) fn
 Proof
-  REFL_TAC
+  simp[simplifyCfgDefsTheory.simplify_cfg_fn_with_labels_def]
 QED
 
 val _ = export_theory()
