@@ -53,6 +53,12 @@ val runtime_pre_tm = find_head ``run_pipeline_stages``
   (rhs (concl runtime_pipeline_outer))
 val runtime_pre_one =
   rew_rec venomPipelineRunnerTheory.run_pipeline_stages_def runtime_pre_tm
+
+Theorem exact_runtime_pre_one_context:
+  ^(concl runtime_pre_one)
+Proof
+  ACCEPT_TAC runtime_pre_one
+QED
 val first_stage_tm = find_head ``run_pipeline_stage``
   (rhs (concl runtime_pre_one))
 val first_stage_unfold =
