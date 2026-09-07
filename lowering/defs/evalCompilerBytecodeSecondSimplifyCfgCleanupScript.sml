@@ -79,6 +79,51 @@ Proof
   ACCEPT_TAC second_substituted_entry_th
 QED
 
+Theorem second_simplify_cfg_substituted_dispatch_edge:
+  fn_succ second_simplify_cfg_substituted "__entry" "@dispatch_1"
+Proof
+  simp[second_simplify_cfg_substituted_eq_phi_fixed,
+       cfgTransformTheory.fn_succ_def,
+       evalCompilerBytecodeSecondSimplifyCfgCollapseDecisionsTheory.exact_second_entry_lookup,
+       GSYM evalCompilerBytecodeSecondSimplifyCfgCollapseDecisionsTheory.second_simplify_cfg_entry_bb_def,
+       evalCompilerBytecodeSecondSimplifyCfgCollapseDecisionsTheory.exact_second_entry_succs]
+QED
+
+Theorem second_simplify_cfg_substituted_fallback_edge:
+  fn_succ second_simplify_cfg_substituted "__entry" "@fallback_0"
+Proof
+  simp[second_simplify_cfg_substituted_eq_phi_fixed,
+       cfgTransformTheory.fn_succ_def,
+       evalCompilerBytecodeSecondSimplifyCfgCollapseDecisionsTheory.exact_second_entry_lookup,
+       GSYM evalCompilerBytecodeSecondSimplifyCfgCollapseDecisionsTheory.second_simplify_cfg_entry_bb_def,
+       evalCompilerBytecodeSecondSimplifyCfgCollapseDecisionsTheory.exact_second_entry_succs]
+QED
+
+Theorem second_simplify_cfg_substituted_entry_reachable:
+  reachable second_simplify_cfg_substituted "__entry"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       second_simplify_cfg_substituted_entry]
+QED
+
+Theorem second_simplify_cfg_substituted_dispatch_reachable:
+  reachable second_simplify_cfg_substituted "@dispatch_1"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       second_simplify_cfg_substituted_entry] >>
+  metis_tac[relationTheory.RTC_SINGLE,
+            second_simplify_cfg_substituted_dispatch_edge]
+QED
+
+Theorem second_simplify_cfg_substituted_fallback_reachable:
+  reachable second_simplify_cfg_substituted "@fallback_0"
+Proof
+  simp[cfgTransformTheory.reachable_def,
+       second_simplify_cfg_substituted_entry] >>
+  metis_tac[relationTheory.RTC_SINGLE,
+            second_simplify_cfg_substituted_fallback_edge]
+QED
+
 fun eval_second_substituted_reachable bb =
   let
     val label_th =
@@ -100,6 +145,38 @@ Theorem exact_second_simplify_cfg_substituted_reachability:
   ^(concl (LIST_CONJ second_substituted_reachable_ths))
 Proof
   ACCEPT_TAC (LIST_CONJ second_substituted_reachable_ths)
+QED
+
+val second_filter_pred =
+  ``\bb : basic_block.
+      reachable second_simplify_cfg_substituted bb.bb_label``
+
+fun second_filter_guard_th (bb, reachable_th) =
+  let
+    val beta_th = BETA_CONV (mk_comb (second_filter_pred, bb))
+    val label_th = RAND_CONV computeLib.EVAL_CONV (rhs (concl beta_th))
+  in
+    TRANS beta_th (TRANS label_th (EQT_INTRO reachable_th))
+  end
+
+val second_filter_guard_ths =
+  ListPair.mapEq second_filter_guard_th
+    (second_substituted_blocks,
+     [second_simplify_cfg_substituted_entry_reachable,
+      second_simplify_cfg_substituted_dispatch_reachable,
+      second_simplify_cfg_substituted_fallback_reachable])
+
+Theorem second_simplify_cfg_final_filter_all:
+  FILTER
+    (\bb. reachable second_simplify_cfg_substituted bb.bb_label)
+    second_simplify_cfg_substituted.fn_blocks =
+  second_simplify_cfg_substituted.fn_blocks
+Proof
+  pure_rewrite_tac [second_simplify_cfg_substituted_blocks] >>
+  pure_rewrite_tac
+    (listTheory.FILTER :: boolTheory.COND_CLAUSES ::
+     second_filter_guard_ths) >>
+  REFL_TAC
 QED
 
 val second_final_remove_th =
