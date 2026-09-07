@@ -175,10 +175,13 @@ val second_simplify_dispatch_named =
   REWRITE_RULE
     [GSYM evalCompilerBytecodeSecondSimplifyCfgResultTheory.second_simplify_cfg_operand_def]
     second_simplify_dispatch_one
-val second_simplify_dispatch_result_th =
+val second_simplify_dispatch_result_named_th =
   REWRITE_RULE [exact_second_simplify_cfg_fn_with_labels]
     second_simplify_dispatch_named
-
+val second_simplify_dispatch_result_th =
+  REWRITE_RULE
+    [evalCompilerBytecodeSecondSimplifyCfgResultTheory.second_simplify_cfg_operand_def]
+    second_simplify_dispatch_result_named_th
 Theorem exact_second_simplify_cfg_dispatch:
   ^(concl second_simplify_dispatch_result_th)
 Proof
