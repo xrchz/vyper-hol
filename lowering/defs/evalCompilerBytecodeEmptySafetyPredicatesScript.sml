@@ -257,6 +257,66 @@ Definition block_defs_before_uses_def[local]:
         EL j bb.bb_instructions = inst
 End
 
+val empty_runtime_final_entry_label = computeLib.EVAL_CONV
+  ``fn_entry_label empty_runtime_final_fn``
+val empty_runtime_final_block0_label = computeLib.EVAL_CONV
+  ``empty_runtime_final_block0.bb_label``
+val empty_runtime_final_block1_label = computeLib.EVAL_CONV
+  ``empty_runtime_final_block1.bb_label``
+val empty_runtime_final_block2_label = computeLib.EVAL_CONV
+  ``empty_runtime_final_block2.bb_label``
+val empty_runtime_final_block3_label = computeLib.EVAL_CONV
+  ``empty_runtime_final_block3.bb_label``
+val empty_runtime_final_block0_succs = computeLib.EVAL_CONV
+  ``bb_succs empty_runtime_final_block0``
+val empty_runtime_final_block1_succs = computeLib.EVAL_CONV
+  ``bb_succs empty_runtime_final_block1``
+
+Theorem empty_runtime_final_member_self_dominates[local]:
+  !bb. MEM bb empty_runtime_final_fn.fn_blocks ==>
+    fn_dominates empty_runtime_final_fn bb.bb_label bb.bb_label
+Proof
+  `fn_cfg_edge empty_runtime_final_fn "__entry" "@dispatch_1"` by
+    (rewrite_tac[venomWfTheory.fn_cfg_edge_def] >>
+     qexists `empty_runtime_final_block0` >>
+     simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+          empty_runtime_final_block0_label,
+          empty_runtime_final_block0_succs]) >>
+  `fn_cfg_edge empty_runtime_final_fn "__entry" "formal_label_0"` by
+    (rewrite_tac[venomWfTheory.fn_cfg_edge_def] >>
+     qexists `empty_runtime_final_block0` >>
+     simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+          empty_runtime_final_block0_label,
+          empty_runtime_final_block0_succs]) >>
+  `fn_cfg_edge empty_runtime_final_fn "@dispatch_1" "@fallback_0"` by
+    (rewrite_tac[venomWfTheory.fn_cfg_edge_def] >>
+     qexists `empty_runtime_final_block1` >>
+     simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+          empty_runtime_final_block1_label,
+          empty_runtime_final_block1_succs]) >>
+  `!bb. MEM bb empty_runtime_final_fn.fn_blocks ==>
+      fn_reachable empty_runtime_final_fn bb.bb_label` by
+    (simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact] >>
+     rpt strip_tac >> gvs[] >>
+     simp[venomWfTheory.fn_reachable_def,
+          empty_runtime_final_entry_label,
+          empty_runtime_final_block0_label,
+          empty_runtime_final_block1_label,
+          empty_runtime_final_block2_label,
+          empty_runtime_final_block3_label] >>
+     irule relationTheory.RTC_RTC >>
+     qexists `"@dispatch_1"` >>
+     conj_tac >-
+       (irule relationTheory.RTC_SINGLE >> simp[]) >>
+     irule relationTheory.RTC_SINGLE >> simp[]) >>
+  rpt strip_tac >>
+  rewrite_tac[venomWfTheory.fn_dominates_def] >>
+  conj_tac >- (first_x_assum irule >> simp[]) >>
+  rpt strip_tac >>
+  qpat_x_assum `LAST path = bb.bb_label` (fn th => rewrite_tac[GSYM th]) >>
+  irule rich_listTheory.LAST_MEM >> simp[]
+QED
+
 Theorem empty_runtime_final_codegen_ready:
   codegen_ready empty_runtime_final_unit.cu_context
 Proof
