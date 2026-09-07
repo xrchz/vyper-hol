@@ -214,6 +214,22 @@ Proof
        fcgDefsTheory.list_precedes_def]
 QED
 
+Theorem empty_runtime_final_canonical_params[local]:
+  canonical_param_prefix empty_runtime_final_fn
+Proof
+  simp[callLayoutDefsTheory.canonical_param_prefix_def,
+       callLayoutDefsTheory.canonical_entry_params_from_def,
+       callLayoutDefsTheory.canonical_after_fmp_def,
+       callLayoutDefsTheory.no_param_insts_def,
+       callLayoutDefsTheory.param_inst_at_def,
+       venomInstTheory.is_param_opcode_def,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
+QED
+
 Theorem empty_runtime_final_codegen_ready:
   codegen_ready empty_runtime_final_unit.cu_context
 Proof
