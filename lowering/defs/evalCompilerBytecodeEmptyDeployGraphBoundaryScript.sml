@@ -840,6 +840,36 @@ Theorem exact_empty_deploy_fmp_reclaim_input:
 Proof
   simp[fmpLowerDefsTheory.fmp_reclaim_input_def]
 QED
+val fmp_checked_seal_tm = list_mk_comb
+  (``fmp_checked_seal``,
+   [fmp_context_tm, fmp_function_tm, ``fmp_info_bottom``,
+    ``(^fmp_function_tm).fn_blocks``])
+val exact_fmp_checked_seal_raw =
+  eval_fmp_closed "empty-deploy FMP checked seal" fmp_checked_seal_tm
+val fmp_checked_seal_rhs = rhs (concl exact_fmp_checked_seal_raw)
+val (_, fmp_checked_seal_result_args) = strip_comb fmp_checked_seal_rhs
+val _ =
+  if head_is ``SOME`` fmp_checked_seal_rhs andalso
+     length fmp_checked_seal_result_args = 1
+  then () else raise Fail "empty-deploy FMP checked seal did not return SOME"
+val fmp_sealed_function_tm = hd fmp_checked_seal_result_args
+val _ = assert_closed "empty-deploy sealed FMP function" fmp_sealed_function_tm
+
+Definition empty_deploy_fmp_sealed_function_def:
+  empty_deploy_fmp_sealed_function = ^fmp_sealed_function_tm
+End
+
+val exact_fmp_checked_seal =
+  exact_fmp_checked_seal_raw
+  |> SIMP_RULE (srw_ss ()) [fmpAnalysisDefsTheory.fmp_info_bottom_def]
+  |> REWRITE_RULE [GSYM empty_deploy_fmp_sealed_function_def]
+
+Theorem exact_empty_deploy_fmp_checked_seal:
+  ^(concl exact_fmp_checked_seal)
+Proof
+  ACCEPT_TAC exact_fmp_checked_seal
+QED
+
 
 
 val _ = export_theory()
