@@ -303,57 +303,57 @@ Proof
 QED
 
 fun eval_fmp_closed label tm =
-  let
-    val _ = assert_closed label tm
-  in
-    computeLib.EVAL_CONV tm
-  end
+  let val _ = assert_closed label tm
+  in computeLib.EVAL_CONV tm end
 
 val fmp_blocks_th = eval_fmp_closed "FMP function block projection"
   ``(^fmp_function_tm).fn_blocks``
-val fmp_blocks = fst (listSyntax.dest_list (rhs (concl fmp_blocks_th)))
-val _ = if length fmp_blocks = 1 then ()
+val (fmp_blocks, _) = listSyntax.dest_list (rhs (concl fmp_blocks_th))
+val _ = if length fmp_blocks = 3 then ()
         else raise Fail ("FMP function block count: " ^
           Int.toString (length fmp_blocks))
-val fmp_bb0_tm = hd fmp_blocks
-fun fmp_block_instructions label bb =
+val fmp_bb0_tm = List.nth (fmp_blocks, 0)
+val fmp_bb1_tm = List.nth (fmp_blocks, 1)
+val fmp_bb2_tm = List.nth (fmp_blocks, 2)
+
+fun block_shape bb =
   let
-    val th = eval_fmp_closed label ``(^bb).bb_instructions``
-    val insts = fst (listSyntax.dest_list (rhs (concl th)))
-  in
-    (th, insts)
-  end
-
-val (fmp_bb0_insts_th, fmp_bb0_insts) =
-  fmp_block_instructions "FMP block 0 instruction projection" fmp_bb0_tm
-val _ = if length fmp_bb0_insts = 4 then ()
-        else raise Fail "FMP block 0 does not have exactly four instructions"
-
-val fmp_bb0_succs_th = eval_fmp_closed "FMP block 0 successors"
-  ``bb_succs ^fmp_bb0_tm``
-
-Theorem empty_runtime_fmp_blocks_shape[local]:
-  ^(concl fmp_blocks_th)
-Proof
-  ACCEPT_TAC fmp_blocks_th
-QED
-
-Theorem empty_runtime_fmp_bb0_instructions_shape[local]:
-  ^(concl fmp_bb0_insts_th)
-Proof
-  ACCEPT_TAC fmp_bb0_insts_th
-QED
-
-Theorem empty_runtime_fmp_bb0_succs_shape[local]:
-  ^(concl fmp_bb0_succs_th)
-Proof
-  ACCEPT_TAC fmp_bb0_succs_th
-QED
+    val insts_th = eval_fmp_closed "FMP block instructions"
+      ``(^bb).bb_instructions``
+    val insts = fst (listSyntax.dest_list (rhs (concl insts_th)))
+    val succs_th = eval_fmp_closed "FMP block successors" ``bb_succs ^bb``
+  in (insts_th, insts, succs_th) end
+val (fmp_bb0_insts_th, fmp_bb0_insts, fmp_bb0_succs_th) =
+  block_shape fmp_bb0_tm
+val (fmp_bb1_insts_th, fmp_bb1_insts, fmp_bb1_succs_th) =
+  block_shape fmp_bb1_tm
+val (fmp_bb2_insts_th, fmp_bb2_insts, fmp_bb2_succs_th) =
+  block_shape fmp_bb2_tm
+val _ =
+  if List.all (fn xs => not (null xs))
+       [fmp_bb0_insts, fmp_bb1_insts, fmp_bb2_insts]
+  then () else raise Fail "FMP function contains an empty block"
 Theorem empty_runtime_fmp_bb0_snoc_shape[local]:
   ^fmp_bb0_tm =
     <| bb_label := (^fmp_bb0_tm).bb_label;
        bb_instructions := FRONT ((^fmp_bb0_tm).bb_instructions) ++
                           [LAST ((^fmp_bb0_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+Theorem empty_runtime_fmp_bb1_snoc_shape[local]:
+  ^fmp_bb1_tm =
+    <| bb_label := (^fmp_bb1_tm).bb_label;
+       bb_instructions := FRONT ((^fmp_bb1_tm).bb_instructions) ++
+                          [LAST ((^fmp_bb1_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+Theorem empty_runtime_fmp_bb2_snoc_shape[local]:
+  ^fmp_bb2_tm =
+    <| bb_label := (^fmp_bb2_tm).bb_label;
+       bb_instructions := FRONT ((^fmp_bb2_tm).bb_instructions) ++
+                          [LAST ((^fmp_bb2_tm).bb_instructions)] |>
 Proof
   EVAL_TAC
 QED
@@ -364,243 +364,129 @@ Proof
   once_rewrite_tac[empty_runtime_fmp_bb0_snoc_shape] >>
   irule empty_runtime_bb_well_formed_snoc >> EVAL_TAC
 QED
+Theorem empty_runtime_fmp_bb1_well_formed[local]:
+  bb_well_formed ^fmp_bb1_tm
+Proof
+  once_rewrite_tac[empty_runtime_fmp_bb1_snoc_shape] >>
+  irule empty_runtime_bb_well_formed_snoc >> EVAL_TAC
+QED
+Theorem empty_runtime_fmp_bb2_well_formed[local]:
+  bb_well_formed ^fmp_bb2_tm
+Proof
+  once_rewrite_tac[empty_runtime_fmp_bb2_snoc_shape] >>
+  irule empty_runtime_bb_well_formed_snoc >> EVAL_TAC
+QED
 
 Theorem empty_runtime_fmp_bb0_instructions_wf[local]:
   EVERY inst_wf (^fmp_bb0_tm).bb_instructions
 Proof
   EVAL_TAC >> simp[]
 QED
+Theorem empty_runtime_fmp_bb1_instructions_wf[local]:
+  EVERY inst_wf (^fmp_bb1_tm).bb_instructions
+Proof
+  simp[venomWfTheory.inst_wf_def]
+QED
+Theorem empty_runtime_fmp_bb2_instructions_wf[local]:
+  EVERY inst_wf (^fmp_bb2_tm).bb_instructions
+Proof
+  EVAL_TAC >> simp[]
+QED
 
-Theorem exact_empty_runtime_fmp_function_not_well_formed:
-  ~wf_function ^fmp_function_tm
+Theorem exact_empty_runtime_fmp_function_well_formed:
+  wf_function ^fmp_function_tm
 Proof
   simp[venomWfTheory.wf_function_def,
        venomWfTheory.fn_has_entry_def,
        venomWfTheory.fn_succs_closed_def,
        venomWfTheory.fn_inst_ids_distinct_def,
        venomInstTheory.fn_labels_def,
-       empty_runtime_fmp_blocks_shape,
        empty_runtime_fmp_bb0_well_formed,
-       empty_runtime_fmp_bb0_succs_shape] >>
-  qexists `"@fallback_0"` >> simp[]
+       empty_runtime_fmp_bb1_well_formed,
+       empty_runtime_fmp_bb2_well_formed,
+       fmp_bb0_succs_th, fmp_bb1_succs_th, fmp_bb2_succs_th] >>
+  conj_tac
+  >- (rpt strip_tac >>
+      gvs[empty_runtime_fmp_bb0_well_formed,
+          empty_runtime_fmp_bb1_well_formed,
+          empty_runtime_fmp_bb2_well_formed])
+  >> rpt strip_tac >>
+  gvs[fmp_bb0_succs_th, fmp_bb1_succs_th, fmp_bb2_succs_th]
 QED
 
-
-Theorem exact_empty_runtime_fmp_reclaims_rejected:
-  analyze_fmp_reclaims empty_runtime_fmp_infos
-    ^fmp_context_tm ^fmp_function_tm = NONE
+Theorem exact_empty_runtime_fmp_function_inst_wf:
+  fn_inst_wf ^fmp_function_tm
 Proof
-  simp[fmpReclaimDefsTheory.analyze_fmp_reclaims_def,
-       exact_empty_runtime_fmp_function_not_well_formed]
+  irule empty_runtime_fn_inst_wf_from_blocks >>
+  rpt strip_tac >>
+  gvs[fmp_blocks_th,
+      empty_runtime_fmp_bb0_instructions_wf,
+      empty_runtime_fmp_bb1_instructions_wf,
+      empty_runtime_fmp_bb2_instructions_wf]
 QED
 
-Theorem exact_empty_runtime_fmp_with_info_rejected:
-  fmp_lower_function_with_info empty_runtime_fmp_infos
-    ^fmp_context_tm ^fmp_supply_tm ^fmp_function_tm = NONE
-Proof
-  simp[fmpLowerDefsTheory.fmp_lower_function_with_info_def,
-       exact_empty_runtime_fmp_info_valid,
-       exact_empty_runtime_fmp_lower_input,
-       exact_empty_runtime_fmp_bottom_lookup,
-       exact_empty_runtime_fmp_reclaims_rejected]
-QED
-
-
-val exact_fmp_lower_rejected =
-  REWR_CONV fmpLowerDefsTheory.fmp_lower_function_def fmp_lower_tm
-  |> CONV_RULE (RAND_CONV (REWRITE_CONV
-       [exact_fmp_analysis, exact_empty_runtime_fmp_with_info_rejected]))
-
-Theorem exact_empty_runtime_fmp_lower_rejected:
-  ^(concl exact_fmp_lower_rejected)
-Proof
-  ACCEPT_TAC exact_fmp_lower_rejected
-QED
-
-val exact_fmp_dispatch_rejected =
-  fmp_dispatch_unfold
-  |> CONV_RULE (RAND_CONV (REWRITE_CONV [exact_fmp_lower_rejected]))
-
-Theorem exact_empty_runtime_fmp_dispatch_rejected:
-  ^(concl exact_fmp_dispatch_rejected)
-Proof
-  ACCEPT_TAC exact_fmp_dispatch_rejected
-QED
-
-val fmp_dispatch_case_tm =
-  find_term (is_exact_dispatch_case fmp_dispatch_tm)
-    (rhs (concl fmp_context_exposed))
-val _ = assert_closed "FmpLowering result option case" fmp_dispatch_case_tm
-val fmp_dispatch_case_rewritten =
-  REWRITE_CONV [exact_fmp_dispatch_rejected] fmp_dispatch_case_tm
-val fmp_dispatch_case_reduced = computeLib.RESTR_EVAL_CONV
-  [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
-  (rhs (concl fmp_dispatch_case_rewritten))
-val fmp_dispatch_case_rejected =
-  TRANS fmp_dispatch_case_rewritten fmp_dispatch_case_reduced
-val after_fmp_rejected =
-  PURE_REWRITE_RULE [fmp_dispatch_case_rejected] fmp_context_exposed
-val after_fmp_rejected_closed =
-  CONV_RULE
-    (RAND_CONV (computeLib.RESTR_EVAL_CONV
-      [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]))
-    after_fmp_rejected
-
-
-val first_make_ssa_dispatch_tm =
-  lhs (concl evalCompilerBytecodeMakeSSAResultTheory.exact_empty_runtime_first_make_ssa_result)
-val (_, first_make_ssa_dispatch_args) = strip_comb first_make_ssa_dispatch_tm
-val pre_make_ssa_function_tm = List.nth (first_make_ssa_dispatch_args, 4)
-val (_, concretize_dispatch_args_for_provenance) =
-  strip_comb (lhs (concl exact_concretize_dispatch))
-val post_lower_dload_function_tm =
-  List.nth (concretize_dispatch_args_for_provenance, 4)
-
-fun eval_cfg_projection label fn_tm =
-  let
-    val _ = assert_closed (label ^ " function") fn_tm
-    fun normalize th =
-      CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss ()) [])) th
-    val labels = normalize (computeLib.EVAL_CONV
-      ``MAP bb_label (^fn_tm).fn_blocks``)
-    val succs = normalize (computeLib.EVAL_CONV
-      ``MAP bb_succs (^fn_tm).fn_blocks``)
-    val closed = normalize (computeLib.EVAL_CONV ``fn_succs_closed ^fn_tm``)
-  in
-    (labels, succs, closed)
-  end
-
-
-fun first_unit_function label unit_tm =
-  let
-    val functions_th = computeLib.EVAL_CONV
-      ``(^unit_tm).cu_context.ctx_functions``
-    val (functions, _) = listSyntax.dest_list (rhs (concl functions_th))
-  in
-    if length functions = 1 then hd functions
-    else raise Fail (label ^ " does not contain exactly one function")
-  end
-
-val raw_pre_walk_call_tm =
-  lhs (concl evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result)
-val (_, raw_pre_walk_call_args) = strip_comb raw_pre_walk_call_tm
-val raw_runtime_unit_tm = List.nth (raw_pre_walk_call_args, 2)
-val raw_runtime_function_tm =
-  first_unit_function "raw runtime unit" raw_runtime_unit_tm
-val pre_walk_function_tm = first_unit_function "pre-walk unit"
-  ``empty_runtime_pre_walk_unit``
-val selected_walk_function_tm = first_unit_function "selected walk unit"
-  ``empty_runtime_walk_unit``
-
-val (raw_runtime_labels, raw_runtime_succs, raw_runtime_closed) =
-  eval_cfg_projection "raw runtime" raw_runtime_function_tm
-val (pre_walk_labels, pre_walk_succs, pre_walk_closed) =
-  eval_cfg_projection "post-pre-walk" pre_walk_function_tm
-val (selected_walk_labels, selected_walk_succs, selected_walk_closed) =
-  eval_cfg_projection "selected walk" selected_walk_function_tm
-val raw_runtime_blocks = fst (listSyntax.dest_list
-  (rhs (concl (computeLib.EVAL_CONV ``(^raw_runtime_function_tm).fn_blocks``))))
-val pre_walk_blocks = fst (listSyntax.dest_list
-  (rhs (concl (computeLib.EVAL_CONV ``(^pre_walk_function_tm).fn_blocks``))))
-val selected_walk_blocks = fst (listSyntax.dest_list
-  (rhs (concl (computeLib.EVAL_CONV ``(^selected_walk_function_tm).fn_blocks``))))
+val fmp_reclaim_states_tm =
+  ``fmp_reclaim_states ^fmp_function_tm``
+val exact_fmp_reclaim_states_raw =
+  eval_fmp_closed "empty-runtime FMP reclaim states" fmp_reclaim_states_tm
+val fmp_reclaim_states_rhs = rhs (concl exact_fmp_reclaim_states_raw)
+val (_, fmp_reclaim_states_result_args) = strip_comb fmp_reclaim_states_rhs
 val _ =
-  if map length [raw_runtime_blocks, pre_walk_blocks, selected_walk_blocks] = [3,3,3]
-  then ()
-  else raise Fail "corrected walk preparation did not preserve 3 -> 3 -> 3 blocks"
-val (pre_make_ssa_labels, pre_make_ssa_succs, pre_make_ssa_closed) =
-  eval_cfg_projection "pre-MakeSSA" pre_make_ssa_function_tm
-val (post_make_ssa_labels, post_make_ssa_succs, post_make_ssa_closed) =
-  eval_cfg_projection "post-MakeSSA" (List.nth (lower_dispatch_args, 4))
-val (post_lower_dload_labels, post_lower_dload_succs, post_lower_dload_closed) =
-  eval_cfg_projection "post-LowerDload" post_lower_dload_function_tm
-val (post_concretize_labels, post_concretize_succs, post_concretize_closed) =
-  eval_cfg_projection "post-ConcretizeMemLoc" fmp_function_tm
+  if head_is ``SOME`` fmp_reclaim_states_rhs andalso
+     length fmp_reclaim_states_result_args = 1
+  then () else raise Fail "empty-runtime FMP reclaim states did not return SOME"
+val fmp_states_tm = hd fmp_reclaim_states_result_args
+val _ = assert_closed "empty-runtime FMP reclaim-state payload" fmp_states_tm
 
-val first_simplify_cfg_input_tm = ``first_simplify_cfg_operand``
-val first_simplify_cfg_output_tm = ``first_simplify_cfg_round1_fn``
-val (first_simplify_input_labels, first_simplify_input_succs,
-     first_simplify_input_closed) =
-  eval_cfg_projection "first SimplifyCFG input" first_simplify_cfg_input_tm
-val (first_simplify_output_labels, first_simplify_output_succs,
-     first_simplify_output_closed) =
-  eval_cfg_projection "first SimplifyCFG output" first_simplify_cfg_output_tm
-val first_simplify_input_blocks = fst (listSyntax.dest_list
-  (rhs (concl (computeLib.EVAL_CONV
-    ``first_simplify_cfg_operand.fn_blocks``))))
-val first_simplify_output_blocks = fst (listSyntax.dest_list
-  (rhs (concl (computeLib.EVAL_CONV
-    ``first_simplify_cfg_round1_fn.fn_blocks``))))
-val _ =
-  if map length [first_simplify_input_blocks, first_simplify_output_blocks] = [3,3]
-  then ()
-  else raise Fail "corrected first SimplifyCFG did not preserve all three blocks"
+Definition empty_runtime_fmp_states_def:
+  empty_runtime_fmp_states = ^fmp_states_tm
+End
 
-Theorem exact_empty_runtime_first_simplify_cfg_provenance:
-  ^(concl first_simplify_input_labels) /\
-  ^(concl first_simplify_input_succs) /\
-  ^(concl first_simplify_output_labels) /\
-  ^(concl first_simplify_output_succs)
+val exact_fmp_reclaim_states =
+  REWRITE_RULE [GSYM empty_runtime_fmp_states_def]
+    exact_fmp_reclaim_states_raw
+
+Theorem exact_empty_runtime_fmp_reclaim_states:
+  ^(concl exact_fmp_reclaim_states)
 Proof
-  ACCEPT_TAC (LIST_CONJ
-    [first_simplify_input_labels, first_simplify_input_succs,
-     first_simplify_output_labels, first_simplify_output_succs])
-QED
-Theorem exact_empty_runtime_walk_selection_cfg_provenance:
-  ^(concl raw_runtime_labels) /\
-  ^(concl raw_runtime_succs) /\
-  ^(concl pre_walk_labels) /\
-  ^(concl pre_walk_succs) /\
-  ^(concl selected_walk_labels) /\
-  ^(concl selected_walk_succs) /\
-  fn_succs_closed empty_runtime_walk_function
-Proof
-  ACCEPT_TAC (LIST_CONJ
-    [raw_runtime_labels, raw_runtime_succs,
-     pre_walk_labels, pre_walk_succs,
-     selected_walk_labels, selected_walk_succs,
-     evalCompilerBytecodeWalkPrepTheory.empty_runtime_walk_function_succs_closed])
+  ACCEPT_TAC exact_fmp_reclaim_states
 QED
 
-Theorem exact_empty_runtime_pre_make_ssa_cfg_projection:
-  ^(concl pre_make_ssa_labels) /\
-  ^(concl pre_make_ssa_succs) /\
-  ^(concl pre_make_ssa_closed)
+val fmp_candidate_tm = list_mk_comb
+  (``fmp_candidate_plan``,
+   [fmp_infos_tm, fmp_context_tm, fmp_function_tm, fmp_states_tm])
+val exact_fmp_candidate_raw =
+  eval_fmp_closed "empty-runtime FMP candidate plan" fmp_candidate_tm
+val exact_fmp_candidate =
+  REWRITE_RULE [GSYM empty_runtime_fmp_infos_def,
+                GSYM empty_runtime_fmp_states_def]
+    exact_fmp_candidate_raw
+
+Theorem exact_empty_runtime_fmp_candidate_empty:
+  ^(concl exact_fmp_candidate)
 Proof
-  ACCEPT_TAC (LIST_CONJ [pre_make_ssa_labels, pre_make_ssa_succs,
-                         pre_make_ssa_closed])
+  ACCEPT_TAC exact_fmp_candidate
 QED
 
-Theorem exact_empty_runtime_post_make_ssa_cfg_projection:
-  ^(concl post_make_ssa_labels) /\
-  ^(concl post_make_ssa_succs) /\
-  ^(concl post_make_ssa_closed)
+Theorem exact_empty_runtime_fmp_reclaim_result:
+  analyze_fmp_reclaims empty_runtime_fmp_infos ^fmp_context_tm
+    ^fmp_function_tm = SOME FEMPTY
 Proof
-  ACCEPT_TAC (LIST_CONJ [post_make_ssa_labels, post_make_ssa_succs,
-                         post_make_ssa_closed])
+  irule fmpReclaimPropsTheory.analyze_fmp_reclaims_ready >>
+  simp[exact_empty_runtime_fmp_info_valid,
+       exact_empty_runtime_fmp_function_well_formed,
+       exact_empty_runtime_fmp_function_inst_wf,
+       exact_empty_runtime_fmp_reclaim_states,
+       exact_empty_runtime_fmp_candidate_empty,
+       fmpReclaimDefsTheory.fmp_reclaim_plan_ok_def] >>
+  EVAL_TAC
 QED
 
-Theorem exact_empty_runtime_post_lower_dload_cfg_projection:
-  ^(concl post_lower_dload_labels) /\
-  ^(concl post_lower_dload_succs) /\
-  ^(concl post_lower_dload_closed)
+Theorem exact_empty_runtime_fmp_reclaim_input:
+  fmp_reclaim_input ^fmp_function_tm FEMPTY
 Proof
-  ACCEPT_TAC (LIST_CONJ [post_lower_dload_labels, post_lower_dload_succs,
-                         post_lower_dload_closed])
+  simp[fmpLowerDefsTheory.fmp_reclaim_input_def]
 QED
 
-Theorem exact_empty_runtime_post_concretize_cfg_projection:
-  ^(concl post_concretize_labels) /\
-  ^(concl post_concretize_succs) /\
-  ^(concl post_concretize_closed)
-Proof
-  ACCEPT_TAC (LIST_CONJ [post_concretize_labels, post_concretize_succs,
-                         post_concretize_closed])
-QED
-Theorem exact_empty_runtime_after_fmp_lowering_rejected:
-  ^(concl after_fmp_rejected_closed)
-Proof
-  ACCEPT_TAC after_fmp_rejected_closed
-QED
 
-val _ = export_theory()
+val _ = export_theory();

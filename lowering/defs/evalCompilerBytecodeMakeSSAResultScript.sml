@@ -4,6 +4,8 @@ Libs computeLib finite_mapLib
 
 open HolKernel Parse boolLib bossLib
 
+val () = computeLib.upd_compset finite_mapLib.add_finite_map_compset
+
 fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
 fun head_arity c n t =
   head_is c t andalso length (snd (strip_comb t)) = n
@@ -44,7 +46,8 @@ val _ =
   else raise Fail "exact MakeSSA result changed the dispatcher LHS"
 val _ =
   if head_is ``SOME`` (rhs (concl exact_dispatch_result)) then ()
-  else raise Fail "exact MakeSSA dispatcher result is not SOME"
+  else raise Fail ("exact MakeSSA dispatcher result is not SOME: " ^
+    term_to_string (rhs (concl exact_dispatch_result)))
 val _ =
   if has_head ``make_ssa_current_fn`` (rhs (concl exact_dispatch_result))
   then raise Fail "exact MakeSSA dispatcher result retains make_ssa_current_fn"
