@@ -173,4 +173,55 @@ Theorem exact_empty_deploy_driver_to_closed_callee_first:
 Proof
   ACCEPT_TAC after_graph
 QED
+
+val (_, callee_first_args) = strip_comb callee_first_tm
+val callee_passes_tm = List.nth (callee_first_args, 1)
+val callee_names_tm = List.nth (callee_first_args, 2)
+val exact_walk_order_shape = computeLib.EVAL_CONV callee_names_tm
+val exact_passes_shape =
+  SIMP_CONV (srw_ss ())
+    [venomPassScheduleTheory.o1_pipeline_spec_exact,
+     venomPassScheduleTheory.o1_fn_passes_exact]
+    callee_passes_tm
+val (exact_passes, _) = listSyntax.dest_list (rhs (concl exact_passes_shape))
+val _ =
+  if length exact_passes = 9 andalso
+     aconv (hd exact_passes) ``CFP_Simple VP_MakeSSA``
+  then ()
+  else raise Fail "empty deploy configured pass list is not nine passes headed MakeSSA"
+
+val callee_one =
+  REWR_CONV venomPipelineRunnerTheory.run_callee_first_def callee_first_tm
+val callee_shaped =
+  CONV_RULE
+    (RAND_CONV
+      (SIMP_CONV (srw_ss ()) [exact_walk_order_shape, exact_passes_shape]))
+    callee_one
+val callee_to_first_fold_rhs =
+  computeLib.RESTR_EVAL_CONV [``run_configured_fn_pass_fold``]
+    (rhs (concl callee_shaped))
+val callee_to_first_fold = TRANS callee_shaped callee_to_first_fold_rhs
+val first_fold_tm = find_closed_head_arity ``run_configured_fn_pass_fold`` 7
+  (rhs (concl callee_to_first_fold))
+val _ = assert_closed "empty deploy first configured fold" first_fold_tm
+val (_, first_fold_args) = strip_comb first_fold_tm
+val first_fold_passes_tm = List.nth (first_fold_args, 2)
+val (first_fold_passes, _) = listSyntax.dest_list first_fold_passes_tm
+val _ =
+  if length first_fold_passes = 9 andalso
+     aconv (hd first_fold_passes) ``CFP_Simple VP_MakeSSA``
+  then ()
+  else raise Fail "empty deploy first fold is not nine passes headed MakeSSA"
+
+val exact_driver_first_fold =
+  PURE_REWRITE_RULE [callee_to_first_fold] after_graph
+val _ =
+  if null (free_vars (rhs (concl exact_driver_first_fold))) then ()
+  else raise Fail "empty deploy first-fold driver context is not closed"
+
+Theorem exact_empty_deploy_driver_first_make_ssa_fold:
+  ^(concl exact_driver_first_fold)
+Proof
+  ACCEPT_TAC exact_driver_first_fold
+QED
 val _ = export_theory()
