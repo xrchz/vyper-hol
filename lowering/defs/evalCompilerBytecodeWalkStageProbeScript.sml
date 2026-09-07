@@ -216,4 +216,60 @@ val _ = assert_closed "FmpLowering context" fmp_context_tm
 val _ = assert_closed "FmpLowering supply" fmp_supply_tm
 val _ = assert_closed "FmpLowering function" fmp_function_tm
 
+val fmp_analysis_tm = list_mk_comb
+  (``analyze_fmp_context``, [fmp_context_tm])
+val exact_fmp_analysis_raw = computeLib.EVAL_CONV fmp_analysis_tm
+val fmp_analysis_rhs = rhs (concl exact_fmp_analysis_raw)
+val (_, fmp_analysis_result_args) = strip_comb fmp_analysis_rhs
+val _ =
+  if head_is ``SOME`` fmp_analysis_rhs andalso
+     length fmp_analysis_result_args = 1
+  then () else raise Fail "empty-runtime FMP analysis did not return SOME"
+val fmp_infos_tm = hd fmp_analysis_result_args
+val _ = assert_closed "empty-runtime FMP analysis information" fmp_infos_tm
+
+Definition empty_runtime_fmp_infos_def:
+  empty_runtime_fmp_infos = ^fmp_infos_tm
+End
+
+val exact_fmp_analysis =
+  REWRITE_RULE [GSYM empty_runtime_fmp_infos_def] exact_fmp_analysis_raw
+
+Theorem exact_empty_runtime_fmp_analysis:
+  ^(concl exact_fmp_analysis)
+Proof
+  ACCEPT_TAC exact_fmp_analysis
+QED
+
+Theorem exact_empty_runtime_fmp_info_valid:
+  fmp_info_valid ^fmp_context_tm empty_runtime_fmp_infos
+Proof
+  irule fmpAnalysisPropsTheory.analyze_fmp_context_valid >>
+  ACCEPT_TAC exact_empty_runtime_fmp_analysis
+QED
+
+val fmp_lower_input_tm = list_mk_comb
+  (``fmp_lower_input``, [fmp_infos_tm, fmp_context_tm, fmp_function_tm])
+val exact_fmp_lower_input_raw = computeLib.EVAL_CONV fmp_lower_input_tm
+val exact_fmp_lower_input =
+  REWRITE_RULE [GSYM empty_runtime_fmp_infos_def] exact_fmp_lower_input_raw
+
+Theorem exact_empty_runtime_fmp_lower_input:
+  ^(concl exact_fmp_lower_input)
+Proof
+  ACCEPT_TAC exact_fmp_lower_input
+QED
+
+val fmp_lookup_tm =
+  ``FLOOKUP ^fmp_infos_tm (^fmp_function_tm).fn_name``
+val exact_fmp_lookup_raw = computeLib.EVAL_CONV fmp_lookup_tm
+val exact_fmp_lookup =
+  REWRITE_RULE [GSYM empty_runtime_fmp_infos_def] exact_fmp_lookup_raw
+
+Theorem exact_empty_runtime_fmp_bottom_lookup:
+  ^(concl exact_fmp_lookup)
+Proof
+  ACCEPT_TAC exact_fmp_lookup
+QED
+
 val _ = export_theory()

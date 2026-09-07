@@ -330,45 +330,6 @@ Proof
        empty_runtime_entry_plan_value_eval]
 QED
 
-Theorem fn_plan_fuel_success_stable:
-  (!fuel liveness dfg cfg fn worklist visited ps result extra.
-    generate_fn_plan_aux_fuel fuel liveness dfg cfg fn worklist visited ps =
-      SOME result ==>
-    generate_fn_plan_aux_fuel (fuel + extra) liveness dfg cfg fn
-      worklist visited ps = SOME result) /\
-  (!fuel liveness dfg cfg fn ss sp succs visited ps result extra.
-    generate_succs_plan_fuel fuel liveness dfg cfg fn ss sp succs visited ps =
-      SOME result ==>
-    generate_succs_plan_fuel (fuel + extra) liveness dfg cfg fn ss sp succs
-      visited ps = SOME result)
-Proof
-  ho_match_mp_tac stackPlanGenTheory.generate_fn_plan_aux_fuel_ind >>
-  rpt conj_tac >> rpt gen_tac >>
-  simp[Ntimes stackPlanGenTheory.generate_fn_plan_aux_fuel_def 2] >>
-  rpt strip_tac >> BasicProvers.every_case_tac >> gvs[] >>
-  simp[arithmeticTheory.ADD_CLAUSES, Once stackPlanGenTheory.generate_fn_plan_aux_fuel_def] >>
-  metis_tac[]
-QED
-
-Theorem generate_fn_plan_aux_fuel_success_stable:
-  !fuel liveness dfg cfg fn worklist visited ps result extra.
-    generate_fn_plan_aux_fuel fuel liveness dfg cfg fn worklist visited ps =
-      SOME result ==>
-    generate_fn_plan_aux_fuel (fuel + extra) liveness dfg cfg fn
-      worklist visited ps = SOME result
-Proof
-  metis_tac[fn_plan_fuel_success_stable]
-QED
-
-Theorem generate_succs_plan_fuel_success_stable:
-  !fuel liveness dfg cfg fn ss sp succs visited ps result extra.
-    generate_succs_plan_fuel fuel liveness dfg cfg fn ss sp succs visited ps =
-      SOME result ==>
-    generate_succs_plan_fuel (fuel + extra) liveness dfg cfg fn ss sp succs
-      visited ps = SOME result
-Proof
-  metis_tac[fn_plan_fuel_success_stable]
-QED
 
 Theorem empty_runtime_entry_live_fuel_eval[local]:
   liveness_analyze_fuel 100000 empty_runtime_entry_fn =
@@ -469,72 +430,8 @@ Proof
 QED
 
 
-val fn_plan_aux_fuel_tm = ``generate_fn_plan_aux_fuel``
 
-fun rator_n_conv 0 conv = conv
-  | rator_n_conv n conv = RATOR_CONV (rator_n_conv (n - 1) conv)
-
-fun closed_fn_plan_aux_success_conv_with_fuels fuels tm =
-  let
-    val (head, args) = strip_comb tm
-    val _ = if aconv head fn_plan_aux_fuel_tm andalso length args = 8
-            then () else raise UNCHANGED
-    val target_fuel = hd args
-    val target_n = numSyntax.int_of_term target_fuel
-    fun seek [] = raise Fail "no successful planner run within bounded fuel"
-      | seek (n :: ns) =
-          let
-            val low_fuel = numSyntax.term_of_int n
-            val low_tm = list_mk_comb (head, low_fuel :: tl args)
-            val low_thm = computeLib.EVAL_CONV low_tm
-            val low_rhs = rhs (concl low_thm)
-          in
-            if optionSyntax.is_some low_rhs then (n, low_fuel, low_thm,
-                                                  optionSyntax.dest_some low_rhs)
-            else seek ns
-          end
-    val (n, low_fuel, low_thm, result) = seek fuels
-    val _ = if n <= target_n then ()
-            else raise Fail "successful probe fuel exceeds target fuel"
-    val extra = numSyntax.term_of_int (target_n - n)
-    val stable = SPECL (low_fuel :: tl args @ [result, extra])
-      generate_fn_plan_aux_fuel_success_stable
-    val lifted = MATCH_MP stable low_thm
-    val normalized =
-      CONV_RULE
-        (LHS_CONV (rator_n_conv 7 (RAND_CONV computeLib.EVAL_CONV)))
-        lifted
-    val _ = if aconv (lhs (concl normalized)) tm then ()
-            else raise Fail "lifted planner theorem does not match target"
-  in
-    normalized
-  end
-
-fun closed_compiler_eval_with_fuels fuels tm =
-  let
-    val partial = RESTR_EVAL_CONV [``generate_fn_plan_aux_fuel``] tm
-    val simplified =
-      SIMP_RULE (srw_ss())
-        [finite_mapTheory.FEVERY_FEMPTY,
-         venomInstTheory.fn_insts_blocks_def, DISJ_IMP_THM]
-        partial
-    val staged =
-      CONV_RULE
-        (RAND_CONV (RESTR_EVAL_CONV [``generate_fn_plan_aux_fuel``]))
-        simplified
-    val planners =
-      CONV_RULE
-        (RAND_CONV
-          (DEPTH_CONV (closed_fn_plan_aux_success_conv_with_fuels fuels)))
-        staged
-  in
-    CONV_RULE (RAND_CONV computeLib.EVAL_CONV) planners
-  end
-
-fun closed_compiler_eval tm =
-  closed_compiler_eval_with_fuels [16, 32, 64, 128, 256] tm
-
-val noop_compiler_eval = closed_compiler_eval
+val noop_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 noop_program``
 Theorem noop_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 noop_program =
@@ -543,15 +440,15 @@ Proof
   rewrite_tac[noop_compiler_eval] >> EVAL_TAC
 QED
 
-val return_uint_compiler_eval = closed_compiler_eval
+val return_uint_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 return_uint_program``
-val return_arg_compiler_eval = closed_compiler_eval
+val return_arg_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 return_arg_program``
-val local_uint_compiler_eval = closed_compiler_eval
+val local_uint_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 local_uint_program``
-val add_arg_compiler_eval = closed_compiler_eval
+val add_arg_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 add_arg_program``
-val two_external_compiler_eval = closed_compiler_eval
+val two_external_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 two_external_program``
 
 Theorem return_uint_result_lengths:
@@ -589,21 +486,21 @@ Proof
   rewrite_tac[two_external_compiler_eval] >> EVAL_TAC
 QED
 
-val storage_read_compiler_eval = closed_compiler_eval
+val storage_read_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 storage_read_program``
-val storage_write_compiler_eval = closed_compiler_eval
+val storage_write_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 storage_write_program``
-val deploy_storage_compiler_eval = closed_compiler_eval
+val deploy_storage_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 deploy_storage_program``
-val event_log_compiler_eval = closed_compiler_eval
+val event_log_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 event_log_program``
-val indexed_event_log_compiler_eval = closed_compiler_eval
+val indexed_event_log_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 indexed_event_log_program``
-val mixed_event_log_compiler_eval = closed_compiler_eval
+val mixed_event_log_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 mixed_event_log_program``
-val hashmap_read_compiler_eval = closed_compiler_eval
+val hashmap_read_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 hashmap_read_program``
-val hashmap_write_compiler_eval = closed_compiler_eval
+val hashmap_write_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 hashmap_write_program``
 
 Theorem storage_read_result_lengths:
@@ -662,7 +559,7 @@ Proof
   rewrite_tac[hashmap_write_compiler_eval] >> EVAL_TAC
 QED
 
-val if_bool_compiler_eval = closed_compiler_eval
+val if_bool_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 if_bool_program``
 Theorem if_bool_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 if_bool_program =
@@ -671,7 +568,7 @@ Proof
   rewrite_tac[if_bool_compiler_eval] >> EVAL_TAC
 QED
 
-val if_join_compiler_eval = closed_compiler_eval
+val if_join_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 if_join_program``
 Theorem if_join_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 if_join_program =
@@ -680,7 +577,7 @@ Proof
   rewrite_tac[if_join_compiler_eval] >> EVAL_TAC
 QED
 
-val for_pass_compiler_eval = closed_compiler_eval
+val for_pass_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 for_pass_program``
 Theorem for_pass_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 for_pass_program =
@@ -689,7 +586,7 @@ Proof
   rewrite_tac[for_pass_compiler_eval] >> EVAL_TAC
 QED
 
-val for_accum_compiler_eval = closed_compiler_eval
+val for_accum_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 for_accum_program``
 Theorem for_accum_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 for_accum_program =
@@ -698,7 +595,7 @@ Proof
   rewrite_tac[for_accum_compiler_eval] >> EVAL_TAC
 QED
 
-val for_continue_compiler_eval = closed_compiler_eval_with_fuels [100000]
+val for_continue_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval_with_fuels [100000]
   ``compile_vyper_o1_fuel_for_testing 100000 for_continue_program``
 Theorem for_continue_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 for_continue_program =
@@ -707,7 +604,7 @@ Proof
   rewrite_tac[for_continue_compiler_eval] >> EVAL_TAC
 QED
 
-val for_break_compiler_eval = closed_compiler_eval
+val for_break_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 for_break_program``
 Theorem for_break_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 for_break_program =
@@ -717,7 +614,7 @@ Proof
 QED
 
 
-val internal_call_compiler_eval = closed_compiler_eval_with_fuels [100000]
+val internal_call_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval_with_fuels [100000]
   ``compile_vyper_o1_fuel_for_testing 100000 internal_call_program``
 Theorem internal_call_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 internal_call_program =
@@ -726,7 +623,7 @@ Proof
   rewrite_tac[internal_call_compiler_eval] >> EVAL_TAC
 QED
 
-val internal_call_arg_compiler_eval = closed_compiler_eval
+val internal_call_arg_compiler_eval = evalCompilerBytecodeLib.closed_compiler_eval
   ``compile_vyper_o1_fuel_for_testing 100000 internal_call_arg_program``
 Theorem internal_call_arg_result_lengths:
   compile_vyper_o1_fuel_for_testing 100000 internal_call_arg_program =
