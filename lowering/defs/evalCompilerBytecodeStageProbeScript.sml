@@ -67,6 +67,10 @@ val first_named_one = computeLib.RESTR_EVAL_CONV
   [``run_configured_fn_passes``] first_named_tm
 val first_configured_tm = find_head ``run_configured_fn_passes``
   (rhs (concl first_named_one))
+val _ =
+  if null (free_vars first_configured_tm) then ()
+  else raise Fail ("first configured call free variables: " ^
+    String.concatWith ", " (map term_to_string (free_vars first_configured_tm)))
 val first_configured_unfold =
   REWR_CONV venomFnScheduleRunnerTheory.run_configured_fn_passes_def
     first_configured_tm
@@ -107,6 +111,89 @@ Theorem first_simplify_cfg_operation_unfold:
       simplify_cfg_iter_with_labels (LENGTH fn.fn_blocks) fn
 Proof
   simp[simplifyCfgDefsTheory.simplify_cfg_fn_with_labels_def]
+QED
+
+val first_coverage_tm = find_head ``ir_supply_covers_unit``
+  (rhs (concl first_configured_unfold))
+val first_coverage_th = computeLib.EVAL_CONV first_coverage_tm
+val _ =
+  if aconv (rhs (concl first_coverage_th)) ``T`` then ()
+  else raise Fail "first configured transaction lacks supply coverage"
+val first_after_coverage =
+  REWRITE_RULE [first_coverage_th] first_configured_unfold
+val first_lookup_tm = find_head ``lookup_unique_function``
+  (rhs (concl first_after_coverage))
+val first_lookup_th = computeLib.EVAL_CONV first_lookup_tm
+val first_transaction_prefix = SIMP_RULE (srw_ss())
+  [first_lookup_th] first_after_coverage
+val first_closed_fold_tm = find_head ``run_configured_fn_pass_fold``
+  (rhs (concl first_transaction_prefix))
+val _ =
+  if null (free_vars first_closed_fold_tm) then ()
+  else raise Fail ("first configured fold free variables: " ^
+    String.concatWith ", " (map term_to_string (free_vars first_closed_fold_tm)))
+
+Theorem exact_first_simplify_cfg_transaction_prefix:
+  ^(concl first_transaction_prefix)
+Proof
+  ACCEPT_TAC first_transaction_prefix
+QED
+
+val first_closed_fold_one =
+  rew_rec venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def
+    first_closed_fold_tm
+val first_closed_dispatcher_tm = find_head ``execute_configured_fn_pass``
+  (rhs (concl first_closed_fold_one))
+val first_closed_dispatcher_unfold =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_simplify_cfg
+    first_closed_dispatcher_tm
+val first_closed_simplify_cfg_tm = find_head ``simplify_cfg_fn_with_labels``
+  (rhs (concl first_closed_dispatcher_unfold))
+val _ =
+  if null (free_vars first_closed_simplify_cfg_tm) then ()
+  else raise Fail "concrete SimplifyCFG operation is not closed"
+val first_closed_simplify_cfg_unfold =
+  REWR_CONV first_simplify_cfg_operation_unfold first_closed_simplify_cfg_tm
+val first_closed_iter_tm = rhs (concl first_closed_simplify_cfg_unfold)
+val first_closed_iter_args = snd (strip_comb first_closed_iter_tm)
+val first_closed_iter_count_tm = hd first_closed_iter_args
+val first_simplify_cfg_operand_tm = List.nth (first_closed_iter_args, 1)
+val _ =
+  if null (free_vars first_simplify_cfg_operand_tm) then ()
+  else raise Fail "first SimplifyCFG operand is not closed"
+
+Definition first_simplify_cfg_operand_def:
+  first_simplify_cfg_operand = ^first_simplify_cfg_operand_tm
+End
+
+val first_closed_iter_count_th =
+  computeLib.EVAL_CONV first_closed_iter_count_tm
+val first_closed_simplify_cfg_count =
+  REWRITE_RULE [first_closed_iter_count_th] first_closed_simplify_cfg_unfold
+val first_named_simplify_cfg_count =
+  REWRITE_RULE [GSYM first_simplify_cfg_operand_def]
+    first_closed_simplify_cfg_count
+
+Theorem exact_first_simplify_cfg_named_count:
+  ^(concl first_named_simplify_cfg_count)
+Proof
+  ACCEPT_TAC first_named_simplify_cfg_count
+QED
+
+val first_closed_iter_counted_tm =
+  rhs (concl first_closed_simplify_cfg_count)
+val first_closed_iter_num_def =
+  CONV_RULE numLib.SUC_TO_NUMERAL_DEFN_CONV
+    (cj 2 simplifyCfgDefsTheory.simplify_cfg_iter_with_labels_def)
+val first_closed_iter_one =
+  REWR_CONV (cj 1 first_closed_iter_num_def) first_closed_iter_counted_tm
+val first_named_iter_one =
+  REWRITE_RULE [GSYM first_simplify_cfg_operand_def] first_closed_iter_one
+
+Theorem exact_first_simplify_cfg_named_iter_one:
+  ^(concl first_named_iter_one)
+Proof
+  ACCEPT_TAC first_named_iter_one
 QED
 
 val _ = export_theory()
