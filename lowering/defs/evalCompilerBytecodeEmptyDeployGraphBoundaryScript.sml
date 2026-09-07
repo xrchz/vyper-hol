@@ -591,4 +591,65 @@ Proof
   ACCEPT_TAC after_concretize
 QED
 
+val fmp_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    fmp_fold_tm
+val fmp_unit_case_tm =
+  find_term is_dispatch_option_case (rhs (concl fmp_fold_one))
+val _ = assert_closed "empty deploy FmpLowering unit option case"
+  fmp_unit_case_tm
+val fmp_unit_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    fmp_unit_case_tm
+val fmp_fold_exposed = PURE_REWRITE_RULE [fmp_unit_case] fmp_fold_one
+val fmp_context_exposed = PURE_REWRITE_RULE [fmp_fold_exposed] after_concretize
+val fmp_dispatch_tm = find_closed_head_arity ``execute_configured_fn_pass`` 5
+  (rhs (concl fmp_context_exposed))
+val (_, fmp_dispatch_args) = strip_comb fmp_dispatch_tm
+val _ =
+  if aconv (List.nth (fmp_dispatch_args, 1))
+       ``CFP_Simple VP_FmpLowering``
+  then () else raise Fail "empty deploy residual dispatcher is not FmpLowering"
+val fmp_policy_tm = List.nth (fmp_dispatch_args, 0)
+val fmp_unit_tm = List.nth (fmp_dispatch_args, 2)
+val fmp_supply_tm = List.nth (fmp_dispatch_args, 3)
+val fmp_function_tm = List.nth (fmp_dispatch_args, 4)
+val fmp_dispatch_unfold =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_fmp
+    fmp_dispatch_tm
+val fmp_lower_tm = find_closed_head_arity ``fmp_lower_function`` 3
+  (rhs (concl fmp_dispatch_unfold))
+val (_, fmp_lower_args) = strip_comb fmp_lower_tm
+val fmp_context_tm = List.nth (fmp_lower_args, 0)
+val _ = assert_closed "empty deploy FMP policy" fmp_policy_tm
+val _ = assert_closed "empty deploy FMP unit" fmp_unit_tm
+val _ = assert_closed "empty deploy FMP context" fmp_context_tm
+val _ = assert_closed "empty deploy FMP supply" fmp_supply_tm
+val _ = assert_closed "empty deploy FMP function" fmp_function_tm
+
+val fmp_analysis_tm = list_mk_comb (``analyze_fmp_context``, [fmp_context_tm])
+val exact_fmp_analysis_raw = computeLib.EVAL_CONV fmp_analysis_tm
+val fmp_analysis_rhs = rhs (concl exact_fmp_analysis_raw)
+val (_, fmp_analysis_result_args) = strip_comb fmp_analysis_rhs
+val _ =
+  if head_is ``SOME`` fmp_analysis_rhs andalso
+     length fmp_analysis_result_args = 1
+  then () else raise Fail "empty deploy FMP analysis did not return SOME"
+val fmp_infos_tm = hd fmp_analysis_result_args
+val _ = assert_closed "empty deploy FMP analysis information" fmp_infos_tm
+
+Definition empty_deploy_fmp_infos_def:
+  empty_deploy_fmp_infos = ^fmp_infos_tm
+End
+
+val exact_fmp_analysis =
+  REWRITE_RULE [GSYM empty_deploy_fmp_infos_def] exact_fmp_analysis_raw
+
+Theorem exact_empty_deploy_fmp_analysis:
+  ^(concl exact_fmp_analysis)
+Proof
+  ACCEPT_TAC exact_fmp_analysis
+QED
+
 val _ = export_theory()
