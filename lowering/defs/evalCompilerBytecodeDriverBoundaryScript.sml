@@ -171,4 +171,70 @@ Proof
   ACCEPT_TAC runtime_data_segment_th
 QED
 
+Theorem runtime_bb0_snoc_shape[local]:
+  ^runtime_bb0_tm =
+    <| bb_label := (^runtime_bb0_tm).bb_label;
+       bb_instructions := FRONT ((^runtime_bb0_tm).bb_instructions) ++
+                          [LAST ((^runtime_bb0_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem runtime_bb1_snoc_shape[local]:
+  ^runtime_bb1_tm =
+    <| bb_label := (^runtime_bb1_tm).bb_label;
+       bb_instructions := FRONT ((^runtime_bb1_tm).bb_instructions) ++
+                          [LAST ((^runtime_bb1_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem runtime_bb2_snoc_shape[local]:
+  ^runtime_bb2_tm =
+    <| bb_label := (^runtime_bb2_tm).bb_label;
+       bb_instructions := FRONT ((^runtime_bb2_tm).bb_instructions) ++
+                          [LAST ((^runtime_bb2_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem runtime_bb0_well_formed[local]:
+  bb_well_formed ^runtime_bb0_tm
+Proof
+  once_rewrite_tac[runtime_bb0_snoc_shape] >>
+  irule runtime_bb_well_formed_snoc >> EVAL_TAC
+QED
+
+Theorem runtime_bb1_well_formed[local]:
+  bb_well_formed ^runtime_bb1_tm
+Proof
+  once_rewrite_tac[runtime_bb1_snoc_shape] >>
+  irule runtime_bb_well_formed_snoc >> EVAL_TAC
+QED
+
+Theorem runtime_bb2_well_formed[local]:
+  bb_well_formed ^runtime_bb2_tm
+Proof
+  once_rewrite_tac[runtime_bb2_snoc_shape] >>
+  irule runtime_bb_well_formed_snoc >> EVAL_TAC
+QED
+
+Theorem runtime_bb0_instructions_wf[local]:
+  EVERY inst_wf (^runtime_bb0_tm).bb_instructions
+Proof
+  EVAL_TAC >> simp[]
+QED
+
+Theorem runtime_bb1_instructions_wf[local]:
+  EVERY inst_wf (^runtime_bb1_tm).bb_instructions
+Proof
+  simp[venomWfTheory.inst_wf_def]
+QED
+
+Theorem runtime_bb2_instructions_wf[local]:
+  EVERY inst_wf (^runtime_bb2_tm).bb_instructions
+Proof
+  EVAL_TAC >> simp[]
+QED
+
 val _ = export_theory()
