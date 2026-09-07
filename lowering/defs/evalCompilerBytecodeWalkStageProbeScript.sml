@@ -349,4 +349,25 @@ Theorem empty_runtime_fmp_bb0_succs_shape[local]:
 Proof
   ACCEPT_TAC fmp_bb0_succs_th
 QED
+Theorem empty_runtime_fmp_bb0_snoc_shape[local]:
+  ^fmp_bb0_tm =
+    <| bb_label := (^fmp_bb0_tm).bb_label;
+       bb_instructions := FRONT ((^fmp_bb0_tm).bb_instructions) ++
+                          [LAST ((^fmp_bb0_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem empty_runtime_fmp_bb0_well_formed[local]:
+  bb_well_formed ^fmp_bb0_tm
+Proof
+  once_rewrite_tac[empty_runtime_fmp_bb0_snoc_shape] >>
+  irule empty_runtime_bb_well_formed_snoc >> EVAL_TAC
+QED
+
+Theorem empty_runtime_fmp_bb0_instructions_wf[local]:
+  EVERY inst_wf (^fmp_bb0_tm).bb_instructions
+Proof
+  EVAL_TAC >> simp[]
+QED
 val _ = export_theory()
