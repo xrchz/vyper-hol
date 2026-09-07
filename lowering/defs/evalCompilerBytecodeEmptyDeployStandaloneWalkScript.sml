@@ -264,4 +264,60 @@ Proof
   ACCEPT_TAC total_fold_named
 QED
 
+val callee_after_total_fold =
+  PURE_REWRITE_RULE [total_fold_named] first_boundary
+val _ =
+  if aconv (lhs (concl callee_after_total_fold)) (lhs (concl first_boundary))
+  then () else raise Fail "standalone callee-first LHS changed during fold integration"
+val callee_tail_reduced = computeLib.RESTR_EVAL_CONV
+  [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+  (rhs (concl callee_after_total_fold))
+val exact_callee_first_result = TRANS callee_after_total_fold callee_tail_reduced
+val _ =
+  if null (free_vars (concl exact_callee_first_result)) andalso
+     aconv (lhs (concl exact_callee_first_result)) (lhs (concl first_boundary)) andalso
+     head_is ``SOME`` (rhs (concl exact_callee_first_result)) andalso
+     not (has_head ``run_configured_fn_pass_fold``
+       (rhs (concl exact_callee_first_result))) andalso
+     not (has_head ``execute_configured_fn_pass``
+       (rhs (concl exact_callee_first_result))) andalso
+     not (has_head ``run_pipeline_stages``
+       (rhs (concl exact_callee_first_result)))
+  then () else raise Fail "standalone callee-first result is malformed"
+
+Theorem exact_empty_deploy_standalone_callee_first_result:
+  ^(concl exact_callee_first_result)
+Proof
+  ACCEPT_TAC exact_callee_first_result
+QED
+
+val final_pair_tm = optionSyntax.dest_some (rhs (concl exact_callee_first_result))
+val (final_compilation_unit_tm, final_supply_tm) = pairSyntax.dest_pair final_pair_tm
+val _ = assert_closed "standalone final compilation unit" final_compilation_unit_tm
+val _ = assert_closed "standalone final supply" final_supply_tm
+val _ =
+  if type_of final_compilation_unit_tm = ``:compilation_unit`` then ()
+  else raise Fail "standalone final payload is not a compilation_unit"
+
+Definition empty_deploy_final_compilation_unit_def:
+  empty_deploy_final_compilation_unit = ^final_compilation_unit_tm
+End
+
+val exact_callee_first_result_named =
+  REWRITE_RULE [GSYM empty_deploy_final_compilation_unit_def]
+    exact_callee_first_result
+val _ =
+  if null (free_vars (concl exact_callee_first_result_named)) andalso
+     head_is ``SOME`` (rhs (concl exact_callee_first_result_named)) andalso
+     aconv (fst (pairSyntax.dest_pair
+       (optionSyntax.dest_some (rhs (concl exact_callee_first_result_named)))))
+       ``empty_deploy_final_compilation_unit``
+  then () else raise Fail "named standalone callee-first result is malformed"
+
+Theorem exact_empty_deploy_standalone_callee_first_result_named:
+  ^(concl exact_callee_first_result_named)
+Proof
+  ACCEPT_TAC exact_callee_first_result_named
+QED
+
 val _ = export_theory()
