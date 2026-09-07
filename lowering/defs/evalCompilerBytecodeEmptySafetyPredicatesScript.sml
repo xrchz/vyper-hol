@@ -323,6 +323,22 @@ Proof
   cheat
 QED
 
+Theorem empty_runtime_final_block0_defs_before_uses[local]:
+  block_defs_before_uses empty_runtime_final_block0
+Proof
+  rewrite_tac[block_defs_before_uses_def] >>
+  rpt strip_tac >>
+  gvs[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact]
+  >- (qexistsl [`0`, `2`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact])
+  >- (qexistsl [`1`, `2`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact])
+  >- (qexistsl [`2`, `3`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact])
+  >> qexistsl [`3`, `4`] >>
+  simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact]
+QED
+
 Theorem empty_runtime_final_mem_ok:
   (K T) empty_runtime_final_unit.cu_context
 Proof
