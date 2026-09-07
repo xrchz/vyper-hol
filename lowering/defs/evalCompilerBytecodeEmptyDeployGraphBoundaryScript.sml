@@ -532,4 +532,63 @@ Proof
   ACCEPT_TAC concretize_function_result
 QED
 
+val concretize_dispatch_with_function =
+  PURE_REWRITE_RULE [concretize_function_result] concretize_dispatch_unfold
+val exact_concretize_dispatch =
+  CONV_RULE
+    (RAND_CONV
+      (computeLib.RESTR_EVAL_CONV [``concretize_function_eval``]))
+    concretize_dispatch_with_function
+val exact_concretize_dispatch_rhs = rhs (concl exact_concretize_dispatch)
+val _ =
+  if head_is ``SOME`` exact_concretize_dispatch_rhs andalso
+     null (free_vars exact_concretize_dispatch_rhs) andalso
+     not (has_head ``concretize_function_eval`` exact_concretize_dispatch_rhs)
+  then () else raise Fail
+    "empty deploy ConcretizeMemLoc dispatcher result is not literal SOME"
+
+Theorem exact_empty_deploy_concretize_dispatch:
+  ^(concl exact_concretize_dispatch)
+Proof
+  ACCEPT_TAC exact_concretize_dispatch
+QED
+
+val concretize_dispatch_case_tm =
+  find_term
+    (fn t => head_is ``option_CASE`` t andalso
+      can (find_term (fn u => aconv u concretize_dispatch_tm)) t)
+    (rhs (concl concretize_context_exposed))
+val _ = assert_closed "empty deploy ConcretizeMemLoc result option case"
+  concretize_dispatch_case_tm
+val concretize_dispatch_case_rewritten =
+  REWRITE_CONV [exact_concretize_dispatch] concretize_dispatch_case_tm
+val concretize_dispatch_case_reduced =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    (rhs (concl concretize_dispatch_case_rewritten))
+val concretize_dispatch_case =
+  TRANS concretize_dispatch_case_rewritten concretize_dispatch_case_reduced
+val after_concretize =
+  PURE_REWRITE_RULE [concretize_dispatch_case] concretize_context_exposed
+val fmp_fold_tm = find_closed_head_arity ``run_configured_fn_pass_fold`` 7
+  (rhs (concl after_concretize))
+val (_, fmp_fold_args) = strip_comb fmp_fold_tm
+val (fmp_passes, _) = listSyntax.dest_list (List.nth (fmp_fold_args, 2))
+val _ =
+  if not (null fmp_passes) andalso
+     aconv (hd fmp_passes) ``CFP_Simple VP_FmpLowering``
+  then () else raise Fail
+    "empty deploy post-ConcretizeMemLoc fold is not headed by FmpLowering"
+val _ =
+  if aconv (lhs (concl after_concretize)) (lhs (concl after_lower_dload)) andalso
+     null (free_vars (rhs (concl after_concretize)))
+  then () else raise Fail
+    "empty deploy post-ConcretizeMemLoc boundary is malformed"
+
+Theorem exact_empty_deploy_after_concretize_to_fmp_lowering:
+  ^(concl after_concretize)
+Proof
+  ACCEPT_TAC after_concretize
+QED
+
 val _ = export_theory()
