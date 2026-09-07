@@ -1,9 +1,9 @@
 [holbuild]
-minimum_version = "0.10.3"
+minimum_version = "0.11.2"
 
 [project]
 name = "vyper-hol"
-version = "0.2.2"
+version = "0.2.3"
 
 [build]
 roots = ["vyperHolScript.sml"]
