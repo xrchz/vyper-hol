@@ -63,6 +63,29 @@ Proof
   EVAL_TAC
 QED
 
+Theorem fmp_return_abi_matches_no_returns:
+  fn_return_insts fn = [] /\
+  (fn.fn_call_abi.ica_has_memory_return_buffer = SOME T ==>
+   fn_memory_return_buffer_param fn <> NONE) ==>
+  fmp_return_abi_matches sig fn
+Proof
+  simp[fmp_return_abi_matches_def]
+QED
+
+Theorem fmp_lowered_return_layout_wf_no_returns:
+  fn_return_insts fn = [] ==>
+  fmp_lowered_return_layout_wf sig fn
+Proof
+  simp[fmp_lowered_return_layout_wf_def]
+QED
+
+Theorem fmp_arity_probe_mismatched_rejected:
+  ~fmp_return_abi_matches fmp_arity_probe_publishing_sig
+    fmp_arity_probe_mismatched_fn
+Proof
+  EVAL_TAC
+QED
+
 Theorem call_abi_matches_fn_iff:
   call_abi_matches_fn fn <=>
   ?sig. fn.fn_fmp_signature = SOME sig /\

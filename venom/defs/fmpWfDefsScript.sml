@@ -56,13 +56,18 @@ End
 
 Definition fmp_return_abi_matches_def:
   fmp_return_abi_matches sig fn <=>
-    case fmp_unique_return_arity sig fn of
-      NONE => F
-    | SOME n =>
-        (fn.fn_call_abi.ica_user_return_count = NONE \/
-         fn.fn_call_abi.ica_user_return_count = SOME n) /\
+    case fn_return_insts fn of
+      [] =>
         (fn.fn_call_abi.ica_has_memory_return_buffer = SOME T ==>
          fn_memory_return_buffer_param fn <> NONE)
+    | _ =>
+        case fmp_unique_return_arity sig fn of
+          NONE => F
+        | SOME n =>
+            (fn.fn_call_abi.ica_user_return_count = NONE \/
+             fn.fn_call_abi.ica_user_return_count = SOME n) /\
+            (fn.fn_call_abi.ica_has_memory_return_buffer = SOME T ==>
+             fn_memory_return_buffer_param fn <> NONE)
 End
 
 Definition fmp_invoke_output_arity_ok_def:
@@ -78,11 +83,13 @@ End
 
 Definition fmp_lowered_return_layout_wf_def:
   fmp_lowered_return_layout_wf sig fn <=>
-    case fmp_expected_user_return_arity sig fn of
-      NONE => F
-    | SOME n =>
-        EVERY (lowered_return_inst_layout_wf sig.fms_publishes n)
-          (fn_return_insts fn)
+    case fn_return_insts fn of
+      [] => T
+    | returns =>
+        case fmp_expected_user_return_arity sig fn of
+          NONE => F
+        | SOME n =>
+            EVERY (lowered_return_inst_layout_wf sig.fms_publishes n) returns
 End
 
 (* This is the non-recursive part of validating a seal against current syntax.
