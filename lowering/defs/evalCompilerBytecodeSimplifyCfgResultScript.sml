@@ -261,6 +261,58 @@ Theorem exact_post_dret_discard_runner_result:
 Proof
   ACCEPT_TAC exact_discard_runner_result
 QED
+
+val _ =
+  if aconv (lhs (concl exact_post_dret_discard_runner_result))
+      (rhs (concl exact_post_dret_closed_discard_runner_boundary))
+  then ()
+  else raise Fail "Discard result no longer matches the normalized boundary"
+val exact_pre_walk_literal =
+  CONV_RULE (RAND_CONV (REWR_CONV exact_post_dret_discard_runner_result))
+    exact_post_dret_closed_discard_runner_boundary
+val exact_pre_walk_rhs = rhs (concl exact_pre_walk_literal)
+val _ =
+  if head_is ``SOME`` exact_pre_walk_rhs then ()
+  else raise Fail "composed pre-walk boundary is not literal SOME"
+val (_, [pre_walk_pair_tm]) = strip_comb exact_pre_walk_rhs
+val (pre_walk_unit_tm, pre_walk_supply_tm) = pairSyntax.dest_pair pre_walk_pair_tm
+val _ =
+  if null (free_vars pre_walk_unit_tm) andalso
+     null (free_vars pre_walk_supply_tm)
+  then ()
+  else raise Fail "pre-walk snapshot payload is not closed"
+
+Definition empty_runtime_pre_walk_unit_def:
+  empty_runtime_pre_walk_unit = ^pre_walk_unit_tm
+End
+
+Definition empty_runtime_pre_walk_supply_def:
+  empty_runtime_pre_walk_supply = ^pre_walk_supply_tm
+End
+
+val named_pre_walk_result =
+  CONV_RULE
+    (RAND_CONV
+      (PURE_REWRITE_CONV
+        [GSYM empty_runtime_pre_walk_unit_def,
+         GSYM empty_runtime_pre_walk_supply_def]))
+    exact_pre_walk_literal
+val _ =
+  if aconv (lhs (concl named_pre_walk_result))
+      (lhs (concl exact_pre_walk_literal))
+  then ()
+  else raise Fail "naming the pre-walk payload changed the exact LHS"
+val _ =
+  if aconv (rhs (concl named_pre_walk_result))
+      ``SOME (empty_runtime_pre_walk_unit, empty_runtime_pre_walk_supply)``
+  then ()
+  else raise Fail "named pre-walk result has the wrong RHS"
+
+Theorem exact_empty_runtime_pre_walk_result:
+  ^(concl named_pre_walk_result)
+Proof
+  ACCEPT_TAC named_pre_walk_result
+QED
 val exact_first_named_result =
   SIMP_RULE (srw_ss ()) [exact_first_configured_simplify_cfg_transaction]
     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_named_context
