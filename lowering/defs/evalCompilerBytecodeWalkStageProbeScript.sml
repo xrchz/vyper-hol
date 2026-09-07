@@ -446,6 +446,155 @@ val after_fmp_rejected_closed =
       [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]))
     after_fmp_rejected
 
+
+val first_make_ssa_dispatch_tm =
+  lhs (concl evalCompilerBytecodeMakeSSAResultTheory.exact_empty_runtime_first_make_ssa_result)
+val (_, first_make_ssa_dispatch_args) = strip_comb first_make_ssa_dispatch_tm
+val pre_make_ssa_function_tm = List.nth (first_make_ssa_dispatch_args, 4)
+val (_, concretize_dispatch_args_for_provenance) =
+  strip_comb (lhs (concl exact_concretize_dispatch))
+val post_lower_dload_function_tm =
+  List.nth (concretize_dispatch_args_for_provenance, 4)
+
+fun eval_cfg_projection label fn_tm =
+  let
+    val _ = assert_closed (label ^ " function") fn_tm
+    fun normalize th =
+      CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss ()) [])) th
+    val labels = normalize (computeLib.EVAL_CONV
+      ``MAP bb_label (^fn_tm).fn_blocks``)
+    val succs = normalize (computeLib.EVAL_CONV
+      ``MAP bb_succs (^fn_tm).fn_blocks``)
+    val closed = normalize (computeLib.EVAL_CONV ``fn_succs_closed ^fn_tm``)
+  in
+    (labels, succs, closed)
+  end
+
+
+fun first_unit_function label unit_tm =
+  let
+    val functions_th = computeLib.EVAL_CONV
+      ``(^unit_tm).cu_context.ctx_functions``
+    val (functions, _) = listSyntax.dest_list (rhs (concl functions_th))
+  in
+    if length functions = 1 then hd functions
+    else raise Fail (label ^ " does not contain exactly one function")
+  end
+
+val raw_pre_walk_call_tm =
+  lhs (concl evalCompilerBytecodeSimplifyCfgResultTheory.exact_empty_runtime_pre_walk_result)
+val (_, raw_pre_walk_call_args) = strip_comb raw_pre_walk_call_tm
+val raw_runtime_unit_tm = List.nth (raw_pre_walk_call_args, 2)
+val raw_runtime_function_tm =
+  first_unit_function "raw runtime unit" raw_runtime_unit_tm
+val pre_walk_function_tm = first_unit_function "pre-walk unit"
+  ``empty_runtime_pre_walk_unit``
+val selected_walk_function_tm = first_unit_function "selected walk unit"
+  ``empty_runtime_walk_unit``
+
+val (raw_runtime_labels, raw_runtime_succs, raw_runtime_closed) =
+  eval_cfg_projection "raw runtime" raw_runtime_function_tm
+val (pre_walk_labels, pre_walk_succs, pre_walk_closed) =
+  eval_cfg_projection "post-pre-walk" pre_walk_function_tm
+val (selected_walk_labels, selected_walk_succs, selected_walk_closed) =
+  eval_cfg_projection "selected walk" selected_walk_function_tm
+val raw_runtime_blocks = fst (listSyntax.dest_list
+  (rhs (concl (computeLib.EVAL_CONV ``(^raw_runtime_function_tm).fn_blocks``))))
+val pre_walk_blocks = fst (listSyntax.dest_list
+  (rhs (concl (computeLib.EVAL_CONV ``(^pre_walk_function_tm).fn_blocks``))))
+val selected_walk_blocks = fst (listSyntax.dest_list
+  (rhs (concl (computeLib.EVAL_CONV ``(^selected_walk_function_tm).fn_blocks``))))
+val _ =
+  if map length [raw_runtime_blocks, pre_walk_blocks, selected_walk_blocks] = [3,1,1]
+  then ()
+  else raise Fail "expected CFG block-count transition 3 -> 1 -> 1"
+val (pre_make_ssa_labels, pre_make_ssa_succs, pre_make_ssa_closed) =
+  eval_cfg_projection "pre-MakeSSA" pre_make_ssa_function_tm
+val (post_make_ssa_labels, post_make_ssa_succs, post_make_ssa_closed) =
+  eval_cfg_projection "post-MakeSSA" (List.nth (lower_dispatch_args, 4))
+val (post_lower_dload_labels, post_lower_dload_succs, post_lower_dload_closed) =
+  eval_cfg_projection "post-LowerDload" post_lower_dload_function_tm
+val (post_concretize_labels, post_concretize_succs, post_concretize_closed) =
+  eval_cfg_projection "post-ConcretizeMemLoc" fmp_function_tm
+
+val first_simplify_cfg_input_tm = ``first_simplify_cfg_operand``
+val first_simplify_cfg_output_tm = ``first_simplify_cfg_round1_fn``
+val (first_simplify_input_labels, first_simplify_input_succs,
+     first_simplify_input_closed) =
+  eval_cfg_projection "first SimplifyCFG input" first_simplify_cfg_input_tm
+val (first_simplify_output_labels, first_simplify_output_succs,
+     first_simplify_output_closed) =
+  eval_cfg_projection "first SimplifyCFG output" first_simplify_cfg_output_tm
+val first_simplify_input_blocks = fst (listSyntax.dest_list
+  (rhs (concl (computeLib.EVAL_CONV
+    ``first_simplify_cfg_operand.fn_blocks``))))
+val first_simplify_output_blocks = fst (listSyntax.dest_list
+  (rhs (concl (computeLib.EVAL_CONV
+    ``first_simplify_cfg_round1_fn.fn_blocks``))))
+val _ =
+  if map length [first_simplify_input_blocks, first_simplify_output_blocks] = [3,1]
+  then ()
+  else raise Fail "first SimplifyCFG does not exhibit the 3 -> 1 block loss"
+
+Theorem exact_empty_runtime_first_simplify_cfg_provenance:
+  ^(concl first_simplify_input_labels) /\
+  ^(concl first_simplify_input_succs) /\
+  ^(concl first_simplify_output_labels) /\
+  ^(concl first_simplify_output_succs)
+Proof
+  ACCEPT_TAC (LIST_CONJ
+    [first_simplify_input_labels, first_simplify_input_succs,
+     first_simplify_output_labels, first_simplify_output_succs])
+QED
+Theorem exact_empty_runtime_walk_selection_cfg_provenance:
+  ^(concl raw_runtime_labels) /\
+  ^(concl raw_runtime_succs) /\
+  ^(concl pre_walk_labels) /\
+  ^(concl pre_walk_succs) /\
+  ^(concl selected_walk_labels) /\
+  ^(concl selected_walk_succs)
+Proof
+  ACCEPT_TAC (LIST_CONJ
+    [raw_runtime_labels, raw_runtime_succs,
+     pre_walk_labels, pre_walk_succs,
+     selected_walk_labels, selected_walk_succs])
+QED
+
+Theorem exact_empty_runtime_pre_make_ssa_cfg_projection:
+  ^(concl pre_make_ssa_labels) /\
+  ^(concl pre_make_ssa_succs) /\
+  ^(concl pre_make_ssa_closed)
+Proof
+  ACCEPT_TAC (LIST_CONJ [pre_make_ssa_labels, pre_make_ssa_succs,
+                         pre_make_ssa_closed])
+QED
+
+Theorem exact_empty_runtime_post_make_ssa_cfg_projection:
+  ^(concl post_make_ssa_labels) /\
+  ^(concl post_make_ssa_succs) /\
+  ^(concl post_make_ssa_closed)
+Proof
+  ACCEPT_TAC (LIST_CONJ [post_make_ssa_labels, post_make_ssa_succs,
+                         post_make_ssa_closed])
+QED
+
+Theorem exact_empty_runtime_post_lower_dload_cfg_projection:
+  ^(concl post_lower_dload_labels) /\
+  ^(concl post_lower_dload_succs) /\
+  ^(concl post_lower_dload_closed)
+Proof
+  ACCEPT_TAC (LIST_CONJ [post_lower_dload_labels, post_lower_dload_succs,
+                         post_lower_dload_closed])
+QED
+
+Theorem exact_empty_runtime_post_concretize_cfg_projection:
+  ^(concl post_concretize_labels) /\
+  ^(concl post_concretize_succs) /\
+  ^(concl post_concretize_closed)
+Proof
+  ACCEPT_TAC (LIST_CONJ [post_concretize_labels, post_concretize_succs,
+                         post_concretize_closed])
+QED
 Theorem exact_empty_runtime_after_fmp_lowering_rejected:
   ^(concl after_fmp_rejected_closed)
 Proof
