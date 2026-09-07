@@ -142,6 +142,40 @@ Proof
   ACCEPT_TAC closed_runner_boundary
 QED
 
+val dret_runner_one =
+  FIRST_CONV
+    [REWR_CONV (cj 1 venomPipelineRunnerTheory.run_pipeline_stages_def),
+     REWR_CONV (cj 2 venomPipelineRunnerTheory.run_pipeline_stages_def)]
+    closed_runner_tm
+val dret_stage_tm = find_head ``run_pipeline_stage``
+  (rhs (concl dret_runner_one))
+val _ =
+  if null (free_vars dret_stage_tm) then ()
+  else raise Fail "Dret stage call is not closed"
+val exact_dret_stage_result = computeLib.EVAL_CONV dret_stage_tm
+val post_dret_runner = SIMP_RULE (srw_ss ()) [exact_dret_stage_result]
+  dret_runner_one
+val post_dret_boundary = SIMP_RULE (srw_ss ()) [post_dret_runner]
+  closed_runner_boundary
+val _ =
+  if null (free_vars (concl post_dret_boundary)) then ()
+  else raise Fail "post-Dret runtime boundary is not closed"
+val _ =
+  if has_head ``VP_DretDesugar`` (rhs (concl post_dret_boundary)) then
+    raise Fail "DretDesugar remained after exact stage evaluation"
+  else ()
+val _ =
+  if has_head ``PS_DiscardAnalyses`` (rhs (concl post_dret_boundary)) andalso
+     has_head ``run_pipeline_stages`` (rhs (concl post_dret_boundary))
+  then ()
+  else raise Fail "post-Dret boundary lacks the later residual pipeline"
+
+Theorem exact_post_dret_desugar_runtime_boundary:
+  ^(concl post_dret_boundary)
+Proof
+  ACCEPT_TAC post_dret_boundary
+QED
+
 val exact_first_named_result =
   SIMP_RULE (srw_ss ()) [exact_first_configured_simplify_cfg_transaction]
     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_named_context
