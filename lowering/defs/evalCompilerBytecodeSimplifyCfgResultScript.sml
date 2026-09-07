@@ -11,39 +11,68 @@ val exact_first_simplify_cfg_literal =
     [evalCompilerBytecodeStageProbeTheory.first_simplify_cfg_operand_def]
     evalCompilerBytecodeRound2ResultTheory.exact_first_simplify_cfg_fn_with_labels
 
-val exact_first_dispatcher_result =
-  SIMP_RULE (srw_ss ()) [exact_first_simplify_cfg_literal]
-    evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_dispatcher_context
+val exact_first_closed_fold_direct =
+  SIMP_RULE (srw_ss ())
+    [venomPassDispatcherTheory.execute_configured_fn_pass_simplify_cfg,
+     exact_first_simplify_cfg_literal]
+    evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_closed_fold_context
+val _ =
+  if null (free_vars (concl exact_first_closed_fold_direct)) then ()
+  else raise Fail "direct SimplifyCFG fold result is not closed"
 val _ =
   if has_head ``simplify_cfg_fn_with_labels``
-      (concl exact_first_dispatcher_result)
-  then raise Fail "SimplifyCFG remained under dispatcher context"
+      (concl exact_first_closed_fold_direct)
+  then raise Fail "SimplifyCFG remained under direct closed fold context"
   else ()
 
-Theorem exact_first_simplify_cfg_dispatcher_result:
-  ^(concl exact_first_dispatcher_result)
-Proof
-  ACCEPT_TAC exact_first_dispatcher_result
-QED
-
-val exact_first_fold_result =
-  SIMP_RULE (srw_ss ()) [exact_first_simplify_cfg_dispatcher_result]
-    evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_fold_context
-
-Theorem exact_first_simplify_cfg_fold_result:
-  ^(concl exact_first_fold_result)
-Proof
-  ACCEPT_TAC exact_first_fold_result
-QED
-
 val exact_first_transaction_result =
-  SIMP_RULE (srw_ss ()) [exact_first_simplify_cfg_fold_result]
+  SIMP_RULE (srw_ss ()) [exact_first_closed_fold_direct]
     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_transaction_prefix
+val _ =
+  if null (free_vars (concl exact_first_transaction_result)) then ()
+  else raise Fail "exact first configured SimplifyCFG transaction is not closed"
+val _ =
+  if has_head ``simplify_cfg_fn_with_labels``
+      (concl exact_first_transaction_result)
+  then raise Fail "SimplifyCFG remained under exact configured transaction"
+  else ()
 
 Theorem exact_first_configured_simplify_cfg_transaction:
   ^(concl exact_first_transaction_result)
 Proof
   ACCEPT_TAC exact_first_transaction_result
+QED
+
+val post_first_simplify_cfg_runtime_pre_one =
+  SIMP_RULE (srw_ss ())
+    [evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_stage_context,
+     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_mapped_context,
+     evalCompilerBytecodeStageProbeTheory.exact_first_simplify_cfg_named_context,
+     exact_first_configured_simplify_cfg_transaction]
+    evalCompilerBytecodeStageProbeTheory.exact_runtime_pre_one_context
+val _ =
+  if aconv (concl post_first_simplify_cfg_runtime_pre_one)
+      (concl evalCompilerBytecodeStageProbeTheory.exact_runtime_pre_one_context)
+  then raise Fail "closed transaction rewrite did not reach runtime pre-walk equation"
+  else ()
+val _ =
+  if null (free_vars (concl post_first_simplify_cfg_runtime_pre_one)) then ()
+  else raise Fail "post-SimplifyCFG runtime pre-walk equation is not closed"
+val _ =
+  if has_head ``simplify_cfg_fn_with_labels``
+      (concl post_first_simplify_cfg_runtime_pre_one)
+  then raise Fail "first SimplifyCFG remained in runtime pre-walk equation"
+  else ()
+val _ =
+  if has_head ``run_pipeline_stages``
+      (concl post_first_simplify_cfg_runtime_pre_one)
+  then ()
+  else raise Fail "remaining pipeline missing after first SimplifyCFG transaction"
+
+Theorem exact_post_first_simplify_cfg_runtime_pre_one:
+  ^(concl post_first_simplify_cfg_runtime_pre_one)
+Proof
+  ACCEPT_TAC post_first_simplify_cfg_runtime_pre_one
 QED
 
 val exact_first_named_result =
@@ -75,5 +104,7 @@ Theorem exact_first_simplify_cfg_stage_result:
 Proof
   ACCEPT_TAC exact_first_stage_result
 QED
+
+
 
 val _ = export_theory()

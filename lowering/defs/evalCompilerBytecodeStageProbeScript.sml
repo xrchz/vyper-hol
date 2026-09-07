@@ -171,6 +171,13 @@ val first_closed_dispatcher_tm = find_head ``execute_configured_fn_pass``
 val first_closed_dispatcher_unfold =
   REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_simplify_cfg
     first_closed_dispatcher_tm
+
+Theorem exact_first_simplify_cfg_closed_fold_context:
+  ^(concl first_closed_fold_one)
+Proof
+  ACCEPT_TAC first_closed_fold_one
+QED
+
 val first_closed_simplify_cfg_tm = find_head ``simplify_cfg_fn_with_labels``
   (rhs (concl first_closed_dispatcher_unfold))
 val _ =
