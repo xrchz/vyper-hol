@@ -339,6 +339,32 @@ Proof
   simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact]
 QED
 
+Theorem empty_runtime_final_block1_defs_before_uses[local]:
+  block_defs_before_uses empty_runtime_final_block1
+Proof
+  rewrite_tac[block_defs_before_uses_def] >>
+  rpt strip_tac >>
+  gvs[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact]
+  >- (qexistsl [`0`, `1`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact])
+  >- (qexistsl [`2`, `3`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact])
+  >> qexistsl [`1`, `3`] >>
+  simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact]
+QED
+
+Theorem empty_runtime_final_block2_defs_before_uses[local]:
+  block_defs_before_uses empty_runtime_final_block2
+Proof
+  rewrite_tac[block_defs_before_uses_def] >>
+  rpt strip_tac >>
+  gvs[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact]
+  >- (qexistsl [`1`, `2`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact])
+  >> qexistsl [`0`, `2`] >>
+  simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact]
+QED
+
 Theorem empty_runtime_final_mem_ok:
   (K T) empty_runtime_final_unit.cu_context
 Proof
