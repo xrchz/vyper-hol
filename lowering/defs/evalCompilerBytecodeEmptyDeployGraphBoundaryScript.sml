@@ -652,4 +652,11 @@ Proof
   ACCEPT_TAC exact_fmp_analysis
 QED
 
+Theorem exact_empty_deploy_fmp_info_valid:
+  fmp_info_valid ^fmp_context_tm empty_deploy_fmp_infos
+Proof
+  irule fmpAnalysisPropsTheory.analyze_fmp_context_valid >>
+  ACCEPT_TAC exact_empty_deploy_fmp_analysis
+QED
+
 val _ = export_theory()
