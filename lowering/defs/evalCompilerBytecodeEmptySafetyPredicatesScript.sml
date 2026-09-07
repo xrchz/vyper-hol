@@ -230,6 +230,19 @@ Proof
        evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
 QED
 
+Theorem empty_runtime_final_ssa_form[local]:
+  ssa_form empty_runtime_final_fn
+Proof
+  simp[venomWfTheory.ssa_form_def,
+       venomInstTheory.fn_insts_def,
+       venomInstTheory.fn_insts_blocks_def,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block0_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block1_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block2_instructions_exact,
+       evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
+QED
+
 Theorem empty_runtime_final_codegen_ready:
   codegen_ready empty_runtime_final_unit.cu_context
 Proof
