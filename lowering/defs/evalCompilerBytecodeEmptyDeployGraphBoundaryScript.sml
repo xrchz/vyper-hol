@@ -872,4 +872,52 @@ QED
 
 
 
+Theorem exact_empty_deploy_fmp_with_info:
+  fmp_lower_function_with_info empty_deploy_fmp_infos ^fmp_context_tm
+    ^fmp_supply_tm ^fmp_function_tm =
+  SOME (empty_deploy_fmp_sealed_function,^fmp_supply_tm)
+Proof
+  simp[fmpLowerDefsTheory.fmp_lower_function_with_info_def,
+       exact_empty_deploy_fmp_info_valid,
+       exact_empty_deploy_fmp_lower_input,
+       exact_empty_deploy_fmp_bottom_lookup,
+       exact_empty_deploy_fmp_reclaim_result,
+       exact_empty_deploy_fmp_reclaim_input,
+       exact_empty_deploy_fmp_checked_seal,
+       fmpAnalysisDefsTheory.fmp_info_bottom_def]
+QED
+
+val exact_fmp_with_info_normalized =
+  SIMP_RULE (srw_ss ()) [] exact_empty_deploy_fmp_with_info
+
+Theorem exact_empty_deploy_fmp_lower:
+  fmp_lower_function ^fmp_context_tm ^fmp_supply_tm ^fmp_function_tm =
+  SOME (empty_deploy_fmp_sealed_function,^fmp_supply_tm)
+Proof
+  simp[fmpLowerDefsTheory.fmp_lower_function_def,
+       exact_empty_deploy_fmp_analysis,
+       exact_fmp_with_info_normalized]
+QED
+
+val fmp_dispatch_with_lower =
+  PURE_REWRITE_RULE [exact_empty_deploy_fmp_lower] fmp_dispatch_unfold
+val exact_fmp_dispatch =
+  CONV_RULE
+    (RAND_CONV
+      (computeLib.RESTR_EVAL_CONV [``fmp_lower_function``]))
+    fmp_dispatch_with_lower
+val exact_fmp_dispatch_rhs = rhs (concl exact_fmp_dispatch)
+val _ =
+  if head_is ``SOME`` exact_fmp_dispatch_rhs andalso
+     null (free_vars exact_fmp_dispatch_rhs) andalso
+     not (has_head ``fmp_lower_function`` exact_fmp_dispatch_rhs)
+  then () else raise Fail
+    "empty deploy FmpLowering dispatcher result is not literal SOME"
+
+Theorem exact_empty_deploy_fmp_dispatch:
+  ^(concl exact_fmp_dispatch)
+Proof
+  ACCEPT_TAC exact_fmp_dispatch
+QED
+
 val _ = export_theory()
