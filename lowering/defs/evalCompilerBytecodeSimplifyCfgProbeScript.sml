@@ -123,4 +123,49 @@ Proof
   ACCEPT_TAC first_removed_blocks_th
 QED
 
+fun eval_first_phi_repair bb =
+  let
+    val label_th =
+      computeLib.EVAL_CONV (mk_comb (``\bb : basic_block. bb.bb_label``, bb))
+    val label_tm = rhs (concl label_th)
+    val preds_tm =
+      list_mk_comb (``pred_labels``, [``first_simplify_cfg_removed``, label_tm])
+    val preds_th =
+      SIMP_CONV (srw_ss ())
+        [first_simplify_cfg_removed_eq_operand,
+         first_simplify_cfg_operand_def,
+         cfgTransformTheory.pred_labels_def,
+         cfgTransformTheory.block_preds_def,
+         venomInstTheory.bb_succs_def,
+         venomInstTheory.get_successors_def,
+         venomInstTheory.is_terminator_def,
+         venomStateTheory.get_label_def]
+        preds_tm
+    val repair_tm =
+      list_mk_comb (``fix_phis_in_block``, [rhs (concl preds_th), bb])
+    val repair_th = computeLib.EVAL_CONV repair_tm
+  in
+    [preds_th, repair_th]
+  end
+
+val first_phi_repair_ths =
+  List.concat (map eval_first_phi_repair first_removed_blocks)
+val first_fix_all_phis_th =
+  SIMP_CONV (srw_ss ())
+    (simplifyCfgDefsTheory.fix_all_phis_def ::
+     first_simplify_cfg_removed_blocks :: first_phi_repair_ths)
+    ``fix_all_phis first_simplify_cfg_removed``
+
+val first_phi_fixed_tm = rhs (concl first_fix_all_phis_th)
+Definition first_simplify_cfg_phi_fixed_def:
+  first_simplify_cfg_phi_fixed = ^first_phi_fixed_tm
+End
+
+Theorem exact_first_fix_all_phis:
+  fix_all_phis first_simplify_cfg_removed = first_simplify_cfg_phi_fixed
+Proof
+  simp[first_simplify_cfg_phi_fixed_def] >>
+  ACCEPT_TAC first_fix_all_phis_th
+QED
+
 val _ = export_theory()
