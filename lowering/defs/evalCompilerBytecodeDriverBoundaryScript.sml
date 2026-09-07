@@ -345,4 +345,20 @@ val _ =
        ``unit_wf ^runtime_input_unit_tm``
   then ()
   else raise Fail "exact runtime unit_wf guard has unexpected conclusion"
+
+Theorem exact_empty_runtime_raw_static_inputs_wf:
+  raw_static_inputs_wf (^runtime_input_unit_tm).cu_context
+Proof
+  simp[staticLayoutWfTheory.raw_static_inputs_wf_def,
+       staticLayoutDefsTheory.reserved_intervals_wf_def,
+       staticLayoutWfTheory.forced_positions_wf_def,
+       runtime_context_inst_ids_distinct,
+       runtime_functions_shape]
+QED
+
+val _ =
+  if aconv (concl exact_empty_runtime_raw_static_inputs_wf)
+       ``raw_static_inputs_wf (^runtime_input_unit_tm).cu_context``
+  then ()
+  else raise Fail "exact runtime raw-static guard has unexpected conclusion"
 val _ = export_theory()
