@@ -1146,32 +1146,14 @@ Proof
 QED
 
 
-Theorem partition_mem_pair[local]:
-  !xs yes no.
-    PARTITION pred xs = (yes,no) ==>
-    (MEM item yes \/ MEM item no <=> MEM item xs)
-Proof
-  rpt strip_tac >>
-  qpat_x_assum `PARTITION pred xs = (yes,no)` (assume_tac o GSYM) >>
-  fs[sortingTheory.PARTITION_DEF] >>
-  drule sortingTheory.PART_MEM >>
-  simp[]
-QED
-
 Theorem fix_phis_in_block_invoke_labels[local]:
   MEM callee
     (simplify_cfg_block_invoke_labels (fix_phis_in_block preds bb)) <=>
   MEM callee (simplify_cfg_block_invoke_labels bb)
 Proof
   simp[simplify_cfg_block_invoke_labels_def, fix_phis_in_block_def,
-       fcgBridgeTheory.mem_get_invoke_targets] >>
-  pairarg_tac >>
-  `!item. MEM item phis \/ MEM item non_phis <=>
-          MEM item (MAP (fix_phi_inst preds) bb.bb_instructions)` by
-    (gen_tac >> drule partition_mem_pair >> simp[]) >>
-  qpat_assum `PARTITION _ _ = _` (fn th => rewrite_tac[th]) >>
-  qpat_x_assum `PARTITION _ _ = _` kall_tac >>
-  gvs[MEM_APPEND, MEM_MAP] >>
+       fcgBridgeTheory.mem_get_invoke_targets, MEM_APPEND, MEM_FILTER,
+       MEM_MAP] >>
   metis_tac[fix_phi_inst_invoke_shape]
 QED
 
@@ -3054,10 +3036,10 @@ Theorem fix_phis_in_block_no_raw[local]:
   EVERY (\inst. ~is_raw_fmp_opcode inst.inst_opcode)
         (fix_phis_in_block preds bb).bb_instructions
 Proof
-  simp[fix_phis_in_block_def] >> pairarg_tac >> gvs[] >> strip_tac >>
-  simp[listTheory.EVERY_MEM] >> rpt strip_tac >>
-  drule partition_mem_pair >> strip_tac >>
-  gvs[listTheory.MEM_MAP, listTheory.EVERY_MEM] >>
+  simp[fix_phis_in_block_def, listTheory.EVERY_APPEND,
+       listTheory.EVERY_FILTER, listTheory.EVERY_MAP,
+       listTheory.EVERY_MEM, listTheory.MEM_FILTER,
+       listTheory.MEM_MAP] >>
   metis_tac[fix_phi_inst_no_raw]
 QED
 
@@ -3606,7 +3588,6 @@ Proof
         venomInstTheory.bb_succs_def,
         venomInstTheory.get_successors_def,
         listTheory.FIND_def, listTheory.INDEX_FIND_def,
-        sortingTheory.PARTITION_DEF, sortingTheory.PART_DEF,
         fix_all_phis_def, fix_phis_in_block_def, fix_phi_inst_def,
         cfgTransformTheory.pred_labels_def,
         cfgTransformTheory.block_preds_def]
@@ -3721,7 +3702,6 @@ Proof
         venomInstTheory.is_terminator_def,
         venomStateTheory.get_label_def,
         listTheory.FIND_def, listTheory.INDEX_FIND_def,
-        sortingTheory.PARTITION_DEF, sortingTheory.PART_DEF,
         fix_all_phis_def, fix_phis_in_block_def, fix_phi_inst_def,
         cfgTransformTheory.pred_labels_def,
         cfgTransformTheory.block_preds_def]
