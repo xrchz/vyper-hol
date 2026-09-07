@@ -5,8 +5,12 @@ Libs computeLib finite_mapLib
 open HolKernel Parse boolLib bossLib
 
 fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
+fun head_arity c n t =
+  head_is c t andalso length (snd (strip_comb t)) = n
 fun has_head c t = head_is c t orelse can (find_term (head_is c)) t
 fun find_head c t = if head_is c t then t else find_term (head_is c) t
+fun find_head_arity c n t =
+  if head_arity c n t then t else find_term (head_arity c n) t
 
 val driver_boundary_th =
   evalCompilerBytecodeDriverBoundaryTheory.exact_empty_runtime_driver_to_callee_first
@@ -92,20 +96,54 @@ val _ =
 val first_fold_one =
   REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
     first_fold_tm
+val unit_with_current_fn_tm = find_head ``unit_with_current_fn``
+  (rhs (concl first_fold_one))
+val _ =
+  if null (free_vars unit_with_current_fn_tm) then ()
+  else raise Fail "first-fold unit_with_current_fn call is not closed"
+val exact_unit_with_current_fn = computeLib.EVAL_CONV unit_with_current_fn_tm
+val _ =
+  if head_is ``SOME`` (rhs (concl exact_unit_with_current_fn)) andalso
+     null (free_vars (rhs (concl exact_unit_with_current_fn)))
+  then ()
+  else raise Fail "first-fold current-function lookup did not return closed SOME"
+fun is_dispatch_option_case t =
+  head_is ``option_CASE`` t andalso has_head ``execute_configured_fn_pass`` t
+val first_dispatch_case_tm =
+  find_term is_dispatch_option_case (rhs (concl first_fold_one))
+val _ =
+  if null (free_vars first_dispatch_case_tm) then ()
+  else raise Fail "enclosing first-dispatch option case is not closed"
+val exact_first_dispatch_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    first_dispatch_case_tm
+val first_fold_observed =
+  PURE_REWRITE_RULE [exact_first_dispatch_case] first_fold_one
 val configured_first_context =
-  SIMP_RULE (srw_ss ()) [first_fold_one] after_lookup
+  PURE_REWRITE_RULE [first_fold_observed] after_lookup
 val named_first_context =
-  SIMP_RULE (srw_ss ()) [configured_first_context] named_one
+  PURE_REWRITE_RULE [configured_first_context] named_one
 val callee_first_context =
-  SIMP_RULE (srw_ss ()) [named_first_context] callee_shaped
+  PURE_REWRITE_RULE [named_first_context] callee_shaped
 val _ =
   if aconv (lhs (concl callee_first_context)) callee_first_tm then ()
   else raise Fail "first-fold context changed the callee-first LHS"
+val applied_dispatch_tm =
+  find_head_arity ``execute_configured_fn_pass`` 5
+    (rhs (concl callee_first_context))
 val _ =
-  if has_head ``execute_configured_fn_pass``
-       (rhs (concl callee_first_context))
+  if null (free_vars applied_dispatch_tm) then ()
+  else raise Fail
+    ("first-fold configured dispatcher application is not closed: " ^
+     term_to_string applied_dispatch_tm ^ " ; free vars: " ^
+     String.concatWith ", " (map term_to_string (free_vars applied_dispatch_tm)))
+val (_, applied_dispatch_args) = strip_comb applied_dispatch_tm
+val _ =
+  if aconv (List.nth (applied_dispatch_args, 1))
+       ``CFP_Simple VP_MakeSSA``
   then ()
-  else raise Fail "first-fold context does not expose the configured dispatcher"
+  else raise Fail "first-fold configured dispatcher application is not MakeSSA"
 
 Theorem exact_empty_runtime_callee_first_first_fold_context:
   ^(concl callee_first_context)
