@@ -180,6 +180,27 @@ Proof
        empty_runtime_final_invoke_layout]
 QED
 
+fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
+fun has_head c t = head_is c t orelse can (find_term (head_is c)) t
+
+val exact_empty_runtime_final_fcg = computeLib.EVAL_CONV
+  ``fcg_analyze empty_runtime_final_unit.cu_context``
+val empty_runtime_final_fcg_tm = rhs (concl exact_empty_runtime_final_fcg)
+val _ =
+  if null (free_vars empty_runtime_final_fcg_tm) then ()
+  else raise Fail "empty runtime final call graph is not closed"
+val _ =
+  if has_head ``fcg_dfs`` empty_runtime_final_fcg_tm orelse
+     has_head ``fcg_visit`` empty_runtime_final_fcg_tm
+  then raise Fail "empty runtime final call graph has residual traversal"
+  else ()
+
+Theorem empty_runtime_final_fcg_exact[local]:
+  ^(concl exact_empty_runtime_final_fcg)
+Proof
+  ACCEPT_TAC exact_empty_runtime_final_fcg
+QED
+
 Theorem empty_runtime_final_reachable_fcg_acyclic:
   reachable_fcg_acyclic empty_runtime_final_unit.cu_context
     (fcg_analyze empty_runtime_final_unit.cu_context)
