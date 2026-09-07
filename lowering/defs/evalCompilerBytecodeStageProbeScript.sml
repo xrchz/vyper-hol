@@ -93,6 +93,24 @@ val _ =
   then ()
   else raise Fail "failed to isolate exact SimplifyCFG operation"
 
+
+Theorem exact_first_simplify_cfg_named_context:
+  ^(concl first_named_one)
+Proof
+  ACCEPT_TAC first_named_one
+QED
+
+Theorem exact_first_simplify_cfg_mapped_context:
+  ^(concl mapped_unfold)
+Proof
+  ACCEPT_TAC mapped_unfold
+QED
+
+Theorem exact_first_simplify_cfg_stage_context:
+  ^(concl first_stage_unfold)
+Proof
+  ACCEPT_TAC first_stage_unfold
+QED
 Theorem exact_first_simplify_cfg_dispatcher_context:
   ^(concl first_dispatcher_unfold)
 Proof
