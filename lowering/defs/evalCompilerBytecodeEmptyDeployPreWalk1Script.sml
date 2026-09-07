@@ -48,4 +48,215 @@ val empty_deploy_spec_wf = eval_true "empty deploy pipeline-spec guard"
 val empty_deploy_raw_static_wf = eval_true "empty deploy raw-static guard"
   ``raw_static_inputs_wf empty_deploy_unit.cu_context``
 
+
+Theorem deploy_unit_wf_intro[local]:
+  ctx_wf unit.cu_context /\
+  wf_invoke_targets unit.cu_context /\
+  ctx_inst_ids_distinct unit.cu_context /\
+  (!fn. MEM fn unit.cu_context.ctx_functions ==>
+        wf_function fn /\ fn_inst_wf fn) /\
+  unit_labels_wf unit ==>
+  unit_wf unit
+Proof
+  rw[venomCompilerWfTheory.unit_wf_def,
+     venomWfTheory.venom_wf_def]
+QED
+
+Theorem deploy_bb_well_formed_snoc[local]:
+  is_terminator term.inst_opcode /\
+  EVERY (\i. ~is_terminator i.inst_opcode) prefix /\
+  EVERY (\i. i.inst_opcode <> PHI) (prefix ++ [term]) ==>
+  bb_well_formed
+    <| bb_label := lbl; bb_instructions := prefix ++ [term] |>
+Proof
+  rw[venomWfTheory.bb_well_formed_def] >>
+  rpt strip_tac >> simp[]
+  >- (Cases_on `i < LENGTH prefix`
+      >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+      >> `i = LENGTH prefix` by decide_tac
+      >> simp[listTheory.EL_APPEND_EQN])
+  >> Cases_on `j < LENGTH prefix`
+  >- gvs[listTheory.EVERY_EL, listTheory.EL_APPEND_EQN]
+  >> `j = LENGTH prefix` by decide_tac
+  >> gvs[listTheory.EL_APPEND_EQN]
+QED
+
+Theorem deploy_fn_inst_wf_from_blocks[local]:
+  (!bb. MEM bb fn.fn_blocks ==>
+        EVERY inst_wf bb.bb_instructions) ==>
+  fn_inst_wf fn
+Proof
+  rw[venomWfTheory.fn_inst_wf_def] >>
+  first_x_assum drule >>
+  simp[listTheory.EVERY_MEM]
+QED
+
+fun eval_closed label tm =
+  let
+    val _ = assert_closed label tm
+  in
+    computeLib.EVAL_CONV tm
+  end
+
+val deploy_functions_th = eval_closed "deploy function projection"
+  ``empty_deploy_unit.cu_context.ctx_functions``
+val deploy_functions = fst (listSyntax.dest_list (rhs (concl deploy_functions_th)))
+val _ = if length deploy_functions = 1 then ()
+        else raise Fail "deploy context does not have exactly one function"
+val deploy_fn_tm = hd deploy_functions
+val deploy_blocks_th = eval_closed "deploy block projection"
+  ``(^deploy_fn_tm).fn_blocks``
+val deploy_blocks = fst (listSyntax.dest_list (rhs (concl deploy_blocks_th)))
+val _ = if length deploy_blocks = 1 then ()
+        else raise Fail "deploy function does not have exactly one block"
+val deploy_bb_tm = hd deploy_blocks
+val deploy_insts_th = eval_closed "deploy instruction projection"
+  ``(^deploy_bb_tm).bb_instructions``
+val deploy_insts = fst (listSyntax.dest_list (rhs (concl deploy_insts_th)))
+val _ = if length deploy_insts = 4 then ()
+        else raise Fail "deploy block does not have exactly four instructions"
+val deploy_succs_th = eval_closed "deploy block successors"
+  ``bb_succs ^deploy_bb_tm``
+val deploy_data_segment_th = eval_closed "deploy data segment projection"
+  ``empty_deploy_unit.cu_data_segment``
+
+Theorem deploy_functions_shape[local]:
+  ^(concl deploy_functions_th)
+Proof
+  ACCEPT_TAC deploy_functions_th
+QED
+
+Theorem deploy_blocks_shape[local]:
+  ^(concl deploy_blocks_th)
+Proof
+  ACCEPT_TAC deploy_blocks_th
+QED
+
+Theorem deploy_instructions_shape[local]:
+  ^(concl deploy_insts_th)
+Proof
+  ACCEPT_TAC deploy_insts_th
+QED
+
+Theorem deploy_succs_shape[local]:
+  ^(concl deploy_succs_th)
+Proof
+  ACCEPT_TAC deploy_succs_th
+QED
+
+Theorem deploy_data_segment_shape[local]:
+  ^(concl deploy_data_segment_th)
+Proof
+  ACCEPT_TAC deploy_data_segment_th
+QED
+
+Theorem deploy_bb_snoc_shape[local]:
+  ^deploy_bb_tm =
+    <| bb_label := (^deploy_bb_tm).bb_label;
+       bb_instructions := FRONT ((^deploy_bb_tm).bb_instructions) ++
+                          [LAST ((^deploy_bb_tm).bb_instructions)] |>
+Proof
+  EVAL_TAC
+QED
+
+Theorem deploy_bb_well_formed[local]:
+  bb_well_formed ^deploy_bb_tm
+Proof
+  once_rewrite_tac[deploy_bb_snoc_shape] >>
+  irule deploy_bb_well_formed_snoc >> EVAL_TAC
+QED
+
+Theorem deploy_bb_instructions_wf[local]:
+  EVERY inst_wf (^deploy_bb_tm).bb_instructions
+Proof
+  simp[venomWfTheory.inst_wf_def]
+QED
+
+Theorem deploy_function_well_formed[local]:
+  wf_function ^deploy_fn_tm
+Proof
+  simp[venomWfTheory.wf_function_def,
+       venomWfTheory.fn_has_entry_def,
+       venomWfTheory.fn_succs_closed_def,
+       venomWfTheory.fn_inst_ids_distinct_def,
+       venomInstTheory.fn_labels_def,
+       deploy_bb_well_formed,
+       deploy_succs_shape] >>
+  rpt strip_tac >> gvs[deploy_bb_well_formed, deploy_succs_shape]
+QED
+
+Theorem deploy_function_instructions_wf[local]:
+  fn_inst_wf ^deploy_fn_tm
+Proof
+  simp[venomWfTheory.fn_inst_wf_def,
+       deploy_blocks_shape] >>
+  rpt strip_tac >> gvs[venomWfTheory.inst_wf_def]
+QED
+
+Theorem deploy_context_functions_wf[local]:
+  !fn. MEM fn empty_deploy_unit.cu_context.ctx_functions ==>
+        wf_function fn /\ fn_inst_wf fn
+Proof
+  simp[deploy_functions_shape,
+       deploy_function_well_formed,
+       deploy_function_instructions_wf]
+QED
+
+Theorem deploy_context_wf[local]:
+  ctx_wf empty_deploy_unit.cu_context
+Proof
+  simp[venomWfTheory.ctx_wf_def,
+       venomWfTheory.ctx_distinct_fn_names_def,
+       venomWfTheory.ctx_has_entry_def,
+       venomInstTheory.ctx_fn_names_def,
+       empty_deploy_unit_def,
+       deploy_functions_shape]
+QED
+
+Theorem deploy_invoke_targets_wf[local]:
+  wf_invoke_targets empty_deploy_unit.cu_context
+Proof
+  rw[venomWfTheory.wf_invoke_targets_def] >> rpt strip_tac >>
+  gvs[deploy_functions_shape,
+      venomInstTheory.fn_insts_def,
+      venomInstTheory.fn_insts_blocks_def,
+      deploy_blocks_shape,
+      deploy_instructions_shape]
+QED
+
+Theorem deploy_context_inst_ids_distinct[local]:
+  ctx_inst_ids_distinct empty_deploy_unit.cu_context
+Proof
+  simp[venomWfTheory.ctx_inst_ids_distinct_def,
+       deploy_functions_shape,
+       deploy_blocks_shape,
+       deploy_instructions_shape]
+QED
+
+Theorem deploy_unit_labels_wf[local]:
+  unit_labels_wf empty_deploy_unit
+Proof
+  simp[venomCompilerWfTheory.unit_labels_wf_def,
+       venomCompilerWfTheory.unit_label_namespace_def,
+       venomCompilerWfTheory.unit_data_labels_consistent_def,
+       venomCompilerWfTheory.unit_data_label_refs_def,
+       venomCompilerWfTheory.data_section_label_refs_def,
+       venomCompilerWfTheory.data_item_label_refs_def,
+       venomInstTheory.fn_labels_def,
+       empty_deploy_unit_def,
+       deploy_functions_shape,
+       deploy_blocks_shape,
+       deploy_data_segment_shape]
+QED
+
+Theorem empty_deploy_unit_wf[local]:
+  unit_wf empty_deploy_unit
+Proof
+  irule deploy_unit_wf_intro >>
+  simp[deploy_context_wf,
+       deploy_invoke_targets_wf,
+       deploy_context_inst_ids_distinct,
+       deploy_context_functions_wf,
+       deploy_unit_labels_wf]
+QED
 val _ = export_theory()
