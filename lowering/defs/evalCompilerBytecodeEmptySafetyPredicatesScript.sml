@@ -205,7 +205,13 @@ Theorem empty_runtime_final_reachable_fcg_acyclic:
   reachable_fcg_acyclic empty_runtime_final_unit.cu_context
     (fcg_analyze empty_runtime_final_unit.cu_context)
 Proof
-  cheat
+  rewrite_tac[empty_runtime_final_fcg_exact] >>
+  rewrite_tac[fcgDefsTheory.reachable_fcg_acyclic_def] >>
+  rewrite_tac[
+    evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_context_entry_exact] >>
+  simp[fcgDefsTheory.fcg_postorder_def,
+       fcgDefsTheory.fcg_get_callees_def,
+       fcgDefsTheory.list_precedes_def]
 QED
 
 Theorem empty_runtime_final_codegen_ready:
