@@ -104,4 +104,85 @@ Proof
   ACCEPT_TAC second_round_fixpoint_guard_th
 QED
 
+val second_iter_unfold_th =
+  SIMP_RULE (srw_ss ()) []
+    (Q.SPECL [`2`, `second_simplify_cfg_operand`]
+      (cj 2 simplifyCfgDefsTheory.simplify_cfg_iter_with_labels_def))
+
+Theorem exact_second_simplify_cfg_iter_with_labels:
+  simplify_cfg_iter_with_labels
+      (LENGTH second_simplify_cfg_operand.fn_blocks)
+      second_simplify_cfg_operand =
+    (second_simplify_cfg_operand, [])
+Proof
+  simp[evalCompilerBytecodeSecondSimplifyCfgResultTheory.second_simplify_cfg_operand_block_count,
+       second_iter_unfold_th,
+       exact_second_simplify_cfg_round_with_labels,
+       second_simplify_cfg_label_map_empty,
+       exact_second_round_fixpoint_guard]
+QED
+
+Theorem exact_second_simplify_cfg_fn_with_labels:
+  simplify_cfg_fn_with_labels second_simplify_cfg_operand =
+    (second_simplify_cfg_operand, [])
+Proof
+  simp[simplifyCfgDefsTheory.simplify_cfg_fn_with_labels_def,
+       exact_second_simplify_cfg_iter_with_labels]
+QED
+
+fun head_is c t = same_const (fst (strip_comb t)) c handle HOL_ERR _ => false
+fun head_arity c n t =
+  head_is c t andalso length (snd (strip_comb t)) = n
+fun has_head c t = head_is c t orelse can (find_term (head_is c)) t
+fun find_head_arity c n t =
+  if head_arity c n t then t else find_term (head_arity c n) t
+fun assert_closed label tm =
+  if null (free_vars tm) then ()
+  else raise Fail (label ^ " is not closed: " ^ term_to_string tm)
+
+val after_second_make_ssa =
+  evalCompilerBytecodeAfterSecondMakeSSATheory.exact_empty_runtime_after_second_make_ssa
+val second_simplify_fold_tm =
+  find_head_arity ``run_configured_fn_pass_fold`` 7
+    (rhs (concl after_second_make_ssa))
+val _ = assert_closed "second SimplifyCFG residual fold" second_simplify_fold_tm
+val second_simplify_fold_one =
+  REWR_CONV (cj 2 venomFnScheduleRunnerTheory.run_configured_fn_pass_fold_def)
+    second_simplify_fold_tm
+fun is_dispatch_case t =
+  head_is ``option_CASE`` t andalso has_head ``execute_configured_fn_pass`` t
+val second_simplify_unit_case_tm =
+  find_term is_dispatch_case (rhs (concl second_simplify_fold_one))
+val _ = assert_closed "second SimplifyCFG unit option case"
+  second_simplify_unit_case_tm
+val second_simplify_unit_case =
+  computeLib.RESTR_EVAL_CONV
+    [``execute_configured_fn_pass``, ``run_configured_fn_pass_fold``]
+    second_simplify_unit_case_tm
+val second_simplify_fold_exposed =
+  PURE_REWRITE_RULE [second_simplify_unit_case] second_simplify_fold_one
+val second_simplify_context_exposed =
+  PURE_REWRITE_RULE [second_simplify_fold_exposed] after_second_make_ssa
+val second_simplify_dispatch_tm =
+  find_head_arity ``execute_configured_fn_pass`` 5
+    (rhs (concl second_simplify_context_exposed))
+val _ = assert_closed "second SimplifyCFG dispatcher"
+  second_simplify_dispatch_tm
+val second_simplify_dispatch_one =
+  REWR_CONV venomPassDispatcherTheory.execute_configured_fn_pass_simplify_cfg
+    second_simplify_dispatch_tm
+val second_simplify_dispatch_named =
+  REWRITE_RULE
+    [GSYM evalCompilerBytecodeSecondSimplifyCfgResultTheory.second_simplify_cfg_operand_def]
+    second_simplify_dispatch_one
+val second_simplify_dispatch_result_th =
+  REWRITE_RULE [exact_second_simplify_cfg_fn_with_labels]
+    second_simplify_dispatch_named
+
+Theorem exact_second_simplify_cfg_dispatch:
+  ^(concl second_simplify_dispatch_result_th)
+Proof
+  ACCEPT_TAC second_simplify_dispatch_result_th
+QED
+
 val _ = export_theory()
