@@ -432,4 +432,15 @@ Proof
        exact_first_final_fix_all_phis]
 QED
 
+val first_round_fixpoint_guard_th =
+  computeLib.EVAL_CONV
+    ``first_simplify_cfg_round1_fn.fn_blocks =
+      first_simplify_cfg_operand.fn_blocks``
+
+Theorem exact_first_round_fixpoint_guard:
+  ^(concl first_round_fixpoint_guard_th)
+Proof
+  ACCEPT_TAC first_round_fixpoint_guard_th
+QED
+
 val _ = export_theory()
