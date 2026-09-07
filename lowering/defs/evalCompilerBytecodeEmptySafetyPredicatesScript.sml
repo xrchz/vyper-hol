@@ -373,6 +373,52 @@ Proof
   gvs[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_block3_instructions_exact]
 QED
 
+Theorem empty_runtime_final_def_dominates_uses[local]:
+  def_dominates_uses empty_runtime_final_fn
+Proof
+  rewrite_tac[venomWfTheory.def_dominates_uses_def] >>
+  rpt strip_tac >>
+  qpat_x_assum `MEM bb empty_runtime_final_fn.fn_blocks` mp_tac >>
+  rewrite_tac[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact] >>
+  simp[] >> rpt strip_tac >> gvs[]
+  >- (mp_tac empty_runtime_final_block0_defs_before_uses >>
+      rewrite_tac[block_defs_before_uses_def] >>
+      disch_then (qspec_then `inst` (qspec_then `v` mp_tac)) >>
+      simp[] >> strip_tac >>
+      qexistsl [`empty_runtime_final_block0`,
+                 `EL i empty_runtime_final_block0.bb_instructions`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+           empty_runtime_final_member_self_dominates] >>
+      qexistsl [`i`, `j`] >> simp[])
+  >- (mp_tac empty_runtime_final_block1_defs_before_uses >>
+      rewrite_tac[block_defs_before_uses_def] >>
+      disch_then (qspec_then `inst` (qspec_then `v` mp_tac)) >>
+      simp[] >> strip_tac >>
+      qexistsl [`empty_runtime_final_block1`,
+                 `EL i empty_runtime_final_block1.bb_instructions`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+           empty_runtime_final_member_self_dominates] >>
+      qexistsl [`i`, `j`] >> simp[])
+  >- (mp_tac empty_runtime_final_block2_defs_before_uses >>
+      rewrite_tac[block_defs_before_uses_def] >>
+      disch_then (qspec_then `inst` (qspec_then `v` mp_tac)) >>
+      simp[] >> strip_tac >>
+      qexistsl [`empty_runtime_final_block2`,
+                 `EL i empty_runtime_final_block2.bb_instructions`] >>
+      simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+           empty_runtime_final_member_self_dominates] >>
+      qexistsl [`i`, `j`] >> simp[])
+  >> mp_tac empty_runtime_final_block3_defs_before_uses >>
+  rewrite_tac[block_defs_before_uses_def] >>
+  disch_then (qspec_then `inst` (qspec_then `v` mp_tac)) >>
+  simp[] >> strip_tac >>
+  qexistsl [`empty_runtime_final_block3`,
+             `EL i empty_runtime_final_block3.bb_instructions`] >>
+  simp[evalCompilerBytecodeEmptyResultTheory.empty_runtime_final_blocks_exact,
+       empty_runtime_final_member_self_dominates] >>
+  qexistsl [`i`, `j`] >> simp[]
+QED
+
 Theorem empty_runtime_final_mem_ok:
   (K T) empty_runtime_final_unit.cu_context
 Proof
