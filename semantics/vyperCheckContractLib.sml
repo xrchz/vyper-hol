@@ -10,6 +10,9 @@ open vyperTypeCallGraphTheory vyperTypeContractTheory vyperTypeSystemTheory
    address : term,
    modules : term}
 
+val in_empty_eq =
+  pred_setTheory.NOT_IN_EMPTY |> SPEC_ALL |> EQF_INTRO |> GEN_ALL
+
 val checker_defs =
   [check_contract_def,
    check_module_def,
@@ -32,6 +35,7 @@ val checker_defs =
    typing_env_fn_updates,
    typing_env_updates_eq_literal,
    fn_sig_accessors,
+   fn_sig_component_equality,
    fn_sig_fn_updates,
    include_fn_sig_def,
    fn_sig_of_def,
@@ -55,7 +59,7 @@ val checker_defs =
    int_calls_raise_reason_def,
    int_calls_stmt_def,
    direct_callees_def,
-   reachable_nodes_def,
+   reachable_nodes_compute,
    type_env_all_modules_def,
    type_env_for_module_def,
    lookup_nonreentrant_slot_def,
@@ -97,26 +101,20 @@ val checker_defs =
    create_arg_types_ok_def,
    optionTheory.option_case_lazily,
    optionTheory.IS_SOME_DEF,
+   optionTheory.THE_DEF,
    pairTheory.FST,
    pairTheory.SND,
-   pred_setTheory.NOT_IN_EMPTY]
+   pairTheory.UNCURRY_DEF]
 
-(* Work around HOL issue #2055. list_compset can route membership through
-   LIST_TO_SET and leave closed ALL_DISTINCT terms unreduced. *)
-fun list_mem_conv eval =
-  REWR_CONV (CONJUNCT1 listTheory.MEM) ORELSEC
-  (REWR_CONV (CONJUNCT2 listTheory.MEM) THENC eval)
-
-fun add_all_distinct_workaround cs = let
-  val cs = computeLib.scrub_const cs ``list$LIST_TO_SET``
-  val cs = computeLib.scrub_const cs ``bool$IN``
-  val eval = computeLib.CBV_CONV cs
-  val cs = computeLib.add_conv (``bool$IN``, 2, list_mem_conv eval) cs
-  val cs = computeLib.scrub_const cs ``list$ALL_DISTINCT``
-  val cs = computeLib.scrub_const cs ``list$nub``
-in
-  computeLib.add_thms [listTheory.ALL_DISTINCT, listTheory.nub_def] cs
-end
+(* Work around HOL issue #2055. Install empty-set membership before the list
+   rules so ALL_DISTINCT does not retain the problematic prior IN treatment. *)
+fun add_list_compset cs =
+  cs
+  |> pred_setLib.add_pred_set_compset
+  |> (fn cs' => computeLib.scrub_const cs' ``bool$IN``)
+  |> computeLib.add_thms [in_empty_eq]
+  |> listSimps.list_rws
+  |> pred_setLib.add_pred_set_compset
 
 (* This is deliberately fixed rather than derived from the global TypeBase. *)
 val checker_datatypes =
@@ -131,16 +129,17 @@ val checker_datatypes =
 fun build_checker_base () =
   reduceLib.num_compset
   |> computeLib.copy
+  |> add_list_compset
+  |> combinLib.add_combin_compset
+  |> numposrepLib.add_numposrep_compset
+  |> ASCIInumbersLib.add_ASCIInumbers_compset
   |> intReduce.add_int_compset
   |> wordsLib.add_words_compset false
   |> finite_mapLib.add_finite_map_compset
   |> alistLib.add_alist_compset
-  |> pred_setLib.add_pred_set_compset
   |> stringLib.add_string_compset
   |> computeLib.extend_compset [computeLib.Tys checker_datatypes]
-  |> computeLib.add_thmset "compute"
   |> computeLib.add_thms checker_defs
-  |> add_all_distinct_workaround
 
 fun eta_expand_quantifier_predicate tm = let
   val (quantifier, predicate) = dest_comb tm
@@ -151,12 +150,7 @@ in
   AP_TERM quantifier (SYM (ETA_CONV expanded))
 end
 
-(* ML libraries are loaded before a script establishes its current theory.
-   Construct on first use so the registered "compute" theorem set is available,
-   then retain the same sealed compset for every subsequent call. *)
-val cached_check_contract_compset : computeLib.compset option ref = ref NONE
-
-fun make_check_contract_compset () = let
+val check_contract_compset = let
   (* This inner compset has no quantifier hooks, avoiding recursive invocation
      of the outer hook while a closed predicate body is normalized. *)
   val quantifier_body_conv = computeLib.CBV_CONV (build_checker_base ())
@@ -181,15 +175,8 @@ in
   |> computeLib.seal
 end
 
-fun check_contract_compset () = case !cached_check_contract_compset of
-    SOME cs => cs
-  | NONE => let
-      val cs = make_check_contract_compset ()
-      val () = cached_check_contract_compset := SOME cs
-    in cs end
-
 fun check_contract_conv tm =
-  computeLib.CBV_CONV (check_contract_compset ()) tm
+  computeLib.CBV_CONV check_contract_compset tm
 
 fun inst_apply function argument = let
   val (domain_ty, _) = dom_rng (type_of function)

@@ -93,7 +93,7 @@ val () =
 (* The exported compset is cached and sealed, while copy permits functional
    caller extension without changing the library instance. *)
 val checker_copy =
-  vyperCheckContractLib.check_contract_compset () |> computeLib.copy
+  vyperCheckContractLib.check_contract_compset |> computeLib.copy
 val copied_empty_check = computeLib.CBV_CONV checker_copy
   (vyperCheckContractLib.mk_check_contract
     {in_deploy = false, layouts = empty_layouts,
