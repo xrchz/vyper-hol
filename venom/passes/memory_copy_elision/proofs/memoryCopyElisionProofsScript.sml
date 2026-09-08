@@ -5306,7 +5306,13 @@ Triviality store_step_is_exec_write2[local]:
    step_inst_base inst s =
      exec_write2 (\key val s. tstore key val s) inst s)
 Proof
-  simp[step_inst_base_def]
+  rpt conj_tac
+  >- (strip_tac >> PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[venomInstTheory.opcode_case_def])
+  >- (strip_tac >> PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[venomInstTheory.opcode_case_def])
+  >- (strip_tac >> PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[venomInstTheory.opcode_case_def])
 QED
 
 (* Key helper 1: transformed instruction produces same step_inst result
