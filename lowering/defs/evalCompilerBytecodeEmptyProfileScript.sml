@@ -778,4 +778,184 @@ Proof
   ACCEPT_TAC runtime_ops_chunk3_pair01_exact
 QED
 
+fun mk_runtime_op_shallow label op_tm =
+  let
+    val call = ``exec_stack_op ^runtime_initial_fmp_tm ^op_tm``
+    val exact =
+      ONCE_REWRITE_CONV [planExecTheory.exec_stack_op_def] call
+    val rhs_tm = rhs (concl exact)
+    val _ =
+      if null (free_vars op_tm) andalso
+         null (free_vars rhs_tm) andalso
+         not (has_head ``exec_stack_op`` rhs_tm)
+      then () else raise Fail (label ^ " shallow result is not closed")
+  in
+    {op_tm = op_tm, call = call, rhs_tm = rhs_tm, exact = exact}
+  end
+
+val runtime_ops_chunk3_op2 =
+  mk_runtime_op_shallow "runtime chunk 3 operation 2"
+    (List.nth (runtime_ops_chunk3, 2))
+val runtime_ops_chunk3_op3 =
+  mk_runtime_op_shallow "runtime chunk 3 operation 3"
+    (List.nth (runtime_ops_chunk3, 3))
+val runtime_ops_chunk3_op4 =
+  mk_runtime_op_shallow "runtime chunk 3 operation 4"
+    (List.nth (runtime_ops_chunk3, 4))
+val runtime_ops_chunk3_op5 =
+  mk_runtime_op_shallow "runtime chunk 3 operation 5"
+    (List.nth (runtime_ops_chunk3, 5))
+
+fun finish_runtime_op label {op_tm, call, rhs_tm, exact} =
+  let
+    val exact' =
+      PURE_REWRITE_RULE
+        [runtime_ops_chunk3_op1_w2n_exact,
+         exact_empty_runtime_ops_chunk3_op1_encode]
+        exact
+    val asm_tm = rhs (concl exact')
+    val _ =
+      if null (free_vars asm_tm) andalso
+         listSyntax.is_list asm_tm andalso
+         type_of asm_tm = ``:asm_inst list`` andalso
+         aconv (lhs (concl exact')) call
+      then () else raise Fail (label ^ " exact theorem has wrong shape")
+  in
+    {op_tm = op_tm, call = call, asm_tm = asm_tm, exact = exact'}
+  end
+
+val runtime_ops_chunk3_op2_result =
+  finish_runtime_op "runtime chunk 3 operation 2" runtime_ops_chunk3_op2
+val runtime_ops_chunk3_op2_call = #call runtime_ops_chunk3_op2_result
+val runtime_ops_chunk3_op2_asm_tm = #asm_tm runtime_ops_chunk3_op2_result
+val runtime_ops_chunk3_op2_exact = #exact runtime_ops_chunk3_op2_result
+
+Theorem exact_empty_runtime_ops_chunk3_op2[local]:
+  ^runtime_ops_chunk3_op2_call = ^runtime_ops_chunk3_op2_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op2_exact
+QED
+
+val runtime_ops_chunk3_op3_result =
+  finish_runtime_op "runtime chunk 3 operation 3" runtime_ops_chunk3_op3
+val runtime_ops_chunk3_op3_call = #call runtime_ops_chunk3_op3_result
+val runtime_ops_chunk3_op3_asm_tm = #asm_tm runtime_ops_chunk3_op3_result
+val runtime_ops_chunk3_op3_exact = #exact runtime_ops_chunk3_op3_result
+
+Theorem exact_empty_runtime_ops_chunk3_op3[local]:
+  ^runtime_ops_chunk3_op3_call = ^runtime_ops_chunk3_op3_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op3_exact
+QED
+
+val runtime_ops_chunk3_op4_result =
+  finish_runtime_op "runtime chunk 3 operation 4" runtime_ops_chunk3_op4
+val runtime_ops_chunk3_op4_call = #call runtime_ops_chunk3_op4_result
+val runtime_ops_chunk3_op4_asm_tm = #asm_tm runtime_ops_chunk3_op4_result
+val runtime_ops_chunk3_op4_exact = #exact runtime_ops_chunk3_op4_result
+
+Theorem exact_empty_runtime_ops_chunk3_op4[local]:
+  ^runtime_ops_chunk3_op4_call = ^runtime_ops_chunk3_op4_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op4_exact
+QED
+
+val runtime_ops_chunk3_op5_result =
+  finish_runtime_op "runtime chunk 3 operation 5" runtime_ops_chunk3_op5
+val runtime_ops_chunk3_op5_call = #call runtime_ops_chunk3_op5_result
+val runtime_ops_chunk3_op5_asm_tm = #asm_tm runtime_ops_chunk3_op5_result
+val runtime_ops_chunk3_op5_exact = #exact runtime_ops_chunk3_op5_result
+
+Theorem exact_empty_runtime_ops_chunk3_op5[local]:
+  ^runtime_ops_chunk3_op5_call = ^runtime_ops_chunk3_op5_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op5_exact
+QED
+
+fun compose_runtime_ops_pair label pair_tm exact1 exact2 =
+  let
+    val call =
+      ``FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^pair_tm)``
+    val exact =
+      PURE_REWRITE_CONV
+        [exact1, exact2, listTheory.MAP, listTheory.FLAT,
+         listTheory.APPEND]
+        call
+    val asm_tm = rhs (concl exact)
+    val _ =
+      if null (free_vars asm_tm) andalso
+         listSyntax.is_list asm_tm andalso
+         type_of asm_tm = ``:asm_inst list``
+      then () else raise Fail (label ^ " is not closed literal assembly")
+  in
+    {call = call, asm_tm = asm_tm, exact = exact}
+  end
+
+val runtime_ops_chunk3_pair23 =
+  List.take (List.drop (runtime_ops_chunk3, 2), 2)
+val runtime_ops_chunk3_pair23_tm =
+  listSyntax.mk_list (runtime_ops_chunk3_pair23, runtime_op_ty)
+val _ =
+  if aconv (List.nth (runtime_ops_chunk3_pair23, 0))
+       (#op_tm runtime_ops_chunk3_op2_result) andalso
+     aconv (List.nth (runtime_ops_chunk3_pair23, 1))
+       (#op_tm runtime_ops_chunk3_op3_result)
+  then () else raise Fail "runtime chunk 3 pair 2-3 has wrong operations"
+val runtime_ops_chunk3_pair23_result =
+  compose_runtime_ops_pair "runtime chunk 3 pair 2-3"
+    runtime_ops_chunk3_pair23_tm exact_empty_runtime_ops_chunk3_op2
+    exact_empty_runtime_ops_chunk3_op3
+val runtime_ops_chunk3_pair23_call = #call runtime_ops_chunk3_pair23_result
+val runtime_ops_chunk3_pair23_asm_tm = #asm_tm runtime_ops_chunk3_pair23_result
+val runtime_ops_chunk3_pair23_exact = #exact runtime_ops_chunk3_pair23_result
+
+Theorem exact_empty_runtime_ops_chunk3_pair23[local]:
+  ^runtime_ops_chunk3_pair23_call = ^runtime_ops_chunk3_pair23_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_pair23_exact
+QED
+
+val runtime_ops_chunk3_pair45 =
+  List.take (List.drop (runtime_ops_chunk3, 4), 2)
+val runtime_ops_chunk3_pair45_tm =
+  listSyntax.mk_list (runtime_ops_chunk3_pair45, runtime_op_ty)
+val _ =
+  if aconv (List.nth (runtime_ops_chunk3_pair45, 0))
+       (#op_tm runtime_ops_chunk3_op4_result) andalso
+     aconv (List.nth (runtime_ops_chunk3_pair45, 1))
+       (#op_tm runtime_ops_chunk3_op5_result)
+  then () else raise Fail "runtime chunk 3 pair 4-5 has wrong operations"
+val runtime_ops_chunk3_pair45_result =
+  compose_runtime_ops_pair "runtime chunk 3 pair 4-5"
+    runtime_ops_chunk3_pair45_tm exact_empty_runtime_ops_chunk3_op4
+    exact_empty_runtime_ops_chunk3_op5
+val runtime_ops_chunk3_pair45_call = #call runtime_ops_chunk3_pair45_result
+val runtime_ops_chunk3_pair45_asm_tm = #asm_tm runtime_ops_chunk3_pair45_result
+val runtime_ops_chunk3_pair45_exact = #exact runtime_ops_chunk3_pair45_result
+
+Theorem exact_empty_runtime_ops_chunk3_pair45[local]:
+  ^runtime_ops_chunk3_pair45_call = ^runtime_ops_chunk3_pair45_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_pair45_exact
+QED
+
+val runtime_ops_chunk3_result =
+  compose_runtime_ops_chunk3 "runtime chunk 3" runtime_ops_chunk3_tm
+    (runtime_ops_chunk3_pair01_call, runtime_ops_chunk3_pair01_asm_tm,
+     exact_empty_runtime_ops_chunk3_pair01)
+    (runtime_ops_chunk3_pair23_call, runtime_ops_chunk3_pair23_asm_tm,
+     exact_empty_runtime_ops_chunk3_pair23)
+    (runtime_ops_chunk3_pair45_call, runtime_ops_chunk3_pair45_asm_tm,
+     exact_empty_runtime_ops_chunk3_pair45)
+val runtime_ops_chunk3_call = #call runtime_ops_chunk3_result
+val runtime_ops_chunk3_asm_tm = #asm_tm runtime_ops_chunk3_result
+val runtime_ops_chunk3_exact = #exact runtime_ops_chunk3_result
+
+Theorem exact_empty_runtime_ops_chunk3[local]:
+  FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^runtime_ops_chunk3_tm) =
+  ^runtime_ops_chunk3_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_exact
+QED
+
 val _ = export_theory()
