@@ -442,4 +442,67 @@ Theorem exact_empty_runtime_ops_chunk1_pair45[local]:
 Proof
   ACCEPT_TAC runtime_ops_chunk1_pair45_exact
 QED
+
+val runtime_ops_chunk1_call =
+  ``FLAT
+      (MAP (exec_stack_op ^runtime_initial_fmp_tm)
+        ^runtime_ops_chunk1_tm)``
+val runtime_ops_chunk1_pairs_call =
+  ``^runtime_ops_chunk1_pair01_call ++
+    ^runtime_ops_chunk1_pair23_call ++
+    ^runtime_ops_chunk1_pair45_call``
+val runtime_ops_chunk1_call_reduce =
+  PURE_REWRITE_CONV
+    [listTheory.MAP, listTheory.FLAT, listTheory.APPEND,
+     listTheory.APPEND_NIL, listTheory.APPEND_ASSOC]
+    runtime_ops_chunk1_call
+val runtime_ops_chunk1_pairs_call_reduce =
+  PURE_REWRITE_CONV
+    [listTheory.MAP, listTheory.FLAT, listTheory.APPEND,
+     listTheory.APPEND_NIL, listTheory.APPEND_ASSOC]
+    runtime_ops_chunk1_pairs_call
+val _ =
+  if aconv (rhs (concl runtime_ops_chunk1_call_reduce))
+       (rhs (concl runtime_ops_chunk1_pairs_call_reduce))
+  then () else raise Fail "runtime chunk 1 pair calls do not reconstruct the full call"
+val runtime_ops_chunk1_to_pairs_exact =
+  TRANS runtime_ops_chunk1_call_reduce
+    (SYM runtime_ops_chunk1_pairs_call_reduce)
+
+val runtime_ops_chunk1_asm_concat_tm =
+  ``^runtime_ops_chunk1_pair01_asm_tm ++
+    ^runtime_ops_chunk1_pair23_asm_tm ++
+    ^runtime_ops_chunk1_pair45_asm_tm``
+val runtime_ops_chunk1_pairs_exact =
+  PURE_REWRITE_CONV
+    [exact_empty_runtime_ops_chunk1_pair01,
+     exact_empty_runtime_ops_chunk1_pair23,
+     exact_empty_runtime_ops_chunk1_pair45]
+    runtime_ops_chunk1_pairs_call
+val _ =
+  if aconv (rhs (concl runtime_ops_chunk1_pairs_exact))
+       runtime_ops_chunk1_asm_concat_tm
+  then () else raise Fail "runtime chunk 1 pair equations produced the wrong concatenation"
+val runtime_ops_chunk1_asm_reduce =
+  PURE_REWRITE_CONV [listTheory.APPEND]
+    runtime_ops_chunk1_asm_concat_tm
+val runtime_ops_chunk1_asm_tm =
+  rhs (concl runtime_ops_chunk1_asm_reduce)
+val runtime_ops_chunk1_exact =
+  TRANS runtime_ops_chunk1_to_pairs_exact
+    (TRANS runtime_ops_chunk1_pairs_exact runtime_ops_chunk1_asm_reduce)
+val _ =
+  if null (free_vars runtime_ops_chunk1_asm_tm) andalso
+     listSyntax.is_list runtime_ops_chunk1_asm_tm andalso
+     type_of runtime_ops_chunk1_asm_tm = ``:asm_inst list`` andalso
+     aconv (lhs (concl runtime_ops_chunk1_exact)) runtime_ops_chunk1_call andalso
+     aconv (rhs (concl runtime_ops_chunk1_exact)) runtime_ops_chunk1_asm_tm
+  then () else raise Fail "runtime chunk 1 exact theorem has wrong shape"
+
+Theorem exact_empty_runtime_ops_chunk1[local]:
+  FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^runtime_ops_chunk1_tm) =
+  ^runtime_ops_chunk1_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk1_exact
+QED
 val _ = export_theory()
