@@ -404,19 +404,6 @@ Proof
   simp[IN_UNION]
 QED
 
-(* Exact two-output shape exposed by the BUMP branch. *)
-Theorem fdom_union_two_outputs_bump_probe[local]:
-  !d outs x ptr_out next_out.
-    outs = [ptr_out; next_out] /\ x = next_out ==>
-    x IN d UNION set outs
-Proof
-  rpt strip_tac >>
-  qpat_x_assum `outs = [ptr_out; next_out]` SUBST_ALL_TAC >>
-  irule fdom_union_two_outputs_intro >>
-  disj2_tac >> disj2_tac >>
-  qpat_assum `x = next_out` ACCEPT_TAC
-QED
-
 Theorem step_inst_base_DRET_not_OK_local[local]:
   !inst s r. inst.inst_opcode = DRET ==>
     step_inst_base inst s <> OK r

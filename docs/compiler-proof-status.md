@@ -3,7 +3,6 @@
 Latest audit:
 
 - [compiler-proof-status-2026-06-24.md](compiler-proof-status-2026-06-24.md)
-- [compiler-proof-baseline.md](compiler-proof-baseline.md) — normalized pre-O1 cheat/build baseline
 
 Historical snapshots:
 

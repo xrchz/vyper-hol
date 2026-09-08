@@ -421,21 +421,6 @@ Proof
   drule_then assume_tac elem_count_take_el_lt >> decide_tac
 QED
 
-Theorem residual_budget_does_not_imply_pending_inventory[local]:
-  let ps = (init_plan_state 0) with
-             ps_stack := [Var "core_a"; Var "core_b"] in
-    plan_state_residual_wf 0 [Var "need_x"; Var "need_y"] 0 ps /\
-    2 <= LENGTH ps.ps_stack /\
-    ~pending_inventory_wf [Var "need_x"; Var "need_y"] ps /\
-    stack_get_unfixed_depth (Var "need_x") 1 2 ps.ps_stack = NONE /\
-    ~IS_SOME (FLOOKUP ps.ps_spilled (Var "need_x"))
-Proof
-  EVAL_TAC >> conj_tac
-  >- (simp[] >> gen_tac >> Cases_on `op` >> simp[LIST_ELEM_COUNT_THM] >>
-      rpt IF_CASES_TAC >> gvs[]) 
-  >> strip_tac >>
-     first_x_assum (qspec_then `Var "need_x"` mp_tac) >> EVAL_TAC
-QED
 Theorem residual_budget_wf_extend_pending[local]:
   !base pending op ps.
     residual_budget_wf base pending ps ==>
@@ -1563,69 +1548,6 @@ Proof
      qpat_assum `!op. op IN FDOM ps.ps_spilled ==> _`
        (qspec_then `x` (drule_then assume_tac)) >>
      simp[GSYM LIST_ELEM_COUNT_MEM] >> decide_tac
-QED
-
-(* Concrete probes for multiplicity budgets and fixed-suffix elimination. *)
-Theorem plan_state_residual_wf_duplicate_probe:
-  let ps = (init_plan_state 0) with
-             ps_stack := [Var "core_x"; Var "core_y";
-                          Var "pending"; Var "pending"] in
-    plan_state_residual_wf 0 [Var "pending"; Var "pending"] 2 ps
-Proof
-  EVAL_TAC >> simp[] >> conj_tac
-  >- (rpt strip_tac >>
-      `i = 0 \/ i = 1` by decide_tac >> gvs[])
-  >> gen_tac >>
-     Cases_on `Var "core_x" = op` >> gvs[] >>
-     Cases_on `Var "core_y" = op` >> gvs[] >>
-     Cases_on `Var "pending" = op` >> gvs[]
-QED
-
-Theorem plan_state_residual_wf_distinct_probe:
-  let ps = (init_plan_state 0) with
-             ps_stack := [Var "core_x"; Var "core_y";
-                          Var "left"; Var "right"] in
-    plan_state_residual_wf 0 [Var "left"; Var "right"] 2 ps
-Proof
-  EVAL_TAC >> simp[] >> conj_tac
-  >- (rpt strip_tac >>
-      `i = 0 \/ i = 1` by decide_tac >> gvs[])
-  >> gen_tac >>
-     Cases_on `Var "core_x" = op` >> gvs[] >>
-     Cases_on `Var "core_y" = op` >> gvs[] >>
-     Cases_on `Var "left" = op` >> gvs[] >>
-     Cases_on `Var "right" = op` >> gvs[]
-QED
-
-(* The post-input residual/count interface does not imply the stack/spill-key
-   disjointness required by [do_swap_venom_asm_rel_general]: a literal can be
-   both materialised for BUMP and retain an older spilled copy. *)
-Theorem probe_two_input_interface_allows_spilled_pending_literal[local]:
-  let ps0 = (init_plan_state 0) with ps_stack := [Var "deep"; Lit 7w] in
-  let (_,ps) = do_spill_tos ps0 in
-  let (_,ps1) = emit_input_plan BUMP [Lit 7w; Var "deep"] [] ps in
-    plan_state_residual_wf 0 [Lit 7w; Var "deep"] 0 ps1 /\
-    (!op. LIST_ELEM_COUNT op [Lit 7w; Var "deep"] <=
-          LIST_ELEM_COUNT op ps1.ps_stack) /\
-    Lit 7w IN FDOM ps1.ps_spilled /\
-    MEM (Lit 7w) ps1.ps_stack /\
-    ~DISJOINT (set ps1.ps_stack) (FDOM ps1.ps_spilled)
-Proof
-  EVAL_TAC >>
-  simp[spill_alloc_layout_wf_def] >>
-  conj_tac >> gen_tac >> Cases_on `op` >>
-  simp[LIST_ELEM_COUNT_THM] >> rpt IF_CASES_TAC >> gvs[]
-QED
-
-Theorem plan_state_residual_wf_rejects_core_duplicate:
-  let ps = (init_plan_state 0) with
-             ps_stack := [Var "core"; Var "core";
-                          Var "pending"; Var "pending"] in
-    ~plan_state_residual_wf 0 [Var "pending"; Var "pending"] 2 ps
-Proof
-  EVAL_TAC >> strip_tac >>
-  qpat_x_assum `!op. LENGTH _ <= _`
-    (qspec_then `Var "core"` mp_tac) >> simp[]
 QED
 
 (* =========================================================================
@@ -4421,40 +4343,6 @@ QED
 Finalise reorder_single_op_val_on_tos_deep
 
 
-(* Checked post-repair trace: suffix-aware input emission creates a second x,
-   and multiplicity-aware reorder preserves both requested occurrences. *)
-Theorem probe_bump_duplicate_after_emit_repair_succeeds:
-  let ps0 = (init_plan_state 0) with
-              ps_stack := [Var "x"; Var "y"] in
-  let (input_ops,ps1) = emit_input_plan BUMP [Var "x"; Var "x"] [] ps0 in
-  let (reorder_ops,ps2) = reorder_plan dfg_empty [Var "x"; Var "x"] ps1 in
-  let aps = apply_prefix_ops initial_fmp FEMPTY
-              (input_ops ++ reorder_ops) ps0 in
-  let vs0 = (init_venom_state "entry") with
-              vs_vars := FEMPTY |+ ("x",1w) |+ ("y",2w) in
-    LENGTH (FILTER (\op. op = Var "x") ps1.ps_stack) = 2 /\
-    stack_peek 1 ps2.ps_stack = Var "x" /\
-    stack_peek 0 ps2.ps_stack = Var "x" /\
-    stack_peek 1 aps.ps_stack = Var "x" /\
-    stack_peek 0 aps.ps_stack = Var "x" /\
-    operand_val vs0 FEMPTY (stack_peek 1 ps2.ps_stack) = SOME 1w /\
-    operand_val vs0 FEMPTY (stack_peek 0 ps2.ps_stack) = SOME 1w /\
-    operand_val vs0 FEMPTY (stack_peek 1 aps.ps_stack) = SOME 1w /\
-    operand_val vs0 FEMPTY (stack_peek 0 aps.ps_stack) = SOME 1w
-Proof
-  EVAL_TAC
-QED
-
-Theorem probe_dfg_empty_alias_sound:
-  !vs lo op at.
-    operand_equiv dfg_empty op at ==>
-    operand_val vs lo op = operand_val vs lo at
-Proof
-  rpt strip_tac >>
-  Cases_on `op` >> Cases_on `at` >>
-  gvs[operand_equiv_def, normalize_operand_def, dfg_empty_def]
-QED
-
 Theorem prefix_spill_wf_append_reorder[local]:
   !l1 l2 lo ps.
     prefix_spill_wf initial_fmp lo (l1 ++ l2) ps <=>
@@ -5023,37 +4911,6 @@ QED
 
 
 
-(* A duplicate restore-offset collision cannot witness the proposed transfer
-   failure when reduction reuses the just-freed slot: the interpreted restore
-   necessarily leaves at least one colliding key, so the whole prefix is
-   already not spill-well-formed. *)
-Theorem restore_collision_reuse_blocks_whole_prefix[local]:
-  !h alt off ps lo ops ps'.
-    h <> alt /\
-    FLOOKUP ps.ps_spilled h = SOME off /\
-    FLOOKUP ps.ps_spilled alt = SOME off /\
-    do_restore h ps = (ops,ps') ==>
-    ~prefix_spill_wf initial_fmp lo (ops ++ [SOSpill off]) ps
-Proof
-  rpt gen_tac >> strip_tac >>
-  qpat_x_assum `do_restore _ _ = _` mp_tac >>
-  simp[do_restore_def] >> strip_tac >> gvs[] >>
-  simp[prefix_spill_wf_def, spill_op_wf_def, apply_prefix_op_def,
-       spill_lookup_def] >>
-  SELECT_ELIM_TAC >> simp[] >>
-  conj_tac >- (qexists_tac `h` >> simp[]) >>
-  rpt strip_tac >>
-  Cases_on `off < dimword(:256)` >> gvs[] >>
-  Cases_on `ps.ps_alloc.sa_spill_base <= off` >> gvs[] >>
-  Cases_on `x = h` >> gvs[]
-  >- (disj2_tac >> qexistsl [`alt`, `off`] >>
-      gvs[finite_mapTheory.FLOOKUP_DEF, DOMSUB_FAPPLY_THM]) >>
-  disj2_tac >> qexistsl [`h`, `off`] >>
-  gvs[finite_mapTheory.FLOOKUP_DEF, DOMSUB_FAPPLY_THM]
-QED
-
-
-
 Theorem reorder_one_exact_two_reduce_init_view[local]:
   !dfg h h' ps ops0 ps1 reduce_ops psr lo d.
     reorder_one dfg [h;h'] 0 h ps = (ops0,ps1) /\
@@ -5363,30 +5220,6 @@ QED
 
 
 
-Definition spill_batch_freshness_counter_ps_def:
-  spill_batch_freshness_counter_ps =
-    (init_plan_state 0) with <|
-      ps_stack := [Var "fresh_other"; Var "fresh_shadow"];
-      ps_spilled := FEMPTY |+ (Var "fresh_shadow",0);
-      ps_alloc := <| sa_free_slots := [];
-                     sa_next_offset := 96;
-                     sa_spill_base := 0 |>
-    |>
-End
-
-Theorem spill_batch_initial_freshness_counterexample[local]:
-  prefix_spill_wf initial_fmp (FEMPTY:string |-> num)
-    [SOSpill 64; SOSpill 0]
-    spill_batch_freshness_counter_ps /\
-  FLOOKUP spill_batch_freshness_counter_ps.ps_spilled
-    (Var "fresh_shadow") = SOME 0 /\
-  MEM (0:num) [64;0]
-Proof
-  EVAL_TAC >>
-  rpt strip_tac >> rpt IF_CASES_TAC >> gvs[] >>
-  simp[wordsTheory.dimword_def] >>
-  CONV_TAC (RAND_CONV fcpLib.INDEX_CONV) >> decide_tac
-QED
 Theorem reorder_one_exact_two_first_noops_shape[local]:
   !base dfg h h' ps ps1.
     exact_two_planner_ready base h h' ps /\

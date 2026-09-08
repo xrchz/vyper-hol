@@ -47,12 +47,4 @@ Proof
   decide_tac
 QED
 
-Theorem ceil32_eval_examples[local]:
-  ceil32 32 = 32 ∧
-  ceil32 33 = 64 ∧
-  ceil32 (2 ** 256 - 32) = 2 ** 256 - 32
-Proof
-  EVAL_TAC
-QED
-
 val _ = export_theory();

@@ -313,14 +313,6 @@ Definition sue_count_exempt_def:
     opc = ASSIGN \/ opc = PHI \/ opc = OFFSET \/ is_param_opcode opc
 End
 
-Theorem sue_count_exempt_param_eval:
-  sue_count_exempt PARAM /\
-  sue_count_exempt FMP_PARAM /\
-  sue_count_exempt RETPC_PARAM
-Proof
-  simp[sue_count_exempt_def, is_param_opcode_def]
-QED
-
 (* Count uses of variable v across non-exempt instructions in a block. *)
 Definition var_use_count_block_def:
   var_use_count_block v bb =

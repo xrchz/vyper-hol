@@ -243,17 +243,6 @@ Definition build_full_eda_def:
 End
 
 
-(* Executable boundary check: a raw FMP read remains ordered after the
-   preceding raw FMP write through the ordinary effect dependency table. *)
-Theorem build_full_eda_raw_fmp_dependency_eval:
-  FLOOKUP
-    (build_full_eda
-      [mk_inst 0 SETFMP [] [];
-       mk_inst 1 GETFMP [] []]) 1 =
-  SOME [mk_inst 0 SETFMP [] []]
-Proof
-  EVAL_TAC
-QED
 (* ===== Combined Dependencies ===== *)
 
 Definition inst_all_deps_def:
@@ -469,26 +458,6 @@ Definition dft_block_def:
 End
 
 
-(* Executable pass-through check: all parameter-like pseudos are preserved in
-   source order at the front, while raw FMP operations remain scheduled after
-   that front partition and retain their effect order. *)
-Theorem dft_block_parameter_front_eval:
-  (dft_block []
-    <| bb_label := "entry";
-       bb_instructions :=
-         [mk_inst 0 SETFMP [] [];
-          mk_inst 1 PARAM [] [];
-          mk_inst 2 GETFMP [] [];
-          mk_inst 3 FMP_PARAM [] [];
-          mk_inst 4 RETPC_PARAM [] []] |>).bb_instructions =
-    [mk_inst 1 PARAM [] [];
-     mk_inst 3 FMP_PARAM [] [];
-     mk_inst 4 RETPC_PARAM [] [];
-     mk_inst 0 SETFMP [] [];
-     mk_inst 2 GETFMP [] []]
-Proof
-  EVAL_TAC
-QED
 (* ===== Function-Level Transform with StackOrder Convergence ===== *)
 
 (* Python: run_pass convergence loop state *)

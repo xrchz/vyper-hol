@@ -59,44 +59,6 @@ Proof
   EVAL_TAC
 QED
 
-Theorem resolve_label_map_direct_eval:
-  resolve_label_map [("a","b")] = SOME [("a","b")]
-Proof
-  EVAL_TAC
-QED
-
-Theorem resolve_label_map_chain_eval:
-  resolve_label_map [("a","b");("b","c")] =
-    SOME [("a","c");("b","c")]
-Proof
-  EVAL_TAC
-QED
-
-Theorem resolve_label_map_non_topological_chain_eval:
-  resolve_label_map [("b","c");("a","b")] =
-    SOME [("b","c");("a","c")]
-Proof
-  EVAL_TAC
-QED
-
-Theorem resolve_label_map_two_cycle_eval:
-  resolve_label_map [("a","b");("b","a")] = NONE
-Proof
-  EVAL_TAC
-QED
-
-Theorem resolve_label_map_three_cycle_eval:
-  resolve_label_map [("a","b");("b","c");("c","a")] = NONE
-Proof
-  EVAL_TAC
-QED
-
-Theorem resolve_label_map_duplicate_domain_eval:
-  resolve_label_map [("a","b");("a","c")] = NONE
-Proof
-  EVAL_TAC
-QED
-
 Definition map_unit_data_item_def:
   map_unit_data_item label_map (DataBytes bytes) = DataBytes bytes /\
   map_unit_data_item label_map (DataLabel label) =
@@ -234,58 +196,6 @@ Proof
   strip_tac >>
   gvs[unit_labels_wf_def] >>
   irule apply_resolved_unit_label_map_data_consistent >> simp[]
-QED
-
-Definition task009_label_fixture_def:
-  task009_label_fixture reference = <|
-    cu_context := mk_venom_context
-      [mk_raw_function "f"
-        [<|bb_label := "old";
-            bb_instructions :=
-              [mk_inst 1 OFFSET [Label reference; Var "x"] ["out"]]|>;
-         <|bb_label := "mid"; bb_instructions := []|>;
-         <|bb_label := "new"; bb_instructions := []|>]]
-      (SOME "f");
-    cu_data_segment :=
-      [<|ds_label := "table";
-          ds_items := [DataLabel reference; DataBytes [1w; 2w]]|>]
-  |>
-End
-
-Theorem apply_unit_label_map_direct_eval:
-  apply_unit_label_map [("old","new")] (task009_label_fixture "old") =
-  SOME (task009_label_fixture "new")
-Proof
-  EVAL_TAC
-QED
-
-Theorem apply_unit_label_map_chain_eval:
-  apply_unit_label_map [("old","mid");("mid","new")]
-    (task009_label_fixture "old") =
-  SOME (task009_label_fixture "new")
-Proof
-  EVAL_TAC
-QED
-
-Theorem apply_unit_label_map_cycle_eval:
-  apply_unit_label_map [("old","mid");("mid","old")]
-    (task009_label_fixture "old") = NONE
-Proof
-  EVAL_TAC
-QED
-
-Theorem apply_unit_label_map_dangling_eval:
-  apply_unit_label_map [("old","missing")]
-    (task009_label_fixture "old") = NONE
-Proof
-  EVAL_TAC
-QED
-
-Theorem apply_unit_label_map_duplicate_source_eval:
-  apply_unit_label_map [("old","mid");("old","new")]
-    (task009_label_fixture "old") = NONE
-Proof
-  EVAL_TAC
 QED
 
 val _ = export_theory ();

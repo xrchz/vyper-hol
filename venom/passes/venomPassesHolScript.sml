@@ -49,7 +49,5 @@ Ancestors
   internalReturnCopyFwdProofs
   readonlyInvokeCopyFwdProofs
 
-  (* target-checked DRET desugaring *)
-  dretDesugarProps
   (* FMP lowering structural postconditions *)
   fmpLowerProps

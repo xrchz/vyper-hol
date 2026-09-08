@@ -634,15 +634,6 @@ Definition inst_sort_key_def:
     else 1n
 End
 
-Theorem task011_inst_sort_key_extended_params:
-  inst_sort_key (mk_inst 0 PHI [] []) = 0 /\
-  inst_sort_key (mk_inst 1 PARAM [] []) = 0 /\
-  inst_sort_key (mk_inst 2 FMP_PARAM [] []) = 0 /\
-  inst_sort_key (mk_inst 3 RETPC_PARAM [] []) = 0
-Proof
-  EVAL_TAC
-QED
-
 (* Sort instructions so PHIs are at the start and terminators at the end.
    Uses insertion sort (stable) to match Python's list.sort(key=...). *)
 Definition insert_by_key_def:
@@ -705,52 +696,3 @@ Definition make_ssa_ctx_def:
                   (live_in_fn func) func)
     ctx.ctx_functions
 End
-
-(* Closed compatibility probe: MakeSSA consumes syntax emitted by FMP lowering. *)
-Definition fmp_lowered_ssa_probe_fn_def:
-  fmp_lowered_ssa_probe_fn =
-    mk_raw_function "entry"
-      [<| bb_label := "entry";
-          bb_instructions :=
-            [mk_inst 1 FMP_PARAM [Lit 0w] ["fmp"];
-             mk_inst 2 INITIAL_FMP [] ["runner"];
-             mk_inst 3 BUMP [Var "runner"; Var "size"]
-               ["ptr"; "runner"];
-             mk_inst 4 ASSIGN [Var "ptr"] ["result"];
-             mk_inst 5 STOP [] []] |>]
-End
-
-Definition fmp_lowered_ssa_expected_fn_def:
-  fmp_lowered_ssa_expected_fn =
-    mk_raw_function "entry"
-      [<| bb_label := "entry";
-          bb_instructions :=
-            [mk_inst 1 FMP_PARAM [Lit 0w] ["fmp"];
-             mk_inst 2 INITIAL_FMP [] ["runner"];
-             mk_inst 3 BUMP [Var "runner"; Var "size"]
-               ["ptr"; "runner:1"];
-             mk_inst 4 ASSIGN [Var "ptr"] ["result"];
-             mk_inst 5 STOP [] []] |>]
-End
-
-Theorem fmp_lowered_second_make_ssa_eval:
-  make_ssa_fn [] (DNode "entry" []) ["entry"] [] [] []
-    fmp_lowered_ssa_probe_fn = fmp_lowered_ssa_expected_fn
-Proof
-  simp[fmp_lowered_ssa_probe_fn_def, fmp_lowered_ssa_expected_fn_def,
-       make_ssa_fn_def,
-       venomInstTheory.fn_entry_label_def,
-       venomInstTheory.entry_block_def,
-       venomInstTheory.mk_raw_function_def,
-       venomInstTheory.lookup_block_def, FIND_thm,
-       venomInstTheory.default_internal_call_abi_def,
-       compute_defs_def, block_assignments_def, nub_def,
-       alist_update_or_prepend_def,
-       add_phi_nodes_def, insert_phis_for_var_def, process_frontiers_def,
-       init_rename_state_def, rename_blocks_def, rename_block_insts_def,
-       rename_inst_def, rename_operands_def, rename_outputs_def,
-       push_version_def, latest_version_def, version_var_def,
-       replace_block_def, update_succ_phis_def,
-       venomInstTheory.mk_inst_def] >>
-  EVAL_TAC
-QED

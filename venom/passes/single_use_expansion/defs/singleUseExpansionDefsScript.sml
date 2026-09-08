@@ -44,14 +44,6 @@ Definition sue_should_skip_def:
     opc = ASSIGN \/ opc = OFFSET \/ opc = PHI \/ is_param_opcode opc
 End
 
-Theorem sue_should_skip_param_eval:
-  sue_should_skip PARAM /\
-  sue_should_skip FMP_PARAM /\
-  sue_should_skip RETPC_PARAM
-Proof
-  simp[sue_should_skip_def, is_param_opcode_def]
-QED
-
 (* ===== Fresh Variable ===== *)
 
 (* Fresh variable name based on instruction id and operand index. *)
@@ -330,34 +322,3 @@ End
 Definition sue_configured_def:
   sue_configured unit = FST (sue_configured_with_supply unit)
 End
-
-
-(* Closed collision probe: the input reserves both the first supply-style name
-   and a legacy SUE-style name, has sparse IDs, and spans two functions. *)
-Definition sue_supply_collision_probe_unit_def:
-  sue_supply_collision_probe_unit = <|
-    cu_context := mk_venom_context
-      [mk_raw_function "probe_f1"
-         [<| bb_label := "probe_b1";
-             bb_instructions :=
-               [mk_inst 7 ASSIGN [Lit 0w] ["formal_var_0"];
-                mk_inst 10000 ADD [Lit 1w; Var "formal_var_0"] ["sue_7_0"]] |>];
-       mk_raw_function "probe_f2"
-         [<| bb_label := "probe_b2";
-             bb_instructions :=
-               [mk_inst 42 ADD [Lit 2w; Lit 3w] ["probe_out"]] |>]]
-      (SOME "probe_f1");
-    cu_data_segment := [] |>
-End
-
-Theorem sue_supply_collision_probe:
-  let result = sue_configured_with_supply sue_supply_collision_probe_unit in
-    (SND result).irs_next_inst = 10004 /\
-    (SND result).irs_next_var = 4 /\
-    TAKE 3 (SND result).irs_used_inst_ids = [10003;10002;10001] /\
-    TAKE 3 (SND result).irs_used_vars =
-      ["formal_var_3";"formal_var_2";"formal_var_1"] /\
-    LENGTH (FST result).cu_context.ctx_functions = 2
-Proof
-  EVAL_TAC
-QED

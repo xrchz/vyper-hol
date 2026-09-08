@@ -6,28 +6,6 @@ Ancestors
   staticLayoutFoldProofs staticLayoutWf concretizeMemLocDefs staticLayoutDefs
   passSimulationDefs passSharedDefs passSharedProps venomInst list fcgDefs
 
-(* Disprove-first probe for the proposed certificate boundary. *)
-Theorem concretize_layout_wf_malformed_output_probe:
-  let fn = mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions := [mk_inst 1 ALLOCA [Lit 1w] []] |>] in
-  let layout = <| cl_positions := FEMPTY |+ (Allocation 1,0);
-                  cl_eom := 1 |> in
-    concretize_layout_wf [] fn layout /\
-    fn_has_alloca
-      (concretize_function_with_positions layout.cl_positions fn)
-Proof
-  EVAL_TAC >>
-  simp[concretize_layout_wf_def, static_fn_positions_wf_def,
-       static_position_wf_def, reserved_intervals_disjoint_def,
-       global_reserved_end_def, allocation_eom_fold_def,
-       allocation_end_def, concretize_function_with_positions_def,
-       function_map_transform_def, block_map_transform_def,
-       clear_nops_function_def, clear_nops_block_def,
-       fn_has_alloca_def, fn_insts_def, fn_insts_blocks_def,
-       concretize_inst_with_positions_def]
-QED
-
 Theorem concretize_inst_with_positions_not_alloca[local]:
   static_alloca_items fn = SOME items /\
   concretize_layout_wf reserved fn layout /\

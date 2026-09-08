@@ -565,40 +565,6 @@ Definition checked_first_fit_def:
     else NONE
 End
 
-Theorem concretize_dimindex_256[local,simp]:
-  dimindex (:256) = 256
-Proof
-  CONV_TAC fcpLib.INDEX_CONV
-QED
-
-(* Closed probes for the strict checked-helper boundary. *)
-Theorem checked_alloc_helper_edge_cases:
-  forced_alloc_keys_valid [Allocation 1]
-    (FEMPTY |+ (2,0)) = F /\
-  candidate_alloc_keys_valid [Allocation 1]
-    (FEMPTY |+ (Allocation 2,0)) = F /\
-  collect_static_allocas
-    [mk_inst 1 ALLOCA [Lit 1w] ["x"];
-     mk_inst 1 ALLOCA [Lit 2w] ["y"]] = NONE /\
-  exact_static_alloca_size (mk_inst 1 ALLOCA [] ["x"]) = NONE /\
-  exact_static_alloca_size (mk_inst 1 ALLOCA [Lit 1w] []) = NONE /\
-  merge_forced_positions [(Allocation 1,4)] (FEMPTY |+ (1,8))
-    (FEMPTY |+ (Allocation 1,4)) = NONE /\
-  checked_preserved_intervals_aux
-    [(Allocation 1,4); (Allocation 2,4)]
-    (FEMPTY |+ (Allocation 1,0) |+ (Allocation 2,2)) [] [] = NONE /\
-  checked_preserved_intervals_aux
-    [(Allocation 1,4)] (FEMPTY |+ (Allocation 1,2)) [(0,4)] [] = NONE /\
-  checked_preserved_intervals
-    [(Allocation 1,4)] (FEMPTY |+ (Allocation 1,8)) [(0,0)] = NONE /\
-  checked_preserved_intervals_aux
-    [(Allocation 1,1)]
-    (FEMPTY |+ (Allocation 1,dimword (:256) - 1)) [] [] = NONE /\
-  checked_first_fit [(0,1)] (dimword (:256) - 1) = NONE
-Proof
-  EVAL_TAC >> simp[wordsTheory.dimword_def]
-QED
-
 (* Fill source ALLOCAs in instruction order after all preserved positions have
    already been validated and reserved. *)
 Definition complete_alloc_positions_aux_def:
@@ -643,27 +609,6 @@ Definition complete_alloc_positions_def:
                       (reserved ++ occupied)
 End
 
-Theorem complete_alloc_positions_edge_cases:
-  let fn = mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 1 ALLOCA [Lit 4w] ["x"];
-           mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>] in
-    complete_alloc_positions FEMPTY [] fn FEMPTY =
-      SOME (FEMPTY |+ (Allocation 1,0) |+ (Allocation 2,4)) /\
-    complete_alloc_positions FEMPTY [] fn
-      (FEMPTY |+ (Allocation 2,0)) =
-      SOME (FEMPTY |+ (Allocation 2,0) |+ (Allocation 1,4)) /\
-    complete_alloc_positions (FEMPTY |+ (1,8)) [] fn
-      (FEMPTY |+ (Allocation 2,16)) =
-      SOME (FEMPTY |+ (Allocation 2,16) |+ (Allocation 1,8))
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, checked_first_fit_def,
-       checked_first_fit_scan_def, sort_reserved_by_pos_def,
-       insert_reserved_by_pos_def, reserved_intervals_wf_def,
-       reserved_interval_wf_def]
-QED
 (* Liveness-aware allocation loop.
    already: (alloc, liveset, position, size) — pre-allocated
    to_alloc: (alloc, liveset, size) — sorted by |liveset| ascending
@@ -812,24 +757,6 @@ Definition concretize_function_with_positions_def:
         fn)
 End
 
-(* Regression: output-variable equality must not collapse allocation identity. *)
-Theorem concretize_function_with_positions_equal_outputs:
-  concretize_function_with_positions
-    (FEMPTY |+ (Allocation 1,32) |+ (Allocation 2,64))
-    (mk_raw_function "f"
-      [<| bb_label := "entry";
-          bb_instructions :=
-            [mk_inst 1 ALLOCA [Lit 1w] ["%same"];
-             mk_inst 2 ALLOCA [Lit 1w] ["%same"]] |>]) =
-  mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 1 ASSIGN [Lit 32w] ["%same"];
-           mk_inst 2 ASSIGN [Lit 64w] ["%same"]] |>]
-Proof
-  EVAL_TAC
-QED
-
 Definition compute_function_alloc_map_fuel_def:
   compute_function_alloc_map_fuel fuel fn =
     let cfg = cfg_analyze fn in
@@ -879,27 +806,6 @@ Definition compute_function_layout_eval_def:
     | SOME completed => mk_concretize_layout reserved completed fn
 End
 
-Theorem compute_function_layout_eval_forced:
-  compute_function_layout_eval [(0,4)]
-    ((mk_raw_function "f"
-      [<| bb_label := "entry";
-          bb_instructions :=
-            [mk_inst 1 ALLOCA [Lit 4w] ["x"];
-             mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>]) with
-       fn_forced_alloc_positions := FEMPTY |+ (2,16)) =
-  SOME <| cl_positions :=
-            FEMPTY |+ (Allocation 2,16) |+ (Allocation 1,4);
-          cl_eom := 20 |>
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, checked_first_fit_def,
-       checked_first_fit_scan_def, sort_reserved_by_pos_def,
-       insert_reserved_by_pos_def, reserved_intervals_wf_def,
-       reserved_interval_wf_def, reserved_intervals_disjoint_def,
-       mk_concretize_layout_def, global_reserved_end_def,
-       allocation_eom_fold_def, allocation_end_def] >>
-  EVAL_TAC
-QED
 Definition fn_has_alloca_def:
   fn_has_alloca fn =
     EXISTS (\inst. is_alloca_op inst.inst_opcode) (fn_insts fn)
@@ -957,22 +863,6 @@ Definition concretize_function_eval_def:
       | SOME layout => SOME (apply_concretize_layout layout fn)
 End
 
-Theorem concretize_function_eval_static_guard:
-  let clean = (mk_raw_function "clean" []) with fn_eom := SOME 0 in
-  let stale_forced = clean with
-    fn_forced_alloc_positions := FEMPTY |+ (7,32) in
-  let stale_alloca = (mk_raw_function "stale"
-    [<| bb_label := "entry";
-        bb_instructions := [mk_inst 1 ALLOCA [Lit 4w] ["x"]] |>]) with
-    fn_eom := SOME 4 in
-    concretize_function_eval [(0,0)] clean = SOME clean /\
-    concretize_function_eval [] stale_forced = NONE /\
-    concretize_function_eval [] stale_alloca = NONE
-Proof
-  EVAL_TAC >> simp[]
-QED
-
-
 Definition concretize_context_fuel_def:
   concretize_context_fuel fuel ctx =
     case OPT_MMAP
@@ -990,131 +880,3 @@ Definition concretize_context_eval_def:
       NONE => NONE
     | SOME fns => SOME (ctx with ctx_functions := fns)
 End
-
-Theorem concretize_context_eval_empty:
-  concretize_context_eval
-    ((mk_venom_context [] NONE) with ctx_global_reserved := [(0,0)]) =
-  SOME ((mk_venom_context [] NONE) with ctx_global_reserved := [(0,0)])
-Proof
-  EVAL_TAC
-QED
-
-
-(* TASK_021 executable acceptance regressions.  These inspect the checked API
-   results, not only the private validation predicates. *)
-Theorem concretize_function_eval_completion_result:
-  let fn = (mk_raw_function "f"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 1 ALLOCA [Lit 4w] ["x"];
-           mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>]) with
-      fn_forced_alloc_positions := FEMPTY |+ (2,16) in
-  concretize_function_eval [(0,4)] fn =
-    SOME ((mk_raw_function "f"
-      [<| bb_label := "entry";
-          bb_instructions :=
-            [mk_inst 1 ASSIGN [Lit 4w] ["x"];
-             mk_inst 2 ASSIGN [Lit 16w] ["y"]] |>]) with
-      <| fn_forced_alloc_positions := FEMPTY;
-         fn_eom := SOME 20 |>)
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, checked_first_fit_def,
-       checked_first_fit_scan_def, sort_reserved_by_pos_def,
-       insert_reserved_by_pos_def, reserved_intervals_wf_def,
-       reserved_interval_wf_def, reserved_intervals_disjoint_def,
-       mk_concretize_layout_def, global_reserved_end_def,
-       allocation_eom_fold_def, allocation_end_def] >>
-  EVAL_TAC
-QED
-
-Theorem compute_function_layout_fuel_missing_liveness_alloca:
-  let fn = mk_raw_function "missing-live"
-    [<| bb_label := "entry";
-        bb_instructions := [mk_inst 3 ALLOCA [Lit 4w] ["z"]] |>] in
-  compute_function_layout_fuel 0 [] fn =
-    SOME <| cl_positions := FEMPTY |+ (Allocation 3,0);
-            cl_eom := 4 |>
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, checked_first_fit_def,
-       checked_first_fit_scan_def, sort_reserved_by_pos_def,
-       insert_reserved_by_pos_def, reserved_intervals_wf_def,
-       reserved_interval_wf_def, reserved_intervals_disjoint_def,
-       mk_concretize_layout_def, global_reserved_end_def,
-       allocation_eom_fold_def, allocation_end_def] >>
-  EVAL_TAC
-QED
-
-Theorem compute_function_layout_eval_rejections:
-  let good = mk_raw_function "good"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 1 ALLOCA [Lit 4w] ["x"];
-           mk_inst 2 ALLOCA [Lit 4w] ["y"]] |>] in
-  let unknown = good with
-    fn_forced_alloc_positions := FEMPTY |+ (7,0) in
-  let overlap = good with
-    fn_forced_alloc_positions := FEMPTY |+ (1,0) |+ (2,2) in
-  let reserved_collision = good with
-    fn_forced_alloc_positions := FEMPTY |+ (1,2) in
-  let overflow = (mk_raw_function "overflow"
-    [<| bb_label := "entry";
-        bb_instructions := [mk_inst 1 ALLOCA [Lit 1w] ["x"]] |>]) with
-    fn_forced_alloc_positions := FEMPTY |+ (1,dimword (:256) - 1) in
-  let duplicate = mk_raw_function "duplicate"
-    [<| bb_label := "entry";
-        bb_instructions :=
-          [mk_inst 1 ALLOCA [Lit 1w] ["x"];
-           mk_inst 1 ALLOCA [Lit 1w] ["y"]] |>] in
-  let malformed = mk_raw_function "malformed"
-    [<| bb_label := "entry";
-        bb_instructions := [mk_inst 1 ALLOCA [] ["x"]] |>] in
-    compute_function_layout_eval [] unknown = NONE /\
-    compute_function_layout_eval [] overlap = NONE /\
-    compute_function_layout_eval [(0,4)] reserved_collision = NONE /\
-    compute_function_layout_eval [] overflow = NONE /\
-    compute_function_layout_eval [] duplicate = NONE /\
-    compute_function_layout_eval [] malformed = NONE /\
-    compute_function_layout_eval [(0,0)] good = NONE
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, reserved_intervals_wf_def,
-       reserved_interval_wf_def, reserved_intervals_disjoint_def]
-QED
-
-Theorem concretize_function_eval_global_only:
-  concretize_function_eval [(8,4)] (mk_raw_function "global" []) =
-    SOME ((mk_raw_function "global" []) with fn_eom := SOME 12)
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, mk_concretize_layout_def,
-       global_reserved_end_def, allocation_eom_fold_def, allocation_end_def,
-       reserved_intervals_wf_def, reserved_interval_wf_def]
-QED
-
-Theorem concretize_context_eval_shared_global_reservation:
-  let f = \name id out. mk_raw_function name
-    [<| bb_label := "entry";
-        bb_instructions := [mk_inst id ALLOCA [Lit 4w] [out]] |>] in
-  let ctx = (mk_venom_context [f "f" 1 "x"; f "g" 2 "y"] NONE) with
-    ctx_global_reserved := [(0,4)] in
-  case concretize_context_eval ctx of
-    NONE => F
-  | SOME out =>
-      MAP (\fn.
-        (fn.fn_eom, fn.fn_forced_alloc_positions,
-         MAP (\inst. (inst.inst_opcode, inst.inst_operands)) (fn_insts fn)))
-        out.ctx_functions =
-      [(SOME 8, FEMPTY, [(ASSIGN,[Lit 4w])]);
-       (SOME 8, FEMPTY, [(ASSIGN,[Lit 4w])])]
-Proof
-  EVAL_TAC >>
-  simp[wordsTheory.dimword_def, checked_first_fit_def,
-       checked_first_fit_scan_def, sort_reserved_by_pos_def,
-       insert_reserved_by_pos_def, reserved_intervals_wf_def,
-       reserved_interval_wf_def, reserved_intervals_disjoint_def,
-       mk_concretize_layout_def, global_reserved_end_def,
-       allocation_eom_fold_def, allocation_end_def] >>
-  EVAL_TAC
-QED

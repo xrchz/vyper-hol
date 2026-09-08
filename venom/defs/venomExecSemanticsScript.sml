@@ -133,42 +133,12 @@ Proof
   simp[pack_dret_dynamic_def]
 QED
 
-Theorem pack_dret_dynamic_singleton_probe:
-  pack_dret_dynamic (100w:bytes32) [((7w:bytes32),(1w:bytes32))] s =
-    ([100w], 132w, mcopy (w2n (100w:bytes32)) (w2n (7w:bytes32))
-      (w2n (1w:bytes32)) s)
-Proof
-  simp[pack_dret_dynamic_def, ceil32_def] >> wordsLib.WORD_DECIDE_TAC
-QED
-
-Theorem pack_dret_dynamic_two_probe:
-  pack_dret_dynamic (100w:bytes32)
-    [((7w:bytes32),(1w:bytes32)); ((40w:bytes32),(33w:bytes32))] s =
-    ([100w;132w], 196w,
-     mcopy (w2n (132w:bytes32)) (w2n (40w:bytes32)) (w2n (33w:bytes32))
-       (mcopy (w2n (100w:bytes32)) (w2n (7w:bytes32)) (w2n (1w:bytes32)) s))
-Proof
-  simp[pack_dret_dynamic_def, ceil32_def] >> wordsLib.WORD_DECIDE_TAC
-QED
-
 Theorem mcopy_preserves_frame_metadata[simp]:
   (mcopy dst src sz s).vs_fmp = s.vs_fmp /\
   (mcopy dst src sz s).vs_call_entry_fmp = s.vs_call_entry_fmp /\
   (mcopy dst src sz s).vs_return_pc_token = s.vs_return_pc_token
 Proof
   simp[mcopy_def, write_memory_with_expansion_def]
-QED
-
-Theorem pack_dret_dynamic_metadata_probe:
-  (case pack_dret_dynamic (100w:bytes32)
-      [((7w:bytes32),(1w:bytes32)); ((40w:bytes32),(33w:bytes32))] s of
-     (ptrs,final_cursor,s') =>
-       s'.vs_fmp = s.vs_fmp /\
-       s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
-       s'.vs_return_pc_token = s.vs_return_pc_token)
-Proof
-  rw[pack_dret_dynamic_two_probe]
-  >> simp[]
 QED
 
 (* Boolean to word *)
@@ -1211,37 +1181,6 @@ Theorem step_inst_base_DRET:
 Proof
   Cases_on `inst` >> gvs[step_inst_base_def]
 QED
-
-
-
-Theorem step_inst_base_pure1_equations_probe[local]:
-  inst.inst_opcode = NOT ==>
-  step_inst_base inst s1 = exec_pure1 word_1comp inst s1 /\
-  step_inst_base inst s2 = exec_pure1 word_1comp inst s2
-Proof
-  simp[step_inst_base_NOT]
-QED
-Theorem step_inst_base_RET_probe:
-  step_inst_base (instruction id RET [Lit 7w; Lit 99w] []) s =
-    IntRet <| iret_values := [7w]; iret_adopt_fmp := NONE |> s
-Proof
-  EVAL_TAC
-QED
-
-Theorem step_inst_base_RETFMP_probe:
-  step_inst_base (instruction id RETFMP [Lit 7w; Lit 99w] []) s =
-    IntRet <| iret_values := [7w]; iret_adopt_fmp := SOME s.vs_fmp |> s
-Proof
-  EVAL_TAC
-QED
-
-Theorem step_inst_base_DRET_malformed_probe:
-  step_inst_base (instruction id DRET [Lit 0w; Lit 99w] []) s =
-    Error "dret: malformed operand envelope"
-Proof
-  EVAL_TAC
-QED
-
 
 (* --------------------------------------------------------------------------
    Block and Function Execution

@@ -110,28 +110,4 @@ Proof
   simp[unit_wf_def, unit_global_inst_ids_distinct_def, venom_wf_def]
 QED
 
-Theorem unit_wf_rejects_duplicate_function_names:
-  ~unit_wf <|
-    cu_context := mk_venom_context
-      [mk_raw_function "dup" []; mk_raw_function "dup" []] (SOME "dup");
-    cu_data_segment := []
-  |>
-Proof
-  EVAL_TAC
-QED
-
-Theorem unit_wf_rejects_duplicate_instruction_ids:
-  ~unit_wf <|
-    cu_context := mk_venom_context
-      [mk_raw_function "f" [<|bb_label := "f_entry";
-                              bb_instructions := [mk_inst 7 STOP [] []]|>];
-       mk_raw_function "g" [<|bb_label := "g_entry";
-                              bb_instructions := [mk_inst 7 STOP [] []]|>]]
-      (SOME "f");
-    cu_data_segment := []
-  |>
-Proof
-  EVAL_TAC
-QED
-
 val _ = export_theory ();

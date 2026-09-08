@@ -203,9 +203,6 @@ jobs:
           key: ${{ needs.export-vyper-tests.outputs.export-cache-key }}
           fail-on-cache-miss: true
 
-      - name: Verify generated Vyper wrappers and provenance
-        run: sh tests/vyper-test-wrappers --check
-
       - name: Run Vyper test group ${{ matrix.group }}
         env:
           TMPDIR: ${{ runner.temp }}

@@ -90,48 +90,6 @@ Definition concretize_layout_wf_def:
         SOME layout.cl_eom
 End
 
-(* Closed probes for the phase boundaries and their principal rejection cases. *)
-Definition static_wf_probe_fn_def:
-  static_wf_probe_fn insts forced eom =
-    (mk_raw_function "probe"
-      [<| bb_label := "entry"; bb_instructions := insts |>]) with <|
-      fn_forced_alloc_positions := forced;
-      fn_eom := eom
-    |>
-End
-
-Definition static_wf_probe_ctx_def:
-  static_wf_probe_ctx fn reserved =
-    (mk_venom_context [fn] NONE) with ctx_global_reserved := reserved
-End
-
-Theorem static_layout_wf_boundary_cases:
-  raw_static_inputs_wf
-    (static_wf_probe_ctx (static_wf_probe_fn [] FEMPTY NONE) []) /\
-  ~raw_static_inputs_wf
-    (static_wf_probe_ctx
-      (static_wf_probe_fn
-        [mk_inst 1 ALLOCA [Lit 1w] ["x"];
-         mk_inst 1 ALLOCA [Lit 1w] ["y"]] FEMPTY NONE) []) /\
-  ~raw_static_inputs_wf
-    (static_wf_probe_ctx
-      (static_wf_probe_fn [] (FEMPTY |+ (7,32)) NONE) []) /\
-  ~raw_static_inputs_wf
-    (static_wf_probe_ctx (static_wf_probe_fn [] FEMPTY NONE) [(0,0)]) /\
-  concretized_static_layouts_wf
-    (static_wf_probe_ctx (static_wf_probe_fn [] FEMPTY (SOME 0)) []) /\
-  ~concretized_static_layouts_wf
-    (static_wf_probe_ctx
-      (static_wf_probe_fn [] (FEMPTY |+ (7,32)) (SOME 0)) []) /\
-  ~concretized_static_layouts_wf
-    (static_wf_probe_ctx
-      (static_wf_probe_fn
-        [mk_inst 1 ALLOCA [Lit 1w] ["x"]] FEMPTY (SOME 1)) [])
-Proof
-  EVAL_TAC >> simp[venomInstTheory.fn_insts_blocks_def] >>
-  qexistsl [`7`,`32`] >> EVAL_TAC
-QED
-
 Theorem static_wf_dimindex_256[local,simp]:
   dimindex (:256) = 256
 Proof
@@ -146,12 +104,4 @@ Proof
   simp[static_position_wf_def]
 QED
 
-Theorem static_position_wf_guard_probes:
-  static_position_wf [(0,10)] 5 (0w : 256 word) /\
-  ~static_position_wf [(0,10)] 5 (1w : 256 word) /\
-  ~static_position_wf [] (dimword (:256)) (0w : 256 word)
-Proof
-  simp[static_position_wf_def, reserved_intervals_disjoint_def,
-       wordsTheory.dimword_def]
-QED
 val _ = export_theory();

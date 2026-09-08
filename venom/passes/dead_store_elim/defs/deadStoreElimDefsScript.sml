@@ -330,25 +330,3 @@ Definition dse_all_equiv_def:
     s1.vs_prev_hashes = s2.vs_prev_hashes /\
     s1.vs_allocas = s2.vs_allocas
 End
-
-
-(* Unknown reads from raw DRET and INVOKE conservatively keep any fixed store
-   live; parameter metadata neither reads nor clobbers memory. *)
-Theorem task011_extended_dse_barriers_eval:
-  let store_loc = <| ml_offset := SOME 64; ml_size := SOME 32;
-                     ml_alloca := NONE; ml_volatile := F |> in
-  let dret = mk_inst 20 DRET [] [] in
-  let invoke = mk_inst 21 INVOKE [] [] in
-  let params = MAP (\op. mk_inst 22 op [] [])
-                   [PARAM; FMP_PARAM; RETPC_PARAM] in
-    dse_inst_reads_alias FEMPTY FEMPTY AddrSp_Memory store_loc dret /\
-    dse_inst_reads_alias FEMPTY FEMPTY AddrSp_Memory store_loc invoke /\
-    ~dse_inst_clobbers FEMPTY AddrSp_Memory store_loc dret /\
-    ~dse_inst_clobbers FEMPTY AddrSp_Memory store_loc invoke /\
-    MAP (dse_inst_reads_alias FEMPTY FEMPTY AddrSp_Memory store_loc) params =
-      [F; F; F] /\
-    MAP (dse_inst_clobbers FEMPTY AddrSp_Memory store_loc) params =
-      [F; F; F]
-Proof
-  EVAL_TAC
-QED

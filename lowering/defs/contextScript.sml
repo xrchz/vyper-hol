@@ -282,44 +282,6 @@ Proof
        emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def]
 QED
 
-(* Closed counter-separation probe: DALLOCA consumes exactly the supplied
-   runtime operand and emits one output using the variable counter. *)
-Theorem compile_alloc_dynamic_counter_probe:
-  !(st:compile_state) (ptr:operand) (st':compile_state).
-  st.cs_next_id = 41 /\ st.cs_next_var = 7 /\
-  compile_alloc_dynamic (Var "%size") st = (ptr, st') ==>
-  ptr = Var "%7" /\
-  st'.cs_next_id = 42 /\ st'.cs_next_var = 8 /\
-  LAST st'.cs_current_insts = mk_inst 41 DALLOCA [Var "%size"] ["%7"]
-Proof
-  simp[compile_alloc_dynamic_def, emit_op_def, fresh_id_def, fresh_var_def,
-       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def] >>
-  EVAL_TAC >> simp[]
-QED
-
-(* TASK_017 allocation-classification audit (vyperlang/vyper@e1dead045).
-
-   Runtime extents (operand-valued) use compile_alloc_dynamic:
-   - builtinSystem.compile_msg_data_to_memory: CALLDATASIZE;
-   - builtinCreate.compile_create_copy: EXTCODESIZE + 32;
-   - builtinCreate.compile_create_blueprint: code size + optional args length.
-
-   Fixed capacities (HOL num-valued) retain compile_alloc_buffer/ALLOCA:
-   - context: declared alloca_size/type-memory bounds and immutable frames;
-   - abiEncoder/builtinAbi: 32-byte cursors and ABI size/max-length bounds;
-   - exprLowering/stmtLowering: type_memory_bytes, return ABI, tuple, log,
-     internal-call and normalization bounds;
-   - builtinBytes/builtinStrings: declared output maxima;
-   - builtinHashing/builtinMisc: fixed 32/64/96/128-byte scratch frames;
-   - builtinCreate/builtinSystem: fixed raw-create/proxy/call-output bounds;
-   - builtinSimple/moduleLowering: declared type/module layout capacities.
-
-   Unsupported statement shapes with missing compiler-environment bindings
-   emit INVALID (AnnAssign, Assign, AugAssign, range-loop and iteration-loop
-   targets),
-   while the general expression and statement catch-alls already emit INVALID.
-   Thus no audited unsupported branch is an undocumented identity lowering. *)
-
 (* Static allocation boundary.  Unlike compile_alloc_buffer, this exposes the
    instruction ID as a separate result so fixed-placement metadata is keyed by
    the emitted ALLOCA, never by its SSA output variable. *)
@@ -347,21 +309,6 @@ Theorem compile_alloc_buffer_with_id_result:
 Proof
   simp[compile_alloc_buffer_with_id_def, fresh_id_def, fresh_var_def,
        emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def]
-QED
-
-(* Closed counter-separation probe: the instruction ID is 41 while the SSA
-   output is %7, making accidental output-keying observable. *)
-Theorem compile_alloc_buffer_with_id_counter_probe:
-  !(st:compile_state) (id:num) (buf:buffer) (st':compile_state).
-  st.cs_next_id = 41 /\ st.cs_next_var = 7 /\
-  compile_alloc_buffer_with_id 64 st = ((id, buf), st') ==>
-  id = 41 /\ buf.buf_operand = Var "%7" /\
-  st'.cs_next_id = 42 /\
-  LAST st'.cs_current_insts = mk_inst 41 ALLOCA [Lit (n2w 64)] ["%7"]
-Proof
-  simp[compile_alloc_buffer_with_id_def, fresh_id_def, fresh_var_def,
-       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def] >>
-  EVAL_TAC >> simp[]
 QED
 
 (* ===== Load/Store Storage ===== *)

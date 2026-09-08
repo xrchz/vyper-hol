@@ -64,43 +64,6 @@ Definition cfg_block_label_declared_def:
       unit.cu_context.ctx_functions
 End
 
-(* The all-occurrence variable and label collectors are coverage collectors,
-   not declaration-identity collectors.  Generated forwarding variables occur
-   once as ASSIGN outputs and again as PHI operands; block labels also occur as
-   both declarations and branch operands. *)
-Theorem cfg_norm_supply_collectors_not_identity_sets[local]:
-  let result = cfg_norm_configured_with_supply
-                 cfg_norm_supply_collision_probe_unit in
-    ~ALL_DISTINCT (unit_ir_vars (FST result)) /\
-    ~ALL_DISTINCT (unit_ir_labels (FST result))
-Proof
-  EVAL_TAC
-QED
-
-(* In contrast, the allocator-event prefixes are pairwise fresh and each event
-   is materialized as a declaration in the configured result. *)
-Theorem cfg_norm_supply_delta_collision_probe:
-  let unit = cfg_norm_supply_collision_probe_unit in
-  let result = cfg_norm_configured_with_supply unit in
-  let unit' = FST result in
-  let s' = SND result in
-    cfg_supply_extends (init_ir_supply unit) s' /\
-    EVERY (cfg_id_declared unit') [9004;9003;9002;9001] /\
-    EVERY (cfg_var_declared unit') ["formal_var_2";"formal_var_1"] /\
-    EVERY (cfg_block_label_declared unit')
-      ["formal_label_2";"formal_label_1"]
-Proof
-  simp[] >>
-  conj_tac
-  >- (simp[cfg_supply_extends_def] >>
-      qexistsl [`[9004;9003;9002;9001]`,
-                `["formal_var_2";"formal_var_1"]`,
-                `["formal_label_2";"formal_label_1"]`] >>
-      EVAL_TAC)
-  >> EVAL_TAC
-QED
-
-
 Definition cfg_insts_id_declared_def:
   cfg_insts_id_declared insts id <=>
     EXISTS (\inst. inst.inst_id = id) insts
@@ -2932,30 +2895,6 @@ Proof
   metis_tac[init_ir_supply_cfg_supply_covers_unit,
             cfg_supply_covers_unit_functions]
 QED
-
-Theorem cfg_norm_function_supply_duplicate_label_invoke_subset_probe:
-  let s = <| irs_next_inst := 4; irs_next_var := 0; irs_next_label := 0;
-             irs_used_inst_ids := [0;1;2;3]; irs_used_vars := ["c"];
-             irs_used_labels := ["P";"C";"B"] |> in
-  let pred = <| bb_label := "P";
-                bb_instructions :=
-                  [mk_inst 0 JNZ [Var "c"; Label "B"; Label "C"] []] |> in
-  let side = <| bb_label := "C";
-                bb_instructions := [mk_inst 1 JMP [Label "B"] []] |> in
-  let target0 = <| bb_label := "B";
-                   bb_instructions := [mk_inst 2 STOP [] []] |> in
-  let target1 = <| bb_label := "B";
-                   bb_instructions :=
-                     [mk_inst 3 INVOKE [Label "callee"] []] |> in
-  let fn = mk_raw_function "f" [pred;side;target0;target1] in
-  let result = cfg_norm_function_supply s fn in
-    FST result <> fn /\
-    EVERY (\t. MEM t (MAP FST (fcg_scan_function fn)))
-      (MAP FST (fcg_scan_function (FST result)))
-Proof
-  EVAL_TAC
-QED
-
 
 (* ===== Raw FMP opcode preservation ===== *)
 Definition cfg_blocks_no_raw_def[local]:

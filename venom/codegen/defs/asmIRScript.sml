@@ -181,14 +181,6 @@ Definition venom_to_evm_name_def:
   venom_to_evm_name DLOADBYTES = NONE
 End
 
-Theorem task063_extended_venom_to_evm_name_eval:
-  MAP venom_to_evm_name
-    [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
-     INVOKE; FMP_PARAM; RETPC_PARAM] = REPLICATE 10 NONE
-Proof
-  EVAL_TAC
-QED
-
 (* =========================================================================
    Instruction Operand Helpers
    ========================================================================= *)

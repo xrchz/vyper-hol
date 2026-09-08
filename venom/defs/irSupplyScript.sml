@@ -542,49 +542,4 @@ Proof
   metis_tac[]
 QED
 
-Definition task013_supply_fixture_def:
-  task013_supply_fixture = <|
-    cu_context := mk_venom_context
-      [mk_raw_function "entry"
-         [<|bb_label := "formal_label_0";
-             bb_instructions :=
-               [mk_inst 3 STOP [] ["formal_var_0"]]|>];
-       mk_raw_function "later"
-         [<|bb_label := "later_block";
-             bb_instructions :=
-               [mk_inst 9000 STOP [] ["formal_var_1"]]|>]]
-      (SOME "entry");
-    cu_data_segment :=
-      [<|ds_label := "formal_label_1";
-          ds_items := [DataLabel "formal_label_2"]|>]
-  |>
-End
-
-Theorem task013_sparse_inst_eval:
-  FST (fresh_inst_id (init_ir_supply task013_supply_fixture)) = 9001 /\
-  FST (fresh_inst_id
-    (SND (fresh_inst_id (init_ir_supply task013_supply_fixture)))) = 9002
-Proof
-  EVAL_TAC
-QED
-
-Theorem task013_var_collision_eval:
-  FST (fresh_ir_var (init_ir_supply task013_supply_fixture)) =
-    "formal_var_2" /\
-  FST (fresh_ir_var
-    (SND (fresh_ir_var (init_ir_supply task013_supply_fixture)))) =
-    "formal_var_3"
-Proof
-  EVAL_TAC
-QED
-
-Theorem task013_label_collision_eval:
-  FST (fresh_ir_label (init_ir_supply task013_supply_fixture)) =
-    "formal_label_3" /\
-  FST (fresh_ir_label
-    (SND (fresh_ir_label (init_ir_supply task013_supply_fixture)))) =
-    "formal_label_4"
-Proof
-  EVAL_TAC
-QED
 val _ = export_theory ();

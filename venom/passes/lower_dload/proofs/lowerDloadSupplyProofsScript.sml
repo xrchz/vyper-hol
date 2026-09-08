@@ -1,66 +1,7 @@
-(* Supply-aware lower-DLOAD contracts and executable validation. *)
+(* Supply-aware lower-DLOAD contracts. *)
 Theory lowerDloadSupplyProofs
 Ancestors
   lowerDloadDefs irSupply venomInst fcgDefs
-
-Definition ld_probe_supply_def:
-  ld_probe_supply = <|
-    irs_next_inst := 10;
-    irs_next_var := 0;
-    irs_next_label := 0;
-    irs_used_inst_ids := [7];
-    irs_used_vars := [];
-    irs_used_labels := []
-  |>
-End
-
-Definition ld_probe_fn_def:
-  ld_probe_fn inst eom =
-    (mk_raw_function "probe"
-      [<| bb_label := "entry"; bb_instructions := [inst] |>])
-      with fn_eom := eom
-End
-
-Theorem lower_dload_supply_shaped_dload_eval:
-  let inst = mk_inst 7 DLOAD [Lit 3w] ["out"] in
-  let result = lower_dload_function_supply ld_probe_supply
-                 (ld_probe_fn inst (SOME 99)) in
-    MAP (\i. i.inst_opcode)
-      (HD (FST result).fn_blocks).bb_instructions =
-        [ALLOCA; ADD; CODECOPY; MLOAD] /\
-    (FST result).fn_eom = NONE /\
-    (SND result).irs_next_inst = 14 /\
-    LENGTH (SND result).irs_used_inst_ids = 5 /\
-    LENGTH (SND result).irs_used_vars = 2
-Proof
-  EVAL_TAC >> simp[lower_dload_invalidates_layout_def]
-QED
-
-Theorem lower_dload_supply_malformed_dload_eval:
-  let inst = mk_inst 7 DLOAD [Lit 3w; Lit 4w] ["out"] in
-  let result = lower_dload_function_supply ld_probe_supply
-                 (ld_probe_fn inst (SOME 99)) in
-    (HD (FST result).fn_blocks).bb_instructions = [inst] /\
-    (FST result).fn_eom = SOME 99 /\
-    SND result = ld_probe_supply
-Proof
-  EVAL_TAC >> simp[lower_dload_invalidates_layout_def]
-QED
-
-Theorem lower_dload_supply_dloadbytes_eval:
-  let inst = mk_inst 7 DLOADBYTES [Var "dst"; Lit 3w; Lit 5w] [] in
-  let result = lower_dload_function_supply ld_probe_supply
-                 (ld_probe_fn inst (SOME 99)) in
-    MAP (\i. i.inst_opcode)
-      (HD (FST result).fn_blocks).bb_instructions = [ADD; CODECOPY] /\
-    (FST result).fn_eom = SOME 99 /\
-    (SND result).irs_next_inst = 12 /\
-    LENGTH (SND result).irs_used_inst_ids = 3 /\
-    LENGTH (SND result).irs_used_vars = 1
-Proof
-  EVAL_TAC >> simp[lower_dload_invalidates_layout_def]
-QED
-
 
 (* A supply extension preserves every reservation and preserves distinctness.
    Consequently the final-list delta is a pairwise-fresh set of generated

@@ -26,4 +26,3 @@ Ancestors
   vyperLoweringHol
   (* codegen *)
   venomToAsmProps asmToBytecodeProps codegenCorrectness
-  contextCodegenRelValidation

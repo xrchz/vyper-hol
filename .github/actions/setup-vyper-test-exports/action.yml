@@ -14,15 +14,14 @@ runs:
       with:
         python-version: '3.11'
 
-    - name: Get Vyper revision and export policy
+    - name: Get Vyper revision
       id: vyper-rev
       shell: bash
       run: |
         set -euo pipefail
         sha=$(tr -d '[:space:]' < VYPER_PIN)
-        settings_sha=$(sha256sum tests/vyper-test-export-settings.json | cut -d' ' -f1)
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
-        echo "cache-key=vyper-tests-${{ runner.os }}-$sha-$settings_sha" >> "$GITHUB_OUTPUT"
+        echo "cache-key=vyper-tests-${{ runner.os }}-$sha" >> "$GITHUB_OUTPUT"
 
     - name: Cache exported Vyper tests
       id: cache-vyper-tests

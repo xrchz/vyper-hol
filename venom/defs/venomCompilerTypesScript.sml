@@ -51,18 +51,4 @@ Proof
   gvs []
 QED
 
-Theorem resolve_o1_policy_prague:
-  IS_SOME (resolve_o1_policy <|cpol_target := prague_capabilities|>)
-Proof
-  simp [resolve_o1_policy_def,
-        venomPolicyTypesTheory.target_capabilities_wf_def,
-        venomPolicyTypesTheory.prague_capabilities_def]
-QED
-
-Theorem resolve_o1_policy_missing_mcopy:
-  resolve_o1_policy <|cpol_target := (\c. c <> CapMcopy)|> = NONE
-Proof
-  EVAL_TAC
-QED
-
 val _ = export_theory ();

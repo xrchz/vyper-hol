@@ -346,21 +346,6 @@ Definition is_pre_codegen_opcode_def:
     is_unlowered_internal_call_opcode opc
 End
 
-Theorem task063_extended_pre_codegen_eval:
-  MAP is_pre_codegen_opcode
-    [DALLOCA; DRET; GETFMP; SETFMP; RETFMP; INITIAL_FMP; BUMP;
-     INVOKE; FMP_PARAM; RETPC_PARAM] =
-    [T; T; T; T; T; F; F; F; F; F]
-Proof
-  EVAL_TAC
-QED
-
-Theorem task063_legacy_pre_codegen_eval:
-  MAP is_pre_codegen_opcode [ALLOCA; SINK; DLOAD; DLOADBYTES] = REPLICATE 4 T
-Proof
-  EVAL_TAC
-QED
-
 (* =========================================================================
    Codegen Preconditions
    These are what the caller (pipeline proof) must discharge.

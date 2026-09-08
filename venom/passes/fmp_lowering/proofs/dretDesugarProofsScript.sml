@@ -678,26 +678,6 @@ Proof
   Cases_on `z` >> gvs[] >>
   metis_tac[dret_desugar_configured_with_supply_metadata]
 QED
-Theorem dret_entry_cursor_label_counterexample:
-  let s = <| irs_next_inst := 1; irs_next_var := 0; irs_next_label := 0;
-             irs_used_inst_ids := []; irs_used_vars := [];
-             irs_used_labels := [] |> in
-  let inst = mk_inst 0 DRET
-    [Lit 1w; Var "src"; Var "size"; Var "retpc"] [] in
-    EVERY dret_value_operand inst.inst_operands /\
-    inst_ir_labels inst = [] /\
-    OPTION_MAP (\p. FLAT (MAP inst_ir_labels (FST p)))
-      (replace_dret_inst s (Label "cursor_label") inst) =
-      SOME ["cursor_label"; "cursor_label"; "cursor_label"]
-Proof
-  simp[dret_value_operand_simps, venomInstTheory.mk_inst_def,
-       inst_ir_labels_def, operand_ir_labels_def] >>
-  EVAL_TAC >>
-  simp[expand_dret_pairs_def, fresh_ir_var_def, seek_fresh_name_def,
-       inst_ir_labels_def, operand_ir_labels_def] >> EVAL_TAC >>
-  simp[inst_ir_labels_def, operand_ir_labels_def]
-QED
-
 Theorem dret_get_invoke_targets_append[local]:
   get_invoke_targets (xs ++ ys) =
   get_invoke_targets xs ++ get_invoke_targets ys

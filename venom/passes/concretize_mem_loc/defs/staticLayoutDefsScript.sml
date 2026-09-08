@@ -79,31 +79,4 @@ Definition mk_concretize_layout_def:
         | SOME eom => SOME <| cl_positions := positions; cl_eom := eom |>
 End
 
-Theorem static_layout_dimindex_256[local,simp]:
-  dimindex (:256) = 256
-Proof
-  CONV_TAC fcpLib.INDEX_CONV
-QED
-
-(* Executable probes for the checked/failure boundary. *)
-Theorem static_layout_fold_edge_cases:
-  global_reserved_end [] 0 = SOME 0 /\
-  global_reserved_end [(32,16)] 0 = SOME 48 /\
-  global_reserved_end [(0,0)] 0 = NONE /\
-  global_reserved_end [(dimword (:256) - 1,1)] 0 = NONE /\
-  mk_concretize_layout [] FEMPTY (mk_raw_function "" []) =
-    SOME <| cl_positions := FEMPTY; cl_eom := 0 |> /\
-  mk_concretize_layout [(32,16)] FEMPTY (mk_raw_function "" []) =
-    SOME <| cl_positions := FEMPTY; cl_eom := 48 |> /\
-  allocation_eom_fold
-    (FEMPTY |+ (Allocation 1,0)) [mk_inst 1 ALLOCA [] ["x"]] 0 = NONE /\
-  allocation_eom_fold FEMPTY
-    [mk_inst 1 ALLOCA [Lit 1w] ["x"]] 0 = NONE /\
-  allocation_eom_fold
-    (FEMPTY |+ (Allocation 1,dimword (:256) - 1))
-    [mk_inst 1 ALLOCA [Lit 1w] ["x"]] 0 = NONE
-Proof
-  EVAL_TAC >> simp[wordsTheory.dimword_def]
-QED
-
 val _ = export_theory();

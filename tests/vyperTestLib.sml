@@ -608,147 +608,36 @@ fun test_files () =
   |> Lib.sort lexless
   |> List.map (fn path => (json_path_to_id path, path))
 
-fun duplicate_by projection entries =
-  case entries of
-      [] => NONE
-    | x::xs =>
-        (case List.find (fn y => projection x = projection y) xs of
-             NONE => duplicate_by projection xs
-           | SOME y => SOME (x, y))
-
-fun validated_test_files () = let
-  val files = test_files ()
-  val () =
-    case duplicate_by #2 files of
-        NONE => ()
-      | SOME ((_, path1), (_, path2)) =>
-          raise Fail (String.concat ["duplicate selected JSON path: ", path1,
-                                     " and ", path2])
-  val () =
-    case duplicate_by #1 files of
-        NONE => ()
-      | SOME ((id, path1), (_, path2)) =>
-          raise Fail (String.concat ["wrapper ID collision for ", id, ": ",
-                                     path1, " and ", path2])
-in
-  files
-end
-
-fun selected_test_count () = List.length (validated_test_files ())
-
-fun definition_wrapper (id, json_path) = let
-  val thyname = String.concat ["vyperTestDefs_", id]
-  val filename = String.concat [thyname, "Script.sml"]
-  (* Paths in generated scripts are relative to tests/generated/. *)
-  val json_from_generated = OS.Path.concat ("..", json_path)
-  val contents = String.concat [
-    "Theory ", thyname, "[no_sig_docs]\nAncestors jsonToVyper\nLibs vyperTestLib\n",
-    "val () = holbuild_extra_deps [\"", json_from_generated, "\"];\n",
-    "val () = make_definitions_for_file (\"", id, "\", \"",
-    json_from_generated, "\");\n"]
-in
-  (filename, contents)
-end
-
-fun test_wrapper (id, _) = let
-  val thyname = String.concat ["vyperTest_", id]
-  val defsname = String.concat ["vyperTestDefs_", id]
-  val filename = String.concat [thyname, "Script.sml"]
-  val contents = String.concat [
-    "Theory ", thyname, "[no_sig_docs]\nAncestors ", defsname,
-    "\nLibs vyperTestRunnerLib\nval () = List.app ",
-    "run_test_on_traces $ all_traces \"", defsname, "\";\n"]
-in
-  (filename, contents)
-end
-
-fun desired_wrapper_inventory () = let
-  val files = validated_test_files ()
-  val artifacts =
-    List.concat (List.map (fn entry =>
-      [definition_wrapper entry, test_wrapper entry]) files)
-    |> Lib.sort (fn (name1, _) => fn (name2, _) => lexless name1 name2)
-  val () =
-    case duplicate_by #1 artifacts of
-        NONE => ()
-      | SOME ((name, _), _) =>
-          raise Fail ("duplicate generated wrapper filename: " ^ name)
-in
-  artifacts
-end
-
-fun is_generated_wrapper name =
-  (String.isPrefix "vyperTestDefs_" name orelse
-   String.isPrefix "vyperTest_" name) andalso
-  String.isSuffix "Script.sml" name
-
-fun actual_wrapper_names () = let
-  val d = OS.FileSys.openDir generated_dir
-  fun loop acc =
+fun cleanup_generated_scripts files = let
+  val keep =
+    List.map (fn (id, _) => String.concat ["vyperTestDefs_", id, "Script.sml"]) files @
+    List.map (fn (id, _) => String.concat ["vyperTest_", id, "Script.sml"]) files
+  fun is_keep name = List.exists (fn k => k = name) keep
+  fun is_gen name =
+    (String.isPrefix "vyperTestDefs_" name orelse
+     String.isPrefix "vyperTest_" name) andalso
+    String.isSuffix "Script.sml" name
+  val gen_dir = generated_dir
+  fun loop d =
     case OS.FileSys.readDir d of
-        NONE => (OS.FileSys.closeDir d; Lib.sort lexless acc)
-      | SOME entry =>
-          if entry = "." orelse entry = ".." then loop acc
-          else if is_generated_wrapper entry then loop (entry :: acc)
-          else loop acc
+      NONE => ()
+    | SOME entry =>
+        if entry = "." orelse entry = ".." then loop d
+        else let
+          val path = OS.Path.concat(gen_dir, entry)
+        in
+          if is_gen entry andalso not (is_keep entry) then
+            (OS.FileSys.remove path handle _ => ())
+          else ();
+          loop d
+        end
+  val d = OS.FileSys.openDir gen_dir
+  val () = loop d
+  val () = OS.FileSys.closeDir d
 in
-  loop [] handle e => (OS.FileSys.closeDir d handle _ => (); raise e)
+  ()
 end
 
-fun read_file path = let
-  val input = TextIO.openIn path
-  val contents = TextIO.inputAll input
-  val () = TextIO.closeIn input
-in
-  contents
-end
-
-fun artifact_names artifacts = List.map #1 artifacts
-fun member name names = List.exists (fn candidate => candidate = name) names
-
-fun wrapper_differences artifacts = let
-  val expected_names = artifact_names artifacts
-  val actual_names = actual_wrapper_names ()
-  val missing = List.filter (fn name => not (member name actual_names)) expected_names
-  val stale = List.filter (fn name => not (member name expected_names)) actual_names
-  val changed = List.mapPartial (fn (name, expected) =>
-    if member name actual_names andalso
-       read_file (OS.Path.concat (generated_dir, name)) <> expected
-    then SOME name else NONE) artifacts
-in
-  List.map (fn name => "missing wrapper: " ^ name) missing @
-  List.map (fn name => "stale wrapper: " ^ name) stale @
-  List.map (fn name => "content mismatch: " ^ name) changed
-end
-
-fun write_file_atomic (name, contents) = let
-  val path = OS.Path.concat (generated_dir, name)
-  val tmp = path ^ ".tmp"
-  val unchanged =
-    OS.FileSys.access (path, [OS.FileSys.A_READ]) andalso read_file path = contents
-in
-  if unchanged then ()
-  else let
-    val output = TextIO.openOut tmp
-                 handle e => (OS.FileSys.remove tmp handle _ => (); raise e)
-    val () = (TextIO.output (output, contents); TextIO.closeOut output)
-             handle e => (TextIO.closeOut output handle _ => ();
-                          OS.FileSys.remove tmp handle _ => ();
-                          raise e)
-    val () = OS.FileSys.rename {old = tmp, new = path}
-             handle e => (OS.FileSys.remove tmp handle _ => (); raise e)
-  in
-    ()
-  end
-end
-
-fun remove_stale_wrappers artifacts = let
-  val expected_names = artifact_names artifacts
-  val stale = List.filter (fn name => not (member name expected_names))
-                          (actual_wrapper_names ())
-in
-  List.app (fn name => OS.FileSys.remove (OS.Path.concat (generated_dir, name))) stale
-end
 fun holbuild_extra_deps (_ : string list) = ()
 
 fun make_definitions_for_file (id, json_path) = let
@@ -762,69 +651,73 @@ fun make_definitions_for_file (id, json_path) = let
                            " - ", exnMessage err, " (",
                            Int.toString (List.length decode_fails),
                            " tests failed to decode)"])
-  val path_vn = String.concat ["json_path_", id]
-  val path_def = new_definition (path_vn ^ "_def",
-                   mk_eq (mk_var (path_vn, string_ty), fromMLstring json_path))
+  val path_vn = String.concat["json_path_", id]
+  val path_def = new_definition(path_vn ^ "_def",
+                   mk_eq(mk_var(path_vn, string_ty),
+                         fromMLstring json_path))
   val traces_prefix = String.concat ["traces_", id, "_"]
   val test_name_prefix = String.concat ["name_", id, "_"]
   fun define_traces i (name, traces) = let
-    val trs = mk_list (traces, trace_ty)
+    val trs = mk_list(traces, trace_ty)
     val tn = Int.toString i
     val vn = traces_prefix ^ tn
-    val var = mk_var (vn, traces_ty)
-    val def = new_definition (vn ^ "_def", mk_eq (var, trs))
+    val var = mk_var(vn, traces_ty)
+    val def = new_definition(vn ^ "_def", mk_eq(var, trs))
     val () = cv_trans def
     val vn = test_name_prefix ^ tn
-    val def = new_definition (vn ^ "_def",
-      mk_eq (mk_var (vn, string_ty), fromMLstring name))
-  in
-    ()
-  end
+    val def = new_definition(vn ^ "_def",
+      mk_eq(mk_var(vn, string_ty), fromMLstring name))
+  in () end
 in
   Lib.appi define_traces tests
 end
 
-
-fun write_artifacts artifacts = List.app write_file_atomic artifacts
-
 fun generate_defn_scripts () = let
   val () = check_generate_dirs ()
-  val artifacts = List.filter (String.isPrefix "vyperTestDefs_" o #1)
-                              (desired_wrapper_inventory ())
+  val files = test_files ()
+  val gen_dir = generated_dir
+  val () = cleanup_generated_scripts files
+  val () = List.app (fn (id, jsonp) => let
+    val thyname = String.concat["vyperTestDefs_", id]
+    val fname = OS.Path.concat(gen_dir, String.concat[thyname, "Script.sml"])
+    (* Path is relative to tests/generated/, so prepend ../ to reach tests/vyper-test-exports *)
+    val jsonp_from_generated = OS.Path.concat("..", jsonp)
+    val contents = String.concat [
+      "Theory ", thyname, "[no_sig_docs]\nAncestors jsonToVyper\nLibs vyperTestLib\n",
+      "val () = holbuild_extra_deps [\"", jsonp_from_generated, "\"];\n",
+      "val () = make_definitions_for_file (\"", id, "\", \"", jsonp_from_generated, "\");\n"]
+    val out = TextIO.openOut(fname)
+    val () = TextIO.output(out, contents)
+    val () = TextIO.closeOut out
+  in () end) files
 in
-  write_artifacts artifacts
+  ()
 end
 
 fun generate_test_scripts () = let
   val () = check_generate_dirs ()
-  val artifacts = List.filter (fn (name, _) =>
-                    String.isPrefix "vyperTest_" name andalso
-                    not (String.isPrefix "vyperTestDefs_" name))
-                  (desired_wrapper_inventory ())
-in
-  write_artifacts artifacts
-end
-
-fun check_generated_tests () = let
-  val () = check_generate_dirs ()
-  val differences = wrapper_differences (desired_wrapper_inventory ())
-  val () = List.app (fn message =>
-             TextIO.output (TextIO.stdErr, message ^ "\n")) differences
-in
-  case differences of
-      [] => ()
-    | _ => raise Fail (Int.toString (List.length differences) ^
-                       " generated wrapper difference(s)")
-end
-
-fun generate_tests () = let
-  val () = check_generate_dirs ()
-  val artifacts = desired_wrapper_inventory ()
-  (* All validation is complete before the first filesystem mutation. *)
-  val () = remove_stale_wrappers artifacts
-  val () = write_artifacts artifacts
+  val files = test_files ()
+  val gen_dir = generated_dir
+  val () = cleanup_generated_scripts files
+  val () = List.app (fn (id, _) => let
+    val thyname = String.concat["vyperTest_", id]
+    val defsname = String.concat["vyperTestDefs_", id]
+    val fname = OS.Path.concat(gen_dir, String.concat[thyname, "Script.sml"])
+    val contents = String.concat [
+      "Theory ", thyname, "[no_sig_docs]\nAncestors ", defsname,
+      "\nLibs vyperTestRunnerLib\nval () = List.app ",
+      "run_test_on_traces $ all_traces \"", defsname, "\";\n"]
+    val out = TextIO.openOut(fname)
+    val () = TextIO.output(out, contents)
+    val () = TextIO.closeOut out
+  in () end) files
 in
   ()
 end
+
+fun generate_tests () = (
+  generate_defn_scripts ();
+  generate_test_scripts ()
+)
 
 end

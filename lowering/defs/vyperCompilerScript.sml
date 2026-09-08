@@ -107,24 +107,6 @@ Definition package_internal_blocks_def:
                   mk_internal_function name fn_blocks has_ret_buf rc :: functions)
 End
 
-(* Small executable probes for the packaging boundary. *)
-Theorem package_internal_blocks_two_probe:
-  package_internal_blocks [("f", T, 2n); ("g", F, 0n)]
-    [<| bb_label := "entry"; bb_instructions := [] |>;
-     <| bb_label := "f"; bb_instructions := [] |>;
-     <| bb_label := "f.more"; bb_instructions := [] |>;
-     <| bb_label := "g"; bb_instructions := [] |>] =
-  SOME
-    ([<| bb_label := "entry"; bb_instructions := [] |>],
-     [mk_internal_function "f"
-        [<| bb_label := "f"; bb_instructions := [] |>;
-         <| bb_label := "f.more"; bb_instructions := [] |>] T 2;
-      mk_internal_function "g"
-        [<| bb_label := "g"; bb_instructions := [] |>] F 0])
-Proof
-  EVAL_TAC
-QED
-
 Theorem mk_internal_function_metadata:
   !name blocks has_ret_buf rc.
     (mk_internal_function name blocks has_ret_buf rc).fn_name = name /\

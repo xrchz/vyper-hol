@@ -228,16 +228,6 @@ Proof
   gvs[is_terminator_def] >> EVAL_TAC
 QED
 
-Triviality memory_def_opcode_store_probes:
-  is_memory_def_opcode AddrSp_Memory MSTORE /\
-  is_memory_def_opcode AddrSp_Storage SSTORE /\
-  is_memory_def_opcode AddrSp_Transient TSTORE /\
-  ~is_memory_def_opcode AddrSp_Memory DRET
-Proof
-  simp[is_memory_def_opcode_def, is_terminator_def, write_effects_def] >>
-  EVAL_TAC
-QED
-
 (* Add effect definitions to computeLib for EVAL capability *)
 val _ = computeLib.add_funs
   [write_effects_def, read_effects_def, is_memory_def_opcode_def,

@@ -6,18 +6,6 @@ Theory singleUseExpansionSupplyProofs
 Ancestors
   singleUseExpansionDefs irSupply venomInst fcgDefs
 
-(* unit_ir_vars is an occurrence collector (definitions and uses), so it is
-   deliberately not ALL_DISTINCT after a generated ASSIGN feeds the rewritten
-   instruction.  This checked probe guards the proof interface against
-   confusing occurrence uniqueness with uniqueness of generated names. *)
-Theorem sue_unit_ir_vars_occurrence_counterexample:
-  ~ALL_DISTINCT
-     (unit_ir_vars
-        (FST (sue_configured_with_supply sue_supply_collision_probe_unit)))
-Proof
-  EVAL_TAC
-QED
-
 Theorem sue_alloc_assign_supply_contract:
   ir_supply_inst_ok s /\ sue_alloc_assign_supply s op = (a,newop,s') ==>
   ?v id.

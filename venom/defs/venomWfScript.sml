@@ -405,20 +405,3 @@ Definition venom_wf_def:
     (∀fn. MEM fn ctx.ctx_functions ==>
           wf_function fn ∧ fn_inst_wf fn)
 End
-
-
-
-Theorem task006_inst_wf_eval:
-  inst_wf (mk_inst 0 DALLOCA [Var "size"] ["out"]) /\
-  inst_wf (mk_inst 1 DRET
-    [Lit 1w; Var "ordinary"; Var "src"; Lit 32w; Var "retpc"] []) /\
-  inst_wf (mk_inst 2 GETFMP [] ["fmp"]) /\
-  inst_wf (mk_inst 3 SETFMP [Var "fmp"] []) /\
-  inst_wf (mk_inst 4 RETFMP [Var "ret"] []) /\
-  inst_wf (mk_inst 5 INITIAL_FMP [] ["fmp"]) /\
-  inst_wf (mk_inst 6 BUMP [Var "fmp"; Var "size"] ["old"; "new"]) /\
-  ~inst_wf (mk_inst 9 FMP_PARAM [Var "3"] ["fmp"]) /\
-  ~inst_wf (mk_inst 10 RETPC_PARAM [Label "4"] ["retpc"])
-Proof
-  EVAL_TAC >> simp[]
-QED

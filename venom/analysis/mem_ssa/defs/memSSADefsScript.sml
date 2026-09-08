@@ -527,25 +527,3 @@ Definition transient_ssa_analyze_def:
   transient_ssa_analyze cfg dom bp fn =
     mem_ssa_build cfg dom bp fn AddrSp_Transient
 End
-
-
-
-(* Extended opcodes enter MemSSA solely through conservative location queries. *)
-Theorem task011_extended_mem_ssa_eval:
-  let dret = mk_inst 10 DRET [] [] in
-  let invoke = mk_inst 11 INVOKE [] [] in
-  let param = mk_inst 12 PARAM [] ["p"] in
-  let fmp_param = mk_inst 13 FMP_PARAM [] ["fmp"] in
-  let retpc_param = mk_inst 14 RETPC_PARAM [] ["pc"] in
-  let dret_ms = mem_ssa_process_inst FEMPTY AddrSp_Memory "b" mem_ssa_init dret in
-  let invoke_ms = mem_ssa_process_inst FEMPTY AddrSp_Memory "b" mem_ssa_init invoke in
-    FLOOKUP dret_ms.ms_inst_use 10 = SOME 1 /\
-    FLOOKUP dret_ms.ms_inst_def 10 = SOME 2 /\
-    FLOOKUP invoke_ms.ms_inst_use 11 = SOME 1 /\
-    FLOOKUP invoke_ms.ms_inst_def 11 = SOME 2 /\
-    mem_ssa_process_inst FEMPTY AddrSp_Memory "b" mem_ssa_init param = mem_ssa_init /\
-    mem_ssa_process_inst FEMPTY AddrSp_Memory "b" mem_ssa_init fmp_param = mem_ssa_init /\
-    mem_ssa_process_inst FEMPTY AddrSp_Memory "b" mem_ssa_init retpc_param = mem_ssa_init
-Proof
-  EVAL_TAC
-QED

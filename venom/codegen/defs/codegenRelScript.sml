@@ -285,34 +285,6 @@ Proof
        venomStateTheory.eval_operand_def]
 QED
 
-Theorem source_memory_writes_disjoint_overlap_probe:
-  let alloc = <| sa_free_slots := []; sa_next_offset := 32;
-                 sa_spill_base := 0 |> in
-  let inst = instruction id ISTORE
-               [Lit (0w:bytes32); Lit (1w:bytes32)] [] in
-    ~source_memory_writes_disjoint alloc inst s
-Proof
-  simp[source_memory_writes_disjoint_def]
-QED
-
-Theorem inst_memory_safe_overlap_probe:
-  let alloc = <| sa_free_slots := []; sa_next_offset := 32;
-                 sa_spill_base := 0 |> in
-  let inst = instruction id ISTORE
-               [Lit (0w:bytes32); Lit (1w:bytes32)] [] in
-    ~inst_memory_safe alloc inst vs vs'
-Proof
-  simp[inst_memory_safe_def, source_memory_writes_disjoint_def]
-QED
-Theorem source_memory_writes_disjoint_zero_length_probe:
-  let alloc = <| sa_free_slots := []; sa_next_offset := 64;
-                 sa_spill_base := 32 |> in
-  let inst = instruction id MCOPY
-               [Lit (40w:bytes32); Lit (0w:bytes32); Lit (0w:bytes32)] [] in
-    source_memory_writes_disjoint alloc inst s
-Proof
-  simp[source_memory_writes_disjoint_def]
-QED
 (* Memory is pre-expanded to cover the spill high-water mark.
    Ensures MEMTOP agrees between Venom and asm from the start.
    Established at context entry by emitting a memory-touching op

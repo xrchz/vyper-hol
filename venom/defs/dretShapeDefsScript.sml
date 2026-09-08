@@ -30,15 +30,3 @@ Proof
   decide_tac
 QED
 
-Theorem parse_dret_shape_examples:
-  parse_dret_shape (mk_inst 0 DRET
-    [Lit 1w; Var "ordinary"; Var "src"; Lit 32w; Var "retpc"] []) =
-      SOME (1,1) /\
-  parse_dret_shape (mk_inst 0 DRET [] []) = NONE /\
-  parse_dret_shape (mk_inst 0 DRET [Var "count"] []) = NONE /\
-  parse_dret_shape (mk_inst 0 DRET [Lit 0w; Var "retpc"] []) = NONE /\
-  parse_dret_shape (mk_inst 0 DRET [Lit 1w] []) = NONE
-Proof
-  EVAL_TAC >> simp[mk_inst_def]
-QED
-

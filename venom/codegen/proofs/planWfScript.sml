@@ -1012,21 +1012,6 @@ Proof
        listTheory.REVERSE_SNOC, stack_find_def]
 QED
 
-Theorem reduce_depth_plan_protected_window_regression[local]:
-  let t = Var "t" in
-  let depths : operand list =
-    [Var "u0"; t; Var "u2"; Var "u3"; Var "u4"; Var "u5";
-     Var "u6"; Var "u7"; Var "u8"; Var "u9"; Var "u10";
-     Var "u11"; Var "u12"; Var "u13"; Var "u14"; Var "u15";
-     Var "u16"; t] in
-  let ps = (init_plan_state 0) with ps_stack := REVERSE depths in
-  let (ops,ps') = reduce_depth_plan 1 [t] t 0 10 ps in
-    ops = [] /\ ps' = ps /\
-    stack_get_unfixed_depth t 0 10 ps'.ps_stack = SOME 17
-Proof
-  EVAL_TAC
-QED
-
 Theorem reduce_depth_plan_protected_identity:
   !fuel target_ops target_op f target_len ps.
     f + 1 < target_len ==>

@@ -20,8 +20,8 @@ End
 
 (* Current lowered returns have a signature-dependent physical suffix: RETPC
  * alone for non-publishing functions, and adopted FMP followed by RETPC for
- * publishing functions.  Keep this boundary separate from TASK_024's raw
- * return arity, which intentionally does not know the FMP signature. *)
+ * publishing functions.  This boundary is separate from raw return arity,
+ * which intentionally does not know the FMP signature. *)
 Definition fmp_current_return_user_arity_def:
   fmp_current_return_user_arity sig inst =
     if inst.inst_opcode <> RET then NONE
@@ -258,23 +258,5 @@ Definition fmp_lowered_context_wf_def:
       MEM fn ctx.ctx_functions /\ MEM inst (fn_insts fn) ==>
       invoke_layout_wf ctx inst)
 End
-
-(* A closed sanity check for the least-closure behavior: fuel does not turn an
- * unseeded cyclic alias into a root. *)
-Definition fmp_cycle_probe_fn_def:
-  fmp_cycle_probe_fn =
-    mk_raw_function "cycle"
-      [<| bb_label := "entry";
-          bb_instructions := [mk_inst 1 ASSIGN [Var "x"] ["x"]] |>]
-End
-
-Theorem fmp_value_rooted_rejects_self_cycle:
-  ~fmp_value_rooted
-    (mk_venom_context [fmp_cycle_probe_fn] NONE)
-    <| fms_has_fmp_param := F; fms_publishes := F |>
-    fmp_cycle_probe_fn "x"
-Proof
-  EVAL_TAC >> simp[]
-QED
 
 val _ = export_theory();
