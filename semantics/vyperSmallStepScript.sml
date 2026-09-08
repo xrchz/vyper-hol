@@ -3,7 +3,7 @@ Ancestors
   arithmetic combin pair list While
   vyperMisc vyperValue vyperContext vyperState vyperCreate vyperInterpreter vyperABI
 Libs
-  cv_transLib
+  cv_transLib wordsLib
 
 (*
   plan for cps version:
@@ -17,6 +17,8 @@ Libs
   - applying a continuation to a result that it doesn't expect is an error: find
     the results it could expect by looking at where it was created
 *)
+
+
 
 Datatype:
   eval_continuation
@@ -511,51 +513,35 @@ val () = apply_tv_def
   |> SRULE [liftk1, prod_CASE_rator, sum_CASE_rator]
   |> cv_auto_trans;
 
-Definition apply_val_def:
-  apply_val cx v st (ReturnK k) = apply_exc cx (ReturnException v) st k ∧
-  apply_val cx (BoolV T) st (AssertK _ k) = apply cx st k ∧
-  apply_val cx (BoolV F) st (AssertK AssertBare k) =
-    apply_exc cx (AssertException "") st k ∧
-  apply_val cx (BoolV F) st (AssertK AssertUnreachable k) =
-    apply_exc cx (AssertException "UNREACHABLE") st k ∧
-  apply_val cx (BoolV F) st (AssertK (AssertReason se) k) =
-    eval_expr_cps cx se st (RaiseK k) ∧
-  apply_val cx _ st (AssertK _ k) = apply_exc cx (Error (TypeError "not BoolV")) st k ∧
-  apply_val cx (StringV str) st (RaiseK k) =
-    apply_exc cx (AssertException str) st k ∧
-  apply_val cx _ st (RaiseK k) =
-    apply_exc cx (Error (TypeError "not StringV")) st k ∧
-  apply_val cx v st (AnnAssignK id tyv k) =
-    liftk cx (K Apply) (new_variable id tyv v st) k ∧
-  apply_val cx v st (AssignK1 gv k) =
-    liftk cx (K Apply) (assign_target cx gv (Replace v) st) k ∧
-  apply_val cx v st (AugAssignK1 ty (loc, sbs) bop k) =
-    liftk cx (K Apply) (assign_target cx (BaseTargetV loc sbs) (Update ty bop v) st) k ∧
-  apply_val cx v st (AppendK1 (loc, sbs) k) =
-    liftk cx (K Apply) (assign_target cx (BaseTargetV loc sbs) (AppendOp v) st) k ∧
-  apply_val cx v st (ArrayK arr_typ k) =
+(* ===== apply_val helpers: extracted complex do-block clauses so each
+        translates cheaply on its own (cv_trans speed) ===== *)
+Definition apply_val_array_def:
+  apply_val_array cx arr_typ v st k =
     (case evaluate_type (get_tenv cx) arr_typ of
      | SOME arr_tv =>
          liftk cx ApplyVals
            (lift_option_type (extract_elements arr_tv v) "For not ArrayV" st) k
-     | NONE => AK cx (ApplyExc (Error (TypeError "For array type"))) st k) ∧
-  apply_val cx v st (RangeK1 e k) = eval_expr_cps cx e st (RangeK2 v k) ∧
-  apply_val cx v2 st (RangeK2 v1 k) =
+     | NONE => AK cx (ApplyExc (Error (TypeError "For array type"))) st k)
+End
+val () = apply_val_array_def
+  |> SRULE [liftk1, prod_CASE_rator, sum_CASE_rator, option_CASE_rator,
+            lift_option_type_def]
+  |> cv_auto_trans;
+Definition apply_val_range2_def:
+  apply_val_range2 cx v1 v2 st k =
     (case do rl <- lift_sum $ get_range_limits v1 v2;
              n1 <<- FST rl; n2 <<- SND rl;
              return $ GENLIST (λn. IntV (n1 + &n)) n2
      od st
        of (INR ex, st) => apply_exc cx ex st k
-        | (INL vs, st) => AK cx (ApplyVals vs) st k) ∧
-  apply_val cx v st (SubscriptTargetK1 (loc, sbs) k) =
-    AK cx (ApplyBaseTarget (loc, ValueSubscript v :: sbs)) st k ∧
-  apply_val cx (BoolV T) st (IfExpK e2 e3 k) =
-    eval_expr_cps cx e2 st k ∧
-  apply_val cx (BoolV F) st (IfExpK e2 e3 k) =
-    eval_expr_cps cx e3 st k ∧
-  apply_val cx v st (IfExpK _ _ k) =
-    apply_exc cx (Error (TypeError "not BoolV")) st k ∧
-  apply_val cx v2 st (SubscriptK1 arr_typ tv1 k) =
+        | (INL vs, st) => AK cx (ApplyVals vs) st k)
+End
+val () = apply_val_range2_def
+  |> SRULE [liftk1, prod_CASE_rator, sum_CASE_rator, option_CASE_rator,
+            LET_RATOR, lift_sum_def, bind_def, ignore_bind_def]
+  |> cv_auto_trans;
+Definition apply_val_subscript_def:
+  apply_val_subscript cx arr_typ tv1 v2 st k =
     liftk cx ApplyTv (do
       tenv <<- get_tenv cx;
       arr_tv <- lift_option_type (evaluate_type tenv arr_typ)
@@ -566,7 +552,47 @@ Definition apply_val_def:
          v <- read_storage_slot cx is_transient slot tv;
          return $ Value v
        od
-    od st) k ∧
+    od st) k
+End
+val () = apply_val_subscript_def
+  |> SRULE [liftk1, prod_CASE_rator, sum_CASE_rator, option_CASE_rator,
+            LET_RATOR, lift_option_type_def, lift_sum_def, bind_def, ignore_bind_def]
+  |> cv_auto_trans;
+Definition apply_val_def:
+  apply_val cx v st (ReturnK k) = apply_exc cx (ReturnException v) st k ∧
+  apply_val cx v st (AssertK r k) =
+    (case v of
+       BoolV T => apply cx st k
+     | BoolV F =>
+         (case r of
+            AssertBare => apply_exc cx (AssertException "") st k
+          | AssertUnreachable => apply_exc cx (AssertException "UNREACHABLE") st k
+          | AssertReason se => eval_expr_cps cx se st (RaiseK k))
+     | _ => apply_exc cx (Error (TypeError "not BoolV")) st k) ∧
+  apply_val cx v st (RaiseK k) =
+    (case v of
+       StringV str => apply_exc cx (AssertException str) st k
+     | _ => apply_exc cx (Error (TypeError "not StringV")) st k) ∧
+  apply_val cx v st (AnnAssignK id tyv k) =
+    liftk cx (K Apply) (new_variable id tyv v st) k ∧
+  apply_val cx v st (AssignK1 gv k) =
+    liftk cx (K Apply) (assign_target cx gv (Replace v) st) k ∧
+  apply_val cx v st (AugAssignK1 ty (loc, sbs) bop k) =
+    liftk cx (K Apply) (assign_target cx (BaseTargetV loc sbs) (Update ty bop v) st) k ∧
+  apply_val cx v st (AppendK1 (loc, sbs) k) =
+    liftk cx (K Apply) (assign_target cx (BaseTargetV loc sbs) (AppendOp v) st) k ∧
+  apply_val cx v st (ArrayK arr_typ k) = apply_val_array cx arr_typ v st k ∧
+  apply_val cx v st (RangeK1 e k) = eval_expr_cps cx e st (RangeK2 v k) ∧
+  apply_val cx v2 st (RangeK2 v1 k) = apply_val_range2 cx v1 v2 st k ∧
+  apply_val cx v st (SubscriptTargetK1 (loc, sbs) k) =
+    AK cx (ApplyBaseTarget (loc, ValueSubscript v :: sbs)) st k ∧
+  apply_val cx v st (IfExpK e2 e3 k) =
+    (case v of
+       BoolV T => eval_expr_cps cx e2 st k
+     | BoolV F => eval_expr_cps cx e3 st k
+     | _ => apply_exc cx (Error (TypeError "not BoolV")) st k) ∧
+  apply_val cx v2 st (SubscriptK1 arr_typ tv1 k) =
+    apply_val_subscript cx arr_typ tv1 v2 st k ∧
   apply_val cx v st (AttributeK id k) =
     liftk cx (ApplyTv o Value) (lift_sum (evaluate_attribute v id) st) k ∧
   apply_val cx v st (ExprsK es k) =
@@ -604,7 +630,12 @@ Definition apply_vals_def:
       return $ Value v
     od st) k ∧
   apply_vals cx vs st (LogK id k) =
-    liftk cx (K Apply) (push_log (id, vs) st) k ∧
+    liftk cx (K Apply) (do
+      event <- lift_option
+        (encode_source_event (get_tenv cx) cx.sources cx.txn.target id vs)
+        "Log encode event";
+      push_log event
+    od st) k ∧
   apply_vals cx vs st (CallSendK k) =
     liftk cx ApplyTv (do
       type_check (LENGTH vs = 2) "CallSendK nargs";
@@ -638,10 +669,11 @@ Definition apply_vals_def:
       result <- lift_option
         (run_ext_call caller target_addr calldata value_opt accounts tStorage txParams)
         "ExtCall run failed";
-      (success, returnData, accounts', tStorage') <<- result;
+      (success, returnData, accounts', tStorage', emitted_logs) <<- result;
       check success "ExtCall reverted";
       update_accounts (K accounts');
       update_transient (K tStorage');
+      append_logs emitted_logs;
       if returnData = [] ∧ IS_SOME drv then
         return (INL (THE drv))
       else do
@@ -696,9 +728,10 @@ Definition apply_vals_def:
       result <- lift_option
         (run_ext_call caller target_addr calldata value_opt accounts tStorage txParams)
         "raw_call run failed";
-      (success, returnData, accounts', tStorage') <<- result;
+      (success, returnData, accounts', tStorage', emitted_logs) <<- result;
       update_accounts (K accounts');
       update_transient (K tStorage');
+      append_logs emitted_logs;
       if flags.rcf_revert_on_failure then do
         check success "raw_call reverted";
         if flags.rcf_max_outsize = 0 then return $ Value NoneV
@@ -718,7 +751,7 @@ Definition apply_vals_def:
       topic_vals <<- (case topics of
          TupleV tvs => tvs | DynArrayV tvs => tvs | _ => []);
       type_check (LENGTH topic_vals ≤ 4) "raw_log too many topics";
-      push_log ((NONE,"raw_log"), topic_vals ++ [BytesV data]);
+      push_log (encode_raw_event_values cx.txn.target topic_vals data);
       return $ Value NoneV
     od st
     of (INR ex, st) => AK cx (ApplyExc ex) st k
@@ -1047,7 +1080,7 @@ Proof
     rw[eval_stmt_cps_def, evaluate_def, bind_def]
     \\ CASE_TAC \\ rw[cont_def] \\ reverse CASE_TAC
     >- rw[Once OWHILE_THM, stepk_def, apply_exc_def]
-    \\ rw[Once OWHILE_THM, stepk_def, apply_vals_def, liftk1])
+    \\ rw[Once OWHILE_THM, stepk_def, apply_vals_def, bind_def, liftk1])
   \\ conj_tac >- ( (* AnnAssign id typ e *)
     rw[eval_stmt_cps_def, evaluate_def, bind_def]
     \\ CASE_TAC \\ rw[cont_def] \\ reverse CASE_TAC
@@ -1197,8 +1230,8 @@ Proof
     \\ rw[Once OWHILE_THM, stepk_def, apply_tv_def, liftk1]
     \\ CASE_TAC \\ reverse CASE_TAC
     >- rw[Once OWHILE_THM, stepk_def, apply_exc_def]
-    \\ rw[Once OWHILE_THM, stepk_def, apply_val_def, liftk1,
-          lift_option_type_def]
+    \\ rw[Once OWHILE_THM, stepk_def, apply_val_def, apply_val_array_def,
+          liftk1, lift_option_type_def]
     \\ CASE_TAC \\ reverse CASE_TAC
     \\ rw[return_def, raise_def]
     \\ gvs[raise_def] )
@@ -1209,7 +1242,7 @@ Proof
     \\ rw[Once OWHILE_THM, stepk_def, apply_tv_def, liftk1]
     \\ CASE_TAC \\ reverse CASE_TAC
     >- rw[Once OWHILE_THM, stepk_def, apply_exc_def]
-    \\ rw[Once OWHILE_THM, stepk_def, apply_val_def, liftk1]
+    \\ rw[Once OWHILE_THM, stepk_def, apply_val_def, apply_val_range2_def, liftk1]
     \\ gvs[]
     \\ first_x_assum $ drule_then drule \\ rw[]
     \\ CASE_TAC \\ reverse CASE_TAC
@@ -1217,7 +1250,7 @@ Proof
     \\ rw[Once OWHILE_THM, stepk_def, apply_tv_def, liftk1]
     \\ CASE_TAC \\ reverse CASE_TAC
     >- rw[Once OWHILE_THM, stepk_def, apply_exc_def]
-    \\ rw[Once OWHILE_THM, stepk_def, apply_val_def, liftk1]
+    \\ rw[Once OWHILE_THM, stepk_def, apply_val_def, apply_val_range2_def, liftk1]
     \\ rw[bind_def]
     \\ CASE_TAC \\ reverse CASE_TAC
     >- (
@@ -1347,7 +1380,7 @@ Proof
     >> rw[Once OWHILE_THM, stepk_def, apply_tv_def, liftk1]
     \\ CASE_TAC \\ reverse CASE_TAC
     >- rw[Once OWHILE_THM, stepk_def, apply_exc_def]
-    >> rw[Once OWHILE_THM, stepk_def, apply_val_def, liftk1, bind_def]
+    >> rw[Once OWHILE_THM, stepk_def, apply_val_def, apply_val_subscript_def, liftk1, bind_def]
     \\ CASE_TAC \\ reverse CASE_TAC
     \\ rw[return_def]
     \\ CASE_TAC \\ reverse CASE_TAC)
@@ -1448,13 +1481,14 @@ Proof
     >- (
       disch_then kall_tac >>
       simp[Abbr`cc1`,Abbr`cc2`,Abbr`gg`,bind_def] >>
-      ntac 4 CASE_TAC >> simp[] >>
+      ntac 5 CASE_TAC >> simp[] >>
       Cases_on`q` >> simp[] >>
       Cases_on`q'` >> simp[] >>
       Cases_on`q''` >> simp[] >>
-      Cases_on`q'''` >> simp[return_def])
+      Cases_on`q'''` >> simp[] >>
+      Cases_on`q''''` >> simp[return_def])
     >> gvs[bind_def,Abbr`gg`] >> disch_then drule
-    >> ntac 3 (
+    >> ntac 4 (
       qmatch_asmsub_abbrev_tac`pair_CASE lot`
       >> Cases_on`lot` >> reverse(Cases_on`q`)
       >- ( simp[Abbr`cc1`,Abbr`cc2`,ignore_bind_def,bind_def] )
@@ -1574,6 +1608,8 @@ Proof
       simp[return_def, ignore_bind_def, bind_def] >>
       AP_TERM_TAC >>
       gvs[push_function_def, return_def] >>
+      (* chains are pure computation; dead assumptions only slow simp down *)
+      POP_ASSUM_LIST (K ALL_TAC) >>
       CASE_TAC >> simp[] >>
       CASE_TAC >> simp[] >>
       CASE_TAC >> simp[return_def, raise_def] >>
@@ -1587,6 +1623,7 @@ Proof
     >> simp[bind_def, return_def, ignore_bind_def]
     >> gvs[push_function_def, return_def]
     >> AP_TERM_TAC >>
+      POP_ASSUM_LIST (K ALL_TAC) >>
       CASE_TAC >> simp[] >>
       CASE_TAC >> simp[] >>
       CASE_TAC >> simp[return_def, raise_def] >>
@@ -1599,7 +1636,8 @@ Proof
   (* All 5 new cases: CPS eval_exprs then continuation matches big-step body.
      Pattern: unfold both sides, use IH for eval_exprs, match continuation bodies. *)
   (* Chain interaction builtins: all use same tactic.
-     CPS evals exprs then calls apply_vals which matches big-step body. *)
+     CPS evals exprs then calls apply_vals which matches big-step body.
+      Applied per-case (not via rpt) to stay within the per-tactic budget. *)
   \\ conj_tac >- (
     rw[eval_expr_cps_def, evaluate_def, ignore_bind_def, bind_def]
     \\ gvs[prod_CASE_rator, sum_CASE_rator, cont_def]
@@ -1650,9 +1688,11 @@ Proof
 QED
 
 Definition fromk_def[simp]:
-  fromk (SOME (AK cx Apply st DoneK)) = (INL (), st) ∧
-  fromk (SOME (AK cx (ApplyExc ex) st DoneK)) = (INR ex, st) ∧
-  fromk _ = (INR $ Error (TypeError "fromk"), empty_state)
+  fromk x =
+    case x of
+      (SOME (AK cx Apply st DoneK)) => (INL (), st)
+    | (SOME (AK cx (ApplyExc ex) st DoneK)) => (INR ex, st)
+    | _ => (INR $ Error (TypeError "fromk"), empty_state)
 End
 
 val () = cv_trans fromk_def;
@@ -1712,9 +1752,11 @@ Proof
 QED
 
 Definition fromtvk_def:
-  fromtvk (SOME (AK cx (ApplyTv tv) st DoneK)) = (INL tv, st) ∧
-  fromtvk (SOME (AK cx (ApplyExc ex) st DoneK)) = (INR ex, st) ∧
-  fromtvk _ = (INR $ Error (TypeError "fromtvk"), empty_state)
+  fromtvk x =
+    case x of
+      (SOME (AK cx (ApplyTv tv) st DoneK)) => (INL tv, st)
+    | (SOME (AK cx (ApplyExc ex) st DoneK)) => (INR ex, st)
+    | _ => (INR $ Error (TypeError "fromtvk"), empty_state)
 End
 
 val () = cv_auto_trans fromtvk_def;
@@ -1796,5 +1838,7 @@ Proof
 QED
 
 val () = cv_auto_trans call_external_def;
+val () = cv_auto_trans clear_machine_logs_def;
+val () = cv_auto_trans call_external_transaction_def;
 
 val () = cv_auto_trans load_contract_def;

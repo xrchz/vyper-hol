@@ -356,8 +356,8 @@ Proof
        check_def, type_check_def, assert_def, lift_option_def, lift_option_type_def,
        get_accounts_def, get_transient_storage_def, option_CASE_rator] >>
   strip_tac >> gvs[AllCaseEqs(), return_def, raise_def] >>
-  pairarg_tac >> gvs[update_accounts_def, update_transient_def, bind_def,
-       ignore_bind_def, return_def, raise_def, AllCaseEqs(), assert_def,
+  pairarg_tac >> gvs[update_accounts_def, update_transient_def, append_logs_def,
+       bind_def, ignore_bind_def, return_def, raise_def, AllCaseEqs(), assert_def,
        COND_RATOR, CaseEq"bool"]
 QED
 
@@ -619,7 +619,11 @@ Resume eval_mutual_preserves_scopes_dom[ExtCall]:
     \\ imp_res_tac check_scopes >> imp_res_tac type_check_scopes
     \\ imp_res_tac update_accounts_scopes
     \\ imp_res_tac update_transient_scopes
+    \\ imp_res_tac append_logs_scopes
     \\ imp_res_tac lift_option_scopes >> imp_res_tac lift_option_type_scopes
+    \\ strip_tac
+    \\ gvs[append_logs_def, return_def, check_def, type_check_def, assert_def]
+    \\ first_x_assum drule
     \\ first_x_assum drule
     \\ gvs[get_accounts_def, get_transient_storage_def, return_def,
            check_def, assert_def,
@@ -636,6 +640,7 @@ Resume eval_mutual_preserves_scopes_dom[ExtCall]:
     \\ rw[] \\ imp_res_tac check_scopes >> imp_res_tac type_check_scopes
     \\ imp_res_tac update_accounts_scopes
     \\ imp_res_tac update_transient_scopes
+    \\ imp_res_tac append_logs_scopes
     \\ imp_res_tac lift_option_scopes >> imp_res_tac lift_option_type_scopes
     \\ imp_res_tac lift_sum_scopes >> imp_res_tac lift_sum_runtime_scopes
     \\ gvs[get_accounts_def, get_transient_storage_def, return_def,
@@ -648,10 +653,12 @@ Resume eval_mutual_preserves_scopes_dom[ExtCall]:
   \\ rw[return_def] \\ imp_res_tac check_scopes >> imp_res_tac type_check_scopes
   \\ imp_res_tac update_accounts_scopes
   \\ imp_res_tac update_transient_scopes
+  \\ imp_res_tac append_logs_scopes
   \\ imp_res_tac lift_option_scopes >> imp_res_tac lift_option_type_scopes
   \\ imp_res_tac lift_sum_scopes >> imp_res_tac lift_sum_runtime_scopes
   \\ gvs[get_accounts_def, get_transient_storage_def, return_def,
          COND_RATOR, CaseEq"bool", bind_def, CaseEq"sum", CaseEq"prod"]
+  \\ imp_res_tac lift_sum_runtime_scopes
   \\ imp_res_tac check_scopes >> imp_res_tac type_check_scopes
   \\ imp_res_tac lift_option_scopes >> imp_res_tac lift_option_type_scopes
   \\ gvs[assert_def]

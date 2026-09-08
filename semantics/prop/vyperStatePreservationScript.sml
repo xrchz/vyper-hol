@@ -212,13 +212,32 @@ Proof
   rw[transfer_value_def, bind_def, get_accounts_def, return_def,
      check_def, raise_def, update_accounts_def, ignore_bind_def,
      assert_def] >>
-  rpt (CASE_TAC >> gvs[return_def, raise_def]) >> gvs[]
+  gvs[AllCaseEqs(), return_def, raise_def]
 QED
 
 Theorem push_log_immutables:
   !l st res st'. push_log l st = (res, st') ==> st'.immutables = st.immutables
 Proof
   rw[push_log_def, return_def] >> gvs[]
+QED
+
+Theorem append_logs_immutables:
+  ∀logs st res st'.
+    append_logs logs st = (res, st') ⇒ st'.immutables = st.immutables
+Proof
+  rw[append_logs_def, return_def] >> gvs[]
+QED
+
+Theorem append_logs_accounts:
+  ∀logs st res st'. append_logs logs st = (res, st') ⇒ st'.accounts = st.accounts
+Proof
+  rw[append_logs_def, return_def] >> gvs[]
+QED
+
+Theorem append_logs_tStorage:
+  ∀logs st res st'. append_logs logs st = (res, st') ⇒ st'.tStorage = st.tStorage
+Proof
+  rw[append_logs_def, return_def] >> gvs[]
 QED
 
 Theorem acquire_nonreentrant_lock_immutables:

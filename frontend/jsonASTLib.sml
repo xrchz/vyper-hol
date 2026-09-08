@@ -183,13 +183,13 @@ fun mk_JE_List (es, ty) = list_mk_comb(JE_List_tm, [mk_list(es, json_expr_ty), t
 fun mk_JE_Call (func, args, kwargs, ty, src_id_opt_tm) =
   list_mk_comb(JE_Call_tm, [func, mk_list(args, json_expr_ty),
                             mk_list(kwargs, json_keyword_ty), ty, src_id_opt_tm])
-fun mk_JE_ExtCall (func_name, arg_types, ret_ty, target, args, keywords) =
-  list_mk_comb(JE_ExtCall_tm, [fromMLstring func_name,
+fun mk_JE_ExtCall (func_name, func_src, arg_types, ret_ty, target, args, keywords) =
+  list_mk_comb(JE_ExtCall_tm, [fromMLstring func_name, func_src,
                                mk_list(arg_types, json_type_ty),
                                ret_ty, target, mk_list(args, json_expr_ty),
                                mk_list(keywords, json_keyword_ty)])
-fun mk_JE_StaticCall (func_name, arg_types, ret_ty, target, args) =
-  list_mk_comb(JE_StaticCall_tm, [fromMLstring func_name,
+fun mk_JE_StaticCall (func_name, func_src, arg_types, ret_ty, target, args) =
+  list_mk_comb(JE_StaticCall_tm, [fromMLstring func_name, func_src,
                                   mk_list(arg_types, json_type_ty),
                                   ret_ty, target, mk_list(args, json_expr_ty)])
 fun mk_JKeyword (arg, v) = list_mk_comb(JKeyword_tm, [fromMLstring arg, v])
@@ -319,9 +319,10 @@ fun mk_JInterfaceFunc (name, args, ret_ty, decorators) =
 fun mk_JTL_InterfaceDef (name, funcs) =
   list_mk_comb(JTL_InterfaceDef_tm,
     [fromMLstring name, mk_list(funcs, json_interface_func_ty)])
-fun mk_JImportInfo (alias, src_id, qual_name) =
+fun mk_JImportInfo (alias, src_id, qual_name, resolved_path) =
   list_mk_comb(JImportInfo_tm,
-    [fromMLstring alias, src_id, fromMLstring qual_name])
+    [fromMLstring alias, src_id, fromMLstring qual_name,
+     fromMLstring resolved_path])
 fun mk_JTL_Import infos =
   mk_comb(JTL_Import_tm, mk_list(infos, json_import_info_ty))
 fun mk_JTL_ExportsDecl ann = mk_comb(JTL_ExportsDecl_tm, ann)
@@ -331,10 +332,10 @@ fun mk_JTL_ImplementsDecl ann = mk_comb(JTL_ImplementsDecl_tm, ann)
 fun mk_JModule (src_id, nr_default, tls) =
   list_mk_comb(JModule_tm,
     [src_id, mk_bool nr_default, mk_list(tls, json_toplevel_ty)])
-fun mk_JImportedModule (src_id_tm, path, nr_default, body) =
+fun mk_JImportedModule (src_id_tm, path, resolved_path, nr_default, body) =
   list_mk_comb(JImportedModule_tm,
-    [src_id_tm, fromMLstring path, mk_bool nr_default,
-     mk_list(body, json_toplevel_ty)])
+    [src_id_tm, fromMLstring path, fromMLstring resolved_path,
+     mk_bool nr_default, mk_list(body, json_toplevel_ty)])
 fun mk_JAnnotatedAST (main_ast, imports) =
   list_mk_comb(JAnnotatedAST_tm,
     [main_ast,
@@ -742,9 +743,12 @@ fun d_json_expr () : term decoder = achoose "expr" [
   (* ExtCall - preserve target separately from ordinary arguments. *)
   (* Signature extracted from func.type: argument_types, return_type *)
   check_ast_type "ExtCall" $
-    JSONDecode.map (fn (((func_name, arg_types), (ret_ty, (target, args))), keywords) =>
-      mk_JE_ExtCall(func_name, arg_types, ret_ty, target, args, keywords)) $
-    tuple2 (tuple2 (tuple2 (field "value" $ field "func" $ field "attr" string,
+    JSONDecode.map (fn ((((func_name, func_src), arg_types), (ret_ty, (target, args))), keywords) =>
+      mk_JE_ExtCall(func_name, func_src, arg_types, ret_ty, target, args, keywords)) $
+    tuple2 (tuple2 (tuple2 (tuple2 (field "value" $ field "func" $ field "attr" string,
+                                    orElse (field "value" $ field "func" $ field "type" $
+                                      field "type_decl_node" $ field "source_id" source_ref_tm,
+                                      succeed JMissingSource_tm)),
                             field "value" $ field "func" $ field "type" $
                               orElse (field "argument_types" (array json_type), succeed [])),
                     tuple2 (field "value" $ field "func" $ field "type" $
@@ -755,9 +759,12 @@ fun d_json_expr () : term decoder = achoose "expr" [
 
   (* StaticCall - same structure as ExtCall. *)
   check_ast_type "StaticCall" $
-    JSONDecode.map (fn ((func_name, arg_types), (ret_ty, (target, args))) =>
-      mk_JE_StaticCall(func_name, arg_types, ret_ty, target, args)) $
-    tuple2 (tuple2 (field "value" $ field "func" $ field "attr" string,
+    JSONDecode.map (fn (((func_name, func_src), arg_types), (ret_ty, (target, args))) =>
+      mk_JE_StaticCall(func_name, func_src, arg_types, ret_ty, target, args)) $
+    tuple2 (tuple2 (tuple2 (field "value" $ field "func" $ field "attr" string,
+                            orElse (field "value" $ field "func" $ field "type" $
+                              field "type_decl_node" $ field "source_id" source_ref_tm,
+                              succeed JMissingSource_tm)),
                     field "value" $ field "func" $ field "type" $
                       orElse (field "argument_types" (array json_type), succeed [])),
             tuple2 (field "value" $ field "func" $ field "type" $
@@ -904,7 +911,10 @@ fun d_json_stmt () : term decoder = achoose "stmt" [
   check_ast_type "Log" $
     field "value" $
     check_ast_type "Call" $
-    JSONDecode.map (fn ((name, src_id_opt), args) => mk_JS_Log(mk_nsid(src_id_opt, name), args)) $
+    JSONDecode.map
+      (fn ((name, src_id_opt), (keywords, args)) =>
+        mk_JS_Log(mk_nsid(src_id_opt, name),
+                  if List.null keywords then args else keywords)) $
     tuple2 (field "func" $ achoose "log func" [
               (* Same-module event: log MyEvent(...) *)
               check_ast_type "Name" $
@@ -917,10 +927,9 @@ fun d_json_stmt () : term decoder = achoose "stmt" [
                       orElse (field "value" $ field "type" $
                                 field "type_decl_node" $ field "source_id" source_ref_tm,
                               succeed JMissingSource_tm))],
-            achoose "log args" [
-              field "keywords" (array (field "value" json_expr)),
-              field "args" (array json_expr)
-            ]),
+            tuple2
+              (field "keywords" (array (field "value" json_expr)),
+               field "args" (array json_expr))),
 
   (* If *)
   check_ast_type "If" $
@@ -1177,18 +1186,20 @@ val json_toplevel : term decoder = achoose "toplevel" [
     JSONDecode.map mk_JTL_Import $
     field "import_infos" $ array $
       JSONDecode.map mk_JImportInfo $
-      tuple3 (field "alias" string,
+      tuple4 (field "alias" string,
               field "source_id" inttm,
-              field "qualified_module_name" string),
+              field "qualified_module_name" string,
+              field "resolved_path" string),
 
   (* ImportFrom - from X import Y statement *)
   check_ast_type "ImportFrom" $
     JSONDecode.map mk_JTL_Import $
     field "import_infos" $ array $
       JSONDecode.map mk_JImportInfo $
-      tuple3 (field "alias" string,
+      tuple4 (field "alias" string,
               field "source_id" inttm,
-              field "qualified_module_name" string),
+              field "qualified_module_name" string,
+              field "resolved_path" string),
 
   (* ExportsDecl - exports declaration *)
   check_ast_type "ExportsDecl" $
@@ -1228,11 +1239,12 @@ val json_module : term decoder =
 (* Decoder for imported modules from the imports array *)
 
 val json_imported_module : term decoder =
-  JSONDecode.map (fn (src_id, path, nr, body) =>
-    mk_JImportedModule(src_id, path, nr, body)) $
-  tuple4 (field "source_id" inttm,
-          field "path" string,
-          nonreentrancy_by_default,
+  JSONDecode.map (fn ((src_id, path, resolved_path, nr), body) =>
+    mk_JImportedModule(src_id, path, resolved_path, nr, body)) $
+  tuple2 (tuple4 (field "source_id" inttm,
+                  field "path" string,
+                  field "resolved_path" string,
+                  nonreentrancy_by_default),
           field "body" (array json_toplevel))
 
 (* Parse raw Vyper `-f annotated_ast` output. *)

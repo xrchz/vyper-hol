@@ -43,6 +43,8 @@ Interface declarations (`InterfaceDecl`) are included in the AST, with interface
 
 The formal semantics for Vyper is defined across several theories in `semantics/`. The top-level entry-points are `load_contract` (for running a contract-deployment transaction given the Vyper source code of the contract), and `call_external` (for calling an external function of an already-deployed contract). These entry-points use the `eval_stmts` function defined in `evaluate_def` for interpreting Vyper code. These functions operate on Vyper values; see the test infrastructure below for how to wrap these calls with encoding/decoding to ABI-encoded bytes.
 
+`load_contract` is a Vyper-level deployment abstraction rather than a model of the EVM `CREATE` or `CREATE2` instructions. Its transaction supplies the target address directly, and successful deployment installs Vyper sources and exports. In contrast, Verifereum's EVM creation semantics derives the created address, updates creator and created-account nonces, executes init code, and installs runtime bytecode. Relating these two boundaries is an obligation of the Vyper-to-EVM compiler-correctness development. Vyper-level constructor value transfer is not omitted: it uses the ordinary external-function call path, retaining the updated accounts on success and rolling back to the input abstract machine on failure.
+
 The semantics is organised into layers:
 - **Values and types** — runtime values (`value`), type representations (`type_value`), and operations on values such as arithmetic, comparisons, conversions, and array manipulation.
 - **Storage** — encoding and decoding of Vyper values to/from EVM storage slots, and hashmap slot computation using Keccak256.

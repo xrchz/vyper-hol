@@ -13,6 +13,7 @@ Ancestors
   (* syntax, frontend, semantics *)
   jsonToVyper
   vyperTestRunner
+  vyperEvent
   (* semantics properties *)
   vyperSemanticsHol
   (* compiler passes *)

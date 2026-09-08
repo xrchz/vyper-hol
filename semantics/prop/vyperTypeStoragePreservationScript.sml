@@ -1502,10 +1502,10 @@ QED
    external transition returned to the protected transaction target. *)
 Definition protected_storage_calls_preserve_def:
   protected_storage_calls_preserve cx <=>
-    !callee calldata value_opt st txp success returndata accounts' tStorage'.
+    !callee calldata value_opt st txp success returndata accounts' tStorage' emitted_logs.
       run_ext_call cx.txn.target callee calldata value_opt
         st.accounts st.tStorage txp =
-        SOME (success,returndata,accounts',tStorage') /\
+        SOME (success,returndata,accounts',tStorage',emitted_logs) /\
       contract_storage_well_formed cx st ==>
       contract_storage_well_formed cx
         (st with <| accounts := accounts'; tStorage := tStorage' |>)
@@ -1515,7 +1515,7 @@ Theorem protected_storage_calls_preserve_run_ext_call:
   protected_storage_calls_preserve cx /\
   run_ext_call cx.txn.target callee calldata value_opt
     st.accounts st.tStorage txp =
-    SOME (success,returndata,accounts',tStorage') /\
+    SOME (success,returndata,accounts',tStorage',emitted_logs) /\
   contract_storage_well_formed cx st ==>
   contract_storage_well_formed cx
     (st with <| accounts := accounts'; tStorage := tStorage' |>)
@@ -1527,7 +1527,7 @@ Theorem protected_storage_calls_preserve_success:
   protected_storage_calls_preserve cx /\
   run_ext_call cx.txn.target callee calldata value_opt
     st.accounts st.tStorage txp =
-    SOME (T,returndata,accounts',tStorage') /\
+    SOME (T,returndata,accounts',tStorage',emitted_logs) /\
   contract_storage_well_formed cx st ==>
   contract_storage_well_formed cx
     (st with <| accounts := accounts'; tStorage := tStorage' |>)
@@ -1539,7 +1539,7 @@ Theorem protected_storage_calls_preserve_revert:
   protected_storage_calls_preserve cx /\
   run_ext_call cx.txn.target callee calldata value_opt
     st.accounts st.tStorage txp =
-    SOME (F,returndata,accounts',tStorage') /\
+    SOME (F,returndata,accounts',tStorage',emitted_logs) /\
   contract_storage_well_formed cx st ==>
   contract_storage_well_formed cx
     (st with <| accounts := accounts'; tStorage := tStorage' |>)
@@ -1551,7 +1551,7 @@ Theorem protected_storage_call_output_persistent_region:
   protected_storage_calls_preserve cx /\
   run_ext_call cx.txn.target callee calldata value_opt
     st.accounts st.tStorage txp =
-    SOME (success,returndata,accounts',tStorage') /\
+    SOME (success,returndata,accounts',tStorage',emitted_logs) /\
   contract_storage_well_formed cx st /\
   declared_storage_region cx mid n subs = SOME (F,slot,tv) /\
   get_storage_backend cx F
@@ -1567,7 +1567,7 @@ Theorem protected_storage_call_output_transient_region:
   protected_storage_calls_preserve cx /\
   run_ext_call cx.txn.target callee calldata value_opt
     st.accounts st.tStorage txp =
-    SOME (success,returndata,accounts',tStorage') /\
+    SOME (success,returndata,accounts',tStorage',emitted_logs) /\
   contract_storage_well_formed cx st /\
   declared_storage_region cx mid n subs = SOME (T,slot,tv) /\
   get_storage_backend cx T

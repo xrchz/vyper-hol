@@ -4,6 +4,88 @@ Ancestors
 Libs
   intLib
 
+(* Vyper assigns the shared source ID -2 to builtin modules.  Canonicalize
+   colliding source IDs by matching the exact resolved paths emitted on import
+   metadata and imported module ASTs. *)
+Definition max_nonnegative_source_id_def:
+  max_nonnegative_source_id [] = 0 ∧
+  max_nonnegative_source_id (JImportedModule src_id _ _ _ _ :: rest) =
+    MAX (Num src_id) (max_nonnegative_source_id rest)
+End
+
+Definition source_id_occurrences_def:
+  source_id_occurrences src_id [] = 0 ∧
+  source_id_occurrences src_id (JImportedModule sid _ _ _ _ :: rest) =
+    (if src_id = sid then 1 else 0) + source_id_occurrences src_id rest
+End
+
+Definition build_module_identity_map_aux_def:
+  build_module_identity_map_aux all_imports next [] = [] ∧
+  build_module_identity_map_aux all_imports next
+      (JImportedModule src_id _ resolved_path _ _ :: rest) =
+    let canonical_id =
+      if source_id_occurrences src_id all_imports = 1 then src_id else &next in
+    (resolved_path,canonical_id) ::
+      build_module_identity_map_aux all_imports (next + 1) rest
+End
+
+Definition build_module_identity_map_def:
+  build_module_identity_map main_src_id imports =
+    build_module_identity_map_aux imports
+      (MAX (Num main_src_id) (max_nonnegative_source_id imports) + 1) imports
+End
+
+Definition lookup_module_identity_def:
+  lookup_module_identity resolved_path [] = NONE ∧
+  lookup_module_identity resolved_path ((path,src_id)::rest) =
+    if resolved_path = path then SOME src_id
+    else lookup_module_identity resolved_path rest
+End
+
+Definition canonicalize_import_infos_def:
+  canonicalize_import_infos identities [] = [] ∧
+  canonicalize_import_infos identities
+      (JImportInfo alias src_id qualified_name resolved_path :: rest) =
+    let canonical_id =
+      case lookup_module_identity resolved_path identities of
+      | SOME sid => sid
+      | NONE => src_id in
+    JImportInfo alias canonical_id qualified_name resolved_path ::
+      canonicalize_import_infos identities rest
+End
+
+Definition canonicalize_import_toplevels_def:
+  canonicalize_import_toplevels identities [] = [] ∧
+  canonicalize_import_toplevels identities (JTL_Import infos :: rest) =
+    JTL_Import (canonicalize_import_infos identities infos) ::
+      canonicalize_import_toplevels identities rest ∧
+  canonicalize_import_toplevels identities (top :: rest) =
+    top :: canonicalize_import_toplevels identities rest
+End
+
+Definition canonicalize_imported_modules_def:
+  canonicalize_imported_modules identities [] = [] ∧
+  canonicalize_imported_modules identities
+      (JImportedModule src_id path resolved_path nr_default body :: rest) =
+    let canonical_id =
+      case lookup_module_identity resolved_path identities of
+      | SOME sid => sid
+      | NONE => src_id in
+    JImportedModule canonical_id path resolved_path nr_default
+      (canonicalize_import_toplevels identities body) ::
+    canonicalize_imported_modules identities rest
+End
+
+Definition canonicalize_annotated_ast_imports_def:
+  canonicalize_annotated_ast_imports
+      (JAnnotatedAST (JModule main_src_id nr_default body) imports) =
+    let identities = build_module_identity_map main_src_id imports in
+    JAnnotatedAST
+      (JModule main_src_id nr_default
+        (canonicalize_import_toplevels identities body))
+      (canonicalize_imported_modules identities imports)
+End
+
 Definition collect_consts_and_immutables_def:
   collect_consts_and_immutables [] = [] ∧
   collect_consts_and_immutables (t :: rest) =
@@ -17,7 +99,7 @@ End
 (* Names of constants/immutables are translated as top-level names. *)
 Definition build_import_map_def:
   build_import_map [] = [] ∧
-  build_import_map (JImportInfo alias src_id _ :: rest) =
+  build_import_map (JImportInfo alias src_id _ _ :: rest) =
     (alias, source_id_to_module_id src_id) :: build_import_map rest
 End
 
@@ -39,7 +121,7 @@ End
 (* Extract source_ids that a module depends on from its body *)
 Definition get_module_deps_def:
   get_module_deps body =
-    MAP (λinfo. case info of JImportInfo _ src_id _ => src_id) (collect_imports body)
+    MAP (λinfo. case info of JImportInfo _ src_id _ _ => src_id) (collect_imports body)
 End
 
 
@@ -48,7 +130,7 @@ End
    Returns T if sorted, F otherwise. *)
 Definition imports_topsorted_def:
   imports_topsorted seen [] = T ∧
-  imports_topsorted seen (JImportedModule src_id _ _ body :: rest) =
+  imports_topsorted seen (JImportedModule src_id _ _ _ body :: rest) =
     let deps = get_module_deps body in
     if EVERY (λd. MEM d seen) deps
     then imports_topsorted (src_id :: seen) rest
@@ -119,14 +201,14 @@ End
 (* Find module body by raw source_id in imports list *)
 Definition find_module_body_def:
   find_module_body src_id [] = [] ∧
-  find_module_body src_id (JImportedModule sid _ _ body :: rest) =
+  find_module_body src_id (JImportedModule sid _ _ _ body :: rest) =
     if src_id = sid then body else find_module_body src_id rest
 End
 
 (* Find module body by offset source_id (num) in imports list *)
 Definition find_module_body_nsid_def:
   find_module_body_nsid nsid [] = [] ∧
-  find_module_body_nsid nsid (JImportedModule sid _ _ body :: rest) =
+  find_module_body_nsid nsid (JImportedModule sid _ _ _ body :: rest) =
     if nsid = source_id_to_module_id sid then body
     else find_module_body_nsid nsid rest
 End
@@ -153,7 +235,7 @@ End
 (* Build a map from source_id to import_map for all imported modules *)
 Definition build_all_import_maps_def:
   build_all_import_maps [] = [] ∧
-  build_all_import_maps (JImportedModule src_id _ _ body :: rest) =
+  build_all_import_maps (JImportedModule src_id _ _ _ body :: rest) =
     let nsid = source_id_to_module_id src_id in
     (nsid, build_import_map (collect_imports body)) ::
     build_all_import_maps rest
@@ -196,7 +278,7 @@ End
 
 Definition build_all_inline_interface_maps_def:
   build_all_inline_interface_maps [] = [] ∧
-  build_all_inline_interface_maps (JImportedModule src_id _ _ body :: rest) =
+  build_all_inline_interface_maps (JImportedModule src_id _ _ _ body :: rest) =
     let nsid = source_id_to_module_id src_id in
     (nsid, collect_inline_interfaces body) :: build_all_inline_interface_maps rest
 End
@@ -299,7 +381,7 @@ End
 
 Definition build_import_compact_indexes_def:
   build_import_compact_indexes [] = [] ∧
-  build_import_compact_indexes (JImportedModule src_id _ _ body :: rest) =
+  build_import_compact_indexes (JImportedModule src_id _ _ _ body :: rest) =
     module_compact_index (source_id_to_module_id src_id) body ::
     build_import_compact_indexes rest
 End
@@ -364,7 +446,7 @@ End
 Definition collect_imported_nominal_decls_def:
   collect_imported_nominal_decls [] = [] ∧
   collect_imported_nominal_decls
-      (JImportedModule src_id _ _ body :: rest) =
+      (JImportedModule src_id _ _ _ body :: rest) =
     collect_nominal_decls (SOME (source_id_to_module_id src_id)) body ++
     collect_imported_nominal_decls rest
 End
@@ -389,7 +471,7 @@ End
    well as its source instead of classifying every import from that source. *)
 Definition collect_interface_refs_def:
   collect_interface_refs [] = [] ∧
-  collect_interface_refs (JImportedModule src_id path _ _ :: rest) =
+  collect_interface_refs (JImportedModule src_id path _ _ _ :: rest) =
     if is_interface_path path
     then (source_id_to_module_id src_id, interface_path_name path) ::
       collect_interface_refs rest
@@ -412,7 +494,7 @@ End
 Definition collect_interface_alias_infos_def:
   collect_interface_alias_infos interface_refs nsid [] = [] ∧
   collect_interface_alias_infos interface_refs nsid
-      (JImportInfo alias src_id qualified_name :: rest) =
+      (JImportInfo alias src_id qualified_name _ :: rest) =
     if is_interface_import interface_refs src_id qualified_name
     then ((nsid, alias), InterfaceKind) ::
       collect_interface_alias_infos interface_refs nsid rest
@@ -431,7 +513,7 @@ End
 Definition collect_imported_interface_aliases_def:
   collect_imported_interface_aliases interface_refs [] = [] ∧
   collect_imported_interface_aliases interface_refs
-      (JImportedModule src_id _ _ body :: rest) =
+      (JImportedModule src_id _ _ _ body :: rest) =
     collect_interface_aliases interface_refs
       (SOME (source_id_to_module_id src_id)) body ++
     collect_imported_interface_aliases interface_refs rest
@@ -528,7 +610,7 @@ End
 Definition imported_decl_types_valid_def:
   imported_decl_types_valid nominal_index all_import_maps main_src_id [] = T ∧
   imported_decl_types_valid nominal_index all_import_maps main_src_id
-      (JImportedModule src_id _ _ body :: rest) =
+      (JImportedModule src_id _ _ _ body :: rest) =
     (let nsid = source_id_to_module_id src_id in
      let import_map = build_import_map (collect_imports body) in
      let type_ctx = (main_src_id, SOME nsid, import_map) in
@@ -559,7 +641,7 @@ End
 Definition collect_imported_toplevel_types_def:
   collect_imported_toplevel_types nominal_index all_import_maps main_src_id [] = [] ∧
   collect_imported_toplevel_types nominal_index all_import_maps main_src_id
-      (JImportedModule src_id _ _ body :: rest) =
+      (JImportedModule src_id _ _ _ body :: rest) =
     let nsid = source_id_to_module_id src_id in
     let import_map = build_import_map (collect_imports body) in
     let type_ctx = (main_src_id, SOME nsid, import_map) in
@@ -597,9 +679,16 @@ Definition translate_module_def:
         toplevels)
 End
 
+Definition is_function_toplevel_def:
+  is_function_toplevel (JTL_FunctionDef _ _ _ _ _ _ _) = T ∧
+  is_function_toplevel _ = F
+End
+
+(* Imported interfaces contribute declarations and nominal identities, but their
+   ellipsis-bodied function stubs are not executable module implementations. *)
 Definition translate_imported_module_def:
   translate_imported_module nominal_index all_import_maps all_toplevel_types
-      main_src_id (JImportedModule src_id path nr_default body) =
+      main_src_id (JImportedModule src_id path _ nr_default body) =
     let nsid = source_id_to_module_id src_id in
     let import_map = build_import_map (collect_imports body) in
     let expr_ctx =
@@ -608,8 +697,12 @@ Definition translate_imported_module_def:
         (import_map,
          (collect_consts_and_immutables body, ([], all_toplevel_types))))) in
     let type_ctx = (main_src_id, SOME nsid, import_map) in
+    let declaration_only = is_interface_path path in
     (SOME nsid, filter_some
-      (MAP (translate_toplevel nominal_index all_import_maps expr_ctx type_ctx nr_default) body))
+      (MAP (λtop.
+        if declaration_only ∧ is_function_toplevel top then NONE
+        else translate_toplevel nominal_index all_import_maps expr_ctx type_ctx
+          nr_default top) body))
 End
 
 Definition translate_imported_modules_def:
@@ -658,8 +751,8 @@ End
    - exports: func_name -> source_id
    - import_map: alias -> source_id (for storage layout key transformation)
    Returns NONE if imports are not topologically sorted. *)
-Definition translate_annotated_ast_def:
-  translate_annotated_ast
+Definition translate_annotated_ast_canonical_def:
+  translate_annotated_ast_canonical
       (JAnnotatedAST (JModule main_src_id nr_default toplevels) imports) =
     if ¬imports_topsorted [] imports then NONE else
     let main = JModule main_src_id nr_default toplevels in
@@ -680,6 +773,11 @@ Definition translate_annotated_ast_def:
         all_toplevel_types main_src_id imports in
     let exports = extract_exports_with_indexes all_import_maps all_inline_maps exports_map main_index in
     SOME (sources, exports, import_map)
+End
+
+Definition translate_annotated_ast_def:
+  translate_annotated_ast ast =
+    translate_annotated_ast_canonical (canonicalize_annotated_ast_imports ast)
 End
 
 (* Annotate all sources with storage slots from json_storage_layout.

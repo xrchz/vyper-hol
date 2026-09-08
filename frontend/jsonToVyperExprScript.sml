@@ -560,7 +560,32 @@ End
 Definition resolve_source_ref_def:
   (resolve_source_ref ctx JMissingSource = expr_current_nsid ctx) /\
   (resolve_source_ref ctx (JExplicitSource src_id) =
-    source_id_to_nsid (expr_main_src_id ctx) src_id)
+    if src_id = -2 then expr_current_nsid ctx
+    else source_id_to_nsid (expr_main_src_id ctx) src_id)
+End
+
+(* Module syntax carries the import alias that disambiguates Vyper's shared
+   builtin source ID.  Prefer that canonical alias mapping to raw metadata. *)
+Definition resolve_module_alias_def:
+  resolve_module_alias ctx alias fallback =
+    case ALOOKUP (expr_import_map ctx) alias of
+    | SOME src_id => SOME src_id
+    | NONE => resolve_source_ref ctx fallback
+End
+
+Definition resolve_func_module_ref_def:
+  resolve_func_module_ref ctx
+      (JE_Attribute (JE_Name alias (SOME "module") src _)
+        _ _ _ _ _ _) fallback =
+    resolve_module_alias ctx alias src ∧
+  resolve_func_module_ref ctx _ fallback = resolve_source_ref ctx fallback
+End
+
+(* External signature metadata omits source IDs on nested nominal types.  Use
+   the declaring function's module as the current type namespace. *)
+Definition signature_type_ctx_def:
+  signature_type_ctx ctx func_src =
+    (expr_main_src_id ctx, resolve_source_ref ctx func_src, expr_import_map ctx)
 End
 
 (* Bare references to constants and immutables are translated as
@@ -695,7 +720,7 @@ Definition translate_expr_def:
       TopLevelName (lookup_toplevel_type ctx nsid ty) nsid
     (* Module variable access (lib1.x): use its canonical declaration type. *)
     else if tc = SOME "module" then
-      let nsid = (resolve_source_ref ctx src_id_opt, attr) in
+      let nsid = (resolve_module_alias ctx obj src_id_opt, attr) in
       TopLevelName (lookup_toplevel_type ctx nsid ty) nsid
     else if attr = "balance" /\ base_type_name = SOME "address" then Builtin (BaseT (UintT 256)) (Acc Balance) [make_name ctx base_ty obj]
     else if attr = "address" /\ base_type_name = SOME "address" then Builtin (BaseT AddressT) (Acc Address) [make_name ctx base_ty obj]
@@ -785,7 +810,7 @@ Definition translate_expr_def:
   (translate_expr ctx (JE_Call func args kwargs ret_ty src_id_opt) =
     let args' = translate_expr_list ctx args in
     let kwargs' = translate_kwargs ctx kwargs in
-    let rty = translate_type (expr_type_ctx ctx) ret_ty in
+    let rty = translate_type (signature_type_ctx ctx src_id_opt) ret_ty in
     case func of
     | JE_Name name (SOME "interface") _ _ =>
         interface_constructor_result rty args'
@@ -811,7 +836,7 @@ Definition translate_expr_def:
     (* Module struct constructor, interface constructor, or module function call *)
     | _ => if is_interface_constructor func then
              interface_constructor_result rty args'
-           else let nsid = resolve_source_ref ctx src_id_opt;
+           else let nsid = resolve_func_module_ref ctx func src_id_opt;
                fname = extract_func_name func in
            (case ret_ty of
               JT_Struct src_id_opt sname =>
@@ -826,7 +851,7 @@ Definition translate_expr_def:
                              SOME src => resolve_source_ref ctx src
                            | NONE => nsid)
                       | _ => nsid in
-                  StructLit rty (mod_nsid, fname) kwargs'
+                  StructLit (StructT (mod_nsid, fname)) (mod_nsid, fname) kwargs'
                 else
                   (* Function call that returns a struct: library.foo() *)
                   Call rty (IntCall (nsid, fname)) args' NONE
@@ -836,18 +861,19 @@ Definition translate_expr_def:
 
   (* ExtCall - mutating external call (is_static = F) *)
   (translate_expr ctx
-      (JE_ExtCall func_name arg_types ret_ty target args keywords) =
+      (JE_ExtCall func_name func_src arg_types ret_ty target args keywords) =
     let value_expr = case find_keyword "value" keywords of
                      | SOME v => translate_expr ctx v
                      | NONE => Literal (BaseT (UintT 256)) (IntL 0) in
-    let ret_ty' = translate_type (expr_type_ctx ctx) ret_ty in
+    let sig_ctx = signature_type_ctx ctx func_src in
+    let ret_ty' = translate_type sig_ctx ret_ty in
     (* Vyper records the full declared parameter list in argument_types, even
        when trailing defaulted parameters are omitted.  ExtCall carries the
        effective ABI signature selected at this call site. *)
     Call ret_ty'
       (ExtCall F
         (func_name,
-         TAKE (LENGTH args) (MAP (translate_type (expr_type_ctx ctx)) arg_types),
+         TAKE (LENGTH args) (MAP (translate_type sig_ctx) arg_types),
          ret_ty'))
       (translate_expr ctx target :: value_expr :: translate_expr_list ctx args)
       (OPTION_MAP (translate_expr ctx)
@@ -855,13 +881,14 @@ Definition translate_expr_def:
 
   (* StaticCall - read-only external call (is_static = T) *)
   (translate_expr ctx
-      (JE_StaticCall func_name arg_types ret_ty target args) =
-    let ret_ty' = translate_type (expr_type_ctx ctx) ret_ty in
+      (JE_StaticCall func_name func_src arg_types ret_ty target args) =
+    let sig_ctx = signature_type_ctx ctx func_src in
+    let ret_ty' = translate_type sig_ctx ret_ty in
     (* See ExtCall above: retain only the effective ABI argument types. *)
     Call ret_ty'
       (ExtCall T
         (func_name,
-         TAKE (LENGTH args) (MAP (translate_type (expr_type_ctx ctx)) arg_types),
+         TAKE (LENGTH args) (MAP (translate_type sig_ctx) arg_types),
          ret_ty'))
       (translate_expr ctx target :: translate_expr_list ctx args)
       NONE) /\

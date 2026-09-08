@@ -107,9 +107,10 @@ Datatype:
   | JE_Call json_expr (json_expr list) (json_keyword list) json_type json_source_ref
 
   (* External calls preserve target and ordinary arguments separately. *)
-  | JE_ExtCall string (json_type list) json_type json_expr
+  | JE_ExtCall string json_source_ref (json_type list) json_type json_expr
       (json_expr list) (json_keyword list)
-  | JE_StaticCall string (json_type list) json_type json_expr (json_expr list)
+  | JE_StaticCall string json_source_ref (json_type list) json_type json_expr
+      (json_expr list)
 ;
   json_keyword = JKeyword string json_expr             (* arg, value *)
 End
@@ -173,7 +174,8 @@ End
 
 Datatype:
   json_import_info
-  = JImportInfo string int string                      (* alias, source_id, qualified_module_name *)
+  = JImportInfo string int string string
+    (* alias, source_id, qualified_module_name, resolved_path *)
 End
 
 (* ===== Interface Function Signature ===== *)
@@ -217,8 +219,8 @@ End
 
 Datatype:
   json_imported_module
-  = JImportedModule int string bool (json_toplevel list)
-    (* source_id, path, nonreentrancy_by_default, body *)
+  = JImportedModule int string string bool (json_toplevel list)
+    (* source_id, path, resolved_path, nonreentrancy_by_default, body *)
 End
 
 (* ===== Annotated AST ===== *)

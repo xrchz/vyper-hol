@@ -539,7 +539,6 @@ Proof
   metis_tac[]
 QED
 
-
 (* ===== Full E2E: Vyper to EVM ===== *)
 
 (* Composes all three legs into a single theorem relating Vyper

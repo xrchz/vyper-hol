@@ -212,7 +212,11 @@ Theorem transfer_value_no_control:
   ∀from to amt s exc s'.
   transfer_value from to amt s = (INR exc, s') ⇒ no_control_exc exc
 Proof
-  rpt gen_tac >> simp[transfer_value_def, bind_def, ignore_bind_def,
+  rpt gen_tac >>
+  rename1 `transfer_value fromAddr toAddr amount st = (INR exc, st') ⇒ no_control_exc exc` >>
+  Cases_on `amount = 0 ∨ fromAddr = toAddr`
+  >- simp[transfer_value_def, return_def]
+  >> simp[transfer_value_def, bind_def, ignore_bind_def,
     get_accounts_def, return_def, update_accounts_def]
   >> strip_tac >> gvs[AllCaseEqs(), return_def]
   >> imp_res_tac check_no_control
@@ -273,6 +277,13 @@ Theorem push_log_no_control:
   push_log log s = (INR exc, s') ⇒ no_control_exc exc
 Proof
   simp[push_log_def, return_def]
+QED
+
+Theorem append_logs_no_control:
+  ∀logs s exc s'.
+  append_logs logs s = (INR exc, s') ⇒ no_control_exc exc
+Proof
+  simp[append_logs_def, return_def]
 QED
 
 Theorem write_storage_slot_no_control:
@@ -723,6 +734,7 @@ Proof
   >> Cases_on `flags.rcf_revert_on_failure`
   >> gvs[return_def, bind_def, COND_RATOR, AllCaseEqs()]
   >> imp_res_tac check_no_control
+  >> imp_res_tac append_logs_no_control
 QED
 
 (* ===== Main theorem ===== *)
@@ -821,6 +833,8 @@ Resume eval_expr_no_control_with_bt[ExtCall]:
        step_tac >- gvs[update_accounts_def, return_def] >> assume_tac ih)
   >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
        step_tac >- gvs[update_transient_def, return_def] >> assume_tac ih)
+  >> qpat_x_assum `∀s'' vs t. _` (fn ih =>
+       step_tac >- gvs[append_logs_def, return_def] >> assume_tac ih)
   (* Handle the if-tail *)
   >> qpat_x_assum `(if _ then _ else _) _ = _` mp_tac
   >> simp[COND_RATOR] >> strip_tac
@@ -840,8 +854,9 @@ Resume eval_expr_no_control_with_bt[ExtCall]:
   >> qpat_x_assum `lift_option (run_ext_call _ _ _ _ _ _ _) _ _ = (INL v'⁶', _)` mp_tac
   >> Cases_on `v'⁶'` >> Cases_on `r` >> Cases_on `r'` >> Cases_on `r` >> strip_tac
   >> gvs[]
+  >> PairCases_on `r''` >> gvs[]
   >> rpt (disch_then drule)
-  >> simp[]
+  >> strip_tac >> last_x_assum irule >> metis_tac[]
 QED
 
 Finalise eval_expr_no_control_with_bt

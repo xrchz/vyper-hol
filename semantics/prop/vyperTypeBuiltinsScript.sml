@@ -3358,6 +3358,19 @@ Proof
   Cases_on`ts` >> gvs[]
 QED
 
+Theorem evaluate_convert_no_type_error[local]:
+  valid_conversion from_ty to_ty /\
+  evaluate_type (get_tenv cx) from_ty = SOME from_tv /\
+  evaluate_type (get_tenv cx) to_ty = SOME to_tv /\
+  value_has_type from_tv v ==>
+  !msg. evaluate_convert (get_tenv cx) v to_ty <> INR (TypeError msg)
+Proof
+  rpt strip_tac >>
+  `evaluate_type_builtin cx Convert to_ty [v] <> INR (TypeError msg)`
+    by (drule_all valid_conversion_no_type_error >> simp[]) >>
+  fs[Once evaluate_type_builtin_def]
+QED
+
 Theorem well_typed_type_builtin_no_type_error:
   type_builtin_result_ok (get_tenv cx) tb result_ty target_ty ts ∧
   well_typed_type_builtin_args tb target_ty ts ∧
@@ -3368,8 +3381,8 @@ Theorem well_typed_type_builtin_no_type_error:
 Proof
   Cases_on `tb` >>
   rw[type_builtin_result_ok_def, well_typed_type_builtin_args_def,
-     evaluate_type_builtin_def, AllCaseEqs(), LET_THM] >>
-  gvs[]
+     evaluate_type_builtin_def, LET_THM] >>
+  gvs[LENGTH_EQ_NUM_compute, AllCaseEqs()]
   >- (qpat_x_assum `is_int_type _` mp_tac >>
       rewrite_tac[is_int_type_inv] >> strip_tac >>
       gvs[evaluate_type_def, evaluate_max_value_def])
@@ -3379,72 +3392,45 @@ Proof
       gvs[evaluate_type_def, evaluate_min_value_def])
   >- simp[evaluate_min_value_def]
   >- simp[evaluate_type_builtin_def]
-  >- (gvs[LENGTH_EQ_NUM_compute] >>
-      drule_all valid_conversion_no_type_error >> simp[])
-  >- (gvs[LENGTH_EQ_NUM_compute] >>
-      Cases_on `tvs` >> gvs[] >>
-      irule evaluate_extract32_supported_no_type_error >>
-      simp[] >> metis_tac[])
-  >- (gvs[LENGTH_EQ_NUM_compute] >>
-      irule evaluate_abi_decode_no_type_error >>
-      metis_tac[])
-QED
-
-Theorem well_typed_type_builtin_success_type:
-  type_builtin_result_ok (get_tenv cx) tb result_ty target_ty ts ∧
-  well_typed_type_builtin_args tb target_ty ts ∧
-  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs ∧
-  evaluate_type (get_tenv cx) result_ty = SOME result_tv ∧
-  LIST_REL value_has_type tvs vs ∧ context_well_typed cx ∧
-  evaluate_type_builtin cx tb target_ty vs = INL v ==>
-  value_has_type result_tv v
-Proof
-  Cases_on `tb` >>
-  rw[type_builtin_result_ok_def, well_typed_type_builtin_args_def,
-     evaluate_type_builtin_def, AllCaseEqs(), LET_THM] >>
-  gvs[]
-  >- (drule default_value_has_type_thm >> simp[])
-  >- metis_tac[evaluate_max_value_well_typed]
-  >- metis_tac[evaluate_max_value_well_typed]
-  >- metis_tac[evaluate_min_value_well_typed]
-  >- metis_tac[evaluate_min_value_well_typed]
-  >- gvs[evaluate_type_def, evaluate_type_builtin_def,
-         within_int_bound_def, value_has_type_def]
-  >- (gvs[LENGTH_EQ_NUM_compute] >>
-      drule_all valid_conversion_success_type >> simp[])
+  >- (drule_all evaluate_convert_no_type_error >> gvs[evaluate_type_builtin_def])
   >- suspend"extract32"
   >- suspend"abi_decode"
-  >- suspend"abi_encode"
-  >- suspend"encode_tuple"
-  >- suspend"encode_tuple_nowrap"
 QED
 
-Resume well_typed_type_builtin_success_type[extract32]:
-  gvs[LENGTH_EQ_NUM_compute, evaluate_type_builtin_def] >>
-  Cases_on`tvs` >>
-  gvs[] >>
-  qmatch_asmsub_rename_tac`evaluate_type_builtin _ _ _ [v1; v2]` >>
-  Cases_on`v1` >> Cases_on`v2` >> gvs[evaluate_type_builtin_def] >>
-  drule_at Any evaluate_extract32_well_typed >>
-  disch_then drule >>
+Resume well_typed_type_builtin_no_type_error[extract32]:
+  gvs[LENGTH_EQ_NUM_compute] >>
+  Cases_on `tvs` >> gvs[] >>
+  drule_all typed_bytes_value_is_BytesV >> strip_tac >> gvs[] >>
+  drule_all typed_int_value_is_IntV >> strip_tac >> gvs[] >>
+  drule_all evaluate_extract32_supported_no_type_error >>
+  fs[evaluate_type_builtin_def] >>
+  simp[AllCaseEqs(), LET_THM]
+QED
+
+Resume well_typed_type_builtin_no_type_error[abi_decode]:
+  gvs[LENGTH_EQ_NUM_compute, AllCaseEqs()] >>
+  drule_all typed_bytes_value_is_BytesV >> strip_tac >> gvs[] >>
+  drule_all evaluate_abi_decode_no_type_error >>
   simp[]
 QED
 
-Resume well_typed_type_builtin_success_type[abi_decode]:
-  gvs[LENGTH_EQ_NUM_compute, evaluate_type_builtin_def,
-      type_builtin_result_ok_def, well_typed_type_builtin_args_def] >>
-  qmatch_asmsub_rename_tac`evaluate_type_builtin _ _ _ [v1]` >>
-  Cases_on`v1` >> gvs[evaluate_type_builtin_def] >>
-  gvs[AllCaseEqs(),evaluate_type_def,value_has_type_def] >>
-  drule evaluate_abi_decode_well_typed >>
-  simp[evaluate_type_def, value_has_type_def, type_slot_size_def] >>
-  disch_then irule >>
-  drule evaluate_type_well_formed_type_value >> strip_tac >>
-  drule well_formed_type_value_slot_size >> simp[]
+Finalise well_typed_type_builtin_no_type_error
+
+Theorem well_typed_convert_success[local]:
+  valid_conversion from_ty to_ty /\
+  evaluate_type (get_tenv cx) from_ty = SOME from_tv /\
+  evaluate_type (get_tenv cx) to_ty = SOME to_tv /\
+  value_has_type from_tv v_in /\
+  evaluate_convert (get_tenv cx) v_in to_ty = INL v_out ==>
+  value_has_type to_tv v_out
+Proof
+  rpt strip_tac >>
+  `evaluate_type_builtin cx Convert to_ty [v_in] = INL v_out` by
+    (simp[Once evaluate_type_builtin_def]) >>
+  drule_all valid_conversion_success_type >> simp[]
 QED
 
-(* ABI encode success typing: type_builtin_result_ok now has vyper_abi_size_bound condition.
-   The 3 resumed branches below need to be proved using the bound. *)
+(* ===== ABI encode success typing bound helpers ===== *)
 
 Theorem evaluate_abi_encode_bytes_success_type_bound[local]:
   evaluate_abi_encode_bytes tenv typ vin = INL bs ∧
@@ -3490,40 +3476,75 @@ Proof
     (cj 2 vyper_to_abi_enc_length_bound) >> simp[] >> decide_tac
 QED
 
-Resume well_typed_type_builtin_success_type[abi_encode]:
-  `abi_encode_method_id_size o' +
-   vyper_abi_size_bound (get_tenv cx) t <= n` by
-    (gvs[abi_encode_size_ok_def, vyper_abi_size_bound_def] >>
-     Cases_on `vyper_is_dynamic (get_tenv cx) t` >> gvs[] >> decide_tac) >>
-  irule evaluate_abi_encode_bytes_success_type_bound >>
-  qexistsl [`n`, `get_tenv cx`, `x0`, `t`, `v'`] >> simp[]
-QED
-
-Resume well_typed_type_builtin_success_type[encode_tuple]:
+Theorem well_typed_abi_encode_tuple_success[local]:
+  abi_encode_size_ok (get_tenv cx) (TupleT ts) o' n /\
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs /\
+  evaluate_type (get_tenv cx) (BaseT (BytesT (Dynamic n))) = SOME result_tv /\
+  LIST_REL value_has_type tvs vs /\
+  evaluate_abi_encode_bytes (get_tenv cx) (TupleT ts) (ArrayV (TupleV vs)) = INL bs ==>
+  value_has_type result_tv (BytesV (abi_encode_method_id_bytes o' ++ bs))
+Proof
+  rpt strip_tac >>
   `LIST_REL (λty tv. evaluate_type (get_tenv cx) ty = SOME tv) ts tvs` by
     (irule MAP_evaluate_type_LIST_REL >> simp[]) >>
   `value_has_type (TupleTV tvs) (ArrayV (TupleV vs))` by
     simp[value_has_type_def, values_have_types_LIST_REL] >>
+  `vyper_abi_size_bound (get_tenv cx) (TupleT ts) +
+   abi_encode_method_id_size o' <= n` by
+    gvs[abi_encode_size_ok_def] >>
   `abi_encode_method_id_size o' +
    vyper_abi_size_bound (get_tenv cx) (TupleT ts) <= n` by
-    gvs[abi_encode_size_ok_def] >>
-  irule evaluate_abi_encode_tuple_bytes_success_type_bound >>
-  qexistsl [`n`, `get_tenv cx`, `ts`, `tvs`, `vs`] >> simp[]
+    decide_tac >>
+  drule_all evaluate_abi_encode_tuple_bytes_success_type_bound >>
+  simp[]
 QED
 
-Resume well_typed_type_builtin_success_type[encode_tuple_nowrap]:
-  `LIST_REL (λty tv. evaluate_type (get_tenv cx) ty = SOME tv) ts tvs` by
-    (irule MAP_evaluate_type_LIST_REL >> simp[]) >>
-  `value_has_type (TupleTV tvs) (ArrayV (TupleV vs))` by
-    simp[value_has_type_def, values_have_types_LIST_REL] >>
-  `abi_encode_method_id_size o' +
-   vyper_abi_size_bound (get_tenv cx) (TupleT ts) <= n` by
-    gvs[abi_encode_size_ok_def] >>
-  irule evaluate_abi_encode_tuple_bytes_success_type_bound >>
-  qexistsl [`n`, `get_tenv cx`, `ts`, `tvs`, `vs`] >> simp[]
+Theorem well_typed_type_builtin_success_type:
+  type_builtin_result_ok (get_tenv cx) tb result_ty target_ty ts ∧
+  well_typed_type_builtin_args tb target_ty ts ∧
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs ∧
+  evaluate_type (get_tenv cx) result_ty = SOME result_tv ∧
+  LIST_REL value_has_type tvs vs ∧ context_well_typed cx ∧
+  evaluate_type_builtin cx tb target_ty vs = INL v ==>
+  value_has_type result_tv v
+Proof
+  Cases_on `tb` >>
+  rw[type_builtin_result_ok_def, well_typed_type_builtin_args_def,
+     evaluate_type_builtin_def, AllCaseEqs(), LET_THM] >>
+  gvs[LENGTH_EQ_NUM_compute]
+  >- (drule default_value_has_type_thm >> simp[])
+  >- metis_tac[evaluate_max_value_well_typed]
+  >- metis_tac[evaluate_max_value_well_typed]
+  >- metis_tac[evaluate_min_value_well_typed]
+  >- metis_tac[evaluate_min_value_well_typed]
+  >- gvs[evaluate_type_def, evaluate_type_builtin_def,
+         within_int_bound_def, value_has_type_def]
+  >- (gvs[evaluate_type_builtin_def, LENGTH_EQ_NUM_compute] >>
+      drule_all well_typed_convert_success >> simp[])
+  >- (gvs[LENGTH_EQ_NUM_compute] >>
+      Cases_on `tvs` >> gvs[] >>
+      drule_all typed_bytes_value_is_BytesV >> strip_tac >> gvs[] >>
+      drule_all typed_int_value_is_IntV >> strip_tac >> gvs[] >>
+      gvs[evaluate_type_builtin_def, AllCaseEqs()] >>
+      drule_all evaluate_extract32_well_typed >> simp[])
+  >- (`evaluate_type (get_tenv cx) (TupleT [result_ty]) =
+        SOME (TupleTV [result_tv])` by
+       (simp[evaluate_type_def, type_slot_size_def] >>
+        drule evaluate_type_well_formed_type_value >> strip_tac >>
+        drule well_formed_type_value_slot_size >> simp[]) >>
+      drule_all typed_bytes_value_is_BytesV >> strip_tac >> gvs[] >>
+      gvs[evaluate_type_builtin_def, AllCaseEqs(), LET_THM] >>
+      drule_all evaluate_abi_decode_well_typed >>
+      simp[evaluate_type_def, value_has_type_def])
+  >| [ (`abi_encode_method_id_size o' +
+         vyper_abi_size_bound (get_tenv cx) t <= n` by
+          (gvs[abi_encode_size_ok_def, vyper_abi_size_bound_def] >>
+           Cases_on `vyper_is_dynamic (get_tenv cx) t` >> gvs[] >> decide_tac) >>
+        irule evaluate_abi_encode_bytes_success_type_bound >>
+        qexistsl [`n`, `get_tenv cx`, `x0`, `t`, `v'`] >> simp[])
+     , metis_tac[well_typed_abi_encode_tuple_success]
+     , metis_tac[well_typed_abi_encode_tuple_success] ]
 QED
-
-Finalise well_typed_type_builtin_success_type
 
 (* ===== Calls / special targets ===== *)
 

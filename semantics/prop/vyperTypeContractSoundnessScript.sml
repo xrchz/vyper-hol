@@ -656,7 +656,7 @@ Proof
   metis_tac[]
 QED
 
-Theorem call_external_function_deploy_normal_success_lookup_transport[local]:
+Theorem call_external_function_deploy_normal_success_lookup_transport:
   (do
      (if nr then
         case cx.nonreentrant_slot of
@@ -691,7 +691,7 @@ Proof
 QED
 
 
-Theorem call_external_function_deploy_return_success_lookup_transport[local]:
+Theorem call_external_function_deploy_return_success_lookup_transport:
   (do
      (if nr then
         case cx.nonreentrant_slot of
@@ -909,7 +909,9 @@ Proof
       combinTheory.APPLY_UPDATE_THM] >>
   rpt strip_tac >> gvs[] >>
   rpt (IF_CASES_TAC >> gvs[]) >>
-  first_x_assum (qspec_then `addr` mp_tac) >> decide_tac
+  first_x_assum (qspec_then `addr` mp_tac) >>
+  simp[vfmStateTheory.update_account_def, combinTheory.APPLY_UPDATE_THM] >>
+  rpt (IF_CASES_TAC >> gvs[]) >> decide_tac
 QED
 
 Theorem send_call_value_no_control_c53:
@@ -1779,7 +1781,7 @@ Proof
   first_x_assum drule >> simp[]
 QED
 
-Theorem call_external_function_deploy_success_preserves_layouts[local]:
+Theorem call_external_function_deploy_success_preserves_layouts:
   !am cx nr mut ts all_mods args dflts vals body ret v am_out am_c.
   cx.in_deploy /\
   call_external_function am cx nr mut ts all_mods args dflts vals body ret =
@@ -1795,7 +1797,7 @@ Proof
   gvs[abstract_machine_from_state_def]
 QED
 
-Theorem load_contract_success_constructor_constants_context[local]:
+Theorem load_contract_success_constructor_constants_context:
   load_contract am deploy_tx mods exps = INL am_deployed ==>
   ?imms ts mut nr args dflts ret body v am_ctor am_c.
     initial_immutables (type_env_all_modules mods) mods = SOME imms /\
@@ -2361,7 +2363,7 @@ Proof
   simp[int_calls_expr_def]
 QED
 
-Theorem selected_public_getter_body_int_calls_empty[local]:
+Theorem selected_public_getter_body_int_calls_empty:
   is_public_getter_decl fn decl /\
   external_getter_tuple src decl = SOME (mut,nr,args,dflts,ret,body) ==>
   int_calls_stmts body = []
@@ -2388,7 +2390,7 @@ Proof
   simp[int_calls_expr_def, int_calls_stmt_def]
 QED
 
-Theorem selected_public_getter_body_eval_context_equiv[local]:
+Theorem selected_public_getter_body_eval_context_equiv:
   is_public_getter_decl fn decl /\
   external_getter_tuple src decl = SOME (mut,nr,args,dflts,ret,body) /\
   getter_context_equiv cx1 cx2 ==>
@@ -2594,7 +2596,7 @@ Proof
   gvs[env_consistent_def]
 QED
 
-Theorem checked_public_getter_post_prefix_body_setup_selected[local]:
+Theorem checked_public_getter_post_prefix_body_setup_selected:
   check_contract F am.layouts tx.target mods = SOME art /\
   checked_contract_runtime_ready art mods am tx /\
   machine_well_typed am /\
@@ -2692,7 +2694,7 @@ Proof
   simp[]
 QED
 
-Theorem checked_public_getter_post_prefix_body_execution_selected[local]:
+Theorem checked_public_getter_post_prefix_body_execution_selected:
   check_contract F am.layouts tx.target mods = SOME art /\
   checked_contract_runtime_ready art mods am tx /\
   machine_well_typed am /\
@@ -2813,7 +2815,7 @@ Proof
 QED
 
 
-Theorem checked_public_getter_post_prefix_body_return_typed_selected[local]:
+Theorem checked_public_getter_post_prefix_body_return_typed_selected:
   check_contract F am.layouts tx.target mods = SOME art /\
   checked_contract_runtime_ready art mods am tx /\
   machine_well_typed am /\
@@ -2833,7 +2835,7 @@ Proof
   metis_tac[]
 QED
 
-Theorem checked_public_getter_initial_body_execution_selected[local]:
+Theorem checked_public_getter_initial_body_execution_selected:
   check_contract F am.layouts tx.target mods = SOME art /\
   checked_contract_runtime_ready art mods am tx /\
   machine_well_typed am /\
@@ -2928,7 +2930,7 @@ Proof
       vyperTypeExprSoundnessTheory.no_type_error_result_def]
 QED
 
-Theorem bind_arguments_success_mem_zip_safe_cast[local]:
+Theorem bind_arguments_success_mem_zip_safe_cast:
   !tenv params vals scope id ty raw.
     bind_arguments tenv params vals = SOME scope /\
     MEM ((id,ty),raw) (ZIP (params, vals)) ==>
@@ -2949,7 +2951,7 @@ Proof
   first_x_assum drule >> simp[]
 QED
 
-Theorem bind_arguments_success_flookup_safe_cast[local]:
+Theorem bind_arguments_success_flookup_safe_cast:
   !tenv params vals scope id ty raw sv.
     bind_arguments tenv params vals = SOME scope /\
     ALL_DISTINCT (MAP (string_to_num o FST) params) /\
@@ -2972,7 +2974,7 @@ Proof
   simp[]
 QED
 
-Theorem checked_explicit_external_body_no_control_escape_selected[local]:
+Theorem checked_explicit_external_body_no_control_escape_selected:
   check_contract F am.layouts tx.target mods = SOME art /\
   ALOOKUP mods src = SOME ts /\
   MEM (FunctionDecl External mut nr raw tx.function_name args dflts ret body) ts ==>
@@ -2984,7 +2986,7 @@ Proof
   gvs[check_function_body_def]
 QED
 
-Theorem checked_public_getter_body_no_control_escape_selected[local]:
+Theorem checked_public_getter_body_no_control_escape_selected:
   check_contract F am.layouts tx.target mods = SOME art /\
   ALOOKUP mods src = SOME ts /\
   MEM decl ts /\
@@ -3079,7 +3081,7 @@ Proof
 QED
 
 
-Theorem checked_explicit_external_body_setup[local]:
+Theorem checked_explicit_external_body_setup:
   check_contract F am.layouts tx.target mods = SOME art /\
   checked_contract_runtime_ready art mods am tx /\
   machine_well_typed am /\ call_tx_well_typed tx /\

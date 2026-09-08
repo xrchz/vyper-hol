@@ -69,7 +69,7 @@ Proof
   rpt conj_tac >> first_assum ACCEPT_TAC
 QED
 
-Theorem checked_constructor_body_typing_package[local]:
+Theorem checked_constructor_body_typing_package:
   check_contract T layouts addr mods = SOME art /\
   ALOOKUP mods NONE = SOME ts /\
   lookup_function NONE fn Deploy ts = SOME (mut,nr,args,dflts,ret,body) ==>
@@ -151,7 +151,7 @@ Proof
       rpt conj_tac >> first_assum ACCEPT_TAC)
 QED
 
-Theorem checked_constructor_body_call_evaluation_safe[local]:
+Theorem checked_constructor_body_call_evaluation_safe:
   check_contract T layouts tx.target mods = SOME art /\
   ALOOKUP sources tx.target = SOME mods /\
   ALOOKUP mods NONE = SOME ts /\
@@ -369,7 +369,7 @@ Proof
   qexistsl [`am`,`imms`,`layouts`,`mods`,`sources`,`tx.target`,`tx`] >> simp[]
 QED
 
-Theorem constructor_call_prefix_body_result_cases[local]:
+Theorem constructor_call_prefix_body_result_cases:
   (!exc st'. lock_action st = (INR exc,st') ==> no_control_exc exc) /\
   ((do
       lock_action;
