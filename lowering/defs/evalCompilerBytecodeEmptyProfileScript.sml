@@ -351,4 +351,23 @@ Proof
   ACCEPT_TAC runtime_ops_chunk1_op2_exact
 QED
 
+val runtime_ops_chunk1_op3_tm = List.nth (runtime_ops_chunk1, 3)
+val runtime_ops_chunk1_op3_call =
+  ``exec_stack_op ^runtime_initial_fmp_tm ^runtime_ops_chunk1_op3_tm``
+val runtime_ops_chunk1_op3_exact =
+  computeLib.EVAL_CONV runtime_ops_chunk1_op3_call
+val runtime_ops_chunk1_op3_asm_tm = rhs (concl runtime_ops_chunk1_op3_exact)
+val _ =
+  if null (free_vars runtime_ops_chunk1_op3_tm) andalso
+     null (free_vars runtime_ops_chunk1_op3_asm_tm) andalso
+     listSyntax.is_list runtime_ops_chunk1_op3_asm_tm andalso
+     type_of runtime_ops_chunk1_op3_asm_tm = ``:asm_inst list``
+  then () else raise Fail "runtime chunk 1 operation 3 is not closed literal assembly"
+
+Theorem exact_empty_runtime_ops_chunk1_op3[local]:
+  ^runtime_ops_chunk1_op3_call = ^runtime_ops_chunk1_op3_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk1_op3_exact
+QED
+
 val _ = export_theory()
