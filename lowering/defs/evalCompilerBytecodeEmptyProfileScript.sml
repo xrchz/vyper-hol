@@ -505,4 +505,126 @@ Theorem exact_empty_runtime_ops_chunk1[local]:
 Proof
   ACCEPT_TAC runtime_ops_chunk1_exact
 QED
+
+fun mk_runtime_ops_piece label chunk start count =
+  let
+    val ops = List.take (List.drop (chunk, start), count)
+    val ops_tm = listSyntax.mk_list (ops, runtime_op_ty)
+    val _ =
+      if length ops = count andalso null (free_vars ops_tm)
+      then () else raise Fail (label ^ " is not a closed operation piece")
+    val call =
+      ``FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^ops_tm)``
+    val op_calls =
+      map (fn op_tm => ``exec_stack_op ^runtime_initial_fmp_tm ^op_tm``) ops
+    val op_exacts = map computeLib.EVAL_CONV op_calls
+    val exact =
+      PURE_REWRITE_CONV
+        (op_exacts @ [listTheory.MAP, listTheory.FLAT, listTheory.APPEND]) call
+    val asm_tm = rhs (concl exact)
+    val _ =
+      if null (free_vars asm_tm) andalso
+         listSyntax.is_list asm_tm andalso
+         type_of asm_tm = ``:asm_inst list``
+      then () else raise Fail (label ^ " is not closed literal assembly")
+  in
+    {call = call, asm_tm = asm_tm, exact = exact}
+  end
+
+fun compose_runtime_ops_chunk3 label chunk_tm
+      (call1, asm1, exact1) (call2, asm2, exact2) (call3, asm3, exact3) =
+  let
+    val call =
+      ``FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^chunk_tm)``
+    val pieces_call = ``^call1 ++ ^call2 ++ ^call3``
+    val call_reduce =
+      PURE_REWRITE_CONV
+        [listTheory.MAP, listTheory.FLAT, listTheory.APPEND,
+         listTheory.APPEND_NIL, listTheory.APPEND_ASSOC] call
+    val pieces_call_reduce =
+      PURE_REWRITE_CONV
+        [listTheory.MAP, listTheory.FLAT, listTheory.APPEND,
+         listTheory.APPEND_NIL, listTheory.APPEND_ASSOC] pieces_call
+    val _ =
+      if aconv (rhs (concl call_reduce)) (rhs (concl pieces_call_reduce))
+      then () else raise Fail (label ^ " pieces do not reconstruct the chunk")
+    val to_pieces_exact = TRANS call_reduce (SYM pieces_call_reduce)
+    val asm_concat_tm = ``^asm1 ++ ^asm2 ++ ^asm3``
+    val pieces_exact =
+      PURE_REWRITE_CONV [exact1, exact2, exact3] pieces_call
+    val _ =
+      if aconv (rhs (concl pieces_exact)) asm_concat_tm
+      then () else raise Fail (label ^ " piece equations produced the wrong concatenation")
+    val asm_reduce =
+      PURE_REWRITE_CONV
+        [listTheory.APPEND, listTheory.APPEND_NIL, listTheory.APPEND_ASSOC]
+        asm_concat_tm
+    val asm_tm = rhs (concl asm_reduce)
+    val exact = TRANS to_pieces_exact (TRANS pieces_exact asm_reduce)
+    val _ =
+      if null (free_vars asm_tm) andalso
+         listSyntax.is_list asm_tm andalso
+         type_of asm_tm = ``:asm_inst list`` andalso
+         aconv (lhs (concl exact)) call andalso
+         aconv (rhs (concl exact)) asm_tm
+      then () else raise Fail (label ^ " exact theorem has wrong shape")
+  in
+    {call = call, asm_tm = asm_tm, exact = exact}
+  end
+
+val runtime_ops_chunk2_pair01 =
+  mk_runtime_ops_piece "runtime chunk 2 pair 0-1" runtime_ops_chunk2 0 2
+val runtime_ops_chunk2_pair01_call = #call runtime_ops_chunk2_pair01
+val runtime_ops_chunk2_pair01_asm_tm = #asm_tm runtime_ops_chunk2_pair01
+val runtime_ops_chunk2_pair01_exact = #exact runtime_ops_chunk2_pair01
+
+Theorem exact_empty_runtime_ops_chunk2_pair01[local]:
+  ^runtime_ops_chunk2_pair01_call = ^runtime_ops_chunk2_pair01_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk2_pair01_exact
+QED
+
+val runtime_ops_chunk2_pair23 =
+  mk_runtime_ops_piece "runtime chunk 2 pair 2-3" runtime_ops_chunk2 2 2
+val runtime_ops_chunk2_pair23_call = #call runtime_ops_chunk2_pair23
+val runtime_ops_chunk2_pair23_asm_tm = #asm_tm runtime_ops_chunk2_pair23
+val runtime_ops_chunk2_pair23_exact = #exact runtime_ops_chunk2_pair23
+
+Theorem exact_empty_runtime_ops_chunk2_pair23[local]:
+  ^runtime_ops_chunk2_pair23_call = ^runtime_ops_chunk2_pair23_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk2_pair23_exact
+QED
+
+val runtime_ops_chunk2_pair45 =
+  mk_runtime_ops_piece "runtime chunk 2 pair 4-5" runtime_ops_chunk2 4 2
+val runtime_ops_chunk2_pair45_call = #call runtime_ops_chunk2_pair45
+val runtime_ops_chunk2_pair45_asm_tm = #asm_tm runtime_ops_chunk2_pair45
+val runtime_ops_chunk2_pair45_exact = #exact runtime_ops_chunk2_pair45
+
+Theorem exact_empty_runtime_ops_chunk2_pair45[local]:
+  ^runtime_ops_chunk2_pair45_call = ^runtime_ops_chunk2_pair45_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk2_pair45_exact
+QED
+
+val runtime_ops_chunk2_result =
+  compose_runtime_ops_chunk3 "runtime chunk 2" runtime_ops_chunk2_tm
+    (runtime_ops_chunk2_pair01_call, runtime_ops_chunk2_pair01_asm_tm,
+     exact_empty_runtime_ops_chunk2_pair01)
+    (runtime_ops_chunk2_pair23_call, runtime_ops_chunk2_pair23_asm_tm,
+     exact_empty_runtime_ops_chunk2_pair23)
+    (runtime_ops_chunk2_pair45_call, runtime_ops_chunk2_pair45_asm_tm,
+     exact_empty_runtime_ops_chunk2_pair45)
+val runtime_ops_chunk2_call = #call runtime_ops_chunk2_result
+val runtime_ops_chunk2_asm_tm = #asm_tm runtime_ops_chunk2_result
+val runtime_ops_chunk2_exact = #exact runtime_ops_chunk2_result
+
+Theorem exact_empty_runtime_ops_chunk2[local]:
+  FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^runtime_ops_chunk2_tm) =
+  ^runtime_ops_chunk2_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk2_exact
+QED
+
 val _ = export_theory()
