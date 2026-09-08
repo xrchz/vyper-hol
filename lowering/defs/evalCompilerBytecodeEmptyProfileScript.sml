@@ -334,4 +334,21 @@ Proof
   ACCEPT_TAC runtime_ops_chunk1_op2_residual_exact_th
 QED
 
+val runtime_ops_chunk1_op2_exact =
+  PURE_REWRITE_RULE [runtime_ops_chunk1_op2_residual_exact]
+    runtime_ops_chunk1_op2_shallow
+val _ =
+  if aconv (lhs (concl runtime_ops_chunk1_op2_exact))
+       runtime_ops_chunk1_op2_call andalso
+     aconv (rhs (concl runtime_ops_chunk1_op2_exact))
+       runtime_ops_chunk1_op2_asm_tm andalso
+     null (free_vars (concl runtime_ops_chunk1_op2_exact))
+  then () else raise Fail "runtime operation 2 exact theorem has wrong shape"
+
+Theorem exact_empty_runtime_ops_chunk1_op2[local]:
+  ^runtime_ops_chunk1_op2_call = ^runtime_ops_chunk1_op2_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk1_op2_exact
+QED
+
 val _ = export_theory()
