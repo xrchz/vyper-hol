@@ -273,4 +273,25 @@ Proof
   irule listTheory.EL_MEM >> decide_tac
 QED
 
+Theorem empty_deploy_final_def_dominates_uses[local]:
+  def_dominates_uses empty_deploy_final_fn
+Proof
+  `block_defs_before_uses empty_deploy_final_block` by
+    (irule indexed_defs_before_uses_imp_block_defs_before_uses >>
+     ACCEPT_TAC empty_deploy_final_indexed_defs_before_uses) >>
+  rewrite_tac[venomWfTheory.def_dominates_uses_def] >>
+  rpt strip_tac >>
+  qpat_x_assum `MEM bb empty_deploy_final_fn.fn_blocks` mp_tac >>
+  rewrite_tac[empty_deploy_final_blocks_exact] >>
+  simp[] >> rpt strip_tac >> gvs[] >>
+  qpat_x_assum `block_defs_before_uses empty_deploy_final_block` mp_tac >>
+  rewrite_tac[block_defs_before_uses_def] >>
+  disch_then (qspec_then `inst` (qspec_then `v` mp_tac)) >>
+  simp[] >> strip_tac >>
+  qexists `EL i empty_deploy_final_block.bb_instructions` >>
+  simp[empty_deploy_final_blocks_exact,
+       empty_deploy_final_member_self_dominates] >>
+  qexistsl [`i`, `j`] >> simp[]
+QED
+
 val _ = export_theory()
