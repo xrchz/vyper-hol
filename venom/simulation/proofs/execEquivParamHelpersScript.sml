@@ -220,10 +220,17 @@ Theorem vsr_step_inst_ssa:
     (!x. MEM (Var x) inst.inst_operands ==> lookup_var x s1 = lookup_var x s2) ==>
     lift_result R_ok R_term R_term (step_inst_base inst s1) (step_inst_base inst s2)
 Proof
-  rpt strip_tac >> gvs[] >> vsr_eval_rewrite_tac () >>
-  rpt (CASE_TAC >> gvs[lift_result_def]) >>
-  TRY (imp_res_tac resolve_phi_MEM >> res_tac >> gvs[]) >>
-  TRY (vsr_irule vsr_update_var_R_ok >> simp[] >> NO_TAC) >>
+  rpt strip_tac >> gvs[]
+  >- (vsr_eval_rewrite_tac () >>
+      rpt (CASE_TAC >> gvs[lift_result_def]) >>
+      TRY (imp_res_tac resolve_phi_MEM >> res_tac >> gvs[]) >>
+      TRY (vsr_irule vsr_update_var_R_ok >> simp[] >> NO_TAC) >>
+      simp[lift_result_def])
+  >- (vsr_eval_rewrite_tac () >>
+      rpt (CASE_TAC >> gvs[lift_result_def]) >>
+      TRY (vsr_irule vsr_update_var_R_ok >> simp[] >> NO_TAC) >>
+      simp[lift_result_def])
+  >> vsr_eval_rewrite_tac () >>
   simp[lift_result_def]
 QED
 

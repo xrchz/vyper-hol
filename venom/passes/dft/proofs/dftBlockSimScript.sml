@@ -894,6 +894,7 @@ Proof
   qpat_x_assum `step_inst_base inst s1 = OK r1` mp_tac >>
   qpat_x_assum `step_inst_base inst s2 = OK r2` mp_tac >>
   ASM_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[venomInstTheory.opcode_case_def] >>
   gvs[AllCaseEqs()] >>
   rpt strip_tac >> gvs[] >>
   first_x_assum irule >> simp[]

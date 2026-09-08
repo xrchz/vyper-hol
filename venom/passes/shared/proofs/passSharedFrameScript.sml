@@ -138,7 +138,9 @@ Theorem step_inst_base_no_halt[local]:
     step_inst_base inst s = Halt s' ==>
     is_terminator inst.inst_opcode
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule opcodeClassTheory.step_inst_base_halt_opcodes >>
+  strip_tac >> gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_no_intret[local]:
@@ -146,7 +148,9 @@ Theorem step_inst_base_no_intret[local]:
     step_inst_base inst s = IntRet vs s' ==>
     is_terminator inst.inst_opcode
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule opcodeClassTheory.step_inst_base_intret_opcodes >>
+  strip_tac >> gvs[is_terminator_def]
 QED
 
 (* Non-INVOKE non-terminator step_inst can't produce Halt *)
@@ -921,7 +925,12 @@ Theorem extcodecopy_memory_determined[local]:
     s1.vs_memory = s2.vs_memory ==>
     v1.vs_memory = v2.vs_memory
 Proof
-  rw[step_inst_base_def, is_terminator_def] >>
+  rpt strip_tac >>
+  qpat_x_assum `step_inst_base inst s1 = OK v1` mp_tac >>
+  qpat_x_assum `step_inst_base inst s2 = OK v2` mp_tac >>
+  PURE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
+  strip_tac >> strip_tac >>
   Cases_on `inst.inst_operands` >> gvs[] >>
   Cases_on `t` >> gvs[] >>
   Cases_on `t'` >> gvs[] >>

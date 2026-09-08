@@ -623,10 +623,13 @@ Resume step_inst_base_preserves_all[g1]:
       Cases_on `inst.inst_opcode` >>
       gvs[is_ext_call_op_def, is_terminator_def, is_alloca_op_def,
           write_effects_def, all_effects_def] >>
-      gvs[Once step_inst_base_def] >>
+      qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+      PURE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[opcode_case_def] >>
       gvs[exec_ext_call_def, exec_delegatecall_def, AllCaseEqs(),
           extract_venom_result_def, update_var_def,
           pairTheory.UNCURRY, lookup_var_def] >>
+      strip_tac >>
       gvs[FLOOKUP_UPDATE]
       >- (
         gvs[exec_create_def, AllCaseEqs(),

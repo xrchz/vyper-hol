@@ -10678,9 +10678,16 @@ Proof
     by metis_tac[all_distinct_map_filter] >>
   `MEM b_orig.inst_id (MAP (\i. i.inst_id) (FILTER (\i. ~is_pseudo i.inst_opcode) orig_bi))`
     by (simp[MEM_MAP] >> qexists_tac `b_orig` >> simp[]) >>
-  `canonical_dep orig_bi b_orig x` by
-    metis_tac[from_barrier_dep_imp_canonical_dep_local, from_barrier_dep_def,
-              iffLR MEM_SPLIT_APPEND_first, map_split_mem_before, MAP_APPEND] >>
+  `?l1 l2.
+     MAP (\i. i.inst_id) (FILTER (\i. ~is_pseudo i.inst_opcode) orig_bi) =
+       l1 ++ [b_orig.inst_id] ++ l2`
+    by metis_tac[MEM_SPLIT_APPEND_first] >>
+  `MEM x.inst_id l1` by
+    (drule_all barrier_in_sfx_from_barrier_dep >> simp[]) >>
+  `canonical_dep orig_bi b_orig x` by (
+    irule from_barrier_dep_imp_canonical_dep_local >>
+    simp[from_barrier_dep_def] >>
+    qexistsl_tac [`l1`, `l2`] >> simp[]) >>
   `canonical_dep orig_bi b' px_b` by (
     irule canonical_dep_inst_id_equiv_filtered >> simp[] >>
     qexistsl_tac [`b_orig`,`x`] >> simp[]) >>

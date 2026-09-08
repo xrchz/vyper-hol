@@ -252,8 +252,7 @@ Theorem log_entry_equiv_log_entry_corresponds[local]:
     (log_entry_equiv cenv addr l ev <=>
      log_entry_corresponds event_info tenv addr l ev)
 Proof
-  rpt strip_tac >> PairCases_on `l` >>
-  gvs[log_entry_equiv_def, log_entry_corresponds_def]
+  simp[log_entry_equiv_def, log_entry_corresponds_def]
 QED
 
 Theorem external_logs_rel_logs_correspond[local]:

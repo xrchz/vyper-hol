@@ -2039,7 +2039,11 @@ Proof
            venomEffectsTheory.empty_effects_def]) >>
     `!v. MEM v inst.inst_outputs ==>
          lookup_var v v1 = lookup_var v v2` by (
-      `inst.inst_opcode <> PHI` by (CCONTR_TAC >> gvs[step_inst_base_def]) >>
+      `inst.inst_opcode <> PHI` by
+        (CCONTR_TAC >>
+         `inst.inst_opcode = PHI` by metis_tac[] >>
+         qpat_x_assum `step_inst_base inst s1 = OK v1` mp_tac >>
+         simp[step_inst_base_def]) >>
       qspecl_then [`inst`, `s1`, `s2`, `v1`, `v2`]
         mp_tac step_inst_base_effect_free_output_determined_vars >>
       simp[]

@@ -204,6 +204,28 @@ Proof
 QED
 
 
+Theorem vsr_step_inst_bump:
+  !R_ok R_term inst s1 s2.
+    valid_state_rel R_ok R_term /\ R_ok s1 s2 /\
+    inst.inst_opcode = BUMP /\
+    (!x. MEM (Var x) inst.inst_operands ==>
+         lookup_var x s1 = lookup_var x s2) ==>
+    lift_result R_ok R_term R_term
+      (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt strip_tac >> gvs[] >> vsr_eval_rewrite_tac () >>
+  Cases_on `inst.inst_operands` >- simp[lift_result_def] >>
+  Cases_on `t` >- simp[lift_result_def] >>
+  reverse (Cases_on `t'`) >-
+    (rpt (BasicProvers.TOP_CASE_TAC >> gvs[lift_result_def])) >>
+  Cases_on `inst.inst_outputs` >- simp[lift_result_def] >>
+  Cases_on `t` >- simp[lift_result_def] >>
+  reverse (Cases_on `t'`) >- simp[lift_result_def] >>
+  Cases_on `eval_operand h s2` >> gvs[lift_result_def] >>
+  Cases_on `eval_operand h' s2` >> gvs[lift_result_def] >>
+  metis_tac[vsr_update_var_R_ok]
+QED
+
 (* Raw-FMP and hidden-parameter opcodes introduced with the extended state. *)
 Theorem vsr_step_inst_fmp_opcode:
   !R_ok R_term inst s1 s2.
@@ -228,9 +250,7 @@ Proof
   >- (vsr_eval_rewrite_tac () >>
       rpt (CASE_TAC >> gvs[lift_result_def]) >>
       metis_tac[vsr_update_var_R_ok])
-  >- (vsr_eval_rewrite_tac () >>
-      rpt (CASE_TAC >> gvs[lift_result_def]) >>
-      metis_tac[vsr_update_var_R_ok])
+  >- (irule vsr_step_inst_bump >> simp[])
   >- (vsr_eval_rewrite_tac () >>
       rpt (CASE_TAC >> gvs[lift_result_def]) >>
       metis_tac[vsr_update_var_R_ok])

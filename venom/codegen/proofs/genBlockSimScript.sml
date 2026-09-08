@@ -4917,7 +4917,7 @@ Resume gen_inst_ok_sim[bump]:
      FIRST [first_assum ACCEPT_TAC, simp[plan_stack_sem_eq_def]])) >>
   strip_tac >>
   `LENGTH (execute_plan initial_fmp bump_emit_ops) = 8` by
-    EVAL_TAC >>
+    simp[bump_emit_ops_def, execute_plan_def, exec_stack_op_def] >>
   `as''.as_pc =
      as'.as_pc + LENGTH (execute_plan initial_fmp bump_emit_ops)` by
     (qpat_assum `as''.as_pc = as'.as_pc + 8` mp_tac >>
@@ -5375,6 +5375,7 @@ Proof
        istore_def, mstore_def, init_venom_state_def, init_plan_state_def,
        asm_steps_def, asm_step_def, asm_step_op_def, asm_swap_def,
        asm_mstore_def, asm_next_def, asm_expand_memory_def, LET_THM,
+       venomMemPropsTheory.dimindex_256,
        vfmTypesTheory.word_to_bytes_word_of_bytes_256] >>
   conj_tac
   >- (conj_tac
@@ -5383,16 +5384,20 @@ Proof
           qpat_x_assum `SUC (SUC _) < 2` mp_tac >> simp[])
       >> rpt strip_tac >>
          gvs[finite_mapTheory.FLOOKUP_UPDATE, operand_val_def, lookup_var_def,
-             byteTheory.LENGTH_word_to_bytes, TAKE_LENGTH_ID_rwt,
+             byteTheory.LENGTH_word_to_bytes, TAKE_LENGTH_ID_rwt, venomMemPropsTheory.dimindex_256,
              vfmTypesTheory.word_to_bytes_word_of_bytes_256]) >>
   conj_tac
   >- (rpt strip_tac >>
       simp[EL_APPEND1, byteTheory.LENGTH_word_to_bytes]) >>
   conj_tac
-  >- EVAL_TAC >>
+  >- (CONV_TAC (LHS_CONV EVAL) >>
+      simp[venomMemPropsTheory.dimindex_256,
+           byteTheory.word_to_bytes_def, byteTheory.LENGTH_word_to_bytes_aux,
+           rich_listTheory.DROP_LENGTH_NIL, empty_call_context_def,
+           empty_tx_context_def, empty_block_context_def]) >>
   qexists `Var "spill"` >> qexists `0` >>
   simp[finite_mapTheory.FLOOKUP_UPDATE, operand_val_def, lookup_var_def,
-       byteTheory.LENGTH_word_to_bytes, TAKE_LENGTH_ID_rwt,
+       byteTheory.LENGTH_word_to_bytes, TAKE_LENGTH_ID_rwt, venomMemPropsTheory.dimindex_256,
        vfmTypesTheory.word_to_bytes_word_of_bytes_256]
 QED
 

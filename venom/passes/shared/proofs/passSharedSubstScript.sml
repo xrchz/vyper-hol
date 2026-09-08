@@ -847,11 +847,10 @@ Proof
     (irule eval_operands_positional >> simp[]) >>
   Cases_on `6 < LENGTH inst.inst_operands` >-
    (irule step_inst_base_pos_safe_long >> simp[]) >>
+  qpat_x_assum `inst_wf inst`
+    (fn th => ASSUME_TAC (REWRITE_RULE [inst_wf_def] th)) >>
   Cases_on `inst.inst_opcode` >>
   gvs[is_alloca_op_def] >>
-  qpat_x_assum `inst_wf inst` mp_tac >>
-  simp[inst_wf_def] >>
-  strip_tac >> gvs[] >>
   gvs[listTheory.LENGTH_EQ_NUM_compute] >>
   inst_eval_tac >> gvs[]
   >- pos_opcode_finish_tac

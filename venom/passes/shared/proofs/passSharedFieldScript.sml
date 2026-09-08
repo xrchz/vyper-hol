@@ -414,6 +414,17 @@ Proof
   gvs[step_inst_non_invoke]
 QED
 
+(* Error results from pure binary operations are memory-independent. *)
+Theorem exec_pure2_mem_error[local]:
+  !f inst s e m.
+    exec_pure2 f inst s = Error e ==>
+    exec_pure2 f inst (s with vs_memory := m) = Error e
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `exec_pure2 f inst s = Error e` mp_tac >>
+  simp[exec_pure2_def, AllCaseEqs()]
+QED
+
 (* Error case: same error regardless of memory replacement *)
 Theorem step_inst_base_mem_error_frame[local]:
   !inst s e m.
@@ -447,7 +458,10 @@ Proof
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
-  >- mem_frame_finish_tac
+  >- (qpat_x_assum `step_inst_base inst s = Error e` mp_tac >>
+      PURE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[opcode_case_def] >>
+      simp[exec_pure2_mem_error])
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac

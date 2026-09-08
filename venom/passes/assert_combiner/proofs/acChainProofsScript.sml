@@ -2099,11 +2099,14 @@ Theorem ac_or_iz_step:
        eval_operand op s_iz = eval_operand op s)
 Proof
   rpt strip_tac >>
-  simp[LET_THM, run_insts_def, step_inst_non_invoke,
-       step_inst_base_def, exec_pure2_def, exec_pure1_def,
-       update_var_def, eval_operand_def, lookup_var_def,
-       finite_mapTheory.FLOOKUP_UPDATE,
-       execution_equiv_def] >>
+  simp[LET_THM] >>
+  simp[run_insts_def] >>
+  simp[step_inst_non_invoke] >>
+  PURE_REWRITE_TAC[step_inst_base_def] >>
+  simp[venomInstTheory.opcode_case_def] >>
+  simp[exec_pure2_def, exec_pure1_def] >>
+  simp[update_var_def, eval_operand_def, lookup_var_def] >>
+  simp[finite_mapTheory.FLOOKUP_UPDATE, execution_equiv_def] >>
   rpt strip_tac >> Cases_on `op` >>
   fs[eval_operand_def, lookup_var_def, update_var_def,
      finite_mapTheory.FLOOKUP_UPDATE]
