@@ -292,4 +292,46 @@ Proof
   ACCEPT_TAC runtime_ops_chunk1_op2_shallow
 QED
 
+val runtime_ops_chunk1_op2_w2n_call =
+  find_head ``w2n`` runtime_ops_chunk1_op2_shallow_rhs
+
+Theorem runtime_ops_chunk1_op2_w2n_exact[local]:
+  ^runtime_ops_chunk1_op2_w2n_call = 4
+Proof
+  simp[wordsTheory.dimword_def]
+QED
+
+val runtime_ops_chunk1_op2_after_w2n =
+  rhs (concl
+    (PURE_REWRITE_CONV [runtime_ops_chunk1_op2_w2n_exact]
+      runtime_ops_chunk1_op2_shallow_rhs))
+val runtime_ops_chunk1_op2_encode_call =
+  find_head ``encode_num_bytes`` runtime_ops_chunk1_op2_after_w2n
+
+Theorem exact_empty_runtime_ops_chunk1_op2_encode[local]:
+  ^runtime_ops_chunk1_op2_encode_call = [4w]
+Proof
+  once_rewrite_tac[asmIRTheory.encode_num_bytes_def] >> simp[] >>
+  once_rewrite_tac[asmIRTheory.encode_num_bytes_def] >> simp[]
+QED
+
+val runtime_ops_chunk1_op2_residual_exact_th =
+  PURE_REWRITE_CONV
+    [runtime_ops_chunk1_op2_w2n_exact,
+     exact_empty_runtime_ops_chunk1_op2_encode]
+    runtime_ops_chunk1_op2_shallow_rhs
+val runtime_ops_chunk1_op2_asm_tm =
+  rhs (concl runtime_ops_chunk1_op2_residual_exact_th)
+val _ =
+  if null (free_vars runtime_ops_chunk1_op2_asm_tm) andalso
+     listSyntax.is_list runtime_ops_chunk1_op2_asm_tm andalso
+     type_of runtime_ops_chunk1_op2_asm_tm = ``:asm_inst list``
+  then () else raise Fail "runtime operation 2 residual is not literal assembly"
+
+Theorem runtime_ops_chunk1_op2_residual_exact[local]:
+  ^runtime_ops_chunk1_op2_shallow_rhs = ^runtime_ops_chunk1_op2_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk1_op2_residual_exact_th
+QED
+
 val _ = export_theory()
