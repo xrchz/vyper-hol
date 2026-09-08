@@ -627,4 +627,61 @@ Proof
   ACCEPT_TAC runtime_ops_chunk2_exact
 QED
 
+
+val runtime_ops_chunk3_op0_tm = List.nth (runtime_ops_chunk3, 0)
+val runtime_ops_chunk3_op0_call =
+  ``exec_stack_op ^runtime_initial_fmp_tm ^runtime_ops_chunk3_op0_tm``
+val runtime_ops_chunk3_op0_shallow =
+  ONCE_REWRITE_CONV [planExecTheory.exec_stack_op_def]
+    runtime_ops_chunk3_op0_call
+val runtime_ops_chunk3_op0_shallow_rhs =
+  rhs (concl runtime_ops_chunk3_op0_shallow)
+val _ =
+  if null (free_vars runtime_ops_chunk3_op0_tm) andalso
+     null (free_vars runtime_ops_chunk3_op0_shallow_rhs) andalso
+     not (has_head ``exec_stack_op`` runtime_ops_chunk3_op0_shallow_rhs)
+  then () else raise Fail "runtime chunk 3 operation 0 shallow result is not closed"
+
+Theorem exact_empty_runtime_ops_chunk3_op0_shallow[local]:
+  ^runtime_ops_chunk3_op0_call = ^runtime_ops_chunk3_op0_shallow_rhs
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op0_shallow
+QED
+
+val runtime_ops_chunk3_op0_asm_tm = runtime_ops_chunk3_op0_shallow_rhs
+val _ =
+  if null (free_vars runtime_ops_chunk3_op0_asm_tm) andalso
+     listSyntax.is_list runtime_ops_chunk3_op0_asm_tm andalso
+     type_of runtime_ops_chunk3_op0_asm_tm = ``:asm_inst list`` andalso
+     aconv (lhs (concl runtime_ops_chunk3_op0_shallow))
+       runtime_ops_chunk3_op0_call andalso
+     aconv (rhs (concl runtime_ops_chunk3_op0_shallow))
+       runtime_ops_chunk3_op0_asm_tm
+  then () else raise Fail "runtime chunk 3 operation 0 exact theorem has wrong shape"
+
+Theorem exact_empty_runtime_ops_chunk3_op0[local]:
+  ^runtime_ops_chunk3_op0_call = ^runtime_ops_chunk3_op0_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op0_shallow
+QED
+
+val runtime_ops_chunk3_op1_tm = List.nth (runtime_ops_chunk3, 1)
+val runtime_ops_chunk3_op1_call =
+  ``exec_stack_op ^runtime_initial_fmp_tm ^runtime_ops_chunk3_op1_tm``
+val runtime_ops_chunk3_op1_shallow =
+  ONCE_REWRITE_CONV [planExecTheory.exec_stack_op_def]
+    runtime_ops_chunk3_op1_call
+val runtime_ops_chunk3_op1_shallow_rhs =
+  rhs (concl runtime_ops_chunk3_op1_shallow)
+val _ =
+  if null (free_vars runtime_ops_chunk3_op1_tm) andalso
+     null (free_vars runtime_ops_chunk3_op1_shallow_rhs) andalso
+     not (has_head ``exec_stack_op`` runtime_ops_chunk3_op1_shallow_rhs)
+  then () else raise Fail "runtime chunk 3 operation 1 shallow result is not closed"
+
+Theorem exact_empty_runtime_ops_chunk3_op1_shallow[local]:
+  ^runtime_ops_chunk3_op1_call = ^runtime_ops_chunk3_op1_shallow_rhs
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_op1_shallow
+QED
 val _ = export_theory()
