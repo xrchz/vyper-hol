@@ -17,79 +17,9 @@
 
 Theory fnPlanDecomp
 Ancestors
-  stackPlanGen stackPlanTypes stackModel planExec codegenRel asmSem stackOpSim allocMono contextPlanRegionProofs list rich_list arithmetic pred_set finite_map
+  stackPlanGen stackPlanTypes stackModel planExec codegenRel asmSem stackOpSim allocMono list rich_list arithmetic pred_set finite_map
 Libs
   BasicProvers
-
-(* ===== Context-region decomposition ===== *)
-
-Theorem generate_context_regions_decompose:
-  !gen fns acc acc'.
-    generate_context_regions gen fns acc = SOME acc' ==>
-    ?rs.
-      acc'.cpa_regions = acc.cpa_regions ++ rs /\
-      LIST_REL
-        (\fn r. r.sr_fn_name = fn.fn_name /\ ?ps labels.
-          gen fn r.sr_spill_base labels = SOME (r.sr_plan,ps) /\
-          ps.ps_alloc.sa_next_offset = r.sr_spill_end)
-        fns rs
-Proof
-  gen_tac >> Induct_on `fns`
-  >- (rpt gen_tac >> simp[generate_context_regions_def]) >>
-  rpt gen_tac >>
-  simp[generate_context_regions_def] >>
-  Cases_on `gen h acc.cpa_next_spill_base acc.cpa_label_counter`
-  >- simp[] >>
-  PairCases_on `x` >> simp[] >>
-  IF_CASES_TAC >> simp[] >>
-  strip_tac >>
-  first_x_assum drule >>
-  disch_then (qx_choose_then `rs` strip_assume_tac) >>
-  qexists_tac `
-    <|sr_fn_name := h.fn_name;
-      sr_spill_base := acc.cpa_next_spill_base;
-      sr_spill_end := x1.ps_alloc.sa_next_offset;
-      sr_plan := x0|> :: rs` >>
-  gvs[SNOC_APPEND] >>
-  qexistsl_tac [`x1`, `acc.cpa_label_counter`] >> simp[]
-QED
-
-Theorem generate_context_plan_region_decompose:
-  generate_context_plan ctx = SOME cp /\
-  i < LENGTH ctx.ctx_functions ==>
-  ?r ps labels.
-    EL i cp.cp_regions = r /\
-    r.sr_fn_name = (EL i ctx.ctx_functions).fn_name /\
-    generate_fn_plan (EL i ctx.ctx_functions)
-      r.sr_spill_base labels = SOME (r.sr_plan,ps) /\
-    ps.ps_alloc.sa_spill_base = r.sr_spill_base /\
-    ps.ps_alloc.sa_next_offset = r.sr_spill_end
-Proof
-  rpt strip_tac >>
-  fs[generate_context_plan_def, generate_context_plan_with_def] >>
-  every_case_tac >> gvs[] >>
-  drule generate_context_regions_decompose >>
-  disch_then (qx_choose_then `rs` strip_assume_tac) >>
-  gvs[finish_context_plan_def] >>
-  qpat_x_assum `LIST_REL _ _ _` mp_tac >>
-  simp[LIST_REL_EL_EQN] >> strip_tac >>
-  qpat_x_assum `!n. _` (qspec_then `i` mp_tac) >>
-  simp[] >>
-  strip_tac >>
-  qexistsl_tac [`ps`, `labels`] >> simp[] >>
-  metis_tac[generate_fn_plan_alloc_mono]
-QED
-Theorem generate_context_plan_regions_length:
-  generate_context_plan ctx = SOME cp ==>
-  LENGTH cp.cp_regions = LENGTH ctx.ctx_functions
-Proof
-  strip_tac >>
-  fs[generate_context_plan_def, generate_context_plan_with_def] >>
-  every_case_tac >> gvs[] >>
-  drule generate_context_regions_decompose >>
-  disch_then (qx_choose_then `rs` strip_assume_tac) >>
-  gvs[finish_context_plan_def, LIST_REL_EL_EQN]
-QED
 
 (* ===== Visited set monotonicity =====
    generate_fn_plan_aux only adds to the visited set, never removes.
@@ -154,23 +84,6 @@ Proof
   `LENGTH prefix + off + i = LENGTH prefix + (off + i)` by decide_tac >>
   simp[EL_APPEND2]
 QED
-Theorem ops_contain_at_trans:
-  ops_contain_at outer_off outer inner /\
-  ops_contain_at inner_off inner sub ==>
-  ops_contain_at (outer_off + inner_off) outer sub
-Proof
-  fs[ops_contain_at_def] >> strip_tac >>
-  rpt strip_tac >>
-  qpat_assum `!j. j < LENGTH inner ==> _`
-    (qspec_then `inner_off + i` mp_tac) >>
-  (impl_tac >- decide_tac) >> strip_tac >>
-  qpat_assum `!j. j < LENGTH sub ==> _`
-    (qspec_then `i` mp_tac) >>
-  (impl_tac >- simp[]) >> strip_tac >>
-  metis_tac[ADD_ASSOC, ADD_COMM]
-QED
-
-
 (* Also: contained in inner -> contained in inner ++ suffix *)
 Theorem ops_contain_at_append:
   !inner suffix sub off.
@@ -238,77 +151,6 @@ Proof
   rpt strip_tac >>
   REWRITE_TAC[execute_plan_append] >>
   irule ops_contain_at_prepend >> simp[]
-QED
-
-Theorem context_plan_region_contained:
-  i < LENGTH cp.cp_regions ==>
-  ?off.
-    ops_contain_at off
-      (execute_plan initial_fmp (context_plan_ops cp))
-      (execute_plan initial_fmp (EL i cp.cp_regions).sr_plan)
-Proof
-  strip_tac >>
-  `cp.cp_regions =
-     TAKE i cp.cp_regions ++ [EL i cp.cp_regions] ++
-     DROP (SUC i) cp.cp_regions` by
-    metis_tac[TAKE_DROP_SUC] >>
-  qabbrev_tac `prefix =
-    FLAT (MAP (\r. r.sr_plan) (TAKE i cp.cp_regions))` >>
-  qabbrev_tac `suffix =
-    FLAT (MAP (\r. r.sr_plan) (DROP (SUC i) cp.cp_regions)) ++
-    revert_postamble` >>
-  `FLAT (MAP (\r. r.sr_plan) cp.cp_regions) =
-     prefix ++ (EL i cp.cp_regions).sr_plan ++
-       FLAT (MAP (\r. r.sr_plan) (DROP (SUC i) cp.cp_regions))` by
-    (qpat_assum `cp.cp_regions = _` (fn th =>
-       mp_tac (AP_TERM ``MAP (\r. r.sr_plan)`` th)) >>
-     simp[MAP_APPEND, Abbr `prefix`]) >>
-  `context_plan_ops cp =
-     prefix ++ (EL i cp.cp_regions).sr_plan ++ suffix` by
-    (rewrite_tac[context_plan_ops_def] >>
-     qpat_assum `FLAT (MAP _ cp.cp_regions) = _` (fn th =>
-       once_rewrite_tac[th]) >>
-     simp[Abbr `suffix`]) >>
-  qexists_tac `LENGTH (execute_plan initial_fmp prefix)` >>
-  simp[] >>
-  simp[execute_plan_append, ops_contain_at_def, EL_APPEND2, EL_APPEND1]
-QED
-
-Theorem generated_context_plan_region_contained:
-  generate_context_plan ctx = SOME cp /\
-  i < LENGTH ctx.ctx_functions ==>
-  ?r off.
-    EL i cp.cp_regions = r /\
-    ops_contain_at off
-      (execute_plan cp.cp_initial_fmp (context_plan_ops cp))
-      (execute_plan cp.cp_initial_fmp r.sr_plan)
-Proof
-  strip_tac >> simp[] >>
-  irule context_plan_region_contained >>
-  drule generate_context_plan_regions_length >>
-  decide_tac
-QED
-
-Theorem generated_context_plan_block_contained:
-  generate_context_plan ctx = SOME cp /\
-  i < LENGTH ctx.ctx_functions /\
-  ops_contain_at block_off
-    (execute_plan cp.cp_initial_fmp (EL i cp.cp_regions).sr_plan)
-    block_asm ==>
-  ?off.
-    ops_contain_at off
-      (execute_plan cp.cp_initial_fmp (context_plan_ops cp))
-      block_asm
-Proof
-  strip_tac >>
-  drule generated_context_plan_region_contained >>
-  simp[] >> strip_tac >>
-  qpat_x_assum `!i'. _` (qspec_then `i` mp_tac) >>
-  simp[] >> strip_tac >>
-  qexists_tac `off + block_off` >>
-  irule ops_contain_at_trans >>
-  qexists_tac `execute_plan cp.cp_initial_fmp
-    (EL i cp.cp_regions).sr_plan` >> simp[]
 QED
 
 (* Main per-block extraction (mutual induction).

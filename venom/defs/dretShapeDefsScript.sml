@@ -29,4 +29,3 @@ Proof
   gvs[parse_dret_shape_def] >>
   decide_tac
 QED
-

@@ -133,6 +133,7 @@ The matrix should eventually identify exact Python modules, classes, and functio
 | HOL file/area | Purpose | Status | Notes |
 |---|---|---|---|
 | `lowering/defs/evalCompilerScript.sml` | compiler smoke fixtures | unknown | Regenerate only after parity updates are understood. |
+| `lowering/defs/evalCompilerBytecodeScript.sml` | bytecode fixture comparison | unknown | Record compiler flags, EVM version, and metadata policy. |
 | `tests/vyper-test-exports` and generators | language-test AST/metadata export | uses repository pin by policy | Keep aligned with `VYPER_PIN`. |
 
 ## Audit workflow

@@ -18,7 +18,6 @@ runs:
       id: vyper-rev
       shell: bash
       run: |
-        set -euo pipefail
         sha=$(tr -d '[:space:]' < VYPER_PIN)
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
         echo "cache-key=vyper-tests-${{ runner.os }}-$sha" >> "$GITHUB_OUTPUT"
@@ -34,13 +33,9 @@ runs:
       if: steps.cache-vyper-tests.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        set -euo pipefail
-        cd "$GITHUB_WORKSPACE"
-        rm -rf tests/vyper-test-exports
         git clone --depth 1 https://github.com/vyperlang/vyper.git vyper-src
         cd vyper-src
         git fetch --unshallow --tags
-        git checkout --detach "${{ steps.vyper-rev.outputs.sha }}"
+        git checkout --detach ${{ steps.vyper-rev.outputs.sha }}
         pip install . --group test
-        pytest -s --optimize gas --evm-version prague --evm-backend revm -n0 \
-          --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional
+        pytest -s -n0 --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional

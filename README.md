@@ -108,21 +108,17 @@ Release instructions, including the prebuilt holbuild archive artefact, are in [
 The test runner expects exported JSON fixtures to be available at `tests/vyper-test-exports`. To generate them locally, clone and install Vyper, then export the functional tests:
 
 ```bash
-rm -rf tests/vyper-test-exports
 git clone --depth 1 https://github.com/vyperlang/vyper.git vyper-src
 cd vyper-src
 git fetch --unshallow --tags
 git checkout --detach "$(tr -d '[:space:]' < ../VYPER_PIN)"
 pip install . --group test
-pytest -s --optimize gas --evm-version prague --evm-backend revm -n0 \
-  --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional
+pytest -s -n0 --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional
 ```
 
 The checkout command reads the repository's authoritative `VYPER_PIN`; keep it
 before installation and export so the installed compiler and generated fixtures
-come from the pinned revision. Individual upstream tests may override compiler
-settings, so each exported JSON file's `compiler_settings` remains authoritative
-for that test.
+come from the pinned revision.
 
 Then run individual generated test theories with `holbuild`, for example:
 

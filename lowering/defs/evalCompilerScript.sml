@@ -277,3 +277,187 @@ Definition internal_call_arg_program_def:
           (Call (BaseT (UintT 256)) (IntCall (NONE, "bar"))
              [Name (BaseT (UintT 256)) "x"] NONE))]]
 End
+
+Theorem empty_compiles:
+  IS_SOME
+    (compile_vyper ([] : toplevel list)
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem noop_compiles:
+  IS_SOME
+    (compile_vyper noop_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem return_uint_compiles:
+  IS_SOME
+    (compile_vyper return_uint_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem return_arg_compiles:
+  IS_SOME
+    (compile_vyper return_arg_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem local_uint_compiles:
+  IS_SOME
+    (compile_vyper local_uint_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem add_arg_compiles:
+  IS_SOME
+    (compile_vyper add_arg_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem two_external_compiles:
+  IS_SOME
+    (compile_vyper two_external_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem storage_read_compiles:
+  IS_SOME
+    (compile_vyper storage_read_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem storage_write_compiles:
+  IS_SOME
+    (compile_vyper storage_write_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem deploy_storage_compiles:
+  IS_SOME
+    (compile_vyper deploy_storage_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem event_log_compiles:
+  IS_SOME
+    (compile_vyper event_log_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem indexed_event_log_compiles:
+  IS_SOME
+    (compile_vyper indexed_event_log_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem mixed_event_log_compiles:
+  IS_SOME
+    (compile_vyper mixed_event_log_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem hashmap_read_compiles:
+  IS_SOME
+    (compile_vyper hashmap_read_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem hashmap_write_compiles:
+  IS_SOME
+    (compile_vyper hashmap_write_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem if_bool_compiles:
+  IS_SOME
+    (compile_vyper if_bool_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem if_join_compiles:
+  IS_SOME
+    (compile_vyper if_join_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem for_pass_compiles:
+  IS_SOME
+    (compile_vyper for_pass_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem for_accum_compiles:
+  IS_SOME
+    (compile_vyper for_accum_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem for_continue_compiles:
+  IS_SOME
+    (compile_vyper for_continue_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem for_break_compiles:
+  IS_SOME
+    (compile_vyper for_break_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem internal_call_compiles:
+  IS_SOME
+    (compile_vyper internal_call_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
+
+Theorem internal_call_arg_compiles:
+  IS_SOME
+    (compile_vyper internal_call_arg_program
+       concretize_context_eval Linear)
+Proof
+  EVAL_TAC
+QED
