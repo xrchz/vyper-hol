@@ -958,4 +958,313 @@ Proof
   ACCEPT_TAC runtime_ops_chunk3_exact
 QED
 
+val runtime_ops_chunk4_shallow =
+  List.tabulate
+    (6, fn i =>
+      mk_runtime_op_shallow ("runtime chunk 4 operation " ^ Int.toString i)
+        (List.nth (runtime_ops_chunk4, i)))
+fun finish_runtime_op_with label rewrites
+      {op_tm, call, rhs_tm, exact} =
+  let
+    val exact' =
+      if null rewrites then exact else PURE_REWRITE_RULE rewrites exact
+    val asm_tm = rhs (concl exact')
+    val _ =
+      if null (free_vars asm_tm) andalso
+         listSyntax.is_list asm_tm andalso
+         type_of asm_tm = ``:asm_inst list`` andalso
+         aconv (lhs (concl exact')) call
+      then () else raise Fail (label ^ " exact theorem has wrong shape")
+  in
+    {op_tm = op_tm, call = call, asm_tm = asm_tm, exact = exact'}
+  end
+
+val runtime_ops_chunk4_op1_shallow =
+  List.nth (runtime_ops_chunk4_shallow, 1)
+val runtime_ops_chunk4_op1_w2n_call =
+  find_head ``w2n`` (#rhs_tm runtime_ops_chunk4_op1_shallow)
+Theorem runtime_ops_chunk4_op1_w2n_exact[local]:
+  ^runtime_ops_chunk4_op1_w2n_call = 224
+Proof
+  simp[wordsTheory.dimword_def]
+QED
+val runtime_ops_chunk4_op1_after_w2n =
+  rhs (concl
+    (PURE_REWRITE_CONV [runtime_ops_chunk4_op1_w2n_exact]
+      (#rhs_tm runtime_ops_chunk4_op1_shallow)))
+val runtime_ops_chunk4_op1_encode_call =
+  find_head ``encode_num_bytes`` runtime_ops_chunk4_op1_after_w2n
+
+Theorem runtime_ops_chunk4_op1_encode_exact[local]:
+  ^runtime_ops_chunk4_op1_encode_call = [224w]
+Proof
+  once_rewrite_tac[asmIRTheory.encode_num_bytes_def] >> simp[] >>
+  once_rewrite_tac[asmIRTheory.encode_num_bytes_def] >> simp[]
+QED
+
+val runtime_ops_chunk4_op2_shallow =
+  List.nth (runtime_ops_chunk4_shallow, 2)
+val runtime_ops_chunk4_op2_swap_call =
+  find_head ``swap_name`` (#rhs_tm runtime_ops_chunk4_op2_shallow)
+val runtime_ops_chunk4_op2_swap_exact =
+  computeLib.EVAL_CONV runtime_ops_chunk4_op2_swap_call
+
+val runtime_ops_chunk4_op4_shallow =
+  List.nth (runtime_ops_chunk4_shallow, 4)
+val runtime_ops_chunk4_op4_replicate_call =
+  find_head ``REPLICATE`` (#rhs_tm runtime_ops_chunk4_op4_shallow)
+val runtime_ops_chunk4_op4_replicate_exact =
+  computeLib.EVAL_CONV runtime_ops_chunk4_op4_replicate_call
+
+val runtime_ops_chunk4_op0_result =
+  finish_runtime_op_with "runtime chunk 4 operation 0" []
+    (List.nth (runtime_ops_chunk4_shallow, 0))
+val runtime_ops_chunk4_op1_result =
+  finish_runtime_op_with "runtime chunk 4 operation 1"
+    [runtime_ops_chunk4_op1_w2n_exact,
+     runtime_ops_chunk4_op1_encode_exact]
+    runtime_ops_chunk4_op1_shallow
+val runtime_ops_chunk4_op2_result =
+  finish_runtime_op_with "runtime chunk 4 operation 2"
+    [runtime_ops_chunk4_op2_swap_exact] runtime_ops_chunk4_op2_shallow
+val runtime_ops_chunk4_op3_result =
+  finish_runtime_op_with "runtime chunk 4 operation 3" []
+    (List.nth (runtime_ops_chunk4_shallow, 3))
+val runtime_ops_chunk4_op4_result =
+  finish_runtime_op_with "runtime chunk 4 operation 4"
+    [runtime_ops_chunk4_op4_replicate_exact] runtime_ops_chunk4_op4_shallow
+val runtime_ops_chunk4_op5_result =
+  finish_runtime_op_with "runtime chunk 4 operation 5" []
+    (List.nth (runtime_ops_chunk4_shallow, 5))
+
+val runtime_ops_chunk4_op0_call = #call runtime_ops_chunk4_op0_result
+val runtime_ops_chunk4_op0_asm_tm = #asm_tm runtime_ops_chunk4_op0_result
+val runtime_ops_chunk4_op0_exact = #exact runtime_ops_chunk4_op0_result
+Theorem exact_empty_runtime_ops_chunk4_op0[local]:
+  ^runtime_ops_chunk4_op0_call = ^runtime_ops_chunk4_op0_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_op0_exact
+QED
+
+val runtime_ops_chunk4_op1_call = #call runtime_ops_chunk4_op1_result
+val runtime_ops_chunk4_op1_asm_tm = #asm_tm runtime_ops_chunk4_op1_result
+val runtime_ops_chunk4_op1_exact = #exact runtime_ops_chunk4_op1_result
+Theorem exact_empty_runtime_ops_chunk4_op1[local]:
+  ^runtime_ops_chunk4_op1_call = ^runtime_ops_chunk4_op1_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_op1_exact
+QED
+
+val runtime_ops_chunk4_op2_call = #call runtime_ops_chunk4_op2_result
+val runtime_ops_chunk4_op2_asm_tm = #asm_tm runtime_ops_chunk4_op2_result
+val runtime_ops_chunk4_op2_exact = #exact runtime_ops_chunk4_op2_result
+Theorem exact_empty_runtime_ops_chunk4_op2[local]:
+  ^runtime_ops_chunk4_op2_call = ^runtime_ops_chunk4_op2_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_op2_exact
+QED
+
+val runtime_ops_chunk4_op3_call = #call runtime_ops_chunk4_op3_result
+val runtime_ops_chunk4_op3_asm_tm = #asm_tm runtime_ops_chunk4_op3_result
+val runtime_ops_chunk4_op3_exact = #exact runtime_ops_chunk4_op3_result
+Theorem exact_empty_runtime_ops_chunk4_op3[local]:
+  ^runtime_ops_chunk4_op3_call = ^runtime_ops_chunk4_op3_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_op3_exact
+QED
+
+val runtime_ops_chunk4_op4_call = #call runtime_ops_chunk4_op4_result
+val runtime_ops_chunk4_op4_asm_tm = #asm_tm runtime_ops_chunk4_op4_result
+val runtime_ops_chunk4_op4_exact = #exact runtime_ops_chunk4_op4_result
+Theorem exact_empty_runtime_ops_chunk4_op4[local]:
+  ^runtime_ops_chunk4_op4_call = ^runtime_ops_chunk4_op4_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_op4_exact
+QED
+
+val runtime_ops_chunk4_op5_call = #call runtime_ops_chunk4_op5_result
+val runtime_ops_chunk4_op5_asm_tm = #asm_tm runtime_ops_chunk4_op5_result
+val runtime_ops_chunk4_op5_exact = #exact runtime_ops_chunk4_op5_result
+Theorem exact_empty_runtime_ops_chunk4_op5[local]:
+  ^runtime_ops_chunk4_op5_call = ^runtime_ops_chunk4_op5_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_op5_exact
+QED
+
+val runtime_ops_chunk4_pair01_tm =
+  listSyntax.mk_list (List.take (runtime_ops_chunk4, 2), runtime_op_ty)
+val runtime_ops_chunk4_pair01_result =
+  compose_runtime_ops_pair "runtime chunk 4 pair 0-1"
+    runtime_ops_chunk4_pair01_tm exact_empty_runtime_ops_chunk4_op0
+    exact_empty_runtime_ops_chunk4_op1
+val runtime_ops_chunk4_pair01_call = #call runtime_ops_chunk4_pair01_result
+val runtime_ops_chunk4_pair01_asm_tm = #asm_tm runtime_ops_chunk4_pair01_result
+val runtime_ops_chunk4_pair01_exact = #exact runtime_ops_chunk4_pair01_result
+Theorem exact_empty_runtime_ops_chunk4_pair01[local]:
+  ^runtime_ops_chunk4_pair01_call = ^runtime_ops_chunk4_pair01_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_pair01_exact
+QED
+
+val runtime_ops_chunk4_pair23_tm =
+  listSyntax.mk_list
+    (List.take (List.drop (runtime_ops_chunk4, 2), 2), runtime_op_ty)
+val runtime_ops_chunk4_pair23_result =
+  compose_runtime_ops_pair "runtime chunk 4 pair 2-3"
+    runtime_ops_chunk4_pair23_tm exact_empty_runtime_ops_chunk4_op2
+    exact_empty_runtime_ops_chunk4_op3
+val runtime_ops_chunk4_pair23_call = #call runtime_ops_chunk4_pair23_result
+val runtime_ops_chunk4_pair23_asm_tm = #asm_tm runtime_ops_chunk4_pair23_result
+val runtime_ops_chunk4_pair23_exact = #exact runtime_ops_chunk4_pair23_result
+Theorem exact_empty_runtime_ops_chunk4_pair23[local]:
+  ^runtime_ops_chunk4_pair23_call = ^runtime_ops_chunk4_pair23_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_pair23_exact
+QED
+
+val runtime_ops_chunk4_pair45_tm =
+  listSyntax.mk_list
+    (List.take (List.drop (runtime_ops_chunk4, 4), 2), runtime_op_ty)
+val runtime_ops_chunk4_pair45_result =
+  compose_runtime_ops_pair "runtime chunk 4 pair 4-5"
+    runtime_ops_chunk4_pair45_tm exact_empty_runtime_ops_chunk4_op4
+    exact_empty_runtime_ops_chunk4_op5
+val runtime_ops_chunk4_pair45_call = #call runtime_ops_chunk4_pair45_result
+val runtime_ops_chunk4_pair45_asm_tm = #asm_tm runtime_ops_chunk4_pair45_result
+val runtime_ops_chunk4_pair45_exact = #exact runtime_ops_chunk4_pair45_result
+Theorem exact_empty_runtime_ops_chunk4_pair45[local]:
+  ^runtime_ops_chunk4_pair45_call = ^runtime_ops_chunk4_pair45_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_pair45_exact
+QED
+
+val runtime_ops_chunk4_result =
+  compose_runtime_ops_chunk3 "runtime chunk 4" runtime_ops_chunk4_tm
+    (runtime_ops_chunk4_pair01_call, runtime_ops_chunk4_pair01_asm_tm,
+     exact_empty_runtime_ops_chunk4_pair01)
+    (runtime_ops_chunk4_pair23_call, runtime_ops_chunk4_pair23_asm_tm,
+     exact_empty_runtime_ops_chunk4_pair23)
+    (runtime_ops_chunk4_pair45_call, runtime_ops_chunk4_pair45_asm_tm,
+     exact_empty_runtime_ops_chunk4_pair45)
+val runtime_ops_chunk4_asm_tm = #asm_tm runtime_ops_chunk4_result
+val runtime_ops_chunk4_exact = #exact runtime_ops_chunk4_result
+
+Theorem exact_empty_runtime_ops_chunk4[local]:
+  FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^runtime_ops_chunk4_tm) =
+  ^runtime_ops_chunk4_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk4_exact
+QED
+
+val runtime_ops_chunk5_shallow =
+  List.tabulate
+    (5, fn i =>
+      mk_runtime_op_shallow ("runtime chunk 5 operation " ^ Int.toString i)
+        (List.nth (runtime_ops_chunk5, i)))
+val runtime_ops_chunk5_results =
+  List.tabulate
+    (5, fn i =>
+      finish_runtime_op_with
+        ("runtime chunk 5 operation " ^ Int.toString i) []
+        (List.nth (runtime_ops_chunk5_shallow, i)))
+
+val runtime_ops_chunk5_op0_result = List.nth (runtime_ops_chunk5_results, 0)
+val runtime_ops_chunk5_op0_call = #call runtime_ops_chunk5_op0_result
+val runtime_ops_chunk5_op0_asm_tm = #asm_tm runtime_ops_chunk5_op0_result
+val runtime_ops_chunk5_op0_exact = #exact runtime_ops_chunk5_op0_result
+Theorem exact_empty_runtime_ops_chunk5_op0[local]:
+  ^runtime_ops_chunk5_op0_call = ^runtime_ops_chunk5_op0_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_op0_exact
+QED
+
+val runtime_ops_chunk5_op1_result = List.nth (runtime_ops_chunk5_results, 1)
+val runtime_ops_chunk5_op1_call = #call runtime_ops_chunk5_op1_result
+val runtime_ops_chunk5_op1_asm_tm = #asm_tm runtime_ops_chunk5_op1_result
+val runtime_ops_chunk5_op1_exact = #exact runtime_ops_chunk5_op1_result
+Theorem exact_empty_runtime_ops_chunk5_op1[local]:
+  ^runtime_ops_chunk5_op1_call = ^runtime_ops_chunk5_op1_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_op1_exact
+QED
+
+val runtime_ops_chunk5_op2_result = List.nth (runtime_ops_chunk5_results, 2)
+val runtime_ops_chunk5_op2_call = #call runtime_ops_chunk5_op2_result
+val runtime_ops_chunk5_op2_asm_tm = #asm_tm runtime_ops_chunk5_op2_result
+val runtime_ops_chunk5_op2_exact = #exact runtime_ops_chunk5_op2_result
+Theorem exact_empty_runtime_ops_chunk5_op2[local]:
+  ^runtime_ops_chunk5_op2_call = ^runtime_ops_chunk5_op2_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_op2_exact
+QED
+
+val runtime_ops_chunk5_op3_result = List.nth (runtime_ops_chunk5_results, 3)
+val runtime_ops_chunk5_op3_call = #call runtime_ops_chunk5_op3_result
+val runtime_ops_chunk5_op3_asm_tm = #asm_tm runtime_ops_chunk5_op3_result
+val runtime_ops_chunk5_op3_exact = #exact runtime_ops_chunk5_op3_result
+Theorem exact_empty_runtime_ops_chunk5_op3[local]:
+  ^runtime_ops_chunk5_op3_call = ^runtime_ops_chunk5_op3_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_op3_exact
+QED
+
+val runtime_ops_chunk5_op4_result = List.nth (runtime_ops_chunk5_results, 4)
+val runtime_ops_chunk5_op4_call = #call runtime_ops_chunk5_op4_result
+val runtime_ops_chunk5_op4_asm_tm = #asm_tm runtime_ops_chunk5_op4_result
+val runtime_ops_chunk5_op4_exact = #exact runtime_ops_chunk5_op4_result
+Theorem exact_empty_runtime_ops_chunk5_op4[local]:
+  ^runtime_ops_chunk5_op4_call = ^runtime_ops_chunk5_op4_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_op4_exact
+QED
+
+val runtime_ops_chunk5_pair01_tm =
+  listSyntax.mk_list (List.take (runtime_ops_chunk5, 2), runtime_op_ty)
+val runtime_ops_chunk5_pair01_result =
+  compose_runtime_ops_pair "runtime chunk 5 pair 0-1"
+    runtime_ops_chunk5_pair01_tm exact_empty_runtime_ops_chunk5_op0
+    exact_empty_runtime_ops_chunk5_op1
+val runtime_ops_chunk5_pair01_call = #call runtime_ops_chunk5_pair01_result
+val runtime_ops_chunk5_pair01_asm_tm = #asm_tm runtime_ops_chunk5_pair01_result
+val runtime_ops_chunk5_pair01_exact = #exact runtime_ops_chunk5_pair01_result
+Theorem exact_empty_runtime_ops_chunk5_pair01[local]:
+  ^runtime_ops_chunk5_pair01_call = ^runtime_ops_chunk5_pair01_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_pair01_exact
+QED
+
+val runtime_ops_chunk5_pair23_tm =
+  listSyntax.mk_list
+    (List.take (List.drop (runtime_ops_chunk5, 2), 2), runtime_op_ty)
+val runtime_ops_chunk5_pair23_result =
+  compose_runtime_ops_pair "runtime chunk 5 pair 2-3"
+    runtime_ops_chunk5_pair23_tm exact_empty_runtime_ops_chunk5_op2
+    exact_empty_runtime_ops_chunk5_op3
+val runtime_ops_chunk5_pair23_call = #call runtime_ops_chunk5_pair23_result
+val runtime_ops_chunk5_pair23_asm_tm = #asm_tm runtime_ops_chunk5_pair23_result
+val runtime_ops_chunk5_pair23_exact = #exact runtime_ops_chunk5_pair23_result
+Theorem exact_empty_runtime_ops_chunk5_pair23[local]:
+  ^runtime_ops_chunk5_pair23_call = ^runtime_ops_chunk5_pair23_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_pair23_exact
+QED
+
+val runtime_ops_chunk5_result =
+  compose_runtime_ops_chunk3 "runtime chunk 5" runtime_ops_chunk5_tm
+    (runtime_ops_chunk5_pair01_call, runtime_ops_chunk5_pair01_asm_tm,
+     exact_empty_runtime_ops_chunk5_pair01)
+    (runtime_ops_chunk5_pair23_call, runtime_ops_chunk5_pair23_asm_tm,
+     exact_empty_runtime_ops_chunk5_pair23)
+    (runtime_ops_chunk5_op4_call, runtime_ops_chunk5_op4_asm_tm,
+     exact_empty_runtime_ops_chunk5_op4)
+val runtime_ops_chunk5_asm_tm = #asm_tm runtime_ops_chunk5_result
+val runtime_ops_chunk5_exact = #exact runtime_ops_chunk5_result
+
+Theorem exact_empty_runtime_ops_chunk5[local]:
+  FLAT (MAP (exec_stack_op ^runtime_initial_fmp_tm) ^runtime_ops_chunk5_tm) =
+  ^runtime_ops_chunk5_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk5_exact
+QED
+
 val _ = export_theory()
