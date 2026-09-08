@@ -742,4 +742,40 @@ Theorem exact_empty_runtime_ops_chunk3_op1[local]:
 Proof
   ACCEPT_TAC runtime_ops_chunk3_op1_exact
 QED
+
+val runtime_ops_chunk3_pair01 = List.take (runtime_ops_chunk3, 2)
+val runtime_ops_chunk3_pair01_tm =
+  listSyntax.mk_list (runtime_ops_chunk3_pair01, runtime_op_ty)
+val _ =
+  if length runtime_ops_chunk3_pair01 = 2 andalso
+     aconv (List.nth (runtime_ops_chunk3_pair01, 0))
+       runtime_ops_chunk3_op0_tm andalso
+     aconv (List.nth (runtime_ops_chunk3_pair01, 1))
+       runtime_ops_chunk3_op1_tm andalso
+     null (free_vars runtime_ops_chunk3_pair01_tm)
+  then () else raise Fail "runtime chunk 3 pair 0-1 is not the expected closed pair"
+val runtime_ops_chunk3_pair01_call =
+  ``FLAT
+      (MAP (exec_stack_op ^runtime_initial_fmp_tm)
+        ^runtime_ops_chunk3_pair01_tm)``
+val runtime_ops_chunk3_pair01_exact =
+  PURE_REWRITE_CONV
+    [exact_empty_runtime_ops_chunk3_op0,
+     exact_empty_runtime_ops_chunk3_op1,
+     listTheory.MAP, listTheory.FLAT, listTheory.APPEND]
+    runtime_ops_chunk3_pair01_call
+val runtime_ops_chunk3_pair01_asm_tm =
+  rhs (concl runtime_ops_chunk3_pair01_exact)
+val _ =
+  if null (free_vars runtime_ops_chunk3_pair01_asm_tm) andalso
+     listSyntax.is_list runtime_ops_chunk3_pair01_asm_tm andalso
+     type_of runtime_ops_chunk3_pair01_asm_tm = ``:asm_inst list``
+  then () else raise Fail "runtime chunk 3 pair 0-1 is not closed literal assembly"
+
+Theorem exact_empty_runtime_ops_chunk3_pair01[local]:
+  ^runtime_ops_chunk3_pair01_call = ^runtime_ops_chunk3_pair01_asm_tm
+Proof
+  ACCEPT_TAC runtime_ops_chunk3_pair01_exact
+QED
+
 val _ = export_theory()
