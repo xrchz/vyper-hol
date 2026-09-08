@@ -1,21 +1,30 @@
 {
-  "schema_version": 1,
-  "profile": "formal_o1_ir_no_asm_opt",
-  "provenance": {
-    "pin_file": "VYPER_PIN"
-  },
+  "schema_version": 2,
   "purpose": "HOL compiler self-regression bytecode fixtures",
-  "formal_compiler": {
+  "target_profile": {
+    "name": "formal_o1_ir_no_asm_opt",
+    "definition": "lowering/defs/evalCompilerBytecodeDefsScript.sml",
     "ir_schedule": "formal_o1",
     "frontend_scope": "lowering_only",
     "frontend_dispatch": "Linear",
     "requested_final_assembly": "FAP_Optimize",
-    "executed_finalizer": "identity"
+    "executed_finalizer": "identity",
+    "target": {
+      "evm_version": "prague",
+      "capabilities": ["MCOPY"],
+      "metadata": "disabled_no_cbor"
+    }
   },
-  "target": {
-    "evm_version": "prague",
-    "capabilities": ["MCOPY"],
-    "metadata": "disabled_no_cbor"
+  "payload_provenance": {
+    "status": "stale",
+    "matches_target_profile": false,
+    "produced_by": "compile_vyper <program> concretize_context_eval Linear",
+    "produced_on": "2026-05-28",
+    "produced_by_commits": ["f51d1b03", "7567c0a4", "424ef64d", "35cbfa10", "309b88da"],
+    "note": "The committed .hex payloads predate the formal_o1_ir_no_asm_opt profile. They were produced by a compiler entry point that ran a single pass (concretize_context_eval) with no target-safety gate and no assembly finalizer; that entry point no longer exists in the tree. Regeneration under the target profile is blocked because the evaluation does not finish; see .agent-files/tasks/TASK_064.md. Until it is unblocked, these files are a regression baseline against their own 2026-05-28 values, not evidence about the current compiler."
+  },
+  "provenance": {
+    "pin_file": "VYPER_PIN"
   },
   "comparison_contract": "hol_self_regression_not_python_or_upstream_o1_byte_parity"
 }

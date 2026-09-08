@@ -141,6 +141,12 @@ the revision named by `VYPER_PIN`, formal O1 IR optimization, and no assembly
 optimization (an identity finalizer). It is neither the functional-test export
 profile nor a claim of byte-for-byte equality with Python Vyper's O1 output.
 
+The `.hex` payloads currently committed under `lowering/defs/bytecode/` were
+**not** produced by that profile. They date from 2026-05-28 and came from an
+earlier single-pass compiler entry point; regeneration under
+`formal_o1_ir_no_asm_opt` is blocked on the evaluation finishing. See
+[`lowering/defs/bytecode/README.md`](lowering/defs/bytecode/README.md).
+
 Then run individual generated test theories with `holbuild`, for example:
 
 ```bash

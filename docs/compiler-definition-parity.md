@@ -134,7 +134,7 @@ The matrix should eventually identify exact Python modules, classes, and functio
 |---|---|---|---|
 | `lowering/defs/evalCompilerScript.sml` | compiler smoke fixtures | unknown | Regenerate only after parity updates are understood. |
 | `lowering/defs/evalCompilerBytecodeDefsScript.sml` | `formal_o1_ir_no_asm_opt` fixture profile and evaluator support lemmas | unknown | Record compiler flags, EVM version, and metadata policy. |
-| `lowering/defs/formal-o1-bytecode-fixtures` + `writeCompilerBytecodeFixturesLib.sml` | deterministic regeneration and `--check` of the 23 `.hex` fixtures | unknown | This tooling is the fixture regression evidence. Fixture evaluation results are deliberately not proved in HOL; the staged per-pass evaluation theories were removed. |
+| `lowering/defs/formal-o1-bytecode-fixtures` + `writeCompilerBytecodeFixturesLib.sml` | deterministic regeneration and `--check` of the 23 `.hex` fixtures | blocked | This tooling is the intended fixture regression evidence, but cannot run today: the `formal_o1_ir_no_asm_opt` evaluation does not finish (TASK_064). The committed `.hex` payloads date from 2026-05-28 and came from an earlier single-pass entry point, not from this profile. Fixture evaluation results are deliberately not proved in HOL; the staged per-pass evaluation theories were removed. |
 | `tests/vyper-test-exports` and generators | language-test AST/metadata export | uses repository pin by policy | Keep aligned with `VYPER_PIN`. |
 
 ## Audit workflow
