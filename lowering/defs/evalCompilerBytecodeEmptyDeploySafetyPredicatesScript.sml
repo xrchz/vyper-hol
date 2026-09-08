@@ -294,4 +294,76 @@ Proof
   qexistsl [`i`, `j`] >> simp[]
 QED
 
+
+Theorem empty_deploy_final_insts_codegen_ready[local]:
+  EVERY (\bb. EVERY codegen_ready_inst bb.bb_instructions)
+    empty_deploy_final_fn.fn_blocks
+Proof
+  simp[stackPlanGenTheory.codegen_ready_inst_def,
+       stackPlanGenTheory.is_pre_codegen_opcode_def,
+       stackPlanGenTheory.is_unlowered_fmp_opcode_def,
+       stackPlanGenTheory.is_unlowered_internal_call_opcode_def,
+       venomInstTheory.is_raw_fmp_opcode_def,
+       empty_deploy_final_blocks_exact,
+       empty_deploy_final_block_instructions_exact]
+QED
+
+Theorem empty_deploy_final_single_use[local]:
+  single_use_form empty_deploy_final_fn
+Proof
+  simp[passSharedDefsTheory.single_use_form_def,
+       passSharedDefsTheory.var_use_count_block_def,
+       passSharedDefsTheory.sue_count_exempt_def,
+       venomInstTheory.is_param_opcode_def,
+       empty_deploy_final_blocks_exact,
+       empty_deploy_final_block_instructions_exact] >>
+  gen_tac >> rpt IF_CASES_TAC >> gvs[]
+QED
+
+val exact_empty_deploy_final_cfg = computeLib.EVAL_CONV
+  ``cfg_analyze empty_deploy_final_fn``
+
+Theorem empty_deploy_final_cfg_exact[local]:
+  ^(concl exact_empty_deploy_final_cfg)
+Proof
+  ACCEPT_TAC exact_empty_deploy_final_cfg
+QED
+
+Theorem empty_deploy_final_cfg_normalized[local]:
+  cfg_is_normalized (cfg_analyze empty_deploy_final_fn)
+    empty_deploy_final_fn
+Proof
+  rewrite_tac[empty_deploy_final_cfg_exact] >>
+  simp[cfgDefsTheory.cfg_is_normalized_def,
+       cfgDefsTheory.cfg_preds_of_def,
+       cfgDefsTheory.cfg_succs_of_def,
+       cfgDefsTheory.fmap_lookup_list_def,
+       empty_deploy_final_blocks_exact,
+       final_block_label] >>
+  rpt strip_tac >>
+  gvs[final_block_label] >>
+  EVAL_TAC >> rpt strip_tac >> gvs[] >> EVAL_TAC
+QED
+
+Theorem empty_deploy_final_codegen_ready_fn[local]:
+  codegen_ready_fn empty_deploy_final_fn
+Proof
+  simp[stackPlanGenTheory.codegen_ready_fn_def,
+       empty_deploy_final_fn_wf,
+       empty_deploy_final_fn_inst_wf,
+       empty_deploy_final_canonical_params,
+       empty_deploy_final_ssa_form,
+       empty_deploy_final_def_dominates_uses,
+       empty_deploy_final_single_use,
+       empty_deploy_final_cfg_normalized,
+       empty_deploy_final_insts_codegen_ready]
+QED
+
+Theorem empty_deploy_final_codegen_ready:
+  codegen_ready empty_deploy_final_compilation_unit.cu_context
+Proof
+  rewrite_tac[stackPlanGenTheory.codegen_ready_def] >>
+  rewrite_tac[empty_deploy_final_functions_exact] >>
+  simp[empty_deploy_final_codegen_ready_fn]
+QED
 val _ = export_theory()
