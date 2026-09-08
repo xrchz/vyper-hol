@@ -155,5 +155,83 @@ Proof
   ACCEPT_TAC runtime_context_plan_exact
 QED
 
+val runtime_plan_ops_call =
+  ``context_plan_ops ^runtime_context_plan_tm``
+val runtime_plan_ops_exact = computeLib.EVAL_CONV runtime_plan_ops_call
+val runtime_plan_ops_tm = rhs (concl runtime_plan_ops_exact)
+val _ =
+  if null (free_vars runtime_plan_ops_tm) andalso
+     listSyntax.is_list runtime_plan_ops_tm
+  then () else raise Fail "runtime context plan operations are not a closed literal list"
+
+Theorem exact_empty_runtime_context_plan_ops[local]:
+  ^runtime_plan_ops_call = ^runtime_plan_ops_tm
+Proof
+  ACCEPT_TAC runtime_plan_ops_exact
+QED
+
+val runtime_assembly_call =
+  ``execute_plan (^runtime_context_plan_tm).cp_initial_fmp
+      (context_plan_ops ^runtime_context_plan_tm) ++
+    data_segment_asm (^runtime_unit_tm).cu_data_segment``
+val runtime_data_assembly_exact =
+  computeLib.EVAL_CONV
+    ``data_segment_asm (^runtime_unit_tm).cu_data_segment``
+val runtime_initial_fmp_exact =
+  computeLib.EVAL_CONV ``(^runtime_context_plan_tm).cp_initial_fmp``
+val runtime_initial_fmp_tm = rhs (concl runtime_initial_fmp_exact)
+
+val (runtime_ops, runtime_op_ty) = listSyntax.dest_list runtime_plan_ops_tm
+val _ =
+  if length runtime_ops = 29 then ()
+  else raise Fail ("expected 29 runtime operations, found " ^
+                   Int.toString (length runtime_ops))
+fun runtime_ops_slice start count =
+  List.take (List.drop (runtime_ops, start), count)
+val runtime_ops_chunk1 = runtime_ops_slice 0 6
+val runtime_ops_chunk2 = runtime_ops_slice 6 6
+val runtime_ops_chunk3 = runtime_ops_slice 12 6
+val runtime_ops_chunk4 = runtime_ops_slice 18 6
+val runtime_ops_chunk5 = runtime_ops_slice 24 5
+val runtime_ops_chunks =
+  [runtime_ops_chunk1, runtime_ops_chunk2, runtime_ops_chunk3,
+   runtime_ops_chunk4, runtime_ops_chunk5]
+val runtime_ops_reconstructed = List.concat runtime_ops_chunks
+val _ =
+  if map length runtime_ops_chunks = [6, 6, 6, 6, 5] andalso
+     length runtime_ops_reconstructed = length runtime_ops andalso
+     ListPair.allEq (fn (x, y) => aconv x y)
+       (runtime_ops_reconstructed, runtime_ops)
+  then () else raise Fail "runtime operation chunk partition is invalid"
+val runtime_ops_chunk1_tm = listSyntax.mk_list (runtime_ops_chunk1, runtime_op_ty)
+val runtime_ops_chunk2_tm = listSyntax.mk_list (runtime_ops_chunk2, runtime_op_ty)
+val runtime_ops_chunk3_tm = listSyntax.mk_list (runtime_ops_chunk3, runtime_op_ty)
+val runtime_ops_chunk4_tm = listSyntax.mk_list (runtime_ops_chunk4, runtime_op_ty)
+val runtime_ops_chunk5_tm = listSyntax.mk_list (runtime_ops_chunk5, runtime_op_ty)
+val runtime_ops_chunk_tms =
+  [runtime_ops_chunk1_tm, runtime_ops_chunk2_tm, runtime_ops_chunk3_tm,
+   runtime_ops_chunk4_tm, runtime_ops_chunk5_tm]
+val _ =
+  if List.all (fn tm => null (free_vars tm) andalso
+                        type_of tm = type_of runtime_plan_ops_tm)
+       runtime_ops_chunk_tms
+  then () else raise Fail "runtime operation chunk is not a closed typed list"
+val runtime_ops_partition_rhs =
+  ``^runtime_ops_chunk1_tm ++ ^runtime_ops_chunk2_tm ++
+    ^runtime_ops_chunk3_tm ++ ^runtime_ops_chunk4_tm ++
+    ^runtime_ops_chunk5_tm``
+val runtime_ops_partition_reduce =
+  PURE_REWRITE_CONV [listTheory.APPEND] runtime_ops_partition_rhs
+val _ =
+  if aconv (rhs (concl runtime_ops_partition_reduce)) runtime_plan_ops_tm
+  then () else raise Fail "runtime operation partition does not reconstruct source list"
+val runtime_ops_partition_exact = SYM runtime_ops_partition_reduce
+
+Theorem exact_empty_runtime_ops_partition[local]:
+  ^runtime_plan_ops_tm = ^runtime_ops_partition_rhs
+Proof
+  ACCEPT_TAC runtime_ops_partition_exact
+QED
+
 
 val _ = export_theory()
