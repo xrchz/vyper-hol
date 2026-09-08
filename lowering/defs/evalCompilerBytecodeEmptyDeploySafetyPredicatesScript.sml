@@ -366,4 +366,82 @@ Proof
   rewrite_tac[empty_deploy_final_functions_exact] >>
   simp[empty_deploy_final_codegen_ready_fn]
 QED
+Theorem empty_deploy_final_safety[local]:
+  unit_wf empty_deploy_final_compilation_unit /\
+  unit_labels_wf empty_deploy_final_compilation_unit /\
+  context_target_safe (K T)
+    empty_deploy_final_compilation_unit.cu_context /\
+  concretized_static_layouts_wf empty_deploy_final_compilation_unit.cu_context /\
+  fmp_lowered_context_wf empty_deploy_final_compilation_unit.cu_context /\
+  (K T) empty_deploy_final_compilation_unit.cu_context /\
+  (K T) empty_deploy_final_compilation_unit.cu_context /\
+  (K T) empty_deploy_final_compilation_unit.cu_context /\
+  reachable_fcg_acyclic empty_deploy_final_compilation_unit.cu_context
+    (fcg_analyze empty_deploy_final_compilation_unit.cu_context) /\
+  codegen_ready empty_deploy_final_compilation_unit.cu_context
+Proof
+  simp[evalCompilerBytecodeEmptyDeploySafetyStructuralTheory.empty_deploy_final_unit_wf,
+       evalCompilerBytecodeEmptyDeploySafetyStructuralTheory.empty_deploy_final_labels_wf,
+       evalCompilerBytecodeEmptyDeploySafetyStructuralTheory.empty_deploy_final_target_safe,
+       evalCompilerBytecodeEmptyDeploySafetyStructuralTheory.empty_deploy_final_concretized_layouts_wf,
+       evalCompilerBytecodeEmptyDeploySafetyStructuralTheory.empty_deploy_final_fmp_lowered_wf,
+       empty_deploy_final_reachable_fcg_acyclic,
+       empty_deploy_final_codegen_ready]
+QED
+
+val empty_deploy_driver_after_callee =
+  PURE_REWRITE_RULE
+    [evalCompilerBytecodeEmptyDeployStandaloneWalkTheory.exact_empty_deploy_standalone_callee_first_result_named]
+    evalCompilerBytecodeEmptyDeployGraphBoundaryTheory.exact_empty_deploy_driver_to_closed_callee_first
+
+fun is_post_walk_case t =
+  head_is ``option_CASE`` t andalso has_head ``run_pipeline_stages`` t
+val empty_deploy_post_walk_case_tm =
+  find_term is_post_walk_case (rhs (concl empty_deploy_driver_after_callee))
+val _ =
+  if null (free_vars empty_deploy_post_walk_case_tm) then ()
+  else raise Fail "empty deploy enclosing post-walk case is not closed"
+val exact_empty_deploy_post_walk_case =
+  computeLib.RESTR_EVAL_CONV
+    [``unit_wf``, ``unit_labels_wf``, ``context_target_safe``,
+     ``concretized_static_layouts_wf``, ``fmp_lowered_context_wf``,
+     ``reachable_fcg_acyclic``, ``codegen_ready``]
+    empty_deploy_post_walk_case_tm
+val exact_empty_deploy_final_context = computeLib.EVAL_CONV
+  ``empty_deploy_final_compilation_unit.cu_context``
+val exact_empty_deploy_post_walk_case_named =
+  PURE_REWRITE_RULE
+    [GSYM empty_deploy_final_compilation_unit_def,
+     GSYM exact_empty_deploy_final_context,
+     GSYM empty_deploy_final_fcg_exact]
+    exact_empty_deploy_post_walk_case
+val empty_deploy_driver_after_post_walk =
+  PURE_REWRITE_RULE [exact_empty_deploy_post_walk_case_named]
+    empty_deploy_driver_after_callee
+val exact_empty_deploy_driver =
+  SIMP_RULE (srw_ss ()) [empty_deploy_final_safety]
+    empty_deploy_driver_after_post_walk
+
+val exact_empty_deploy_driver_rhs = rhs (concl exact_empty_deploy_driver)
+val _ =
+  if head_is ``SOME`` exact_empty_deploy_driver_rhs andalso
+     null (free_vars exact_empty_deploy_driver_rhs)
+  then ()
+  else raise Fail "exact empty deploy driver result is not closed literal SOME"
+val _ =
+  if has_head ``run_callee_first`` exact_empty_deploy_driver_rhs orelse
+     has_head ``run_pipeline_stages`` exact_empty_deploy_driver_rhs
+  then raise Fail "exact empty deploy driver result has residual driver stage"
+  else ()
+val _ =
+  if has_head ``run_configured_fn_pass_fold`` exact_empty_deploy_driver_rhs orelse
+     has_head ``execute_configured_fn_pass`` exact_empty_deploy_driver_rhs
+  then raise Fail "exact empty deploy driver result has residual configured pass"
+  else ()
+
+Theorem exact_empty_deploy_driver_result:
+  ^(concl exact_empty_deploy_driver)
+Proof
+  ACCEPT_TAC exact_empty_deploy_driver
+QED
 val _ = export_theory()
