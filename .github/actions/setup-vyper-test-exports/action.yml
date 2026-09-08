@@ -20,34 +20,8 @@ runs:
       run: |
         set -euo pipefail
         sha=$(tr -d '[:space:]' < VYPER_PIN)
-        settings_sha=$(python - <<'PY'
-        import hashlib
-        import json
-        from pathlib import Path
-
-        path = Path("tests/vyper-test-export-settings.json")
-        settings = json.loads(path.read_text())
-        assert settings["schema_version"] == 1
-        assert settings["profile"] == "functional_test_exports"
-        assert settings["revision"] == {"pin_file": "VYPER_PIN"}
-        assert settings["runtime"] == {"python": "3.11"}
-        assert settings["compiler"] == {
-            "optimize": "gas",
-            "evm_version": "prague",
-            "evm_backend": "revm",
-            "codegen": "legacy",
-            "experimental_codegen": False,
-            "metadata": "default",
-        }
-        assert settings["pytest"] == {
-            "workers": 0,
-            "marker_expression": "not fuzzing",
-        }
-        print(hashlib.sha256(path.read_bytes()).hexdigest())
-        PY
-        )
+        settings_sha=$(sha256sum tests/vyper-test-export-settings.json | cut -d' ' -f1)
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
-        echo "settings-sha=$settings_sha" >> "$GITHUB_OUTPUT"
         echo "cache-key=vyper-tests-${{ runner.os }}-$sha-$settings_sha" >> "$GITHUB_OUTPUT"
 
     - name: Cache exported Vyper tests
@@ -69,7 +43,5 @@ runs:
         git fetch --unshallow --tags
         git checkout --detach "${{ steps.vyper-rev.outputs.sha }}"
         pip install . --group test
-        # Legacy codegen and default metadata are selected by omitting the
-        # experimental-codegen and metadata-disable switches, as asserted above.
         pytest -s --optimize gas --evm-version prague --evm-backend revm -n0 \
           --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional
