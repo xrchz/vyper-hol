@@ -268,5 +268,28 @@ Proof
   ACCEPT_TAC runtime_ops_chunk1_pair01_exact
 QED
 
-val _ = export_theory()
+val runtime_ops_chunk1_op2_tm = List.nth (runtime_ops_chunk1, 2)
+val runtime_ops_chunk1_op2_call =
+  ``exec_stack_op ^runtime_initial_fmp_tm ^runtime_ops_chunk1_op2_tm``
+val runtime_ops_chunk1_op2_shallow =
+  ONCE_REWRITE_CONV [planExecTheory.exec_stack_op_def]
+    runtime_ops_chunk1_op2_call
+val runtime_ops_chunk1_op2_shallow_rhs =
+  rhs (concl runtime_ops_chunk1_op2_shallow)
+val _ =
+  if null (free_vars runtime_ops_chunk1_op2_tm) andalso
+     null (free_vars runtime_ops_chunk1_op2_shallow_rhs) andalso
+     not (has_head ``exec_stack_op`` runtime_ops_chunk1_op2_shallow_rhs)
+  then () else raise Fail "runtime chunk 1 operation 2 shallow result is not closed"
+val _ = print
+  ("runtime chunk 1 operation 2: " ^
+   term_to_string runtime_ops_chunk1_op2_tm ^ "\nshallow RHS: " ^
+   term_to_string runtime_ops_chunk1_op2_shallow_rhs ^ "\n")
+
+Theorem exact_empty_runtime_ops_chunk1_op2_shallow[local]:
+  ^runtime_ops_chunk1_op2_call = ^runtime_ops_chunk1_op2_shallow_rhs
+Proof
+  ACCEPT_TAC runtime_ops_chunk1_op2_shallow
+QED
+
 val _ = export_theory()
