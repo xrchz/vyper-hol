@@ -97,6 +97,14 @@ Proof
      lookup_var_def]
 QED
 
+Theorem ld_ok_istore:
+  !vars off val s1 s2.
+    ld_ok vars s1 s2 ==>
+    ld_ok vars (istore off val s1) (istore off val s2)
+Proof
+  rw[ld_ok_def, istore_def, mstore_def, lookup_var_def]
+QED
+
 (* ===== eval_operand agreement under ld_ok ===== *)
 
 Theorem ld_eval_operand_agree:
@@ -278,6 +286,7 @@ val ld_classify_one_tac =
   gvs[] >>
   TRY (irule ld_ok_update_var >> gvs[ld_ok_def] >> NO_TAC) >>
   TRY (irule ld_ok_write_memory >> gvs[ld_ok_def] >> NO_TAC) >>
+  TRY (irule ld_ok_istore >> gvs[ld_ok_def] >> NO_TAC) >>
   gvs[ld_ok_def, lookup_var_def, update_var_def, FLOOKUP_UPDATE];
 
 Theorem hidden_output_ld_ok_probe[local]:
@@ -309,7 +318,6 @@ Theorem step_inst_base_ld_ok_classify:
 Proof
   gen_tac >> Cases_on `inst.inst_opcode` >>
   simp[is_terminator_def, reads_memory_def]
-  >- ld_classify_one_tac
   >- ld_classify_one_tac
   >- ld_classify_one_tac
   >- ld_classify_one_tac

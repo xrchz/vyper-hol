@@ -2244,7 +2244,9 @@ Proof
   pop_assum SUBST1_TAC >>
   `!op. eval_operand (subst_label_map_op m op) st = eval_operand op st` by (
     rpt strip_tac >> irule eval_operand_subst_label_map >> simp[]) >>
-  simp[step_inst_base_def, subst_label_map_op_def, is_terminator_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  PURE_REWRITE_TAC[instruction_accfupds] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
   Cases_on `inst.inst_operands` >> simp[subst_label_map_op_def] >>
   Cases_on `t` >> simp[subst_label_map_op_def] >>
   Cases_on `h'` >> simp[subst_label_map_op_def] >>

@@ -544,9 +544,20 @@ Theorem step_inst_base_vars_fupdate:
   ==>
     s'.vs_vars = s.vs_vars |+ (out, THE (FLOOKUP s'.vs_vars out))
 Proof
-  rw[step_inst_base_def] >>
-  gvs[AllCaseEqs(), is_terminator_def] >>
-  step_vars_fupdate_finish_tac ()
+  rpt strip_tac >>
+  `!v. v <> out ==> lookup_var v s' = lookup_var v s` by
+    (drule_all venomInstProofs1Theory.step_inst_base_preserves_all >>
+     simp[]) >>
+  `!v. FLOOKUP s'.vs_vars v =
+       FLOOKUP (s.vs_vars |+ (out, THE (FLOOKUP s'.vs_vars out))) v` by
+    (gen_tac >> Cases_on `v = out`
+     >- (gvs[FLOOKUP_UPDATE] >>
+         Cases_on `FLOOKUP s'.vs_vars out` >> gvs[flookup_thm])
+     >> `FLOOKUP s'.vs_vars v = FLOOKUP s.vs_vars v` by
+          (qpat_x_assum `!v. v <> out ==> _` (qspec_then `v` mp_tac) >>
+           simp[lookup_var_def]) >>
+        simp[FLOOKUP_UPDATE]) >>
+  metis_tac[FLOOKUP_EXT, FUN_EQ_THM]
 QED
 
 (* SSA uniqueness: DFG entry for a variable maps to the unique instruction

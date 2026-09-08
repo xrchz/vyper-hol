@@ -325,6 +325,7 @@ Triviality side_effect_lookup_var[local]:
   (!off bytes s v.
      lookup_var v (write_memory_with_expansion off bytes s) = lookup_var v s) /\
   (!off val s v. lookup_var v (mstore off val s) = lookup_var v s) /\
+  (!off val s v. lookup_var v (istore off val s) = lookup_var v s) /\
   (!off val s v. lookup_var v (mstore8 off val s) = lookup_var v s) /\
   (!dst src sz s v. lookup_var v (mcopy dst src sz s) = lookup_var v s) /\
   (!key val s v. lookup_var v (sstore key val s) = lookup_var v s) /\
@@ -333,7 +334,7 @@ Triviality side_effect_lookup_var[local]:
   (!s v. lookup_var v (revert_state s) = lookup_var v s) /\
   (!rd s v. lookup_var v (set_returndata rd s) = lookup_var v s)
 Proof
-  rw[write_memory_with_expansion_def, mstore_def, mstore8_def,
+  rw[write_memory_with_expansion_def, mstore_def, istore_def, mstore8_def,
      mcopy_def, sstore_def, tstore_def, halt_state_def,
      revert_state_def, set_returndata_def, lookup_var_def]
 QED
@@ -686,7 +687,8 @@ Triviality direct_single_output_step_structure[local]:
 Proof
   rpt strip_tac >>
   qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
-  gvs[] >> once_rewrite_tac[step_inst_base_def] >>
+  gvs[] >> PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
   gvs[AllCaseEqs()] >> metis_tac[]
 QED
 

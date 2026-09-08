@@ -80,6 +80,13 @@ Proof
   rw[update_var_def, mstore_def, venom_state_component_equality]
 QED
 
+Theorem update_var_istore_commute:
+  !x v off val s.
+  update_var x v (istore off val s) = istore off val (update_var x v s)
+Proof
+  rw[update_var_def, istore_def, mstore_def, venom_state_component_equality]
+QED
+
 Theorem update_var_mstore8_commute:
   !x v off val s.
   update_var x v (mstore8 off val s) = mstore8 off val (update_var x v s)
@@ -438,7 +445,8 @@ val helper_frames = [
 (* Rewrites for threading update_var through state operations *)
 val update_var_rwts = [
   update_var_fields, update_var_commutes,
-  update_var_mstore_commute, update_var_mstore8_commute, update_var_sstore_commute,
+  update_var_mstore_commute, update_var_istore_commute,
+  update_var_mstore8_commute, update_var_sstore_commute,
   update_var_tstore_commute, update_var_write_memory_commute,
   update_var_mcopy_commute, update_var_halt_state_commute,
   update_var_revert_state_commute, update_var_set_returndata_commute,

@@ -34,12 +34,10 @@ Ancestors
 
 (* ===== Immutable Operations ===== *)
 
-(* ILOAD/ISTORE operate on vs_immutables (an fmap), NOT vs_memory.
-   mem_write_ops/mem_read_ops classify them as memory ops, but their
-   "address" is an immutables key, not a memory offset. Pointer-derived
-   vars must NEVER appear in ILOAD/ISTORE address positions — they would
-   write different fmap keys in remapped states, breaking vs_immutables
-   equality. True for Vyper: ILOAD/ISTORE use compile-time literal offsets. *)
+(* ILOAD/ISTORE retain this classification for pass-specific dispatch, but
+   executable semantics now reads and writes ordinary memory. Their address
+   operands therefore follow the same pointer-confinement rules as other
+   memory operations. *)
 Definition is_immutable_op_def:
   is_immutable_op ILOAD = T /\
   is_immutable_op ISTORE = T /\
@@ -139,10 +137,8 @@ Definition pointer_confined_def:
       MEM inst bb.bb_instructions /\
       MEM (Var v) inst.inst_operands /\
       v IN pv ==>
-      (?ops. mem_write_ops inst = SOME ops /\
-             ~is_immutable_op inst.inst_opcode /\ Var v = ops.iao_ofst) \/
-      (?ops. mem_read_ops inst = SOME ops /\
-             ~is_immutable_op inst.inst_opcode /\ Var v = ops.iao_ofst) \/
+      (?ops. mem_write_ops inst = SOME ops /\ Var v = ops.iao_ofst) \/
+      (?ops. mem_read_ops inst = SOME ops /\ Var v = ops.iao_ofst) \/
       (is_pointer_preserving_op inst.inst_opcode /\
         set inst.inst_outputs SUBSET pv)
 End
@@ -162,8 +158,7 @@ Definition all_mem_via_pointer_def:
     !bb inst ops.
       MEM bb fn.fn_blocks /\
       MEM inst bb.bb_instructions /\
-      (mem_write_ops inst = SOME ops \/ mem_read_ops inst = SOME ops) /\
-      ~is_immutable_op inst.inst_opcode ==>
+      (mem_write_ops inst = SOME ops \/ mem_read_ops inst = SOME ops) ==>
       ?v. ops.iao_ofst = Var v /\ v IN pv
 End
 

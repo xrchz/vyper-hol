@@ -358,7 +358,8 @@ Proof
   qpat_x_assum `step_inst _ _ _ _ = _` mp_tac >>
   simp[step_inst_non_invoke] >>
   Cases_on `inst` >>
-  simp[step_inst_base_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
   rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[update_var_def]) >>
   rpt strip_tac >> gvs[update_var_def]
 QED

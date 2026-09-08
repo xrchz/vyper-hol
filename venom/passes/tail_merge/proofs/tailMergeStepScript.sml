@@ -551,7 +551,7 @@ val decompose_ops =
 val inline_close_defs = [execution_equiv_def, update_var_def,
   write_memory_with_expansion_def, read_memory_def,
   halt_state_def, revert_state_def, set_returndata_def,
-  mcopy_def, lookup_var_def,
+  mcopy_def, istore_def, mstore_def, lookup_var_def,
   finite_mapTheory.FLOOKUP_UPDATE];
 
 (* Standard inline tactic: imp_res_tac cr, unfold step_sim,

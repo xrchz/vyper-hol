@@ -1951,6 +1951,34 @@ Proof
   gvs[]
 QED
 
+Theorem m2v_inv_noix_with_immutables:
+  !fn s1 s2 imm.
+    m2v_inv_noix fn s1 s2 ==>
+    m2v_inv_noix fn (s1 with vs_immutables := imm)
+                    (s2 with vs_immutables := imm)
+Proof
+  rw[m2v_inv_noix_def, lookup_var_def, in_promoted_region_def,
+     mem_byte_def, mload_def, allocas_non_overlapping_def] >>
+  metis_tac[]
+QED
+
+Theorem m2v_inv_noix_both_sides_istore:
+  !fn s1 s2 off val_w.
+    m2v_inv_noix fn s1 s2 /\
+    m2v_non32_ok fn s1 s2 /\
+    (!ao pvar addr. MEM (ao,pvar,32) (m2v_promo_list fn) /\
+      lookup_var ao s1 = SOME addr ==>
+      off + 32 <= w2n addr \/ w2n addr + 32 <= off) ==>
+    m2v_inv_noix fn (istore off val_w s1) (istore off val_w s2)
+Proof
+  rpt strip_tac >>
+  `s1.vs_immutables = s2.vs_immutables` by gvs[m2v_inv_noix_def] >>
+  simp[istore_def] >>
+  irule m2v_inv_noix_with_immutables >>
+  irule m2v_inv_noix_both_sides_mstore >> simp[] >>
+  qpat_x_assum `!ao pvar addr. _` ACCEPT_TAC
+QED
+
 (* --- Memory clause helper for mstore_core --- *)
 Theorem mstore_core_mem_clause:
   !fn s1 s2 addr val_w.
@@ -2491,7 +2519,6 @@ Definition m2v_nonpromoted_access_safe_def:
     (!bb inst ops off_val sz_val sz_op.
       MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
       (mem_write_ops inst = SOME ops \/ mem_read_ops inst = SOME ops) /\
-      ~is_immutable_op inst.inst_opcode /\
       FIND (\(ao,_,_). MEM (Var ao) inst.inst_operands)
            (m2v_promo_list fn) = NONE /\
       eval_operand ops.iao_ofst s = SOME off_val /\
@@ -2807,7 +2834,6 @@ Theorem nas_write_range_disjoint:
     m2v_nonpromoted_access_safe fn s /\
     MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
     mem_write_ops inst = SOME ops /\
-    ~is_immutable_op inst.inst_opcode /\
     FIND (\(ao,_0,_1). MEM (Var ao) inst.inst_operands)
          (m2v_promo_list fn) = NONE /\
     eval_operand ops.iao_ofst s = SOME off_val /\
@@ -2825,7 +2851,6 @@ Theorem nas_read_range_disjoint:
     m2v_nonpromoted_access_safe fn s /\
     MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
     mem_read_ops inst = SOME ops /\
-    ~is_immutable_op inst.inst_opcode /\
     FIND (\(ao,_0,_1). MEM (Var ao) inst.inst_operands)
          (m2v_promo_list fn) = NONE /\
     eval_operand ops.iao_ofst s = SOME off_val /\
@@ -2863,7 +2888,6 @@ Triviality read_memory_nas_agrees:
     m2v_nonpromoted_access_safe fn s1 /\
     MEM bb fn.fn_blocks /\ MEM inst bb.bb_instructions /\
     mem_read_ops inst = SOME ops /\
-    ~is_immutable_op inst.inst_opcode /\
     FIND (\(ao,_0,_1). MEM (Var ao) inst.inst_operands)
          (m2v_promo_list fn) = NONE /\
     eval_operand ops.iao_ofst s1 = SOME off_val /\
@@ -3116,9 +3140,9 @@ Resume m2v_nonterminal_step_dispatch[nonpromoted]:
       `inst_wf inst` by (drule_all fn_inst_wf_MEM >> simp[]) >>
       (* Enumerate opcodes — only SSTORE/TSTORE/ASSERT/ASSERT_UNREACHABLE remain *)
       Cases_on `inst.inst_opcode` >>
-      gvs[inst_wf_def, is_effect_free_op_def, write_effects_def,
-          read_effects_def, is_alloca_op_def, is_ext_call_op_def,
-          is_terminator_def])
+      gvs[is_effect_free_op_def] >>
+      gvs[inst_wf_def, write_effects_def, read_effects_def,
+          is_alloca_op_def, is_ext_call_op_def, is_terminator_def])
 QED
 
 Resume m2v_nonterminal_step_dispatch[mstore]:
@@ -3479,21 +3503,25 @@ Proof
   irule m2v_inv_noix_both_sides_mstore >> metis_tac[]
 QED
 
-(* Helper: ISTORE — updates vs_immutables identically on both sides.
-   No memory change, no variable update (no outputs). *)
+(* Helper: ISTORE performs the same 32-byte memory write and immutable-map
+   update on both sides, away from promoted allocation regions. *)
 Theorem m2v_step_nonpromoted_istore:
   !fn inst s1 s2 fuel ctx v1.
-    m2v_inv_noix fn s1 s2 /\
+    m2v_inv_noix fn s1 s2 /\ m2v_non32_ok fn s1 s2 /\
     inst.inst_opcode = ISTORE /\ inst.inst_opcode <> INVOKE /\
     step_inst fuel ctx inst s1 = OK v1 /\
     (!op. MEM op inst.inst_operands ==>
-          eval_operand op s1 = eval_operand op s2) ==>
+          eval_operand op s1 = eval_operand op s2) /\
+    (!ao pvar off addr.
+      MEM (ao,pvar,32) (m2v_promo_list fn) /\
+      lookup_var ao s1 = SOME addr /\
+      eval_operand (HD inst.inst_operands) s1 = SOME off ==>
+      w2n off + 32 <= w2n addr \/ w2n addr + 32 <= w2n off) ==>
     ?v2. step_inst fuel ctx inst s2 = OK v2 /\ m2v_inv_noix fn v1 v2
 Proof
   rpt strip_tac >> gvs[step_inst_non_invoke] >>
   gvs[step_inst_base_def, AllCaseEqs()] >>
-  gvs[m2v_inv_noix_def, in_promoted_region_def, mem_byte_def,
-      lookup_var_def, allocas_non_overlapping_def, mload_def] >>
+  irule m2v_inv_noix_both_sides_istore >> simp[] >>
   metis_tac[]
 QED
 
@@ -3663,15 +3691,49 @@ QED
 
 Resume m2v_nonpromoted_mem_dispatch[istore]:
   ho_match_mp_tac m2v_step_nonpromoted_istore >>
-  qexists `s1` >> simp[]
+  qexists `s1` >> simp[] >>
+  rpt strip_tac >>
+  `?offset_op value_op. inst.inst_operands = [offset_op; value_op]` by
+    (qpat_x_assum `step_inst fuel ctx inst s1 = OK v1` mp_tac >>
+     simp[step_inst_non_invoke] >>
+     PURE_ONCE_REWRITE_TAC[step_inst_base_def] >> ASM_REWRITE_TAC[] >>
+     simp[AllCaseEqs()] >> strip_tac >> gvs[]) >>
+  drule_all m2v_inv_noix_alloca_bridge >> strip_tac >>
+  irule (iffRL DISJ_COMM) >>
+  ho_match_mp_tac promoted_region_disjoint_from_nonpromoted >>
+  qexistsl [`fn`, `s1`, `inst_id`] >> simp[] >>
+  `eval_operand offset_op s1 = SOME off` by gvs[] >>
+  `eval_operand offset_op s2 = SOME off` by
+    (qpat_x_assum `!op. MEM op inst.inst_operands ==> _`
+       (qspec_then `offset_op` mp_tac) >> simp[]) >>
+  mp_tac (Q.SPECL [`fn`, `s1`, `bb`, `inst`,
+    `<| iao_ofst := HD inst.inst_operands;
+        iao_size := SOME (Lit 32w); iao_max_size := SOME (Lit 32w) |>`,
+    `off`, `32w`, `Lit 32w`] nas_write_range_disjoint) >>
+  simp[mem_write_ops_def, eval_operand_def, lt_32_dimword_256,
+       arithmeticTheory.LESS_MOD]
 QED
 
 Resume m2v_nonpromoted_mem_dispatch[iload]:
   ho_match_mp_tac m2v_step_nonpromoted_read1 >>
-  qexistsl [`\off s. case FLOOKUP s.vs_immutables (w2n off) of
-                        SOME v => v | NONE => 0w`, `s1`] >>
-  gvs[step_inst_non_invoke, step_inst_base_def] >>
-  gvs[m2v_inv_noix_def]
+  qexistsl [`\addr s. mload (w2n addr) s`, `s1`] >>
+  ASM_REWRITE_TAC[step_inst_non_invoke, step_inst_base_def,
+                  is_alloca_op_def] >> gvs[] >>
+  rpt strip_tac >>
+  irule mload_mem_byte_eq >> rpt strip_tac >>
+  qpat_x_assum `m2v_inv_noix _ _ _` mp_tac >>
+  simp[m2v_inv_noix_def] >> strip_tac >>
+  first_x_assum irule >>
+  mp_tac (Q.SPECL [`fn`, `s1`, `bb`, `inst`] nas_read_range_disjoint) >>
+  simp[mem_read_ops_def, is_immutable_op_def, eval_operand_def] >>
+  disch_then irule >>
+  `step_inst fuel ctx inst s1 = step_inst_base inst s1` by
+    (irule step_inst_non_invoke >> simp[]) >>
+  qpat_x_assum `step_inst fuel ctx inst s1 = OK v1` mp_tac >>
+  ASM_REWRITE_TAC[] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >> ASM_REWRITE_TAC[] >>
+  simp[exec_read1_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  simp[eval_operand_def, lt_32_dimword_256, arithmeticTheory.LESS_MOD]
 QED
 
 Resume m2v_nonpromoted_mem_dispatch[dload]:
