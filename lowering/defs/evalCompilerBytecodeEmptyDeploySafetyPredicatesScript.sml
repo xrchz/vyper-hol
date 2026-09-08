@@ -246,4 +246,31 @@ Proof
   metis_tac[]
 QED
 
+Theorem indexed_defs_before_uses_imp_block_defs_before_uses[local]:
+  indexed_defs_before_uses bb.bb_instructions ==>
+  block_defs_before_uses bb
+Proof
+  rw[indexed_defs_before_uses_def, block_defs_before_uses_def] >>
+  qpat_x_assum `MEM inst bb.bb_instructions` mp_tac >>
+  simp[listTheory.MEM_EL] >>
+  strip_tac >>
+  qpat_x_assum `EVERY _ _` mp_tac >>
+  simp[listTheory.EVERY_MEM, listTheory.MEM_GENLIST] >>
+  disch_then (qspec_then `n` mp_tac) >>
+  simp[] >>
+  disch_then (qspec_then `v` assume_tac) >>
+  gvs[] >>
+  qpat_x_assum `MEM v (defs_in_prefix n bb.bb_instructions)` mp_tac >>
+  simp[defs_in_prefix_def, listTheory.MEM_FLAT, listTheory.MEM_MAP] >>
+  strip_tac >>
+  gvs[] >>
+  qpat_x_assum `MEM inst (TAKE n bb.bb_instructions)` mp_tac >>
+  simp[listTheory.MEM_EL] >>
+  strip_tac >>
+  gvs[listTheory.EL_TAKE] >>
+  qexistsl [`n'`, `n`] >>
+  simp[GSYM listTheory.MEM_EL] >>
+  irule listTheory.EL_MEM >> decide_tac
+QED
+
 val _ = export_theory()
