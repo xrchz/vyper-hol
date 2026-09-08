@@ -1,6 +1,6 @@
 Theory jsonToVyper
 Ancestors
-  integer alist rich_list jsonAST vyperAST jsonToVyperType jsonToVyperTopLevel
+  integer alist rich_list jsonAST vyperAST vyperStorage jsonToVyperType jsonToVyperTopLevel
 Libs
   intLib
 
@@ -161,6 +161,17 @@ Definition transform_storage_layout_def:
   transform_storage_layout import_map ((key, slot) :: rest) =
     (transform_layout_key import_map key, slot) ::
     transform_storage_layout import_map rest
+End
+
+(* Extract semantic storage and transient-storage layouts from the compiler
+   layout, transforming optional import aliases into source IDs. *)
+Definition extract_storage_layout_def:
+  extract_storage_layout import_map
+      (jsl : json_storage_layout) : storage_layout # storage_layout =
+    (transform_storage_layout import_map
+       (MAP (λ(key, info). (key, info.slot)) jsl.storage),
+     transform_storage_layout import_map
+       (MAP (λ(key, info). (key, info.slot)) jsl.transient))
 End
 
 
