@@ -9,6 +9,7 @@
 Theory venomInst
 Ancestors
   venomState
+  venomPolicyTypes
 Libs
   listTheory
 
@@ -40,10 +41,11 @@ Datatype:
     | JMP | JNZ | DJMP | RET | RETURN | REVERT | STOP | SINK
     (* SSA/IR-specific *)
     | PHI | PARAM | ASSIGN | NOP
-    (* Allocation (Vyper-specific stack slots) *)
-    | ALLOCA
-    (* Internal function calls *)
-    | INVOKE
+    (* Allocation and frame-memory-pointer operations *)
+    | ALLOCA | DALLOCA
+    | DRET | GETFMP | SETFMP | RETFMP | INITIAL_FMP | BUMP
+    (* Internal function calls and hidden physical parameters *)
+    | INVOKE | FMP_PARAM | RETPC_PARAM
     (* Environment *)
     | CALLER | CALLVALUE | CALLDATALOAD | CALLDATASIZE | CALLDATACOPY
     | ADDRESS | ORIGIN | GASPRICE | GAS | GASLIMIT
@@ -135,22 +137,60 @@ End
 (* --------------------------------------------------------------------------
    Function
 
-   An IR function contains:
-   - A name (entry label)
-   - A list of basic blocks (first is entry)
+   An IR function contains its control-flow blocks together with independently
+   owned identity, static-layout, and FMP-convention metadata.
    -------------------------------------------------------------------------- *)
+
+Datatype:
+  internal_call_abi = <|
+    ica_has_memory_return_buffer : bool option;
+    ica_user_return_count : num option
+  |>
+End
+
+Datatype:
+  fmp_signature = <|
+    fms_has_fmp_param : bool;
+    fms_publishes : bool
+  |>
+End
 
 Datatype:
   ir_function = <|
     fn_name : string;
-    fn_blocks : basic_block list
+    fn_blocks : basic_block list;
+    fn_call_abi : internal_call_abi;
+    fn_noinline : bool;
+    fn_forced_alloc_positions : (num,num) fmap;
+    fn_eom : num option;
+    fn_fmp_signature : fmp_signature option
+  |>
+End
+
+Definition default_internal_call_abi_def:
+  default_internal_call_abi = <|
+    ica_has_memory_return_buffer := NONE;
+    ica_user_return_count := NONE
+  |>
+End
+
+Definition mk_raw_function_def:
+  mk_raw_function name blocks = <|
+    fn_name := name;
+    fn_blocks := blocks;
+    fn_call_abi := default_internal_call_abi;
+    fn_noinline := F;
+    fn_forced_alloc_positions := FEMPTY;
+    fn_eom := NONE;
+    fn_fmp_signature := NONE
   |>
 End
 
 (* --------------------------------------------------------------------------
    Context (whole program)
 
-   Contains multiple functions and optional entry point.
+   Contains multiple functions, an optional entry point, and globally reserved
+   static-layout intervals.
 
    NOTE: Python IRContext also has data_segment : list[DataSection] containing
    label references and raw bytes (for selector dispatch tables, deploy code,
@@ -164,9 +204,63 @@ End
 Datatype:
   venom_context = <|
     ctx_functions : ir_function list;
-    ctx_entry : string option
+    ctx_entry : string option;
+    ctx_global_reserved : (num # num) list
   |>
 End
+
+Definition mk_venom_context_def:
+  mk_venom_context fns entry = <|
+    ctx_functions := fns;
+    ctx_entry := entry;
+    ctx_global_reserved := []
+  |>
+End
+
+(* Metadata ownership is deliberately split by the phase that owns each field. *)
+Definition fn_identity_metadata_eq_def:
+  fn_identity_metadata_eq f g <=>
+    f.fn_name = g.fn_name /\
+    f.fn_call_abi = g.fn_call_abi /\
+    f.fn_noinline = g.fn_noinline
+End
+
+Definition fn_static_input_eq_def:
+  fn_static_input_eq f g <=>
+    f.fn_forced_alloc_positions = g.fn_forced_alloc_positions
+End
+
+Definition fn_static_layout_eq_def:
+  fn_static_layout_eq f g <=> f.fn_eom = g.fn_eom
+End
+
+Definition fn_fmp_convention_eq_def:
+  fn_fmp_convention_eq f g <=>
+    f.fn_fmp_signature = g.fn_fmp_signature
+End
+
+Theorem mk_raw_function_metadata:
+  !name blocks.
+    (mk_raw_function name blocks).fn_call_abi = default_internal_call_abi /\
+    (mk_raw_function name blocks).fn_noinline = F /\
+    (mk_raw_function name blocks).fn_forced_alloc_positions = FEMPTY /\
+    (mk_raw_function name blocks).fn_eom = NONE /\
+    (mk_raw_function name blocks).fn_eom <> SOME 0 /\
+    (mk_raw_function name blocks).fn_fmp_signature = NONE
+Proof
+  simp[mk_raw_function_def]
+QED
+
+Theorem fn_metadata_eq_refl:
+  !f.
+    fn_identity_metadata_eq f f /\
+    fn_static_input_eq f f /\
+    fn_static_layout_eq f f /\
+    fn_fmp_convention_eq f f
+Proof
+  simp[fn_identity_metadata_eq_def, fn_static_input_eq_def,
+       fn_static_layout_eq_def, fn_fmp_convention_eq_def]
+QED
 
 (* --------------------------------------------------------------------------
    Data segment types (shared between lowering and codegen)
@@ -237,6 +331,15 @@ Definition is_terminator_def:
   is_terminator SINK = T /\
   is_terminator SELFDESTRUCT = T /\
   is_terminator INVALID = T /\
+  is_terminator DRET = T /\
+  is_terminator RETFMP = T /\
+  is_terminator DALLOCA = F /\
+  is_terminator GETFMP = F /\
+  is_terminator SETFMP = F /\
+  is_terminator INITIAL_FMP = F /\
+  is_terminator BUMP = F /\
+  is_terminator FMP_PARAM = F /\
+  is_terminator RETPC_PARAM = F /\
   is_terminator _ = F
 End
 
@@ -253,6 +356,15 @@ End
 Definition is_pseudo_def:
   is_pseudo PHI = T /\
   is_pseudo PARAM = T /\
+  is_pseudo FMP_PARAM = T /\
+  is_pseudo RETPC_PARAM = T /\
+  is_pseudo DALLOCA = F /\
+  is_pseudo DRET = F /\
+  is_pseudo GETFMP = F /\
+  is_pseudo SETFMP = F /\
+  is_pseudo RETFMP = F /\
+  is_pseudo INITIAL_FMP = F /\
+  is_pseudo BUMP = F /\
   is_pseudo _ = F
 End
 
@@ -291,6 +403,15 @@ Definition is_volatile_def:
   is_volatile ASSERT = T /\
   is_volatile ASSERT_UNREACHABLE = T /\
   is_volatile STOP = T /\
+  is_volatile DRET = T /\
+  is_volatile RETFMP = T /\
+  is_volatile FMP_PARAM = T /\
+  is_volatile RETPC_PARAM = T /\
+  is_volatile DALLOCA = F /\
+  is_volatile GETFMP = F /\
+  is_volatile SETFMP = F /\
+  is_volatile INITIAL_FMP = F /\
+  is_volatile BUMP = F /\
   is_volatile _ = F
 End
 
@@ -361,9 +482,20 @@ Definition is_effect_free_op_def:
   is_effect_free_op ASSIGN = T /\
   is_effect_free_op PHI = T /\
   is_effect_free_op PARAM = T /\
+  is_effect_free_op FMP_PARAM = T /\
+  is_effect_free_op RETPC_PARAM = T /\
   is_effect_free_op OFFSET = T /\
+  (* FMP value reads/arithmetic that do not mutate non-output state *)
+  is_effect_free_op GETFMP = T /\
+  is_effect_free_op INITIAL_FMP = T /\
+  is_effect_free_op BUMP = T /\
   (* No-op (no outputs, no state change, no side effects) *)
   is_effect_free_op NOP = T /\
+  (* Reviewed stateful FMP operations *)
+  is_effect_free_op DALLOCA = F /\
+  is_effect_free_op DRET = F /\
+  is_effect_free_op SETFMP = F /\
+  is_effect_free_op RETFMP = F /\
   (* Everything else *)
   is_effect_free_op _ = F
 End
@@ -378,12 +510,30 @@ Definition is_mem_write_op_def:
   is_mem_write_op CODECOPY = T /\
   is_mem_write_op EXTCODECOPY = T /\
   is_mem_write_op DLOADBYTES = T /\
+  is_mem_write_op DRET = T /\
+  is_mem_write_op DALLOCA = F /\
+  is_mem_write_op GETFMP = F /\
+  is_mem_write_op SETFMP = F /\
+  is_mem_write_op RETFMP = F /\
+  is_mem_write_op INITIAL_FMP = F /\
+  is_mem_write_op BUMP = F /\
+  is_mem_write_op FMP_PARAM = F /\
+  is_mem_write_op RETPC_PARAM = F /\
   is_mem_write_op _ = F
 End
 
 (* Allocation opcodes: modify vs_allocas *)
 Definition is_alloca_op_def:
   is_alloca_op ALLOCA = T /\
+  is_alloca_op DALLOCA = F /\
+  is_alloca_op DRET = F /\
+  is_alloca_op GETFMP = F /\
+  is_alloca_op SETFMP = F /\
+  is_alloca_op RETFMP = F /\
+  is_alloca_op INITIAL_FMP = F /\
+  is_alloca_op BUMP = F /\
+  is_alloca_op FMP_PARAM = F /\
+  is_alloca_op RETPC_PARAM = F /\
   is_alloca_op _ = F
 End
 
@@ -394,7 +544,59 @@ Definition is_ext_call_op_def:
   is_ext_call_op DELEGATECALL = T /\
   is_ext_call_op CREATE = T /\
   is_ext_call_op CREATE2 = T /\
+  is_ext_call_op DALLOCA = F /\
+  is_ext_call_op DRET = F /\
+  is_ext_call_op GETFMP = F /\
+  is_ext_call_op SETFMP = F /\
+  is_ext_call_op RETFMP = F /\
+  is_ext_call_op INITIAL_FMP = F /\
+  is_ext_call_op BUMP = F /\
+  is_ext_call_op FMP_PARAM = F /\
+  is_ext_call_op RETPC_PARAM = F /\
   is_ext_call_op _ = F
+End
+
+(* Raw FMP operations are eliminated by the FMP lowering boundary. *)
+Definition is_raw_fmp_opcode_def:
+  is_raw_fmp_opcode DALLOCA = T /\
+  is_raw_fmp_opcode DRET = T /\
+  is_raw_fmp_opcode GETFMP = T /\
+  is_raw_fmp_opcode SETFMP = T /\
+  is_raw_fmp_opcode RETFMP = T /\
+  is_raw_fmp_opcode INITIAL_FMP = F /\
+  is_raw_fmp_opcode BUMP = F /\
+  is_raw_fmp_opcode FMP_PARAM = F /\
+  is_raw_fmp_opcode RETPC_PARAM = F /\
+  is_raw_fmp_opcode _ = F
+End
+
+(* Canonical classification for all parameter-like pseudo instructions. *)
+Definition is_param_opcode_def:
+  is_param_opcode PARAM = T /\
+  is_param_opcode FMP_PARAM = T /\
+  is_param_opcode RETPC_PARAM = T /\
+  is_param_opcode _ = F
+End
+
+Theorem is_param_opcode_iff:
+  is_param_opcode op <=>
+    (op = PARAM \/ op = FMP_PARAM \/ op = RETPC_PARAM)
+Proof
+  Cases_on `op` >> simp[is_param_opcode_def]
+QED
+
+(* Compatibility classifier for the two hidden physical parameters only. *)
+Definition is_fmp_param_opcode_def:
+  is_fmp_param_opcode FMP_PARAM = T /\
+  is_fmp_param_opcode RETPC_PARAM = T /\
+  is_fmp_param_opcode DALLOCA = F /\
+  is_fmp_param_opcode DRET = F /\
+  is_fmp_param_opcode GETFMP = F /\
+  is_fmp_param_opcode SETFMP = F /\
+  is_fmp_param_opcode RETFMP = F /\
+  is_fmp_param_opcode INITIAL_FMP = F /\
+  is_fmp_param_opcode BUMP = F /\
+  is_fmp_param_opcode _ = F
 End
 
 (* --------------------------------------------------------------------------
@@ -504,6 +706,12 @@ End
 
 Definition fn_insts_def:
   fn_insts fn = fn_insts_blocks fn.fn_blocks
+End
+
+Definition no_raw_fmp_ops_def:
+  no_raw_fmp_ops fn <=>
+    !inst. MEM inst (fn_insts fn) ==>
+           ~is_raw_fmp_opcode inst.inst_opcode
 End
 
 (* The function names in a context. *)

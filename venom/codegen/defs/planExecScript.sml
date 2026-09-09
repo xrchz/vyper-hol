@@ -44,28 +44,30 @@ End
 (* ===== Execute a Single Stack Operation ===== *)
 
 Definition exec_stack_op_def:
-  exec_stack_op (SOPush (Lit v)) =
+  exec_stack_op initial_fmp (SOPush (Lit v)) =
     (* Python: PUSH(wrap256(value)) → minimal big-endian byte list.
        0 → PUSH0, 42 → PUSH1 42, etc. encode_num_bytes gives minimal. *)
     ([AsmPush (encode_num_bytes (w2n v))] : asm_inst list) ∧
-  exec_stack_op (SOPush (Var _)) = [] ∧
-  exec_stack_op (SOPush (Label l)) = [AsmPushLabel l] ∧
-  exec_stack_op (SOPop n) = REPLICATE n (AsmOp "POP") ∧
-  exec_stack_op (SOSwap n) = [AsmOp (swap_name n)] ∧
-  exec_stack_op (SODup n) = [AsmOp (dup_name n)] ∧
-  exec_stack_op (SOPoke _ _) = [] ∧
-  exec_stack_op (SOSpill off) =
+  exec_stack_op initial_fmp (SOPush (Var _)) = [] ∧
+  exec_stack_op initial_fmp (SOPush (Label l)) = [AsmPushLabel l] ∧
+  exec_stack_op initial_fmp (SOPop n) = REPLICATE n (AsmOp "POP") ∧
+  exec_stack_op initial_fmp (SOSwap n) = [AsmOp (swap_name n)] ∧
+  exec_stack_op initial_fmp (SODup n) = [AsmOp (dup_name n)] ∧
+  exec_stack_op initial_fmp (SOPoke _ _) = [] ∧
+  exec_stack_op initial_fmp (SOSpill off) =
     [AsmPush (encode_num_bytes off); AsmOp "MSTORE"] ∧
-  exec_stack_op (SORestore off) =
+  exec_stack_op initial_fmp (SORestore off) =
     [AsmPush (encode_num_bytes off); AsmOp "MLOAD"] ∧
-  exec_stack_op (SOEmit opc) = [AsmOp opc] ∧
-  exec_stack_op (SOLabel lbl) = [AsmLabel lbl] ∧
-  exec_stack_op (SOPushLabel lbl) = [AsmPushLabel lbl] ∧
-  exec_stack_op (SOPushOfst lbl off) = [AsmPushOfst lbl off]
+  exec_stack_op initial_fmp (SOEmit opc) = [AsmOp opc] ∧
+  exec_stack_op initial_fmp SOInitialFmp =
+    [AsmPush (encode_num_bytes initial_fmp)] ∧
+  exec_stack_op initial_fmp (SOLabel lbl) = [AsmLabel lbl] ∧
+  exec_stack_op initial_fmp (SOPushLabel lbl) = [AsmPushLabel lbl] ∧
+  exec_stack_op initial_fmp (SOPushOfst lbl off) = [AsmPushOfst lbl off]
 End
 
 (* ===== Execute Full Plan ===== *)
 
 Definition execute_plan_def:
-  execute_plan ops = FLAT (MAP exec_stack_op ops)
+  execute_plan initial_fmp ops = FLAT (MAP (exec_stack_op initial_fmp) ops)
 End

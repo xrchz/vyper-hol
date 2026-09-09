@@ -24,24 +24,20 @@ Ancestors
   list rich_list finite_map arithmetic
 
 (* =========================================================================
-   FOLDL decomposition: emit_input_plan cons
+   Structural decomposition: emit_input_plan arity equations
    ========================================================================= *)
 
-(* 2-element unrolling for pure2 *)
+(* 2-element unrolling for pure2.  The first occurrence is live when op2
+   uses the same variable; the second sees only the original post-liveness. *)
 Theorem emit_input_plan_two:
   !opc op1 op2 nl ps.
     emit_input_plan opc [op1; op2] nl ps =
-    let (ops1, ps1) = emit_one_input opc nl op1 ps in
+    let (ops1, ps1) =
+      emit_one_input opc (operand_vars [op2] ++ nl) op1 ps in
     let (ops2, ps2) = emit_one_input opc nl op2 ps1 in
     (ops1 ++ ops2, ps2)
 Proof
-  rpt gen_tac >>
-  simp[emit_input_plan_def, FOLDL] >>
-  Cases_on `emit_one_input opc nl op1 ps` >>
-  rename1 `(ops1, ps1)` >>
-  Cases_on `emit_one_input opc nl op2 ps1` >>
-  rename1 `(ops2, ps2)` >>
-  simp[]
+  simp[stackPlanGenTheory.emit_input_plan_two]
 QED
 
 (* 1-element for pure1 *)
@@ -49,29 +45,24 @@ Theorem emit_input_plan_one:
   !opc op nl ps.
     emit_input_plan opc [op] nl ps = emit_one_input opc nl op ps
 Proof
-  rpt gen_tac >>
-  simp[emit_input_plan_def, FOLDL] >>
-  Cases_on `emit_one_input opc nl op ps` >> simp[]
+  simp[stackPlanGenTheory.emit_input_plan_one]
 QED
 
 (* 3-element for pure3 *)
 Theorem emit_input_plan_three:
   !opc op1 op2 op3 nl ps.
     emit_input_plan opc [op1; op2; op3] nl ps =
-    let (ops1, ps1) = emit_one_input opc nl op1 ps in
-    let (ops2, ps2) = emit_one_input opc nl op2 ps1 in
+    let (ops1, ps1) =
+      emit_one_input opc (operand_vars [op2; op3] ++ nl) op1 ps in
+    let (ops2, ps2) =
+      emit_one_input opc (operand_vars [op3] ++ nl) op2 ps1 in
     let (ops3, ps3) = emit_one_input opc nl op3 ps2 in
     (ops1 ++ ops2 ++ ops3, ps3)
 Proof
   rpt gen_tac >>
-  simp[emit_input_plan_def, FOLDL] >>
-  Cases_on `emit_one_input opc nl op1 ps` >>
-  rename1 `(ops1, ps1)` >>
-  Cases_on `emit_one_input opc nl op2 ps1` >>
-  rename1 `(ops2, ps2)` >>
-  Cases_on `emit_one_input opc nl op3 ps2` >>
-  rename1 `(ops3, ps3)` >>
-  simp[APPEND_ASSOC]
+  simp[emit_input_plan_def, venomInstTheory.operand_vars_def,
+       dfgDefsTheory.operand_vars_def] >>
+  rpt (pairarg_tac >> gvs[APPEND_ASSOC])
 QED
 
 (* =========================================================================
@@ -268,39 +259,24 @@ Proof
             emit_one_input_label_stack]
 QED
 
-(* Helper: FOLDL stack monotonicity in fully-reduced FST/SND form *)
-Theorem emit_input_foldl_stack_mono[local]:
-  !ops opc nl acc ps.
-    LENGTH (SND (FOLDL (\(acc_ops, ps) op.
-               (acc_ops ++ FST (emit_one_input opc nl op ps),
-                SND (emit_one_input opc nl op ps)))
-             (acc, ps) ops)).ps_stack >=
-    LENGTH ps.ps_stack
-Proof
-  Induct >> simp[] >> rpt gen_tac >>
-  SUBGOAL_THEN ``LENGTH (SND (FOLDL (\(acc_ops,ps) op.
-             (acc_ops ++ FST (emit_one_input opc nl op ps),
-              SND (emit_one_input opc nl op ps)))
-           (acc ++ FST (emit_one_input opc nl h ps),
-            SND (emit_one_input opc nl h ps)) ops)).ps_stack >=
-   LENGTH (SND (emit_one_input opc nl h ps)).ps_stack``
-    ASSUME_TAC >- metis_tac[] >>
-  SUBGOAL_THEN ``LENGTH (SND (emit_one_input opc nl h ps)).ps_stack >=
-   LENGTH ps.ps_stack`` ASSUME_TAC
-  >- metis_tac[emit_one_input_stack_mono] >>
-  decide_tac
-QED
-
 Theorem emit_input_plan_stack_mono:
   !opc ops nl ps.
     LENGTH (SND (emit_input_plan opc ops nl ps)).ps_stack >=
     LENGTH ps.ps_stack
 Proof
+  gen_tac >> Induct
+  >- simp[emit_input_plan_def] >>
   rpt gen_tac >>
-  PURE_REWRITE_TAC[emit_input_plan_def] >>
-  CONV_TAC (DEPTH_CONV (REWR_CONV LET_THM)) >>
-  CONV_TAC (DEPTH_CONV PairRules.PBETA_CONV) >>
-  metis_tac[emit_input_foldl_stack_mono]
+  Cases_on `emit_one_input opc (operand_vars ops ++ nl) h ps` >>
+  rename1 `emit_one_input _ _ h _ = (h_ops, ps1)` >>
+  Cases_on `emit_input_plan opc ops nl ps1` >>
+  rename1 `emit_input_plan _ ops _ _ = (rest_ops, ps2)` >>
+  `LENGTH ps1.ps_stack >= LENGTH ps.ps_stack` by
+    (qspecl_then [`opc`, `operand_vars ops ++ nl`, `h`, `ps`]
+       mp_tac emit_one_input_stack_mono >> simp[]) >>
+  `LENGTH ps2.ps_stack >= LENGTH ps1.ps_stack` by
+    (first_x_assum (qspecl_then [`nl`, `ps1`] mp_tac) >> simp[]) >>
+  gvs[emit_input_plan_def] >> decide_tac
 QED
 
 (* =========================================================================
@@ -317,11 +293,11 @@ Theorem emit_one_input_sim:
     (!l. op = Label l ==> IS_SOME (FLOOKUP lo l)) /\
     emit_one_input opc nl op ps = (ops, ps') /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
     ?st'.
-      asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st = AsmOK st' /\
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st' /\
       venom_asm_rel lo ps' vs st' /\
-      st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt gen_tac >> strip_tac >>
   (* Key: keep equation emit_one_input ... = (ops, ps') intact.
@@ -349,7 +325,7 @@ Proof
        mp_tac emit_one_input_state_bridge >>
      (impl_tac >- ASM_REWRITE_TAC[]) >> gvs[]) >>
   (* Apply simple_prefix_venom_asm_rel *)
-  qspecl_then [`ops`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
+  qspecl_then [`ops`, `initial_fmp`, `lo`, `o2pc`, `prog`, `ps`, `vs`, `st`]
     mp_tac simple_prefix_venom_asm_rel >>
   (impl_tac >- ASM_REWRITE_TAC[]) >> strip_tac >>
   qexists_tac `st'` >> ASM_REWRITE_TAC[] >>
@@ -358,33 +334,4 @@ Proof
   qexists_tac `apply_simple_ops lo ops ps` >>
   ASM_REWRITE_TAC[]
 QED
-
-(* =========================================================================
-   Bridge: emit_input_plan = plan_steps (emit_one_input ...)
-   ========================================================================= *)
-
-(* The FOLDL in emit_input_plan matches plan_steps with the right body *)
-Theorem emit_input_foldl_body_eq[local]:
-  !opc nl.
-    foldl_body (\op ps. emit_one_input opc nl op ps) =
-    (\(acc_ops, ps) op.
-      let (step_ops, ps') = emit_one_input opc nl op ps in
-      (acc_ops ++ step_ops, ps'))
-Proof
-  rpt gen_tac >>
-  simp[FUN_EQ_THM, foldl_body_def, pairTheory.FORALL_PROD]
-QED
-
-(* emit_input_plan = plan_steps with emit_one_input as step function *)
-Theorem emit_input_plan_eq_plan_steps:
-  !opc operands nl ps.
-    emit_input_plan opc operands nl ps =
-    plan_steps (\op ps. emit_one_input opc nl op ps) operands ps
-Proof
-  rpt gen_tac >>
-  REWRITE_TAC[emit_input_plan_def] >>
-  REWRITE_TAC[GSYM emit_input_foldl_body_eq] >>
-  REWRITE_TAC[GSYM plan_steps_eq_foldl]
-QED
-
 

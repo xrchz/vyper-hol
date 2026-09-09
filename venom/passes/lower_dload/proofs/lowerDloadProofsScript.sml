@@ -123,7 +123,7 @@ val term_ok_jump_tac =
   PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
   ASM_REWRITE_TAC[opcode_case_def] >>
   simp[eval_operands_def, eval_operand_def, AllCaseEqs()] >>
-  rpt CASE_TAC >> gvs[];
+  rpt CASE_TAC >> gvs[] >> TRY pairarg_tac >> gvs[];
 
 Theorem step_inst_base_ok_terminator_jump[local]:
   !inst s s'.
@@ -138,6 +138,10 @@ Proof
   >- term_ok_jump_tac
   >- term_ok_jump_tac
   >- term_ok_jump_tac
+  >- term_ok_jump_tac
+  >- (term_ok_jump_tac >> rpt strip_tac >>
+      Cases_on `pack_dret_dynamic s.vs_call_entry_fmp pairs s` >>
+      Cases_on `r` >> gvs[])
   >- term_ok_jump_tac
   >- term_ok_jump_tac
   >- term_ok_jump_tac
@@ -172,11 +176,16 @@ Theorem step_term_ok_preserves[local]:
     s'.vs_labels = s.vs_labels
 Proof
   rpt strip_tac >>
-  Cases_on `inst.inst_opcode` >> fs[is_terminator_def] >>
+  `inst.inst_opcode <> INVOKE` by
+    (strip_tac >> gvs[is_terminator_def]) >>
+  `step_inst_base inst s = OK s'` by
+    metis_tac[step_inst_non_invoke] >>
+  `inst.inst_opcode = JMP \/ inst.inst_opcode = JNZ \/
+   inst.inst_opcode = DJMP` by
+    metis_tac[step_inst_base_ok_terminator_jump] >>
   metis_tac[step_jmp_ok_preserves_layout,
             step_jnz_ok_preserves_layout,
-            step_djmp_ok_preserves_layout,
-            step_non_ok_terminator]
+            step_djmp_ok_preserves_layout]
 QED
 
 Theorem step_inst_preserves_layout:
@@ -428,6 +437,68 @@ Proof
   rw[ld_ok_def, ld_equiv_def, halt_state_def, lookup_var_def]
 QED
 
+(* pack_dret_dynamic changes only memory, which ld_ok deliberately omits. *)
+Theorem ld_ok_mcopy[local]:
+  !vars dst src sz s1 s2.
+    ld_ok vars s1 s2 ==>
+    ld_ok vars (mcopy dst src sz s1) (mcopy dst src sz s2)
+Proof
+  rw[ld_ok_def, mcopy_def, write_memory_with_expansion_def, lookup_var_def]
+QED
+
+Theorem pack_dret_dynamic_ld_ok[local]:
+  !pairs cursor s1 s2 ptrs1 final1 t1 ptrs2 final2 t2 vars.
+    ld_ok vars s1 s2 /\
+    pack_dret_dynamic cursor pairs s1 = (ptrs1,final1,t1) /\
+    pack_dret_dynamic cursor pairs s2 = (ptrs2,final2,t2) ==>
+    ptrs1 = ptrs2 /\ final1 = final2 /\ ld_ok vars t1 t2
+Proof
+  Induct_on `pairs`
+  >- simp[pack_dret_dynamic_def]
+  >> rpt gen_tac >> PairCases_on `h`
+  >> simp[Once pack_dret_dynamic_def]
+  >> Cases_on `pack_dret_dynamic
+       (cursor + n2w (ceil32 (w2n h1))) pairs
+       (mcopy (w2n cursor) (w2n h0) (w2n h1) s1)`
+  >> Cases_on `r`
+  >> Cases_on `pack_dret_dynamic
+       (cursor + n2w (ceil32 (w2n h1))) pairs
+       (mcopy (w2n cursor) (w2n h0) (w2n h1) s2)`
+  >> Cases_on `r` >> gvs[pack_dret_dynamic_def]
+  >> rpt strip_tac >> gvs[]
+  >> `ld_ok vars
+        (mcopy (w2n cursor) (w2n h0) (w2n h1) s1)
+        (mcopy (w2n cursor) (w2n h0) (w2n h1) s2)` by
+       (irule ld_ok_mcopy >> simp[])
+  >> first_x_assum drule_all
+  >> simp[]
+QED
+Theorem pack_dret_dynamic_lift_result[local]:
+  !vars pairs s1 s2 vals.
+    ld_ok vars s1 s2 ==>
+    lift_result (ld_ok vars) (ld_equiv vars) (ld_equiv vars)
+      ((\(ptrs,final_cursor,s').
+          IntRet <|iret_values := vals ++ ptrs;
+                   iret_adopt_fmp := SOME final_cursor|>
+            (s' with vs_fmp := final_cursor))
+       (pack_dret_dynamic s1.vs_call_entry_fmp pairs s1))
+      ((\(ptrs,final_cursor,s').
+          IntRet <|iret_values := vals ++ ptrs;
+                   iret_adopt_fmp := SOME final_cursor|>
+            (s' with vs_fmp := final_cursor))
+       (pack_dret_dynamic s2.vs_call_entry_fmp pairs s2))
+Proof
+  rpt strip_tac >>
+  `s1.vs_call_entry_fmp = s2.vs_call_entry_fmp` by fs[ld_ok_def] >>
+  Cases_on `pack_dret_dynamic s1.vs_call_entry_fmp pairs s1` >>
+  Cases_on `r` >>
+  Cases_on `pack_dret_dynamic s2.vs_call_entry_fmp pairs s2` >>
+  Cases_on `r` >> gvs[] >>
+  drule_all pack_dret_dynamic_ld_ok >> strip_tac >>
+  gvs[lift_result_def, ld_ok_def, ld_equiv_def, lookup_var_def]
+QED
+
+
 (* Shared tactic for terminator opcodes: unfold, case-split, derive
    operand agreements, close with ld_ok/ld_equiv helpers *)
 (* Key lemma: under ld_ok, eval_operand agrees for non-exempt vars *)
@@ -453,7 +524,17 @@ val ld_derive_fields_tac =
   `s2.vs_accounts = s1.vs_accounts` by fs[ld_ok_def] >>
   `s2.vs_call_ctx = s1.vs_call_ctx` by fs[ld_ok_def];
 
+Theorem ld_ok_implies_ld_equiv_and_fmp[local]:
+  !vars s1 s2.
+    ld_ok vars s1 s2 ==>
+    ld_equiv vars s1 s2 /\ s1.vs_fmp = s2.vs_fmp
+Proof
+  rw[ld_ok_def, ld_equiv_def]
+QED
+
 val ld_close_tac =
+  TRY (irule ld_ok_implies_ld_equiv_and_fmp >> simp[] >> NO_TAC) >>
+  TRY (irule pack_dret_dynamic_lift_result >> simp[] >> NO_TAC) >>
   TRY (irule ld_ok_jump_to >> simp[] >> NO_TAC) >>
   TRY (irule ld_equiv_halt_state >> simp[] >> NO_TAC) >>
   TRY (irule ld_equiv_set_returndata_halt >> simp[] >> NO_TAC) >>
@@ -521,6 +602,56 @@ Proof
   gvs[lift_result_def] >> ld_close_tac
 QED
 
+Theorem step_inst_base_ld_ok_dret_success[local]:
+  !inst s1 s2 vars q r vals pairs.
+    inst.inst_opcode = DRET /\ inst.inst_outputs = [] /\
+    ld_ok vars s1 s2 /\
+    parse_dret_shape inst = SOME (q,r) /\
+    eval_operands inst.inst_operands s1 = SOME vals /\
+    eval_operands inst.inst_operands s2 = SOME vals /\
+    pair_dret_words (TAKE (2 * r) (DROP (1 + q) vals)) = SOME pairs ==>
+    lift_result (ld_ok vars) (ld_equiv vars) (ld_equiv vars)
+      (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt strip_tac >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[] >> simp[] >>
+  qspecl_then [`vars`, `pairs`, `s1`, `s2`, `TAKE q (DROP 1 vals)`]
+    mp_tac pack_dret_dynamic_lift_result >> simp[]
+QED
+
+Theorem step_inst_base_ld_ok_dret[local]:
+  !inst s1 s2 vars.
+    inst.inst_opcode = DRET /\
+    ld_ok vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) ==>
+    lift_result (ld_ok vars) (ld_equiv vars) (ld_equiv vars)
+      (step_inst_base inst s1)
+      (step_inst_base inst s2)
+Proof
+  rpt strip_tac >>
+  ld_derive_agree_tac >>
+  `eval_operands inst.inst_operands s1 =
+   eval_operands inst.inst_operands s2` by
+    (irule eval_operands_agree >> rpt strip_tac >> res_tac) >>
+  reverse (Cases_on `inst.inst_outputs`)
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> simp[lift_result_def]) >>
+  Cases_on `parse_dret_shape inst`
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> simp[lift_result_def]) >>
+  Cases_on `THE (parse_dret_shape inst)` >> gvs[] >>
+  Cases_on `eval_operands inst.inst_operands s2`
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> gvs[lift_result_def]) >>
+  gvs[] >>
+  Cases_on `pair_dret_words
+    (TAKE (2 * r) (DROP (1 + q) x))`
+  >- (PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[] >> gvs[lift_result_def]) >>
+  irule step_inst_base_ld_ok_dret_success >> gvs[]
+QED
+
 Theorem step_inst_base_ld_ok_terminator:
   !inst s1 s2 vars.
     ld_ok vars s1 s2 /\
@@ -540,6 +671,8 @@ Proof
   >- ld_terminator_tac
   >- ld_terminator_tac
   >- ld_terminator_tac
+  >- ld_terminator_tac
+  >- (rpt strip_tac >> irule step_inst_base_ld_ok_dret >> simp[])
   >- ld_terminator_tac
   >- ld_terminator_tac
   >- ld_terminator_tac

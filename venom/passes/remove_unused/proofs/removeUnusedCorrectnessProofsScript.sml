@@ -325,7 +325,8 @@ Proof
         simp[is_terminator_def] >>
         Cases_on `bind_outputs
           (EL s.vs_inst_idx bb.bb_instructions).inst_outputs
-          l' (merge_callee_state s v')` >> simp[]))))
+          i'.iret_values
+          (adopt_return_fmp i' (merge_callee_state s v'))` >> simp[]))))
 QED
 
 (* ===== Cross-context function equivalence ===== *)

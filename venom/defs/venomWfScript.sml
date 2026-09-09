@@ -10,7 +10,7 @@
 
 Theory venomWf
 Ancestors
-  venomInst
+  dretShapeDefs
 
 (* ==========================================================================
    PHI operand well-formedness: alternating (Label, Var) pairs.
@@ -134,9 +134,21 @@ Definition inst_wf_def:
     | NOP => inst.inst_outputs = []
     | PARAM => ∃idx. inst.inst_operands = [Lit idx] ∧
                      LENGTH inst.inst_outputs = 1
-    (* ---- Allocation ---- *)
+    | FMP_PARAM => (∃idx. inst.inst_operands = [Lit idx]) ∧
+                         LENGTH inst.inst_outputs = 1
+    | RETPC_PARAM => (∃idx. inst.inst_operands = [Lit idx]) ∧
+                           LENGTH inst.inst_outputs = 1
+    (* ---- Allocation and frame-memory-pointer operations ---- *)
     | ALLOCA => ∃sz. inst.inst_operands = [Lit sz] ∧
                      LENGTH inst.inst_outputs = 1
+    | DALLOCA => LENGTH inst.inst_operands = 1 ∧
+                 LENGTH inst.inst_outputs = 1
+    | DRET => inst.inst_outputs = [] ∧ IS_SOME (parse_dret_shape inst)
+    | GETFMP => inst.inst_operands = [] ∧ LENGTH inst.inst_outputs = 1
+    | SETFMP => LENGTH inst.inst_operands = 1 ∧ inst.inst_outputs = []
+    | RETFMP => inst.inst_operands <> [] ∧ inst.inst_outputs = []
+    | INITIAL_FMP => inst.inst_operands = [] ∧ LENGTH inst.inst_outputs = 1
+    | BUMP => LENGTH inst.inst_operands = 2 ∧ LENGTH inst.inst_outputs = 2
     (* ---- External calls ---- *)
     | CALL => LENGTH inst.inst_operands = 7 ∧ LENGTH inst.inst_outputs = 1
     | STATICCALL => LENGTH inst.inst_operands = 6 ∧ LENGTH inst.inst_outputs = 1
@@ -144,8 +156,8 @@ Definition inst_wf_def:
     | CREATE => LENGTH inst.inst_operands = 3 ∧ LENGTH inst.inst_outputs = 1
     | CREATE2 => LENGTH inst.inst_operands = 4 ∧ LENGTH inst.inst_outputs = 1
     (* ---- Special ---- *)
-    | OFFSET => ∃op lbl. inst.inst_operands = [op; Label lbl] ∧
-                         LENGTH inst.inst_outputs = 1
+    | OFFSET => ∃v lbl. inst.inst_operands = [Lit v; Label lbl] ∧
+                        LENGTH inst.inst_outputs = 1
     | LOG => ∃tc rest. inst.inst_operands = Lit tc :: rest ∧
                        LENGTH rest = w2n tc + 2 /\ inst.inst_outputs = []
     | SELFDESTRUCT => LENGTH inst.inst_operands = 1 /\ inst.inst_outputs = []
@@ -157,6 +169,18 @@ Definition inst_wf_def:
        arity which can be 0, 1, or more - see check_venom._collect_ret_arities) ---- *)
     | INVOKE => ∃lbl args. inst.inst_operands = Label lbl :: args
 End
+
+Theorem inst_wf_offset_shape:
+  inst_wf inst /\ inst.inst_opcode = OFFSET ==>
+  ?v lbl out.
+    inst.inst_operands = [Lit v; Label lbl] /\
+    inst.inst_outputs = [out]
+Proof
+  rpt strip_tac >>
+  gvs[inst_wf_def] >>
+  Cases_on `inst.inst_outputs` >> gvs[] >>
+  Cases_on `t` >> gvs[]
+QED
 
 (* The function has an entry block (fn_blocks is non-empty). *)
 Definition fn_has_entry_def:
@@ -381,5 +405,3 @@ Definition venom_wf_def:
     (∀fn. MEM fn ctx.ctx_functions ==>
           wf_function fn ∧ fn_inst_wf fn)
 End
-
-

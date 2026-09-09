@@ -183,11 +183,11 @@ Theorem pop_one_step_sim[local]:
     (case stack_get_depth v ps.ps_stack of
        NONE => T | SOME d => d <= 16) /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
     ?st1.
-      asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st = AsmOK st1 /\
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st1 /\
       venom_asm_rel lo ps1 vs st1 /\
-      st1.as_pc = st.as_pc + LENGTH (execute_plan ops)
+      st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   rpt gen_tac >> strip_tac >>
   qpat_x_assum `pop_one_step _ _ = _` mp_tac >>
@@ -219,7 +219,7 @@ Resume pop_one_step_sim[dist0]:
     fs[stack_get_depth_def] >> imp_res_tac stack_find_bound >> fs[],
     ALL_TAC
   ] >>
-  qspecl_then [`lo`, `o2pc`, `prog`, `SOPop 1`, `ps`, `vs`, `st`]
+  qspecl_then [`initial_fmp`, `lo`, `o2pc`, `prog`, `SOPop 1`, `ps`, `vs`, `st`]
     mp_tac simple_op_venom_asm_rel >>
   (impl_tac
   THENL [
@@ -248,11 +248,11 @@ Resume pop_one_step_sim[distN]:
   SUBGOAL_THEN ``~(dist > (16:num))`` STRIP_ASSUME_TAC
   THENL [decide_tac, ALL_TAC] >>
   qspecl_then [`dist`, `ps`, `swap_ops`, `ps2`, `lo`, `o2pc`, `prog`,
-               `vs`, `st`] mp_tac do_swap_venom_asm_rel >>
+               `vs`, `st`] mp_tac do_swap_venom_asm_rel_small >>
   (impl_tac THENL [simp[], ALL_TAC]) >> strip_tac >>
   rename1 `asm_steps _ _ _ _ st = AsmOK st2` >>
   (* SOPop 1 *)
-  qspecl_then [`lo`, `o2pc`, `prog`, `SOPop 1`, `ps2`, `vs`, `st2`]
+  qspecl_then [`initial_fmp`, `lo`, `o2pc`, `prog`, `SOPop 1`, `ps2`, `vs`, `st2`]
     mp_tac simple_op_venom_asm_rel >>
   (impl_tac THENL [
     conj_tac THENL [EVAL_TAC, ALL_TAC] >>
@@ -280,7 +280,7 @@ Finalise pop_one_step_sim;
    Invariant: LENGTH ps.ps_stack <= 17 ensures all depths <= 16. *)
 Theorem pop_one_step_sim_ok_inv[local]:
   !lo o2pc prog vs.
-    step_sim_ok_inv (\ps. LENGTH ps.ps_stack <= 17)
+    step_sim_ok_inv initial_fmp (\ps. LENGTH ps.ps_stack <= 17)
       pop_one_step lo o2pc prog vs
 Proof
   simp[step_sim_ok_inv_def] >>
@@ -315,11 +315,11 @@ val pop_foldl_sim = save_thm("pop_foldl_sim", prove(
     venom_asm_rel lo ps vs st /\
     LENGTH ps.ps_stack <= 17 /\
     FOLDL pop_foldl_body ([], ps) sorted = (ops_acc, ps2) /\
-    asm_block_at prog st.as_pc (execute_plan ops_acc) ==>
-    ?st1. asm_steps lo o2pc prog (LENGTH (execute_plan ops_acc)) st =
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops_acc) ==>
+    ?st1. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops_acc)) st =
             AsmOK st1 /\
           venom_asm_rel lo ps2 vs st1 /\
-          st1.as_pc = st.as_pc + LENGTH (execute_plan ops_acc)``,
+          st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops_acc)``,
   rpt strip_tac >>
   mp_tac (INST_TYPE [alpha |-> ``:operand``] plan_steps_sim_inv) >>
   disch_then (qspecl_then [`sorted`, `pop_one_step`,
@@ -340,11 +340,11 @@ Theorem popmany_individual_sim:
     popmany_individual to_pop ps = (clean_ops, ps2) /\
     LENGTH ps.ps_stack <= 17 /\
     venom_asm_rel lo ps vs as /\
-    asm_block_at prog as.as_pc (execute_plan clean_ops) ==>
+    asm_block_at prog as.as_pc (execute_plan initial_fmp clean_ops) ==>
     ?n as'.
       asm_steps lo o2pc prog n as = AsmOK as' /\
       venom_asm_rel lo ps2 vs as' /\
-      as'.as_pc = as.as_pc + LENGTH (execute_plan clean_ops)
+      as'.as_pc = as.as_pc + LENGTH (execute_plan initial_fmp clean_ops)
 Proof
   rpt gen_tac >> strip_tac >>
   qpat_x_assum `popmany_individual _ _ = _` mp_tac >>
@@ -354,16 +354,67 @@ Proof
   metis_tac[]
 QED
 
+Theorem popmany_plan_top_two_sim:
+  !drop_a drop_b a b stk ps ops ps' lo o2pc prog vs st.
+    ps.ps_stack = stk ++ [a; b] /\
+    a <> b /\
+    popmany_plan
+      (if drop_a then a :: if drop_b then [b] else []
+       else if drop_b then [b] else []) ps = (ops,ps') /\
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?n st'.
+      asm_steps lo o2pc prog n st = AsmOK st' /\
+      venom_asm_rel lo ps' vs st' /\
+      st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
+Proof
+  rpt gen_tac >> strip_tac >>
+  qexists_tac `LENGTH (execute_plan initial_fmp ops)` >>
+  Cases_on `drop_a` >> Cases_on `drop_b` >>
+  gvs[popmany_plan_def, popmany_individual_def, is_contiguous_top_def,
+      stack_get_depth_def, stack_find_def, do_swap_def, LET_THM,
+      REVERSE_APPEND, stack_pop_def, TAKE_APPEND1, TAKE_APPEND2,
+      sortingTheory.QSORT_DEF,
+      sortingTheory.PARTITION_DEF, sortingTheory.PART_DEF] >>
+  once_rewrite_tac[arithmeticTheory.ADD_COMM] >>
+  TRY (rename1 `asm_block_at _ _ (execute_plan _ [])` >>
+       qexists_tac `st` >>
+       gvs[asm_steps_def, execute_plan_def] >> NO_TAC) >>
+  TRY (rename1 `asm_block_at _ _ (execute_plan _ [SOPop 1])` >>
+       qspecl_then [`[SOPop 1]`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+                    `ps`, `vs`, `st`] mp_tac simple_prefix_venom_asm_rel >>
+       (impl_tac >-
+         gvs[prefix_wf_def, stack_op_wf_def, is_simple_stack_op_def]) >>
+       strip_tac >> qexists_tac `st'` >>
+       gvs[apply_simple_ops_def, apply_simple_op_def, stack_pop_def,
+           TAKE_APPEND1, TAKE_APPEND2] >> NO_TAC) >>
+  TRY (rename1 `asm_block_at _ _ (execute_plan _ [SOSwap 1; SOPop 1])` >>
+       qspecl_then [`[SOSwap 1; SOPop 1]`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+                    `ps`, `vs`, `st`] mp_tac simple_prefix_venom_asm_rel >>
+       (impl_tac >-
+         gvs[prefix_wf_def, stack_op_wf_def, is_simple_stack_op_def]) >>
+       strip_tac >> qexists_tac `st'` >>
+       gvs[apply_simple_ops_def, apply_simple_op_def, stack_swap_def,
+           stack_pop_def, TAKE_APPEND1, TAKE_APPEND2] >> NO_TAC) >>
+  rename1 `asm_block_at _ _ (execute_plan _ [SOPop 1; SOPop 1])` >>
+  qspecl_then [`[SOPop 1; SOPop 1]`, `initial_fmp`, `lo`, `o2pc`, `prog`,
+               `ps`, `vs`, `st`] mp_tac simple_prefix_venom_asm_rel >>
+  (impl_tac >-
+    gvs[prefix_wf_def, stack_op_wf_def, is_simple_stack_op_def]) >>
+  strip_tac >> qexists_tac `st'` >>
+  gvs[apply_simple_ops_def, apply_simple_op_def, stack_pop_def,
+      TAKE_APPEND1, TAKE_APPEND2]
+QED
 Theorem clean_ops_sim:
   !label_offsets offset_to_pc prog liveness cfg fn bb ps ps2 clean_ops vs as.
     venom_asm_rel label_offsets ps vs as /\
     LENGTH ps.ps_stack <= 17 /\
     clean_stack_plan liveness cfg fn bb ps = (clean_ops, ps2) /\
-    asm_block_at prog as.as_pc (execute_plan clean_ops) ==>
+    asm_block_at prog as.as_pc (execute_plan initial_fmp clean_ops) ==>
     ?n as'.
       asm_steps label_offsets offset_to_pc prog n as = AsmOK as' /\
       venom_asm_rel label_offsets ps2 vs as' /\
-      as'.as_pc = as.as_pc + LENGTH (execute_plan clean_ops)
+      as'.as_pc = as.as_pc + LENGTH (execute_plan initial_fmp clean_ops)
 Proof
   rpt gen_tac >> strip_tac >>
   qpat_x_assum `clean_stack_plan _ _ _ _ _ = _` mp_tac >>
@@ -434,7 +485,7 @@ QED
 
 Resume clean_ops_sim[contiguous]:
   once_rewrite_tac[arithmeticTheory.ADD_COMM] >>
-  qexistsl_tac [`LENGTH (execute_plan clean_ops)`] >>
+  qexistsl_tac [`LENGTH (execute_plan initial_fmp clean_ops)`] >>
   irule popmany_plan_contiguous_sim >>
   conj_tac >- ASM_REWRITE_TAC[] >>
   qexistsl_tac [`ps`, `MAP Var to_pop`] >>

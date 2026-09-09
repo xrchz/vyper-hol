@@ -2088,19 +2088,34 @@ Proof
   Cases_on `extract_labels ops` >> gvs[]
 QED
 
+Theorem parse_dret_shape_subst_label_map[local]:
+  !m inst.
+    parse_dret_shape
+      (inst with inst_operands := MAP (subst_label_map_op m) inst.inst_operands) =
+    parse_dret_shape inst
+Proof
+  rpt gen_tac >>
+  Cases_on `inst.inst_operands` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def] >>
+  Cases_on `h` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def, subst_label_map_op_def] >>
+  BasicProvers.EVERY_CASE_TAC >> gvs[]
+QED
+
 (* Non-jumping terminator: step_inst_base unchanged when map labels are
    disjoint from vs_labels. Uses eval_operands_subst_label_map. *)
 val non_jump_term_tac =
   rpt strip_tac >>
   simp[subst_block_labels_inst_def, is_block_label_opcode_def,
-       is_terminator_def, subst_label_map_inst_def] >>
+       is_terminator_def, subst_label_map_inst_def,
+       parse_dret_shape_subst_label_map] >>
   simp[Once step_inst_base_def] >>
   simp[Once step_inst_base_def] >>
   `eval_operands (MAP (subst_label_map_op m) inst.inst_operands) st =
    eval_operands inst.inst_operands st` by (
     irule eval_operands_subst_label_map >> fs[]) >>
-  simp[] >>
-  Cases_on `inst.inst_operands` >> simp[] >>
+  simp[parse_dret_shape_subst_label_map] >>
+  Cases_on `inst.inst_operands` >> simp[parse_dret_shape_subst_label_map] >>
   TRY (Cases_on `t` >> simp[]) >>
   TRY (Cases_on `t'` >> simp[]) >>
   TRY (
@@ -2129,6 +2144,8 @@ Proof
   >- non_jump_term_tac (* REVERT *)
   >- non_jump_term_tac (* STOP *)
   >- non_jump_term_tac (* SINK *)
+  >- non_jump_term_tac (* DRET *)
+  >- non_jump_term_tac (* RETFMP *)
   >- non_jump_term_tac (* SELFDESTRUCT *)
   >- non_jump_term_tac (* INVALID *)
 QED
@@ -2227,7 +2244,9 @@ Proof
   pop_assum SUBST1_TAC >>
   `!op. eval_operand (subst_label_map_op m op) st = eval_operand op st` by (
     rpt strip_tac >> irule eval_operand_subst_label_map >> simp[]) >>
-  simp[step_inst_base_def, subst_label_map_op_def, is_terminator_def] >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  PURE_REWRITE_TAC[instruction_accfupds] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
   Cases_on `inst.inst_operands` >> simp[subst_label_map_op_def] >>
   Cases_on `t` >> simp[subst_label_map_op_def] >>
   Cases_on `h'` >> simp[subst_label_map_op_def] >>
@@ -2337,7 +2356,7 @@ val term_ok_jump_tac =
   qpat_x_assum `step_inst_base _ _ = OK _` mp_tac >>
   simp[step_inst_base_def, eval_operands_def, eval_operand_def,
        AllCaseEqs()] >>
-  rpt CASE_TAC >> gvs[];
+  rpt CASE_TAC >> gvs[] >> TRY pairarg_tac >> gvs[];
 
 Theorem step_inst_base_ok_terminator_jump[local]:
   !inst s s'.
@@ -2347,11 +2366,18 @@ Theorem step_inst_base_ok_terminator_jump[local]:
     inst.inst_opcode = DJMP
 Proof
   rpt strip_tac >>
-  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
-  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
-  ASM_REWRITE_TAC[step_inst_base_def] >>
-  PURE_REWRITE_TAC[opcode_case_def] >>
-  gvs[AllCaseEqs()]
+  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def]
+  >- term_ok_jump_tac
+  >- term_ok_jump_tac
+  >- term_ok_jump_tac
+  >- term_ok_jump_tac
+  >- term_ok_jump_tac
+  >- (term_ok_jump_tac >> rpt strip_tac >>
+      Cases_on `pack_dret_dynamic s.vs_call_entry_fmp pairs s` >>
+      Cases_on `r` >> gvs[])
+  >- term_ok_jump_tac
+  >- term_ok_jump_tac
+  >- term_ok_jump_tac
 QED
 
 (* Non-jump terminators never return OK *)

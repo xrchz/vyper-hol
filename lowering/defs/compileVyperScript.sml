@@ -31,11 +31,6 @@ Ancestors
   vyperAST
   byte
 
-(* ===== Dispatch Strategy ===== *)
-
-Datatype:
-  dispatch_strategy = Linear | Sparse | Dense
-End
 
 (* ===== Struct Fields Map ===== *)
 
@@ -339,7 +334,7 @@ Definition build_func_info_def:
       FunctionDecl vis _ _ _ fname fargs _ ret _ =>
         if vis = External then rest_map
         else
-          let fn_lbl = "fn_" ++ fname in
+          let fn_lbl = fname in
           let arg_types = MAP SND fargs in
           let ret_mem = type_mem_bytes sft ret in
           let info = compute_func_info (λn. MAP (FST o SND) (sft n))
@@ -373,6 +368,25 @@ Definition min_calldata_size_def:
                     required in
     4 + SUM sizes
 End
+Theorem build_positional_args_single_uint256:
+  !cenv name.
+    build_positional_args cenv [(name, BaseT (UintT 256))] =
+      [(name, T, F, 32, DecPrimWord NoClamp)]
+Proof
+  simp[build_positional_args_def, build_positional_arg_def,
+       is_word_type_def, is_abi_dynamic_def,
+       abi_embedded_static_size_def, abi_static_size_def,
+       type_to_abi_dec_info_def, type_to_abi_clamp_def]
+QED
+
+Theorem min_calldata_size_single_uint256:
+  !cenv name.
+    min_calldata_size cenv [(name, BaseT (UintT 256))] 0 = 36
+Proof
+  simp[min_calldata_size_def, abi_embedded_static_size_def,
+       is_abi_dynamic_def, abi_static_size_def]
+QED
+
 
 (* ===== Storage Layout from AST ===== *)
 
@@ -428,7 +442,8 @@ Definition build_compile_env_def:
           case ALOOKUP (REVERSE (args ++ locals)) n of
             SOME ty => SOME ty
           | NONE => var_type_map n) in
-    <| ce_vars := all_vars;
+    <| ce_target := prague_capabilities;
+       ce_vars := all_vars;
        ce_storage_layout := storage_layout;
        (* TODO: NONE = main module. For multi-module (imports), should
           be SOME src_id. Currently single-module only. *)
@@ -457,6 +472,70 @@ Definition build_compile_env_def:
     |> : compile_env
 End
 
+Theorem build_compile_env_ce_target[simp]:
+  !tops vis mut func_name args ret_type (body : stmt list) use_trans.
+    (build_compile_env tops vis mut func_name args ret_type body use_trans).
+      ce_target = prague_capabilities
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem build_compile_env_ce_struct_fields:
+  !tops vis mut func_name args ret_type (body : stmt list) use_trans.
+    (build_compile_env tops vis mut func_name args ret_type body use_trans).
+      ce_struct_fields = make_struct_fields_map tops
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem build_compile_env_ce_func_info:
+  !tops vis mut func_name args ret_type (body : stmt list) use_trans.
+    (build_compile_env tops vis mut func_name args ret_type body use_trans).
+      ce_func_info =
+    build_func_info (get_struct_fields (make_struct_fields_map tops)) tops
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem build_compile_env_external_single_uint_arg_lookup:
+  !tops mut func_name arg_name ret_type (body : stmt list) use_trans.
+    add_module_var_locations tops FEMPTY = FEMPTY /\
+    collect_locals body = [] ==>
+    FLOOKUP
+      (build_compile_env tops External mut func_name
+         [(arg_name, BaseT (UintT 256))] ret_type body use_trans).ce_vars
+      arg_name = SOME (MemLoc 0 32)
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[allocate_args_def, type_mem_bytes_def])
+  >> EVAL_TAC
+QED
+
+Theorem build_compile_env_external_single_uint_arg_no_return_pc:
+  !tops mut func_name arg_name ret_type (body : stmt list) use_trans.
+    add_module_var_locations tops FEMPTY = FEMPTY /\
+    collect_locals body = [] /\
+    arg_name <> "__return_pc__" ==>
+    FLOOKUP
+      (build_compile_env tops External mut func_name
+         [(arg_name, BaseT (UintT 256))] ret_type body use_trans).ce_vars
+      "__return_pc__" = NONE
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[allocate_args_def, type_mem_bytes_def])
+  >> EVAL_TAC
+  >> gvs[]
+QED
+
+
 Definition update_cenv_ret_abi_def:
   update_cenv_ret_abi cenv ret_type =
     let enc_info = type_to_abi_enc_info cenv.ce_struct_fields cenv ret_type in
@@ -471,6 +550,38 @@ Definition update_cenv_nonreentrant_def:
   update_cenv_nonreentrant cenv is_nr nkey use_trans is_view =
     cenv with ce_nonreentrant := (is_nr, nkey, use_trans, is_view)
 End
+
+Theorem update_cenv_ret_abi_ce_target[simp]:
+  (update_cenv_ret_abi cenv ret_type).ce_target = cenv.ce_target
+Proof
+  simp[update_cenv_ret_abi_def]
+QED
+
+Theorem update_cenv_nonreentrant_ce_target[simp]:
+  (update_cenv_nonreentrant cenv nr nkey use_trans is_view).ce_target =
+  cenv.ce_target
+Proof
+  simp[update_cenv_nonreentrant_def]
+QED
+Theorem compile_env_ce_raw_return_fupd[simp]:
+  (cenv with ce_raw_return := rr).ce_target = cenv.ce_target
+Proof
+  Cases_on `cenv` >> simp[]
+QED
+
+Theorem compile_env_ce_is_ctor_fupd[simp]:
+  (cenv with ce_is_ctor := is_ctor).ce_target = cenv.ce_target
+Proof
+  Cases_on `cenv` >> simp[]
+QED
+
+
+Theorem compile_env_target_update_id:
+  cenv.ce_target = target ==>
+  (cenv with ce_target := target) = cenv
+Proof
+  Cases_on `cenv` >> simp[compile_env_component_equality]
+QED
 
 (* ===== Selector Construction ===== *)
 
@@ -523,9 +634,9 @@ End
                     F in runtime context.
    Mirrors Python: _generate_internal_function(is_ctor_context=...) *)
 Definition package_internal_fn_def:
-  package_internal_fn tops use_trans nkey_map is_ctor_context
+  package_internal_fn tops use_trans nkey_map is_ctor_context immutables_len
     (mut, nr, rr, fname, fargs, _, ret, body) =
-    let fn_lbl = "fn_" ++ fname in
+    let fn_lbl = fname in
     let sft = make_struct_fields_map tops in
     let sft_fn = get_struct_fields sft in
     let sft_types = (λname. MAP (FST o SND) (sft_fn name)) in
@@ -544,9 +655,74 @@ Definition package_internal_fn_def:
     let params = ZIP (MAP FST fargs, pvs) in
     (fn_lbl, cenv_final, params, has_ret_buf,
      nr, nkey, use_trans, is_view,
-     is_ctor_context, 0n,
+     is_ctor_context, (if is_ctor_context then immutables_len else 0n),
      body, SOME ret)
 End
+
+Theorem package_internal_fn_call_label:
+  !tops use_trans nkey_map is_ctor_context immutables_len
+   mut nr rr fname fargs dflts ret body.
+    FST (package_internal_fn tops use_trans nkey_map is_ctor_context
+           immutables_len
+           (mut, nr, rr, fname, fargs, dflts, ret, body)) =
+    nsid_to_string (NONE, fname)
+Proof
+  simp[package_internal_fn_def, nsid_to_string_def]
+QED
+
+Definition source_internal_fn_descriptor_def:
+  source_internal_fn_descriptor tops
+    (mut, nr, rr, fname, fargs, dflts, ret, body) =
+    let sft_types =
+      (\name. MAP (FST o SND)
+                    (get_struct_fields (make_struct_fields_map tops) name)) in
+    let rc = returns_stack_count sft_types ret in
+    (fname, rc = 0 /\ ret <> NoneT, rc)
+End
+
+Theorem build_compile_env_returns_count:
+  !tops vis mut fname fargs ret body use_trans.
+    (build_compile_env tops vis mut fname fargs ret body use_trans).
+      ce_returns_count =
+    returns_stack_count
+      (\name. MAP (FST o SND)
+                    (get_struct_fields (make_struct_fields_map tops) name)) ret
+Proof
+  rpt strip_tac
+  >> simp[build_compile_env_def]
+  >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem package_internal_fn_descriptor:
+  !tops use_trans nkey_map is_ctor_context immutables_len
+   mut nr rr fname fargs dflts ret body.
+    internal_fn_descriptors
+      [package_internal_fn tops use_trans nkey_map is_ctor_context
+         immutables_len
+         (mut, nr, rr, fname, fargs, dflts, ret, body)] =
+    [source_internal_fn_descriptor tops
+       (mut, nr, rr, fname, fargs, dflts, ret, body)]
+Proof
+  simp[internal_fn_descriptors_def, package_internal_fn_def,
+       source_internal_fn_descriptor_def, update_cenv_nonreentrant_def,
+       build_compile_env_returns_count]
+QED
+
+Theorem internal_fn_descriptors_MAP_package_internal_fn:
+  !fs tops use_trans nkey_map is_ctor_context immutables_len.
+    internal_fn_descriptors
+      (MAP (package_internal_fn tops use_trans nkey_map is_ctor_context
+              immutables_len) fs) =
+    MAP (source_internal_fn_descriptor tops) fs
+Proof
+  Induct
+  >- simp[internal_fn_descriptors_def]
+  >> Cases_on `h`
+  >> PairCases_on `r`
+  >> simp[internal_fn_descriptors_def, package_internal_fn_def,
+          source_internal_fn_descriptor_def, update_cenv_nonreentrant_def,
+          build_compile_env_returns_count]
+QED
 
 Definition package_fallback_fn_def:
   package_fallback_fn tops use_trans nkey_map NONE = NONE ∧
@@ -615,145 +791,313 @@ Definition build_dense_entry_info_def:
           else rest_map n)) /\
   build_dense_entry_info _ _ = K ("", 0n, F)
 End
-
-Definition compile_vyper_def:
-  compile_vyper (tops : toplevel list)
-                (pipeline : venom_context -> venom_context)
-                dispatch_strategy =
-    let tenv = type_env tops in
-    let sft = make_struct_fields_map tops in
-    let sft_fn = get_struct_fields sft in
-    let immutables_len = compute_immutables_len sft_fn tops in
-    let nkey_map = assign_nkeys tops 0 in
-    let use_trans = F in
-    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
-    (* Phase 1: Runtime *)
-    let selectors = build_selectors tenv ext_fns in
-    let external_fns = MAP (package_external_fn tops use_trans nkey_map)
-                           ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F)
-                              int_fns in
-    let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
-    let entry_label = "__entry" in
-    (* Compute dispatch parameters based on strategy *)
-    let method_ids = MAP FST selectors in
-    let entry_info = build_dense_entry_info selectors external_fns in
-    let (bucket_count, fn_meta_bytes, dense_buckets) =
-      (case dispatch_strategy of
-         Dense =>
-           let min_cds_values = MAP (λ(_, _, _, min_cds, _, _, _, _, _, _, _).
-                                      min_cds) external_fns in
-           let fn_mb = compute_fn_metadata_bytes min_cds_values in
-           (case generate_dense_jumptable_info method_ids of
-              NONE => (1, fn_mb, ([] : dense_bucket list))
-            | SOME (nb, buckets) => (nb, fn_mb, buckets))
-       | Sparse =>
-           let (nb, _) = generate_sparse_jumptable_buckets method_ids in
-           (nb, 0, [])
-       | Linear =>
-           (0, 0, [])) in
-    let (runtime_ctx, runtime_data) =
-      run_lowering selectors external_fns runtime_int_fns
-        fallback_fn dispatch_strategy bucket_count fn_meta_bytes
-        dense_buckets entry_info entry_label in
-    let runtime_ctx' = pipeline runtime_ctx in
-    case codegen runtime_ctx' FEMPTY runtime_data of
-      NONE => NONE
-    | SOME runtime_bytecode =>
-    (* Phase 2: Deploy *)
-    let has_constructor = IS_SOME ctor_fn in
-    (* Deploy internal fns: is_ctor_context = T
-       Conservative: all internal fns are ctor-reachable.
-       TODO: compute actual reachability from __init__. *)
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T)
-                             int_fns in
-    let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
-         ctor_trans, ctor_body, ctor_ret) =
-      case ctor_fn of
-        SOME cf => package_constructor tops use_trans nkey_map cf
-      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
-                 F, F, 0n, F, ([] : stmt list), NoneT) in
-    let (deploy_ctx, deploy_data_base) =
-      run_deploy_lowering has_constructor
-        (LENGTH runtime_bytecode) immutables_len
-        ctor_args 0 deploy_int_fns
-        ctor_cenv ctor_body ctor_payable ctor_nr
-        ctor_nkey ctor_trans "__deploy" in
-    let deploy_ctx' = pipeline deploy_ctx in
-    let deploy_data =
-      deploy_data_base ++
-      [<| ds_label := "runtime_begin";
-          ds_items := [DataBytes runtime_bytecode] |>] in
-    case codegen deploy_ctx' FEMPTY deploy_data of
-      NONE => NONE
-    | SOME deploy_bytecode =>
-      SOME (deploy_bytecode, runtime_bytecode)
+(* Install the one resolved target into packaged function environments without
+   changing source-visible ABI metadata or any other package field. *)
+Definition set_external_package_target_def:
+  set_external_package_target target
+    (entry_lbl, cenv, pos_args, min_cds, is_payable, nr, nkey, use_trans,
+     is_view, body, ret) =
+    (entry_lbl, cenv with ce_target := target, pos_args, min_cds, is_payable,
+     nr, nkey, use_trans, is_view, body, ret)
 End
 
-Definition compile_vyper_eval_def:
-  compile_vyper_eval fuel (tops : toplevel list)
-                     (pipeline : venom_context -> venom_context)
-                     dispatch_strategy =
+Definition set_internal_package_target_def:
+  set_internal_package_target target
+    (fn_lbl, cenv, params, has_ret_buf, nr, nkey, use_trans, is_view,
+     is_ctor, immutables_len, body, ret) =
+    (fn_lbl, cenv with ce_target := target, params, has_ret_buf, nr, nkey,
+     use_trans, is_view, is_ctor, immutables_len, body, ret)
+End
+
+Definition set_fallback_package_target_def:
+  set_fallback_package_target target NONE = NONE /\
+  set_fallback_package_target target
+    (SOME (cenv, is_payable, nr, nkey, use_trans, is_view, body, ret)) =
+    SOME (cenv with ce_target := target, is_payable, nr, nkey, use_trans,
+          is_view, body, ret)
+End
+
+Definition set_constructor_package_target_def:
+  set_constructor_package_target target
+    (cenv, pos_args, is_payable, nr, nkey, use_trans, body, ret) =
+    (cenv with ce_target := target, pos_args, is_payable, nr, nkey,
+     use_trans, body, ret)
+End
+
+Theorem internal_fn_descriptors_set_internal_package_target:
+  internal_fn_descriptors
+    (MAP (set_internal_package_target target) internal_fns) =
+  internal_fn_descriptors internal_fns
+Proof
+  Induct_on `internal_fns`
+  >- simp[internal_fn_descriptors_def]
+  >> Cases_on `h` >> PairCases_on `r`
+  >> simp[set_internal_package_target_def, internal_fn_descriptors_def]
+QED
+
+Theorem set_internal_package_target_capability:
+  set_internal_package_target target
+    (fn_lbl, cenv, params, has_ret_buf, nr, nkey, use_trans, is_view,
+     is_ctor, immutables_len, body, ret) =
+    (fn_lbl, cenv', params, has_ret_buf, nr, nkey, use_trans, is_view,
+     is_ctor, immutables_len, body, ret) ==>
+  cenv'.ce_target = target /\
+  cenv'.ce_returns_count = cenv.ce_returns_count
+Proof
+  simp[set_internal_package_target_def] >> strip_tac >> gvs[]
+QED
+
+Theorem set_external_package_target_prague[simp]:
+  set_external_package_target prague_capabilities
+    (package_external_fn tops use_trans nkey_map source) =
+  package_external_fn tops use_trans nkey_map source
+Proof
+  Cases_on `source` >> PairCases_on `r` >>
+  simp[set_external_package_target_def, package_external_fn_def] >>
+  irule compile_env_target_update_id >> IF_CASES_TAC >> simp[]
+QED
+
+Theorem set_internal_package_target_prague[simp]:
+  set_internal_package_target prague_capabilities
+    (package_internal_fn tops use_trans nkey_map is_ctor immutables_len source) =
+  package_internal_fn tops use_trans nkey_map is_ctor immutables_len source
+Proof
+  Cases_on `source` >> PairCases_on `r` >>
+  simp[set_internal_package_target_def, package_internal_fn_def] >>
+  irule compile_env_target_update_id >> simp[]
+QED
+
+Theorem set_fallback_package_target_prague[simp]:
+  set_fallback_package_target prague_capabilities
+    (package_fallback_fn tops use_trans nkey_map source) =
+  package_fallback_fn tops use_trans nkey_map source
+Proof
+  Cases_on `source`
+  >- simp[set_fallback_package_target_def, package_fallback_fn_def]
+  >> Cases_on `x` >> PairCases_on `r` >>
+  simp[set_fallback_package_target_def, package_fallback_fn_def] >>
+  irule compile_env_target_update_id >> simp[]
+QED
+
+Theorem set_constructor_package_target_prague[simp]:
+  set_constructor_package_target prague_capabilities
+    (package_constructor tops use_trans nkey_map source) =
+  package_constructor tops use_trans nkey_map source
+Proof
+  Cases_on `source` >> PairCases_on `r` >>
+  simp[set_constructor_package_target_def, package_constructor_def] >>
+  irule compile_env_target_update_id >> simp[]
+QED
+
+Theorem set_external_package_target_all[simp]:
+  set_external_package_target (K T)
+    (package_external_fn tops use_trans nkey_map source) =
+  package_external_fn tops use_trans nkey_map source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem set_internal_package_target_all[simp]:
+  set_internal_package_target (K T)
+    (package_internal_fn tops use_trans nkey_map is_ctor immutables_len source) =
+  package_internal_fn tops use_trans nkey_map is_ctor immutables_len source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem set_fallback_package_target_all[simp]:
+  set_fallback_package_target (K T)
+    (package_fallback_fn tops use_trans nkey_map source) =
+  package_fallback_fn tops use_trans nkey_map source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+Theorem set_constructor_package_target_all[simp]:
+  set_constructor_package_target (K T)
+    (package_constructor tops use_trans nkey_map source) =
+  package_constructor tops use_trans nkey_map source
+Proof
+  rw[GSYM venomPolicyTypesTheory.prague_capabilities_def]
+QED
+
+
+(* ===== Policy-driven complete-unit lowering ===== *)
+
+(* Package runtime metadata from source, but keep the raw lowering result atomic.
+   The checked raw boundary accepts only Linear O1 policies, so no independent
+   dispatch or jumptable choice is exposed here. *)
+Definition lower_vyper_runtime_unit_def:
+  lower_vyper_runtime_unit (tops : toplevel list)
+                           (rpolicy : resolved_compiler_policy) =
     let tenv = type_env tops in
+    let nkey_map = assign_nkeys tops 0 in
+    let use_trans = F in
+    let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
+    let selectors = build_selectors tenv ext_fns in
+    let external_fns =
+          MAP (set_external_package_target rpolicy.rpol_target o
+               package_external_fn tops use_trans nkey_map) ext_fns in
+    let runtime_int_fns =
+          MAP (set_internal_package_target rpolicy.rpol_target o
+               package_internal_fn tops use_trans nkey_map F 0) int_fns in
+    let fallback_fn =
+          set_fallback_package_target rpolicy.rpol_target
+            (package_fallback_fn tops use_trans nkey_map fb_fn) in
+    let entry_info = build_dense_entry_info selectors external_fns in
+    run_lowering selectors external_fns runtime_int_fns fallback_fn
+      rpolicy 0 0 ([] : dense_bucket list) entry_info "__entry"
+End
+
+(* Deploy lowering receives the actual runtime bytes.  Their size and data
+   section are both owned by run_deploy_lowering. *)
+Definition lower_vyper_deploy_unit_def:
+  lower_vyper_deploy_unit (tops : toplevel list)
+                          (rpolicy : resolved_compiler_policy)
+                          (runtime_bytecode : byte list) =
     let sft = make_struct_fields_map tops in
     let sft_fn = get_struct_fields sft in
     let immutables_len = compute_immutables_len sft_fn tops in
     let nkey_map = assign_nkeys tops 0 in
     let use_trans = F in
     let (ext_fns, int_fns, fb_fn, ctor_fn) = classify_functions tops in
-    let selectors = build_selectors tenv ext_fns in
-    let external_fns = MAP (package_external_fn tops use_trans nkey_map)
-                           ext_fns in
-    let runtime_int_fns = MAP (package_internal_fn tops use_trans nkey_map F)
-                              int_fns in
-    let fallback_fn = package_fallback_fn tops use_trans nkey_map fb_fn in
-    let entry_label = "__entry" in
-    let method_ids = MAP FST selectors in
-    let entry_info = build_dense_entry_info selectors external_fns in
-    let (bucket_count, fn_meta_bytes, dense_buckets) =
-      (case dispatch_strategy of
-         Dense =>
-           let min_cds_values = MAP (λ(_, _, _, min_cds, _, _, _, _, _, _, _).
-                                      min_cds) external_fns in
-           let fn_mb = compute_fn_metadata_bytes min_cds_values in
-           (case generate_dense_jumptable_info method_ids of
-              NONE => (1, fn_mb, ([] : dense_bucket list))
-            | SOME (nb, buckets) => (nb, fn_mb, buckets))
-       | Sparse =>
-           let (nb, _) = generate_sparse_jumptable_buckets method_ids in
-           (nb, 0, [])
-       | Linear =>
-           (0, 0, [])) in
-    let (runtime_ctx, runtime_data) =
-      run_lowering selectors external_fns runtime_int_fns
-        fallback_fn dispatch_strategy bucket_count fn_meta_bytes
-        dense_buckets entry_info entry_label in
-    let runtime_ctx' = pipeline runtime_ctx in
-    case codegen_fuel fuel runtime_ctx' FEMPTY runtime_data of
-      NONE => NONE
-    | SOME runtime_bytecode =>
     let has_constructor = IS_SOME ctor_fn in
-    let deploy_int_fns = MAP (package_internal_fn tops use_trans nkey_map T)
-                             int_fns in
+    let deploy_int_fns =
+          if has_constructor then
+            MAP (set_internal_package_target rpolicy.rpol_target o
+                 package_internal_fn tops use_trans nkey_map T immutables_len)
+                int_fns
+          else [] in
     let (ctor_cenv, ctor_args, ctor_payable, ctor_nr, ctor_nkey,
          ctor_trans, ctor_body, ctor_ret) =
-      case ctor_fn of
-        SOME cf => package_constructor tops use_trans nkey_map cf
-      | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
-                 F, F, 0n, F, ([] : stmt list), NoneT) in
-    let (deploy_ctx, deploy_data_base) =
-      run_deploy_lowering has_constructor
-        (LENGTH runtime_bytecode) immutables_len
-        ctor_args 0 deploy_int_fns
-        ctor_cenv ctor_body ctor_payable ctor_nr
-        ctor_nkey ctor_trans "__deploy" in
-    let deploy_ctx' = pipeline deploy_ctx in
-    let deploy_data =
-      deploy_data_base ++
-      [<| ds_label := "runtime_begin";
-          ds_items := [DataBytes runtime_bytecode] |>] in
-    case codegen_fuel fuel deploy_ctx' FEMPTY deploy_data of
+      set_constructor_package_target rpolicy.rpol_target
+        (case ctor_fn of
+           SOME cf => package_constructor tops use_trans nkey_map cf
+         | NONE => (ARB, ([] : (string # bool # bool # num # abi_dec_info) list),
+                    F, F, 0n, F, ([] : stmt list), NoneT)) in
+    run_deploy_lowering has_constructor rpolicy runtime_bytecode
+      immutables_len ctor_args 0 deploy_int_fns ctor_cenv ctor_body
+      ctor_payable ctor_nr ctor_nkey ctor_trans "__deploy"
+End
+
+
+(* Run one complete compilation unit through a resolved-policy pipeline and
+   reject any output whose final-assembly policy disagrees with that policy. *)
+Definition checked_unit_pipeline_def:
+  checked_unit_pipeline
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (rpolicy : resolved_compiler_policy)
+    (unit : compilation_unit) =
+    case pipeline rpolicy unit of
       NONE => NONE
-    | SOME deploy_bytecode =>
-      SOME (deploy_bytecode, runtime_bytecode)
+    | SOME out =>
+        if out.po_final_assembly <> rpolicy.rpol_final_assembly then NONE
+        else finalize_codegen finalizer rpolicy out.po_unit
+End
+
+(* Bounded planning is deliberately exposed only as a testing boundary. *)
+Definition finalize_codegen_fuel_for_testing_def:
+  finalize_codegen_fuel_for_testing fuel
+    (finalizer : assembly_finalizer)
+    (rpolicy : resolved_compiler_policy)
+    (unit : compilation_unit) =
+    case codegen_assembly_fuel fuel rpolicy unit of
+      NONE => NONE
+    | SOME asm =>
+        case finalizer rpolicy asm of
+          NONE => NONE
+        | SOME finalized_asm =>
+            if assembly_target_safe rpolicy.rpol_target finalized_asm
+            then SOME (assemble finalized_asm)
+            else NONE
+End
+
+Definition checked_unit_pipeline_fuel_for_testing_def:
+  checked_unit_pipeline_fuel_for_testing fuel
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (rpolicy : resolved_compiler_policy)
+    (unit : compilation_unit) =
+    case pipeline rpolicy unit of
+      NONE => NONE
+    | SOME out =>
+        if out.po_final_assembly <> rpolicy.rpol_final_assembly then NONE
+        else finalize_codegen_fuel_for_testing fuel finalizer rpolicy out.po_unit
+End
+
+Definition compile_vyper_with_def:
+  compile_vyper_with
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (policy : compiler_policy)
+    (tops : toplevel list) =
+    case resolve_o1_policy policy of
+      NONE => NONE
+    | SOME rpolicy =>
+        case lower_vyper_runtime_unit tops rpolicy of
+          NONE => NONE
+        | SOME runtime_unit =>
+            case checked_unit_pipeline pipeline finalizer rpolicy runtime_unit of
+              NONE => NONE
+            | SOME runtime_bytecode =>
+                case lower_vyper_deploy_unit tops rpolicy runtime_bytecode of
+                  NONE => NONE
+                | SOME deploy_unit =>
+                    case checked_unit_pipeline pipeline finalizer rpolicy deploy_unit of
+                      NONE => NONE
+                    | SOME deploy_bytecode =>
+                        SOME (deploy_bytecode, runtime_bytecode)
+End
+
+(* The bounded wrapper mirrors the normative unit sequencing exactly, but is
+   named explicitly as a testing-only interface. *)
+Definition compile_vyper_fuel_for_testing_def:
+  compile_vyper_fuel_for_testing fuel
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    (finalizer : assembly_finalizer)
+    (policy : compiler_policy)
+    (tops : toplevel list) =
+    case resolve_o1_policy policy of
+      NONE => NONE
+    | SOME rpolicy =>
+        case lower_vyper_runtime_unit tops rpolicy of
+          NONE => NONE
+        | SOME runtime_unit =>
+            case checked_unit_pipeline_fuel_for_testing fuel pipeline finalizer
+                    rpolicy runtime_unit of
+              NONE => NONE
+            | SOME runtime_bytecode =>
+                case lower_vyper_deploy_unit tops rpolicy runtime_bytecode of
+                  NONE => NONE
+                | SOME deploy_unit =>
+                    case checked_unit_pipeline_fuel_for_testing fuel pipeline finalizer
+                            rpolicy deploy_unit of
+                      NONE => NONE
+                    | SOME deploy_bytecode =>
+                        SOME (deploy_bytecode, runtime_bytecode)
+End
+
+(* The shortest generic compiler fixes the exact O1 pipeline but leaves target
+   policy and final assembly implementation explicit. *)
+Definition compile_vyper_def:
+  compile_vyper (finalizer : assembly_finalizer)
+                (policy : compiler_policy)
+                (tops : toplevel list) =
+    compile_vyper_with
+      (\rpolicy unit.
+         run_venom_pipeline (K T) (K T) (K T)
+           rpolicy o1_pipeline_spec unit)
+      finalizer policy tops
+End
+
+(* Prague is only the exact O1 target specialization. *)
+Definition compile_vyper_o1_def:
+  compile_vyper_o1 (finalizer : assembly_finalizer)
+                   (tops : toplevel list) =
+    compile_vyper finalizer (o1_policy prague_capabilities) tops
 End

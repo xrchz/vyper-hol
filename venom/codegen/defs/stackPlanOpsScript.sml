@@ -125,10 +125,12 @@ End
 (* ===== Reduce Depth via Selective Spilling ===== *)
 
 Definition select_spill_candidate_def:
-  select_spill_candidate stk forbidden target_dist =
-    (* max_offset excludes the target position itself *)
+  select_spill_candidate stk forbidden target_dist target_len =
+    (* max_offset excludes the target position itself; target_len keeps every
+       spill below the already-finalized target window. *)
     let max_offset = MIN 16 (MIN (target_dist - 1) (LENGTH stk - 1)) in
     FIND (λoffset.
+      target_len ≤ offset ∧
       let item = stack_peek offset stk in
       ¬ MEM item forbidden ∧ is_var_operand item)
     (GENLIST I (max_offset + 1))
@@ -136,20 +138,23 @@ End
 
 (* fuel = stack height, guarantees termination *)
 Definition reduce_depth_plan_def:
-  reduce_depth_plan 0 target_ops target_op ps = ([] : stack_op list, ps) ∧
-  reduce_depth_plan (SUC fuel) target_ops target_op ps =
-    case stack_get_depth target_op ps.ps_stack of
-      NONE => ([], ps)
-    | SOME dist =>
-        if dist ≤ 16 then ([], ps)
-        else
-          case select_spill_candidate ps.ps_stack target_ops dist of
-            NONE => ([], ps)
-          | SOME cand_dist =>
-              let (spill_ops, ps') = do_spill_at cand_dist ps in
-              let (rest_ops, ps'') =
-                reduce_depth_plan fuel target_ops target_op ps' in
-              (spill_ops ++ rest_ops, ps'')
+  reduce_depth_plan 0 target_ops target_op f target_len ps =
+    ([] : stack_op list, ps) ∧
+  reduce_depth_plan (SUC fuel) target_ops target_op f target_len ps =
+    if f + 1 < target_len then ([], ps)
+    else
+      case stack_get_unfixed_depth target_op f target_len ps.ps_stack of
+        NONE => ([], ps)
+      | SOME dist =>
+          if dist ≤ 16 then ([], ps)
+          else
+            case select_spill_candidate ps.ps_stack target_ops dist target_len of
+              NONE => ([], ps)
+            | SOME cand_dist =>
+                let (spill_ops, ps') = do_spill_at cand_dist ps in
+                let (rest_ops, ps'') =
+                  reduce_depth_plan fuel target_ops target_op f target_len ps' in
+                (spill_ops ++ rest_ops, ps'')
 End
 
 (* ===== Stack Reorder ===== *)
@@ -159,22 +164,23 @@ Definition reorder_one_def:
   reorder_one dfg target_ops target_idx op ps =
     let num_ops = LENGTH target_ops in
     let final_dist = num_ops - 1 - target_idx in
-    (* Find or restore operand *)
+    (* Find an unfixed occurrence, or restore a spilled copy at unprotected TOS. *)
     let (restore_ops, ps1) =
-      case stack_get_depth op ps.ps_stack of
+      case stack_get_unfixed_depth op final_dist num_ops ps.ps_stack of
         SOME _ => ([] : stack_op list, ps)
       | NONE =>
           (case FLOOKUP ps.ps_spilled op of
             SOME _ => do_restore op ps
           | NONE => ([], ps)) in
-    case stack_get_depth op ps1.ps_stack of
+    case stack_get_unfixed_depth op final_dist num_ops ps1.ps_stack of
       NONE => (restore_ops, ps1)
     | SOME dist =>
         let (reduce_ops, ps2) =
           if dist > 16
-          then reduce_depth_plan (LENGTH ps1.ps_stack) target_ops op ps1
+          then reduce_depth_plan (LENGTH ps1.ps_stack) target_ops op
+                 final_dist num_ops ps1
           else ([] : stack_op list, ps1) in
-        case stack_get_depth op ps2.ps_stack of
+        case stack_get_unfixed_depth op final_dist num_ops ps2.ps_stack of
           NONE => (restore_ops ++ reduce_ops, ps2)
         | SOME dist' =>
             if dist' = final_dist then

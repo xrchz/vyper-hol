@@ -12,8 +12,8 @@
 
 Theory stackPlanGen
 Ancestors
-  stackPlanOps livenessDefs cfgDefs venomWf passSharedDefs
-  list relation pair pred_set arithmetic
+  stackPlanOps livenessDefs cfgDefs venomWf passSharedDefs staticLayoutDefs
+  callLayoutDefs list relation pair pred_set arithmetic
 
 (* =========================================================================
    Emit Input Operands
@@ -48,12 +48,57 @@ Definition emit_one_input_def:
 End
 
 Definition emit_input_plan_def:
-  emit_input_plan opc ops next_liveness ps =
-    FOLDL (λ(acc_ops, ps) op.
-      let (step_ops, ps') = emit_one_input opc next_liveness op ps in
-      (acc_ops ++ step_ops, ps'))
-    ([] : stack_op list, ps) ops
+  emit_input_plan opc [] next_liveness ps = ([] : stack_op list, ps) /\
+  emit_input_plan opc (op :: rest) next_liveness ps =
+    let (step_ops, ps1) =
+      emit_one_input opc (operand_vars rest ++ next_liveness) op ps in
+    let (rest_ops, ps2) = emit_input_plan opc rest next_liveness ps1 in
+      (step_ops ++ rest_ops, ps2)
 End
+
+Theorem emit_input_plan_nil[simp]:
+  !opc next_liveness ps.
+    emit_input_plan opc [] next_liveness ps = ([], ps)
+Proof
+  simp[emit_input_plan_def]
+QED
+
+Theorem emit_input_plan_cons:
+  !opc op rest next_liveness ps.
+    emit_input_plan opc (op :: rest) next_liveness ps =
+      let (step_ops, ps1) =
+        emit_one_input opc (operand_vars rest ++ next_liveness) op ps in
+      let (rest_ops, ps2) = emit_input_plan opc rest next_liveness ps1 in
+        (step_ops ++ rest_ops, ps2)
+Proof
+  simp[emit_input_plan_def]
+QED
+
+Theorem emit_input_plan_one:
+  !opc op next_liveness ps.
+    emit_input_plan opc [op] next_liveness ps =
+      emit_one_input opc next_liveness op ps
+Proof
+  rpt gen_tac >>
+  simp[emit_input_plan_def, venomInstTheory.operand_vars_def,
+       dfgDefsTheory.operand_vars_def] >>
+  Cases_on `emit_one_input opc next_liveness op ps` >> simp[]
+QED
+
+Theorem emit_input_plan_two:
+  !opc op1 op2 next_liveness ps.
+    emit_input_plan opc [op1; op2] next_liveness ps =
+      let (ops1, ps1) =
+        emit_one_input opc (operand_vars [op2] ++ next_liveness) op1 ps in
+      let (ops2, ps2) = emit_one_input opc next_liveness op2 ps1 in
+        (ops1 ++ ops2, ps2)
+Proof
+  rpt gen_tac >>
+  simp[emit_input_plan_def] >>
+  Cases_on `emit_one_input opc (operand_vars [op2] ++ next_liveness) op1 ps` >>
+  Cases_on `emit_one_input opc next_liveness op2 r` >>
+  simp[venomInstTheory.operand_vars_def, dfgDefsTheory.operand_vars_def]
+QED
 
 (* =========================================================================
    Optimistic Swap
@@ -122,10 +167,25 @@ End
    Per-opcode emission logic.
    ========================================================================= *)
 
+Definition bump_round_word_def:
+  bump_round_word (sz:bytes32) =
+    word_lsl (word_lsr (sz + 31w) 5) 5
+End
+
+Definition bump_emit_ops_def:
+  bump_emit_ops =
+    [SOPush (Lit 31w); SOEmit "ADD";
+     SOPush (Lit 5w); SOEmit "SHR";
+     SOPush (Lit 5w); SOEmit "SHL";
+     SODup 2; SOEmit "ADD"]
+End
+
 Definition generate_emit_ops_def:
   generate_emit_ops inst log_topic_count ps =
     let opc = inst.inst_opcode in
-    case venom_to_evm_name opc of
+    if opc = INITIAL_FMP then ([SOInitialFmp], ps)
+    else if opc = BUMP then (bump_emit_ops, ps)
+    else case venom_to_evm_name opc of
       SOME name => ([SOEmit name], ps)
     | NONE =>
         if opc = JNZ then
@@ -260,13 +320,30 @@ Definition generate_regular_inst_plan_def:
        pop_ops ++ opt_ops, ps10)
 End
 
-(* Opcodes that should never appear at codegen time.
-   These must be eliminated by earlier passes:
-     ALLOCA — eliminated by mem2var / memory layout
-     SINK   — test-only pseudo-instruction
-     DLOAD, DLOADBYTES — lowered by lower_dload pass *)
+(* Raw FMP operations still require lowering before legacy codegen.  Setup
+   operations INITIAL_FMP and BUMP have explicit stack-plan implementations. *)
+Definition is_unlowered_fmp_opcode_def:
+  is_unlowered_fmp_opcode opc ⇔ is_raw_fmp_opcode opc
+End
+
+Definition is_unlowered_internal_call_opcode_def:
+  is_unlowered_internal_call_opcode opc ⇔ F
+End
+
+(* INVOKE is planned directly, but only after decoding its label-headed
+   operand shape.  Context-level call-layout checks establish callee
+   resolution and exact input/output arities before codegen. *)
+Definition invoke_operands_wf_def:
+  invoke_operands_wf inst ⇔
+    case inst.inst_operands of Label callee_name :: args => T | _ => F
+End
+
+(* Opcodes that should never appear at legacy codegen time. *)
 Definition is_pre_codegen_opcode_def:
-  is_pre_codegen_opcode opc ⇔ MEM opc [ALLOCA; SINK; DLOAD; DLOADBYTES]
+  is_pre_codegen_opcode opc ⇔
+    MEM opc [ALLOCA; SINK; DLOAD; DLOADBYTES; MEMTOP] ∨
+    is_unlowered_fmp_opcode opc ∨
+    is_unlowered_internal_call_opcode opc
 End
 
 (* =========================================================================
@@ -276,12 +353,15 @@ End
 
 (* Per-instruction: no pre-codegen opcodes *)
 Definition codegen_ready_inst_def:
-  codegen_ready_inst inst ⇔ ¬ is_pre_codegen_opcode inst.inst_opcode
+  codegen_ready_inst inst ⇔
+    ¬ is_pre_codegen_opcode inst.inst_opcode ∧
+    (inst.inst_opcode = INVOKE ==> invoke_operands_wf inst)
 End
 
 (* Per-function: structural WF + SSA + SUE + normalized CFG + no bad opcodes *)
 Definition codegen_ready_fn_def:
   codegen_ready_fn fn ⇔
+    canonical_param_prefix fn ∧
     wf_function fn ∧
     fn_inst_wf fn ∧
     ssa_form fn ∧
@@ -302,11 +382,12 @@ Definition generate_inst_plan_def:
   generate_inst_plan liveness dfg cfg fn inst
     next_liveness is_halting next_is_terminator cur_bb_label ps =
     if is_pre_codegen_opcode inst.inst_opcode then NONE
+    else if inst.inst_opcode = INVOKE /\ ~invoke_operands_wf inst then NONE
     else if inst.inst_opcode = PHI then
       SOME (generate_phi_plan inst next_liveness ps)
     else if inst.inst_opcode = OFFSET then
       SOME (generate_offset_plan inst ps)
-    else if inst.inst_opcode = PARAM then
+    else if is_param_opcode inst.inst_opcode then
       SOME ([] : stack_op list, ps)
     else if inst.inst_opcode = NOP then
       SOME ([], ps)
@@ -317,6 +398,31 @@ Definition generate_inst_plan_def:
               next_liveness is_halting next_is_terminator cur_bb_label ps)
 End
 
+Theorem generate_inst_plan_pre_codegen_none:
+  is_pre_codegen_opcode inst.inst_opcode ==>
+  generate_inst_plan liveness dfg cfg fn inst next_liveness is_halting
+    next_is_terminator cur_bb_label ps = NONE
+Proof
+  simp[generate_inst_plan_def]
+QED
+
+Theorem generate_inst_plan_malformed_invoke_none:
+  inst.inst_opcode = INVOKE /\ ~invoke_operands_wf inst ==>
+  generate_inst_plan liveness dfg cfg fn inst next_liveness is_halting
+    next_is_terminator cur_bb_label ps = NONE
+Proof
+  simp[generate_inst_plan_def]
+QED
+
+Theorem invoke_operands_wf_eval:
+  invoke_operands_wf (mk_inst 0 INVOKE [Label "callee"] []) /\
+  invoke_operands_wf (mk_inst 1 INVOKE [Label "callee"; Lit 7w] ["out"]) /\
+  ~invoke_operands_wf (mk_inst 2 INVOKE [] []) /\
+  ~invoke_operands_wf (mk_inst 3 INVOKE [Lit 0w] [])
+Proof
+  EVAL_TAC
+QED
+
 (* =========================================================================
    Prepare Stack for Function Entry
    Port of _prepare_stack_for_function
@@ -325,7 +431,7 @@ End
 Definition get_params_def:
   get_params [] = ([] : instruction list) ∧
   get_params (inst :: rest) =
-    if inst.inst_opcode = PARAM then inst :: get_params rest
+    if is_param_opcode inst.inst_opcode then inst :: get_params rest
     else []
 End
 
@@ -348,7 +454,7 @@ Definition prepare_params_plan_def:
       let (pop_ops, ps'') = popmany_plan to_pop_vars ps' in
       (* Python: _optimistic_swap checks if the next instruction (first
          non-param) is a terminator. Compute that here. *)
-      let first_non_param = FIND (λinst. inst.inst_opcode ≠ PARAM)
+      let first_non_param = FIND (λinst. ¬is_param_opcode inst.inst_opcode)
             entry.bb_instructions in
       let next_is_term = case first_non_param of
           SOME inst => is_terminator inst.inst_opcode
@@ -391,7 +497,7 @@ End
 
 Definition non_param_insts_def:
   non_param_insts bb =
-    FILTER (λinst. inst.inst_opcode ≠ PARAM) bb.bb_instructions
+    FILTER (λinst. ¬is_param_opcode inst.inst_opcode) bb.bb_instructions
 End
 
 (* =========================================================================
@@ -760,12 +866,73 @@ val (fn_plan_aux_eqs, fn_plan_aux_ind) =
 Theorem generate_fn_plan_aux_def[compute] = fn_plan_aux_eqs
 Theorem generate_fn_plan_aux_ind = fn_plan_aux_ind
 
-(* Visited monotonicity: set visited ⊆ set visited' after fn_plan_aux *)
+Theorem visited_subset_cons:
+  !lbl visited. set visited SUBSET set (lbl :: visited)
+Proof
+  simp[SUBSET_DEF]
+QED
+
+(* Visited monotonicity for the clean mutually recursive functions. *)
+Theorem generate_plan_visited_mono:
+  (!liveness dfg cfg fn worklist visited ps ops visited' ps'.
+     generate_fn_plan_aux liveness dfg cfg fn worklist visited ps =
+       SOME (ops,visited',ps') ==>
+     set visited SUBSET set visited') /\
+  (!liveness dfg cfg fn saved_stack saved_spilled succs visited ps ops
+      visited' ps'.
+     generate_succs_plan liveness dfg cfg fn saved_stack saved_spilled
+       succs visited ps = SOME (ops,visited',ps') ==>
+     set visited SUBSET set visited')
+Proof
+  ho_match_mp_tac generate_fn_plan_aux_ind >> rpt conj_tac
+  >- (rpt gen_tac >> simp[Once generate_fn_plan_aux_def])
+  >- (rpt gen_tac >> strip_tac >>
+      Cases_on `MEM lbl visited`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> Cases_on `lookup_block lbl fn.fn_blocks`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `lookup_block lbl fn.fn_blocks = SOME bb` >>
+      Cases_on `generate_block_plan liveness dfg cfg fn bb ps`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `generate_block_plan liveness dfg cfg fn bb ps = SOME bp` >>
+      PairCases_on `bp` >>
+      Cases_on `generate_succs_plan liveness dfg cfg fn bp1.ps_stack
+                  bp1.ps_spilled (cfg_succs_of cfg lbl) (lbl::visited) bp1`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `generate_succs_plan _ _ _ _ _ _ _ _ _ = SOME sr` >>
+      PairCases_on `sr` >>
+      Cases_on `generate_fn_plan_aux liveness dfg cfg fn worklist sr1 sr2`
+      >- gvs[Once generate_fn_plan_aux_def]
+      >> rename1 `generate_fn_plan_aux _ _ _ _ _ _ _ = SOME rr` >>
+      PairCases_on `rr` >>
+      gvs[Once generate_fn_plan_aux_def] >>
+      irule SUBSET_TRANS >> qexists `set (lbl::visited)` >> conj_tac
+      >- (MATCH_ACCEPT_TAC visited_subset_cons)
+      >> irule SUBSET_TRANS >> qexists `set sr1` >> conj_tac >> simp[])
+  >- (rpt gen_tac >> simp[Once generate_fn_plan_aux_def])
+  >> rpt gen_tac >> strip_tac >>
+     Cases_on `generate_fn_plan_aux liveness dfg cfg fn [succ] visited
+                 (ps with <| ps_stack := saved_stack;
+                             ps_spilled := saved_spilled |>)`
+     >- gvs[Once (cj 4 generate_fn_plan_aux_def)]
+     >> rename1 `generate_fn_plan_aux _ _ _ _ _ _ _ = SOME sr` >>
+     PairCases_on `sr` >>
+     Cases_on `generate_succs_plan liveness dfg cfg fn saved_stack
+                 saved_spilled succs sr1
+                 (ps with <| ps_alloc := sr2.ps_alloc;
+                             ps_label_counter := sr2.ps_label_counter |>)`
+     >- gvs[Once (cj 4 generate_fn_plan_aux_def)]
+     >> rename1 `generate_succs_plan _ _ _ _ _ _ _ _ _ = SOME rr` >>
+     PairCases_on `rr` >>
+     gvs[Once (cj 4 generate_fn_plan_aux_def)] >>
+     irule SUBSET_TRANS >> qexists `set sr1` >> conj_tac >> simp[]
+QED
+
 Theorem generate_fn_plan_aux_visited_mono =
-  REWRITE_RULE [GSYM fn_plan_aux_def] fn_plan_mono_inl
+  CONJUNCT1 generate_plan_visited_mono
 
 Theorem generate_succs_plan_visited_mono =
-  REWRITE_RULE [GSYM fn_plan_aux_def] fn_plan_mono_inr
+  CONJUNCT2 generate_plan_visited_mono
 
 Definition generate_fn_plan_aux_fuel_def:
   generate_fn_plan_aux_fuel 0 liveness dfg cfg fn worklist visited ps =
@@ -833,31 +1000,35 @@ End
    ========================================================================= *)
 
 Definition generate_fn_plan_def:
-  generate_fn_plan fn fn_eom (lbl_ctr : num) =
-    let liveness = liveness_analyze fn in
-    let dfg = dfg_build_function fn in
-    let cfg = cfg_analyze fn in
-    let ps = (init_plan_state fn_eom) with ps_label_counter := lbl_ctr in
-    case fn_entry_label fn of
-      NONE => SOME ([] : stack_op list, ps)
-    | SOME lbl =>
-        case generate_fn_plan_aux liveness dfg cfg fn [lbl] [] ps of
-          NONE => NONE
-        | SOME (ops, _, ps') => SOME (ops, ps')
+  generate_fn_plan fn spill_base (lbl_ctr : num) =
+    if ¬canonical_param_prefix fn then NONE
+    else
+      let liveness = liveness_analyze fn in
+      let dfg = dfg_build_function fn in
+      let cfg = cfg_analyze fn in
+      let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
+      case fn_entry_label fn of
+        NONE => SOME ([] : stack_op list, ps)
+      | SOME lbl =>
+          case generate_fn_plan_aux liveness dfg cfg fn [lbl] [] ps of
+            NONE => NONE
+          | SOME (ops, _, ps') => SOME (ops, ps')
 End
 
 Definition generate_fn_plan_fuel_def:
-  generate_fn_plan_fuel fuel fn fn_eom (lbl_ctr : num) =
-    let liveness = liveness_analyze_fuel fuel fn in
-    let dfg = dfg_build_function fn in
-    let cfg = cfg_analyze fn in
-    let ps = (init_plan_state fn_eom) with ps_label_counter := lbl_ctr in
-    case fn_entry_label fn of
-      NONE => SOME ([] : stack_op list, ps)
-    | SOME lbl =>
-        case generate_fn_plan_aux_fuel fuel liveness dfg cfg fn [lbl] [] ps of
-          NONE => NONE
-        | SOME (ops, _, ps') => SOME (ops, ps')
+  generate_fn_plan_fuel fuel fn spill_base (lbl_ctr : num) =
+    if ¬canonical_param_prefix fn then NONE
+    else
+      let liveness = liveness_analyze_fuel fuel fn in
+      let dfg = dfg_build_function fn in
+      let cfg = cfg_analyze fn in
+      let ps = (init_plan_state spill_base) with ps_label_counter := lbl_ctr in
+      case fn_entry_label fn of
+        NONE => SOME ([] : stack_op list, ps)
+      | SOME lbl =>
+          case generate_fn_plan_aux_fuel fuel liveness dfg cfg fn [lbl] [] ps of
+            NONE => NONE
+          | SOME (ops, _, ps') => SOME (ops, ps')
 End
 
 Definition revert_postamble_def:
@@ -865,40 +1036,119 @@ Definition revert_postamble_def:
     [SOLabel "revert"; SOPush (Lit 0w); SOEmit "DUP1"; SOEmit "REVERT"]
 End
 
-Definition generate_context_plan_def:
-  generate_context_plan ctx fn_eom_map =
-    let result =
-      FOLDL (λacc fn.
-        case acc of
-          NONE => NONE
-        | SOME (ops, lbl_ctr) =>
-          let eom = case FLOOKUP fn_eom_map fn.fn_name of
-            SOME v => v | NONE => 0 in
-          case generate_fn_plan fn eom lbl_ctr of
-            NONE => NONE
-          | SOME (fn_ops, ps) =>
-              SOME (ops ++ fn_ops, ps.ps_label_counter))
-      (SOME ([] : stack_op list, 0)) ctx.ctx_functions in
-    case result of
+Definition collect_fn_eoms_def:
+  (collect_fn_eoms [] = SOME ([] : num list)) /\
+  (collect_fn_eoms (fn::fns) =
+    case fn.fn_eom of
       NONE => NONE
-    | SOME (all_ops, _) => SOME (all_ops ++ revert_postamble)
+    | SOME eom =>
+        case collect_fn_eoms fns of
+          NONE => NONE
+        | SOME eoms => SOME (eom::eoms))
+End
+
+Definition max_live_eom_def:
+  max_live_eom ctx =
+    if ~reserved_intervals_wf ctx.ctx_global_reserved then NONE else
+    case global_reserved_end ctx.ctx_global_reserved 0 of
+      NONE => NONE
+    | SOME global_end =>
+        OPTION_MAP (FOLDL MAX global_end)
+                   (collect_fn_eoms ctx.ctx_functions)
+End
+
+Definition generate_context_regions_def:
+  (generate_context_regions gen [] acc = SOME acc) /\
+  (generate_context_regions gen (fn::fns) acc =
+    let spill_base = acc.cpa_next_spill_base in
+    case gen fn spill_base acc.cpa_label_counter of
+      NONE => NONE
+    | SOME (fn_ops,ps) =>
+        let spill_end = ps.ps_alloc.sa_next_offset in
+        let region = <|
+          sr_fn_name := fn.fn_name;
+          sr_spill_base := spill_base;
+          sr_spill_end := spill_end;
+          sr_plan := fn_ops
+        |> in
+        if spill_plan_in_region spill_base spill_end fn_ops then
+          let peak =
+            if spill_base < spill_end then
+              MAX acc.cpa_peak_spill_end spill_end
+            else acc.cpa_peak_spill_end in
+          generate_context_regions gen fns
+            (acc with <|
+              cpa_regions := SNOC region acc.cpa_regions;
+              cpa_label_counter := ps.ps_label_counter;
+              cpa_next_spill_base := spill_end;
+              cpa_peak_spill_end := peak
+            |>)
+        else NONE)
+End
+
+Definition finish_context_plan_def:
+  finish_context_plan max_eom acc = <|
+    cp_regions := acc.cpa_regions;
+    cp_max_static_eom := max_eom;
+    cp_peak_spill_end := acc.cpa_peak_spill_end;
+    cp_initial_fmp := ceil32
+      (MAX max_eom acc.cpa_peak_spill_end)
+  |>
+End
+
+Definition generate_context_plan_with_def:
+  generate_context_plan_with gen ctx =
+    case max_live_eom ctx of
+      NONE => NONE
+    | SOME max_eom =>
+        let init = <|
+          cpa_regions := [];
+          cpa_label_counter := 0;
+          cpa_next_spill_base := max_eom;
+          cpa_peak_spill_end := 0
+        |> in
+        case generate_context_regions gen ctx.ctx_functions init of
+          NONE => NONE
+        | SOME acc =>
+            let cp = finish_context_plan max_eom acc in
+            if cp.cp_initial_fmp < dimword (:256)
+            then SOME cp else NONE
+End
+
+Definition generate_context_plan_def:
+  generate_context_plan ctx =
+    generate_context_plan_with generate_fn_plan ctx
 End
 
 Definition generate_context_plan_fuel_def:
-  generate_context_plan_fuel fuel ctx fn_eom_map =
-    let result =
-      FOLDL (λacc fn.
-        case acc of
-          NONE => NONE
-        | SOME (ops, lbl_ctr) =>
-          let eom = case FLOOKUP fn_eom_map fn.fn_name of
-            SOME v => v | NONE => 0 in
-          case generate_fn_plan_fuel fuel fn eom lbl_ctr of
-            NONE => NONE
-          | SOME (fn_ops, ps) =>
-              SOME (ops ++ fn_ops, ps.ps_label_counter))
-      (SOME ([] : stack_op list, 0)) ctx.ctx_functions in
-    case result of
-      NONE => NONE
-    | SOME (all_ops, _) => SOME (all_ops ++ revert_postamble)
+  generate_context_plan_fuel fuel ctx =
+    generate_context_plan_with (generate_fn_plan_fuel fuel) ctx
+End
+Theorem generate_context_regions_rejects_malformed_spill:
+  generate_context_regions
+    (\fn base labels. SOME ([SOSpill base], init_plan_state base))
+    [fn] acc = NONE
+Proof
+  simp[generate_context_regions_def,
+       stackPlanTypesTheory.spill_plan_in_region_def,
+       stackPlanTypesTheory.stack_op_in_spill_region_def,
+       stackPlanTypesTheory.init_plan_state_def,
+       stackPlanTypesTheory.init_spill_alloc_def]
+QED
+
+Theorem generate_context_regions_accepts_empty_plan:
+  IS_SOME
+    (generate_context_regions
+      (\fn base labels. SOME ([], init_plan_state base)) [fn] acc)
+Proof
+  simp[generate_context_regions_def,
+       stackPlanTypesTheory.spill_plan_in_region_def,
+       stackPlanTypesTheory.init_plan_state_def,
+       stackPlanTypesTheory.init_spill_alloc_def]
+QED
+
+
+Definition context_plan_ops_def:
+  context_plan_ops cp =
+    FLAT (MAP (\r. r.sr_plan) cp.cp_regions) ++ revert_postamble
 End

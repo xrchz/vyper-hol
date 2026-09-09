@@ -279,7 +279,10 @@ val allowed_test_patterns = [
 ]
 
 val excluded_test_patterns = [
-  "*/functional/codegen/abstract/*"  (* @override semantics not implemented *)
+  "*/functional/codegen/abstract/*", (* @override semantics not implemented *)
+  (* The clean export contains a top-level ErrorDef, for which
+     frontend/jsonASTLib.sml's json_toplevel decoder has no branch. *)
+  "vyper-test-exports/functional/codegen/features/test_custom_errors.json"
 ]
 
 (* Individual test names that bypass unsupported pattern checks *)

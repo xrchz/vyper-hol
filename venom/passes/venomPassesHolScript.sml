@@ -1,6 +1,7 @@
 (* Roll-up theory for all venom compiler passes *)
 Theory venomPassesHol
 Ancestors
+  venomPassSchedule venomPassDispatcherProps
   (* shared pass infrastructure *)
   passSharedDefs passSharedProps passSharedFrame
   (* phi elimination *)
@@ -12,7 +13,7 @@ Ancestors
   overflowElim
   literalsCodesize
   removeUnused
-  concretizeMemLoc
+  concretizeMemLoc staticLayoutWf
   (* lower dload/dloadbytes *)
   lowerDload
   (* branch optimization *)
@@ -47,3 +48,6 @@ Ancestors
   (* invoke copy forwarding *)
   internalReturnCopyFwdProofs
   readonlyInvokeCopyFwdProofs
+
+  (* FMP lowering structural postconditions *)
+  fmpLowerProps

@@ -278,6 +278,16 @@ Proof
   rw[bind_outputs_def, foldl_update_var_idx]
 QED
 
+
+Triviality adopt_return_fmp_idx:
+  !ir st j.
+    adopt_return_fmp ir (st with vs_inst_idx := j) =
+    adopt_return_fmp ir st with vs_inst_idx := j
+Proof
+  rpt gen_tac >>
+  Cases_on `ir.iret_adopt_fmp` >>
+  simp[adopt_return_fmp_def]
+QED
 (* Non-terminator step_inst at different idx:
    - OK results: state shifted by idx
    - Non-OK results: execution_equiv {} (ignores idx)
@@ -319,9 +329,10 @@ Proof
     `merge_callee_state (s with vs_inst_idx := j) callee_s' =
      merge_callee_state s callee_s' with vs_inst_idx := j` by
       simp[merge_callee_state_def, venom_state_component_equality] >>
-    simp[bind_outputs_idx] >>
-    Cases_on `bind_outputs inst.inst_outputs ret_vals
-                (merge_callee_state s callee_s')` >>
+    simp[adopt_return_fmp_idx, bind_outputs_idx] >>
+    Cases_on `bind_outputs inst.inst_outputs ret_vals.iret_values
+                (adopt_return_fmp ret_vals
+                  (merge_callee_state s callee_s'))` >>
     simp[result_equiv_def, execution_equiv_def, revert_equiv_def, lookup_var_def,
          venom_state_component_equality]
   ) >>

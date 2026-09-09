@@ -4,11 +4,7 @@ This document tracks whether the HOL compiler definitions correspond to the Pyth
 
 ## Authoritative upstream revision
 
-The sole source of truth is [`../VYPER_PIN`](../VYPER_PIN). At the time of this update it contains:
-
-```text
-1d81b8731a1f4d0fff953212deba5941c89602eb
-```
+The sole source of truth is [`../VYPER_PIN`](../VYPER_PIN). Read the live revision from that file; it must not be duplicated here.
 
 The same pin is to be used for:
 
@@ -104,6 +100,7 @@ The matrix should eventually identify exact Python modules, classes, and functio
 | Memory/allocation model | `vyper/venom/memory_allocator.py`, `memory_location.py` | unknown | Relate Python compile-time locations to HOL runtime allocation semantics. |
 | CFG analysis | `vyper/venom/analysis/cfg.py` | partially reviewed | See [`cfg_analysis_parity.md`](cfg_analysis_parity.md); revalidate against pin. |
 | Other analyses | `vyper/venom/analysis/*` | unknown | Audit those used by the mandatory pipeline first. |
+| Conservative FMP reclaim analysis (`venom/analysis/fmp/defs/fmpReclaimDefsScript.sml`, `venom/analysis/fmp/proofs/fmpReclaimPropsScript.sml`) | `vyper/venom/passes/fmp_lowering.py:FmpLoweringPass` reclaim behavior | intentional abstraction | HOL recomputes from the current context and structurally checks every emitted restore target, but conservatively vetoes alias, provenance, capture, and escape cases represented by richer Python analysis objects. Empty or no-target plans are conservative outcomes, not evidence of parity. |
 
 ### Pipeline and pass definitions
 

@@ -342,7 +342,13 @@ Proof
   rpt strip_tac >>
   `step_inst_base b s = OK sb` by gvs[step_inst_non_invoke] >>
   drule pure_step_structure >> simp[] >>
-  strip_tac >> gvs[] >> metis_tac[]
+  strip_tac >> gvs[] >>
+  `LENGTH pairs = 1` by metis_tac[LENGTH_MAP] >>
+  Cases_on `pairs` >> gvs[] >>
+  PairCases_on `h` >>
+  qexists_tac `h1` >> simp[] >>
+  qpat_x_assum `_ = b.inst_outputs`
+    (fn th => rewrite_tac[GSYM th]) >> simp[]
 QED
 
 (* Transfer a non-INVOKE, empty-effects instruction across any non-terminator
@@ -389,6 +395,14 @@ Proof
     strip_tac >>
     qspecl_then [`fuel`, `ctx`, `b`, `s`, `sb`] mp_tac
       step_preserves_params >> simp[]) >>
+  `a.inst_opcode = FMP_PARAM ==> s.vs_params = sb.vs_params` by (
+    strip_tac >>
+    qspecl_then [`fuel`, `ctx`, `b`, `s`, `sb`] mp_tac
+      step_preserves_params >> simp[]) >>
+  `a.inst_opcode = RETPC_PARAM ==> s.vs_params = sb.vs_params` by (
+    strip_tac >>
+    qspecl_then [`fuel`, `ctx`, `b`, `s`, `sb`] mp_tac
+      step_preserves_params >> simp[]) >>
   `a.inst_opcode = RETURNDATACOPY ==> s.vs_returndata = sb.vs_returndata` by (
     strip_tac >> gvs[read_effects_def]) >>
   simp[]
@@ -425,21 +439,19 @@ Proof
           simp[])
       >> (qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
             step_preserves_labels >> simp[])) >>
-  (* PARAM: vs_params preserved by non-term step *)
-  conj_tac
-  >- (strip_tac >>
-      qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
-        step_preserves_params >> simp[]) >>
-  (* PHI: vs_prev_bb preserved by non-term step *)
-  conj_tac
-  >- (strip_tac >>
-      qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
-        step_preserves_control_flow >> simp[]) >>
+  `sa.vs_prev_bb = s.vs_prev_bb` by
+    (qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
+       step_preserves_control_flow >> simp[]) >>
+  `sa.vs_params = s.vs_params` by
+    (qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
+       step_preserves_params >> simp[]) >>
+  simp[] >>
   (* RETURNDATACOPY: vs_returndata preserved *)
   strip_tac >>
   Cases_on `is_alloca_op a.inst_opcode`
   >- (drule_all step_alloca_preserves >> simp[])
-  >> (qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
+  >>
+  (qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`] mp_tac
         write_effects_sound_returndata >> simp[] >>
       disch_then irule >>
       gvs[effects_independent_def] >>
@@ -455,6 +467,25 @@ QED
      Use step_inst_ok_frame to transfer INVOKE across the update.
    Case 2 (a≠INVOKE, b=INVOKE): a is pure, use pure_inst_transfer_across.
    Case 3 (a≠INVOKE, b≠INVOKE): delegate to non-ext step_ok_transfer_forward. *)
+
+Theorem step_inst_ok_frame_fold[local]:
+  !pairs fuel ctx inst s s'.
+    step_inst fuel ctx inst s = OK s' /\
+    DISJOINT (set (MAP FST pairs)) (set (operand_vars inst.inst_operands)) /\
+    DISJOINT (set (inst_defs inst)) (set (MAP FST pairs)) ==>
+    step_inst fuel ctx inst
+      (FOLDL (\st (out,value). update_var out value st) s pairs) =
+    OK (FOLDL (\st (out,value). update_var out value st) s' pairs)
+Proof
+  Induct_on `pairs` >- simp[] >>
+  rpt gen_tac >> PairCases_on `h` >> simp[] >> rpt strip_tac >>
+  first_x_assum irule >>
+  conj_tac
+  >- (irule step_inst_ok_frame >> simp[] >>
+      gvs[DISJOINT_DEF, EXTENSION, inst_defs_def] >>
+      metis_tac[var_mem_operand_vars, MEM]) >>
+  gvs[DISJOINT_DEF, EXTENSION]
+QED
 
 (* Helper: a_invoke case *)
 Triviality step_ok_transfer_forward_ext_invoke:
@@ -480,16 +511,9 @@ Proof
   fs[step_inst_non_invoke] >>
   qspecl_then [`b`, `s`, `sb`] mp_tac pure_step_structure >> simp[] >>
   strip_tac >> gvs[] >>
-  (* Only update_var case remains; b.inst_outputs=[] case solved by gvs *)
-  qspecl_then [`fuel`, `ctx`, `a`, `s`, `sa`, `out`, `val`] mp_tac
-    step_inst_ok_frame >>
-  impl_tac
-  >- (simp[] >>
-      conj_tac
-      >- (rpt strip_tac >> spose_not_then strip_assume_tac >> gvs[] >>
-          drule var_mem_operand_vars >> gvs[])
-      >> (gvs[inst_defs_def, DISJOINT_DEF, EXTENSION] >> EVAL_TAC))
-  >> (strip_tac >> metis_tac[])
+  qexists_tac `FOLDL (\st (out,value). update_var out value st) sa pairs` >>
+  irule step_inst_ok_frame_fold >> simp[] >>
+  gvs[inst_defs_def, DISJOINT_DEF, EXTENSION]
 QED
 
 (* Helper: a_not_invoke case *)
@@ -585,93 +609,83 @@ Proof
   (impl_tac >- gvs[inst_defs_def, inst_uses_def]) >> simp[]
 QED
 
-(* Helper: INVOKE b case. a must be pure (invoke_implies_pure).
-   Split further into inst_outputs=[] and inst_outputs=[out] sub-cases. *)
-
-(* Sub-case: a has no outputs (identity step) *)
-Triviality step_swap_ok_ext_invoke_no_out:
-  !fuel ctx a b s sab.
-    step_inst_base a s = OK s /\
-    a.inst_outputs = [] /\
-    a.inst_opcode <> INVOKE /\
-    write_effects a.inst_opcode = {} /\
-    read_effects a.inst_opcode = {} /\
-    inst_wf a /\ inst_wf b /\
+(* Helper: invert INVOKE framing through an arbitrary finite sequence of
+   fresh output updates.  This is the inverse boundary needed by
+   pure_step_structure consumers. *)
+Theorem step_inst_invoke_unframe_fold[local]:
+  !pairs fuel ctx b s sab.
     b.inst_opcode = INVOKE /\
-    ~is_terminator a.inst_opcode /\ ~is_alloca_op a.inst_opcode /\
-    ~is_ext_call_op a.inst_opcode /\
-    DISJOINT (set (inst_defs a)) (set (inst_uses b)) /\
-    DISJOINT (set (inst_defs b)) (set (inst_uses a)) /\
-    DISJOINT (set (inst_defs a)) (set (inst_defs b)) /\
-    step_inst fuel ctx b s = OK sab ==>
+    DISJOINT (set (MAP FST pairs))
+             (set (operand_vars b.inst_operands)) /\
+    DISJOINT (set (MAP FST pairs)) (set b.inst_outputs) /\
+    step_inst fuel ctx b
+      (FOLDL (\st (out,value). update_var out value st) s pairs) = OK sab ==>
     ?sb. step_inst fuel ctx b s = OK sb /\
-         step_inst fuel ctx a sb = OK sab
+         sab = FOLDL (\st (out,value). update_var out value st) sb pairs
 Proof
-  rpt strip_tac >>
-  qexists_tac `sab` >> simp[] >>
-  (* Transfer a's success from s to sab *)
-  qspecl_then [`fuel`,`ctx`,`a`,`b`,`s`,`s`,`sab`] mp_tac
-    pure_inst_transfer_across >>
-  (impl_tac >- gvs[inst_defs_def, inst_uses_def,
-                    is_terminator_def, is_alloca_op_def]) >> strip_tac >>
-  (* By pure_step_structure on sba, inst_outputs=[] ⟹ sba = sab *)
-  qspecl_then [`a`, `sab`, `sba`] mp_tac pure_step_structure >>
-  simp[] >> strip_tac >> gvs[step_inst_non_invoke]
+  Induct_on `pairs` >- simp[] >>
+  rpt gen_tac >> PairCases_on `h` >> simp[] >> rpt strip_tac >>
+  first_x_assum (qspecl_then
+    [`fuel`, `ctx`, `b`, `update_var h0 h1 s`, `sab`] mp_tac) >>
+  (impl_tac >- gvs[DISJOINT_DEF, EXTENSION]) >>
+  strip_tac >>
+  qspecl_then [`fuel`, `ctx`, `b`, `s`, `h0`, `h1`] mp_tac
+    step_inst_invoke_frame >>
+  (impl_tac
+   >- (simp[] >> gvs[DISJOINT_DEF, EXTENSION] >>
+       metis_tac[var_mem_operand_vars, MEM])) >>
+  Cases_on `step_inst fuel ctx b s` >> gvs[] >>
+  metis_tac[]
 QED
 
-(* Helper: INVOKE b case, one_out sub-case *)
-Triviality step_swap_ok_ext_invoke_one_out:
-  !fuel ctx a b s out val_ sab.
-    step_inst_base a s = OK (update_var out val_ s) /\
-    a.inst_outputs = [out] /\
+(* Fold-level INVOKE swap.  The hypotheses deliberately match the witness
+   supplied by pure_step_structure, so callers never reason about output
+   cardinality. *)
+Triviality step_swap_ok_ext_invoke_fold:
+  !pairs fuel ctx a b s sab.
+    MAP FST pairs = a.inst_outputs /\
+    step_inst_base a s =
+      OK (FOLDL (\st (out,value). update_var out value st) s pairs) /\
     a.inst_opcode <> INVOKE /\
     write_effects a.inst_opcode = {} /\
     read_effects a.inst_opcode = {} /\
     inst_wf a /\ inst_wf b /\
     b.inst_opcode = INVOKE /\
-    ~is_terminator a.inst_opcode /\ ~is_alloca_op a.inst_opcode /\
-    ~is_ext_call_op a.inst_opcode /\
+    ~is_terminator a.inst_opcode /\ ~is_terminator b.inst_opcode /\
+    ~is_alloca_op a.inst_opcode /\ ~is_alloca_op b.inst_opcode /\
+    ~is_ext_call_op a.inst_opcode /\ ~is_ext_call_op b.inst_opcode /\
     DISJOINT (set (inst_defs a)) (set (inst_uses b)) /\
     DISJOINT (set (inst_defs b)) (set (inst_uses a)) /\
     DISJOINT (set (inst_defs a)) (set (inst_defs b)) /\
     effects_independent a.inst_opcode b.inst_opcode /\
     abort_compatible a.inst_opcode b.inst_opcode /\
-    step_inst fuel ctx a s = OK (update_var out val_ s) /\
-    step_inst fuel ctx b (update_var out val_ s) = OK sab ==>
+    step_inst fuel ctx a s =
+      OK (FOLDL (\st (out,value). update_var out value st) s pairs) /\
+    step_inst fuel ctx b
+      (FOLDL (\st (out,value). update_var out value st) s pairs) = OK sab ==>
     ?sb. step_inst fuel ctx b s = OK sb /\
          step_inst fuel ctx a sb = OK sab
 Proof
   rpt strip_tac >>
-  (* Use invoke_frame to derive step_inst b s = OK sb *)
-  qspecl_then [`fuel`,`ctx`,`b`,`s`,`out`,`val_`] mp_tac
-    step_inst_invoke_frame >>
-  impl_tac
-  >- (simp[] >> conj_tac
-      >- (rpt strip_tac >> spose_not_then strip_assume_tac >>
-          gvs[inst_defs_def, inst_uses_def, DISJOINT_DEF, EXTENSION] >>
-          drule var_mem_operand_vars >> strip_tac >> metis_tac[])
-      >> gvs[inst_defs_def, DISJOINT_DEF, EXTENSION])
-  >> strip_tac >>
-  (* step_inst b (update_var out val_ s) = OK sab, so
-     case step_inst b s = OK sb and sab = update_var out val_ sb *)
-  Cases_on `step_inst fuel ctx b s` >> gvs[] >>
-  rename1 `step_inst fuel ctx b s = OK sb` >>
-  (* Goal is now: step_inst a sb = OK (update_var out val_ sb) *)
-  (* Transfer a's success from s to sb *)
-  qspecl_then [`fuel`,`ctx`,`a`,`b`,`s`,`update_var out val_ s`,`sb`] mp_tac
-    pure_inst_transfer_across >>
-  (impl_tac >- gvs[inst_defs_def, inst_uses_def, is_terminator_def]) >>
+  qspecl_then [`pairs`, `fuel`, `ctx`, `b`, `s`, `sab`] mp_tac
+    step_inst_invoke_unframe_fold >>
+  (impl_tac
+   >- (simp[] >> gvs[inst_defs_def, inst_uses_def, DISJOINT_DEF, EXTENSION])) >>
+  strip_tac >>
+  qspecl_then [`fuel`, `ctx`, `a`, `b`, `s`,
+               `FOLDL (\st (out,value). update_var out value st) s pairs`,
+               `sb`] mp_tac pure_inst_transfer_across >>
+  (impl_tac
+   >- gvs[inst_defs_def, inst_uses_def, is_terminator_def]) >>
   strip_tac >>
   `step_inst fuel ctx a sb = OK sba` by gvs[step_inst_non_invoke] >>
-  (* Use independent_commute_eq_ext: sba = update_var out val_ sb *)
-  `update_var out val_ sb = sba` suffices_by gvs[] >>
-  qspecl_then [`fuel`,`ctx`,`a`,`b`,`s`,`update_var out val_ s`,`sb`,
-               `update_var out val_ sb`,`sba`] mp_tac
-    independent_commute_eq_ext >>
-  simp[] >>
-  (impl_tac >- gvs[is_terminator_def,
-                    is_alloca_op_def, is_ext_call_op_def]) >>
-  simp[]
+  qexists_tac `sb` >> simp[] >>
+  `sab = sba` suffices_by simp[] >>
+  irule independent_commute_eq_ext >>
+  qexistsl_tac
+    [`ctx`, `fuel`, `a`, `b`, `s`,
+     `FOLDL (\st (out,value). update_var out value st) s pairs`, `sb`] >>
+  gvs[]
 QED
 
 (* Helper: INVOKE b case. a must be pure (invoke_implies_pure). *)
@@ -691,19 +705,10 @@ Proof
   drule invoke_implies_pure >> strip_tac >>
   `step_inst_base a s = OK sa` by gvs[step_inst_non_invoke] >>
   qspecl_then [`a`, `s`, `sa`] mp_tac pure_step_structure >>
-  simp[] >> strip_tac
-  >- (
-    (* no_out case: a.inst_outputs = [], sa = s *)
-    gvs[] >>
-    qspecl_then [`fuel`,`ctx`,`a`,`b`,`s`,`sab`] mp_tac
-      step_swap_ok_ext_invoke_no_out >>
-    gvs[inst_defs_def, inst_uses_def])
-  >> (
-    (* one_out case: a.inst_outputs = [out], sa = update_var out val s *)
-    gvs[] >> rename1 `step_inst_base a s = OK (update_var out vv s)` >>
-    qspecl_then [`fuel`,`ctx`,`a`,`b`,`s`,`out`,`vv`,`sab`] mp_tac
-      step_swap_ok_ext_invoke_one_out >>
-    gvs[inst_defs_def, inst_uses_def])
+  simp[] >> strip_tac >> gvs[] >>
+  qspecl_then [`pairs`, `fuel`, `ctx`, `a`, `b`, `s`, `sab`] mp_tac
+    step_swap_ok_ext_invoke_fold >>
+  gvs[inst_defs_def, inst_uses_def]
 QED
 
 (* Under ext bilateral independence and well-formedness, swapping the

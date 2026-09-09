@@ -9,7 +9,7 @@
 
 Theory venomExecSemantics
 Ancestors
-  venomState venomInst keccak vfmExecution
+  venomState venomInst venomLayout dretShapeDefs keccak vfmExecution
 
 (* --------------------------------------------------------------------------
    Arithmetic/Logic Operations (using bytes32 = 256 word)
@@ -82,6 +82,65 @@ Definition mcopy_def:
     write_memory_with_expansion dst data s
 End
 
+(* Immutable stores lower to MSTORE.  The finite map is retained only as
+   source-level bookkeeping; executable behavior is carried by vs_memory. *)
+Definition istore_def:
+  istore offset (value:bytes32) s =
+    (mstore offset value s with
+       vs_immutables := s.vs_immutables |+ (offset, value))
+End
+
+Theorem istore_memory[simp]:
+  (istore offset value s).vs_memory = (mstore offset value s).vs_memory
+Proof
+  simp[istore_def]
+QED
+
+Theorem istore_shared_fields[simp]:
+  (istore offset value s).vs_accounts = s.vs_accounts /\
+  (istore offset value s).vs_transient = s.vs_transient /\
+  (istore offset value s).vs_returndata = s.vs_returndata /\
+  (istore offset value s).vs_logs = s.vs_logs /\
+  (istore offset value s).vs_call_ctx = s.vs_call_ctx /\
+  (istore offset value s).vs_tx_ctx = s.vs_tx_ctx /\
+  (istore offset value s).vs_block_ctx = s.vs_block_ctx /\
+  (istore offset value s).vs_code = s.vs_code /\
+  (istore offset value s).vs_prev_hashes = s.vs_prev_hashes
+Proof
+  simp[istore_def, mstore_def]
+QED
+
+
+Definition pair_dret_words_def:
+  pair_dret_words [] = SOME [] /\
+  pair_dret_words (src::sz::rest) =
+    OPTION_MAP (CONS (src,sz)) (pair_dret_words rest) /\
+  pair_dret_words _ = NONE
+End
+(* Pack dynamic return values left-to-right from an explicit destination cursor. *)
+Definition pack_dret_dynamic_def:
+  pack_dret_dynamic (cursor:bytes32) [] (s:venom_state) = ([], cursor, s) /\
+  pack_dret_dynamic cursor ((src,sz)::rest) s =
+    let s1 = mcopy (w2n cursor) (w2n src) (w2n sz) s in
+    let next = cursor + n2w (ceil32 (w2n sz)) in
+    let (ptrs, final_cursor, s2) = pack_dret_dynamic next rest s1 in
+      (cursor::ptrs, final_cursor, s2)
+End
+
+Theorem pack_dret_dynamic_nil[simp]:
+  pack_dret_dynamic cursor [] s = ([], cursor, s)
+Proof
+  simp[pack_dret_dynamic_def]
+QED
+
+Theorem mcopy_preserves_frame_metadata[simp]:
+  (mcopy dst src sz s).vs_fmp = s.vs_fmp /\
+  (mcopy dst src sz s).vs_call_entry_fmp = s.vs_call_entry_fmp /\
+  (mcopy dst src sz s).vs_return_pc_token = s.vs_return_pc_token
+Proof
+  simp[mcopy_def, write_memory_with_expansion_def]
+QED
+
 (* Boolean to word *)
 Definition bool_to_word_def:
   bool_to_word T = (1w:bytes32) /\
@@ -101,11 +160,18 @@ Datatype:
 End
 
 Datatype:
+  internal_return = <|
+    iret_values : bytes32 list;
+    iret_adopt_fmp : bytes32 option
+  |>
+End
+
+Datatype:
   exec_result =
     | OK venom_state              (* Normal continuation *)
     | Halt venom_state            (* Normal termination (STOP/RETURN) *)
     | Abort abort_type venom_state  (* Aborted execution *)
-    | IntRet (bytes32 list) venom_state  (* Internal function return (RET) *)
+    | IntRet internal_return venom_state  (* Internal function return *)
     | Error string                (* Execution error *)
 End
 
@@ -568,6 +634,64 @@ Definition step_inst_base_def:
             | _ => Error "djmp: undefined operand or invalid labels")
         | _ => Error "djmp requires selector and labels")
 
+    (* Raw free-memory-pointer operations *)
+    | GETFMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([], [out]) => OK (update_var out s.vs_fmp s)
+        | _ => Error "getfmp requires no operands and one output")
+
+    | SETFMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([op], []) =>
+            (case eval_operand op s of
+              SOME value => OK (s with vs_fmp := value)
+            | NONE => Error "setfmp: undefined operand")
+        | _ => Error "setfmp requires one operand and no outputs")
+
+    | DALLOCA =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([size_op], [out]) =>
+            (case eval_operand size_op s of
+              SOME sz =>
+                OK (update_var out s.vs_fmp
+                  (s with vs_fmp :=
+                    s.vs_fmp + n2w (ceil32 (w2n sz))))
+            | NONE => Error "dalloca: undefined operand")
+        | _ => Error "dalloca requires one operand and one output")
+
+    | INITIAL_FMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([], [out]) => OK (update_var out s.vs_initial_fmp s)
+        | _ => Error "initial_fmp requires no operands and one output")
+
+    (* Lowered explicit-base bump arithmetic; deliberately FMP-independent. *)
+    | BUMP =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([base_op; size_op], [ptr_out; next_out]) =>
+            (case (eval_operand base_op s, eval_operand size_op s) of
+              (SOME base_val, SOME sz) =>
+                OK (update_var next_out
+                  (word_add base_val (n2w (ceil32 (w2n sz)) : bytes32))
+                  (update_var ptr_out base_val s))
+            | _ => Error "bump: undefined operand")
+        | _ => Error "bump requires two operands and two outputs")
+
+    (* Hidden invoke parameters. *)
+    | FMP_PARAM =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([Lit idx], [out]) =>
+            let i = w2n idx in
+            if i < LENGTH s.vs_params then
+              OK (update_var out (EL i s.vs_params) s)
+            else Error "fmp_param: index out of range"
+        | _ => Error "fmp_param requires literal index and one output")
+
+    | RETPC_PARAM =>
+        (case (inst.inst_operands, inst.inst_outputs) of
+          ([Lit idx], [out]) =>
+            OK (update_var out s.vs_return_pc_token s)
+        | _ => Error "retpc_param requires literal index and one output")
+
     (* Function parameter access *)
     | PARAM =>
         (case inst.inst_operands of
@@ -580,11 +704,43 @@ Definition step_inst_base_def:
             else Error "param: index out of range"
         | _ => Error "param requires literal index")
 
-    (* Return from internal function *)
+    (* Return from internal function.  The final operand is the return-PC token. *)
     | RET =>
         (case eval_operands inst.inst_operands s of
-          SOME ret_vals => IntRet ret_vals s
+          SOME [] => Error "ret requires a return pc"
+        | SOME ret_vals =>
+            IntRet <| iret_values := FRONT ret_vals;
+                      iret_adopt_fmp := NONE |> s
         | NONE => Error "ret: undefined return value")
+
+    | RETFMP =>
+        (case eval_operands inst.inst_operands s of
+          SOME [] => Error "retfmp requires a return pc"
+        | SOME ret_vals =>
+            IntRet <| iret_values := FRONT ret_vals;
+                      iret_adopt_fmp := SOME s.vs_fmp |> s
+        | NONE => Error "retfmp: undefined return value")
+
+    | DRET =>
+        if inst.inst_outputs <> [] then Error "dret requires no outputs"
+        else
+          (case parse_dret_shape inst of
+            NONE => Error "dret: malformed operand envelope"
+          | SOME (ordinary,dynamic) =>
+              case eval_operands inst.inst_operands s of
+                NONE => Error "dret: undefined operand"
+              | SOME vals =>
+                  case pair_dret_words
+                    (TAKE (2 * dynamic) (DROP (1 + ordinary) vals)) of
+                    NONE => Error "dret: malformed dynamic operands"
+                  | SOME pairs =>
+                      let ordinary_vals = TAKE ordinary (DROP 1 vals) in
+                      let (ptrs,final_cursor,s') =
+                        pack_dret_dynamic s.vs_call_entry_fmp pairs s in
+                      let s'' = s' with vs_fmp := final_cursor in
+                        IntRet
+                          <| iret_values := ordinary_vals ++ ptrs;
+                             iret_adopt_fmp := SOME final_cursor |> s'')
 
     (* Termination *)
     | STOP => Halt (halt_state s)
@@ -760,18 +916,15 @@ Definition step_inst_base_def:
             else word_of_bytes T (0w:bytes32)
                    (Keccak_256_w64 acct.code)) inst s
 
-    (* Immutables - separate from memory, used during constructor *)
-    | ILOAD => exec_read1
-        (\off s.
-          case FLOOKUP s.vs_immutables (w2n off) of
-            SOME v => v
-          | NONE => 0w) inst s
+    (* Immutables are lowered to ordinary EVM memory operations.  Keep the
+       finite map as source-level bookkeeping, but make executable reads and
+       writes use the same byte memory represented by assembly semantics. *)
+    | ILOAD => exec_read1 (\off s. mload (w2n off) s) inst s
     | ISTORE =>
         (case inst.inst_operands of
           [offset_op; val_op] =>
             (case (eval_operand offset_op s, eval_operand val_op s) of
-              (SOME off, SOME v) =>
-                OK (s with vs_immutables := s.vs_immutables |+ (w2n off, v))
+              (SOME off, SOME v) => OK (istore (w2n off) v s)
             | _ => Error "undefined operand")
         | _ => Error "istore requires 2 operands")
 
@@ -958,6 +1111,77 @@ Definition step_inst_base_def:
     | _ => Error "unknown opcode"
 End
 
+Theorem step_inst_base_ILOAD:
+  eval_operand op s = SOME off ==>
+  step_inst_base (instruction id ILOAD [op] [out]) s =
+    OK (update_var out (mload (w2n off) s) s)
+Proof
+  simp[step_inst_base_def, exec_read1_def]
+QED
+
+Theorem step_inst_base_ISTORE:
+  eval_operand offset_op s = SOME off /\
+  eval_operand value_op s = SOME value ==>
+  step_inst_base (instruction id ISTORE [offset_op; value_op] []) s =
+    OK (istore (w2n off) value s)
+Proof
+  simp[step_inst_base_def, exec_write2_def]
+QED
+
+Theorem step_inst_base_NOT:
+  inst.inst_opcode = NOT ==>
+  step_inst_base inst s = exec_pure1 word_1comp inst s
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
+Theorem step_inst_base_ISZERO:
+  inst.inst_opcode = ISZERO ==>
+  step_inst_base inst s =
+    exec_pure1 (\x. bool_to_word (x = 0w)) inst s
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
+Theorem step_inst_base_RETFMP:
+  inst.inst_opcode = RETFMP ==>
+  step_inst_base inst s =
+    case eval_operands inst.inst_operands s of
+      SOME [] => Error "retfmp requires a return pc"
+    | SOME ret_vals =>
+        IntRet <| iret_values := FRONT ret_vals;
+                  iret_adopt_fmp := SOME s.vs_fmp |> s
+    | NONE => Error "retfmp: undefined return value"
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
+Theorem step_inst_base_DRET:
+  inst.inst_opcode = DRET ==>
+  step_inst_base inst s =
+    if inst.inst_outputs <> [] then Error "dret requires no outputs"
+    else
+      case parse_dret_shape inst of
+        NONE => Error "dret: malformed operand envelope"
+      | SOME (ordinary,dynamic) =>
+          case eval_operands inst.inst_operands s of
+            NONE => Error "dret: undefined operand"
+          | SOME vals =>
+              case pair_dret_words
+                (TAKE (2 * dynamic) (DROP (1 + ordinary) vals)) of
+                NONE => Error "dret: malformed dynamic operands"
+              | SOME pairs =>
+                  let ordinary_vals = TAKE ordinary (DROP 1 vals) in
+                  let (ptrs,final_cursor,s') =
+                    pack_dret_dynamic s.vs_call_entry_fmp pairs s in
+                  let s'' = s' with vs_fmp := final_cursor in
+                    IntRet
+                      <| iret_values := ordinary_vals ++ ptrs;
+                         iret_adopt_fmp := SOME final_cursor |> s''
+Proof
+  Cases_on `inst` >> gvs[step_inst_base_def]
+QED
+
 (* --------------------------------------------------------------------------
    Block and Function Execution
    -------------------------------------------------------------------------- *)
@@ -970,17 +1194,21 @@ Theorem step_inst_base_preserves_inst_idx:
     step_inst_base inst s = OK s' /\ ~is_terminator inst.inst_opcode ==>
     s'.vs_inst_idx = s.vs_inst_idx
 Proof
-  rw[step_inst_base_def] >>
-  gvs[AllCaseEqs(), is_terminator_def] >>
-  fs[exec_pure1_def, exec_pure2_def, exec_pure3_def,
-     exec_read0_def, exec_read1_def, exec_write2_def,
-     exec_ext_call_def, exec_delegatecall_def,
-     exec_create_def, exec_alloca_def,
-     extract_venom_result_def] >>
-  gvs[AllCaseEqs()] >>
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode` >>
+  gvs[is_terminator_def] >>
+  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+  PURE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
+  gvs[AllCaseEqs(), exec_pure1_def, exec_pure2_def, exec_pure3_def,
+      exec_read0_def, exec_read1_def, exec_write2_def,
+      exec_ext_call_def, exec_delegatecall_def,
+      exec_create_def, exec_alloca_def,
+      extract_venom_result_def] >>
+  rpt strip_tac >> gvs[] >>
   rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
   fs[update_var_def, mstore_def, mstore8_def, sstore_def, tstore_def,
-     write_memory_with_expansion_def, mcopy_def,
+     istore_def, write_memory_with_expansion_def, mcopy_def,
      revert_state_def, eval_operands_def]
 QED
 
@@ -1031,19 +1259,31 @@ Definition merge_callee_state_def:
     |>
 End
 
-(* Prepare callee state: fresh vars, params, entry block, clean allocas *)
+(* Prepare callee state: fresh frame rooted at the caller's current FMP.
+   The final evaluated argument is the logical return-PC token; the complete
+   argument vector is retained for indexed PARAM/FMP_PARAM semantics. *)
 Definition setup_callee_def:
   setup_callee fn args s =
-    if NULL fn.fn_blocks then NONE
+    if NULL fn.fn_blocks \/ NULL args then NONE
     else SOME (s with <|
-      vs_vars       := FEMPTY;
-      vs_params     := args;
-      vs_current_bb := (HD fn.fn_blocks).bb_label;
-      vs_inst_idx   := 0;
-      vs_prev_bb    := NONE;
-      vs_halted     := F;
-      vs_allocas    := FEMPTY
+      vs_vars            := FEMPTY;
+      vs_params          := args;
+      vs_current_bb      := (HD fn.fn_blocks).bb_label;
+      vs_inst_idx        := 0;
+      vs_prev_bb         := NONE;
+      vs_halted          := F;
+      vs_allocas         := FEMPTY;
+      vs_fmp             := s.vs_fmp;
+      vs_call_entry_fmp  := s.vs_fmp;
+      vs_return_pc_token := LAST args
     |>)
+End
+
+Definition adopt_return_fmp_def:
+  adopt_return_fmp ir s =
+    case ir.iret_adopt_fmp of
+      NONE => s
+    | SOME p => s with vs_fmp := p
 End
 
 (* Decode INVOKE operands: first is Label (callee name), rest are args *)
@@ -1070,6 +1310,62 @@ Theorem merge_callee_state_inst_idx:
   (merge_callee_state c e).vs_inst_idx = c.vs_inst_idx
 Proof
   simp[merge_callee_state_def]
+QED
+
+
+Theorem setup_callee_frame:
+  setup_callee fn args caller = SOME callee ==>
+  callee.vs_fmp = caller.vs_fmp /\
+  callee.vs_call_entry_fmp = caller.vs_fmp /\
+  callee.vs_return_pc_token = LAST args /\
+  callee.vs_params = args
+Proof
+  rw[setup_callee_def] >> gvs[]
+QED
+
+Theorem merge_callee_state_frame[simp]:
+  (merge_callee_state caller callee).vs_fmp = caller.vs_fmp /\
+  (merge_callee_state caller callee).vs_call_entry_fmp = caller.vs_call_entry_fmp /\
+  (merge_callee_state caller callee).vs_return_pc_token = caller.vs_return_pc_token
+Proof
+  simp[merge_callee_state_def]
+QED
+
+Theorem adopt_return_fmp_frame[simp]:
+  (adopt_return_fmp ir s).vs_call_entry_fmp = s.vs_call_entry_fmp /\
+  (adopt_return_fmp ir s).vs_return_pc_token = s.vs_return_pc_token
+Proof
+  Cases_on `ir.iret_adopt_fmp` >> simp[adopt_return_fmp_def]
+QED
+
+Theorem adopt_return_fmp_allocas[simp]:
+  !ir s. (adopt_return_fmp ir s).vs_allocas = s.vs_allocas
+Proof
+  rpt strip_tac >> Cases_on `ir.iret_adopt_fmp` >> simp[adopt_return_fmp_def]
+QED
+
+Theorem adopt_return_fmp_halted[simp]:
+  (adopt_return_fmp ir s).vs_halted = s.vs_halted
+Proof
+  Cases_on `ir.iret_adopt_fmp` >> simp[adopt_return_fmp_def]
+QED
+
+Theorem adopt_return_fmp_NONE[simp]:
+  adopt_return_fmp <| iret_values := vals; iret_adopt_fmp := NONE |> s = s
+Proof
+  simp[adopt_return_fmp_def]
+QED
+
+Theorem adopt_return_fmp_SOME[simp]:
+  adopt_return_fmp <| iret_values := vals; iret_adopt_fmp := SOME p |> s =
+    s with vs_fmp := p
+Proof
+  simp[adopt_return_fmp_def]
+QED
+Theorem adopt_return_fmp_inst_idx[simp]:
+  (adopt_return_fmp ir s).vs_inst_idx = s.vs_inst_idx
+Proof
+  Cases_on `ir.iret_adopt_fmp` >> simp[adopt_return_fmp_def]
 QED
 
 Theorem update_var_inst_idx:
@@ -1176,9 +1472,10 @@ Definition run_defs:
                     NONE => Error "invoke: empty function"
                   | SOME callee_s =>
                       case run_blocks fuel ctx callee_fn callee_s of
-                        IntRet vals callee_s' =>
-                          (case bind_outputs inst.inst_outputs vals
-                                  (merge_callee_state s callee_s') of
+                        IntRet ret callee_s' =>
+                          (case bind_outputs inst.inst_outputs ret.iret_values
+                                  (adopt_return_fmp ret
+                                    (merge_callee_state s callee_s')) of
                             SOME s' => OK s'
                           | NONE => Error "invoke: return arity mismatch")
                       | Halt s' => Halt s'
@@ -1323,6 +1620,20 @@ Theorem step_inst_non_invoke:
     step_inst fuel ctx inst s = step_inst_base inst s
 Proof
   rw[Once step_inst_def]
+QED
+
+Theorem step_inst_param_ok_or_error:
+  !inst fuel ctx s.
+    is_param_opcode inst.inst_opcode ==>
+    (?s'. step_inst fuel ctx inst s = OK s') \/
+    (?e. step_inst fuel ctx inst s = Error e)
+Proof
+  rpt strip_tac >>
+  fs[is_param_opcode_iff] >>
+  simp[step_inst_non_invoke] >>
+  Cases_on `inst` >>
+  simp[step_inst_base_def] >>
+  rpt (BasicProvers.PURE_FULL_CASE_TAC >> gvs[step_inst_base_def])
 QED
 
 (* --------------------------------------------------------------------------

@@ -145,7 +145,9 @@ QED
 val step_term_ok_jump_fields_tac =
   qpat_x_assum `step_inst _ _ _ _ = OK _` mp_tac >>
   simp[Once step_inst_def, step_inst_base_def, jump_to_def] >>
-  gvs[AllCaseEqs(), PULL_EXISTS] >> rw[] >> gvs[lookup_var_def] >> NO_TAC;
+  gvs[AllCaseEqs(), PULL_EXISTS] >>
+  rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
+  rw[] >> gvs[lookup_var_def] >> NO_TAC;
 
 Triviality step_inst_ok_terminator_jump_fields[local]:
   !fuel ctx inst s v.
@@ -165,6 +167,11 @@ Proof
   >- step_term_ok_jump_fields_tac
   >- step_term_ok_jump_fields_tac
   >- step_term_ok_jump_fields_tac
+  >- step_term_ok_jump_fields_tac
+  >- (qpat_x_assum `step_inst _ _ _ _ = OK _` mp_tac >>
+      simp[Once step_inst_def, step_inst_base_def, jump_to_def] >>
+      gvs[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      pairarg_tac >> gvs[])
   >- step_term_ok_jump_fields_tac
   >- step_term_ok_jump_fields_tac
   >- step_term_ok_jump_fields_tac
@@ -531,7 +538,9 @@ QED
 val term_succ_basic_tac =
   fs[step_inst_base_def, inst_wf_def, get_successors_def,
      get_label_def, jump_to_def, is_terminator_def] >>
-  gvs[AllCaseEqs()] >> rw[] >> gvs[];
+  gvs[AllCaseEqs()] >>
+  rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
+  rw[] >> gvs[];
 
 val term_succ_djmp_tac =
   term_succ_basic_tac >>
@@ -555,6 +564,8 @@ Proof
   >- term_succ_basic_tac
   >- term_succ_basic_tac
   >- term_succ_djmp_tac
+  >- term_succ_basic_tac
+  >- term_succ_basic_tac
   >- term_succ_basic_tac
   >- term_succ_basic_tac
   >- term_succ_basic_tac
@@ -981,8 +992,8 @@ Proof
     >- (`step_inst m ctx inst s = Abort a v` by
           (first_x_assum (qspec_then `Abort a v` mp_tac) >> simp[]) >>
         strip_tac >> gvs[] >> simp[Once exec_block_def])
-    >- (`step_inst m ctx inst s = IntRet l v` by
-          (first_x_assum (qspec_then `IntRet l v` mp_tac) >> simp[]) >>
+    >- (`step_inst m ctx inst s = IntRet i v` by
+          (first_x_assum (qspec_then `IntRet i v` mp_tac) >> simp[]) >>
         strip_tac >> gvs[] >> simp[Once exec_block_def])
   )
   (* --- run_blocks case --- *)
@@ -1054,7 +1065,7 @@ Proof
       >- (
         Cases_on `m` >- gvs[] >> rename1 `SUC m''` >>
         `exec_block m'' ctx bb
-           (s_phi with vs_inst_idx := phi_prefix_length bb.bb_instructions) = IntRet l v` by
+           (s_phi with vs_inst_idx := phi_prefix_length bb.bb_instructions) = IntRet i v` by
           (first_x_assum (qspec_then `m''` mp_tac) >> simp[]) >>
         simp[Once run_blocks_def]
       )
@@ -1259,12 +1270,22 @@ Triviality step_inst_base_operands_none_custom[local]:
       ASSIGN; INVOKE; CALLDATACOPY; RETURNDATACOPY; CODECOPY;
       EXTCODECOPY; SHA3; CALL; STATICCALL; DELEGATECALL;
       CREATE; CREATE2; SELFDESTRUCT; ASSERT; ASSERT_UNREACHABLE;
-      DLOADBYTES] /\
+      DLOADBYTES; DALLOCA; DRET; GETFMP; SETFMP; RETFMP;
+      INITIAL_FMP; BUMP; FMP_PARAM; RETPC_PARAM] /\
     inst_wf inst /\
     eval_operands inst.inst_operands s = NONE ==>
     ?e. step_inst_base inst s = Error e
 Proof
   rpt strip_tac >> gvs[MEM]
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
+  >- operands_none_custom_tac
   >- operands_none_custom_tac
   >- operands_none_custom_tac
   >- operands_none_custom_tac
@@ -1439,7 +1460,7 @@ fun prove_fdom_group opcode_list = prove(
       step_inst_base_def, exec_pure2_def, exec_pure1_def, exec_pure3_def,
       exec_read0_def, exec_read1_def, exec_write2_def,
       exec_alloca_def,
-      mstore_def, mstore8_def, sstore_def, tstore_def] >>
+      istore_def, mstore_def, mstore8_def, sstore_def, tstore_def] >>
   BasicProvers.every_case_tac >>
   gvs[update_var_def, finite_mapTheory.FDOM_FUPDATE] >>
   simp[pred_setTheory.EXTENSION] >> metis_tac[]);
@@ -1482,7 +1503,8 @@ val step_inst_base_fdom_no_output = prove(
       mcopy_def, write_memory_with_expansion_def]);
 
 val step_inst_base_fdom_custom1 = prove_fdom_group
-  ``[ASSIGN; SHA3; PARAM; ALLOCA; OFFSET]``;
+  ``[ASSIGN; SHA3; PARAM; ALLOCA; OFFSET; DALLOCA; GETFMP; SETFMP;
+     INITIAL_FMP; BUMP; FMP_PARAM; RETPC_PARAM]``;
 
 (* External calls: extract_venom_result preserves vs_vars, then update_var adds output *)
 val step_inst_base_fdom_external = prove(
@@ -1556,6 +1578,7 @@ Proof
     (* INVOKE case: merge_callee preserves vs_vars, bind_outputs adds outputs *)
     gvs[Once step_inst_def] >>
     BasicProvers.every_case_tac >> gvs[] >>
+    Cases_on `i.iret_adopt_fmp` >> gvs[adopt_return_fmp_def] >>
     imp_res_tac bind_outputs_fdom >>
     gvs[merge_callee_state_def])
   >- (

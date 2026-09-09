@@ -667,7 +667,8 @@ Proof
     fs[execution_equiv_def, merge_callee_state_def,
        venom_state_component_equality]) >>
   gvs[] >>
-  Cases_on `bind_outputs inst.inst_outputs l (merge_callee_state s v')` >>
+  Cases_on `bind_outputs inst.inst_outputs i.iret_values
+    (adopt_return_fmp i (merge_callee_state s v'))` >>
   simp[result_equiv_def, state_equiv_refl, execution_equiv_refl]
 QED
 

@@ -54,7 +54,7 @@ QED
 (* State-accessing function defs used by step_inst_base helpers.
    Needed so gvs can rewrite through field equalities (e.g.
    s1.vs_memory = s2.vs_memory ==> mload x s1 = mload x s2). *)
-val state_fn_defs = [mload_def, mstore_def, mstore8_def, sload_def, sstore_def,
+val state_fn_defs = [mload_def, mstore_def, istore_def, mstore8_def, sload_def, sstore_def,
   tload_def, tstore_def, contract_storage_def, contract_transient_def,
   write_memory_with_expansion_def, write_memory_def, expand_memory_def,
   read_memory_def, mcopy_def];
@@ -83,6 +83,7 @@ val transfer_close_tac =
       Cases_on `rest` >> gvs[] >>
       Cases_on `t` >> gvs[]) >>
     gvs[] >> NO_TAC) >>
+  rpt strip_tac >>
   res_tac >> gvs (update_var_def :: lookup_var_def ::
                   finite_mapTheory.FLOOKUP_UPDATE :: state_fn_defs);
 
@@ -213,7 +214,8 @@ val output_vars_finish_tac =
 
 (* OK transfer: if step_inst_base returns OK on s, it also returns OK on s'
    when operands agree and the conditional context fields match
-   (PHI → vs_prev_bb, PARAM → vs_params, RETURNDATACOPY → vs_returndata). *)
+   (PHI → vs_prev_bb, PARAM/FMP_PARAM → vs_params,
+    RETURNDATACOPY → vs_returndata). *)
 Theorem step_inst_base_ok_transfer:
   !inst s v s'.
     step_inst_base inst s = OK v /\
@@ -224,6 +226,7 @@ Theorem step_inst_base_ok_transfer:
           eval_operand op s = eval_operand op s') /\
     (inst.inst_opcode = PHI ==> s.vs_prev_bb = s'.vs_prev_bb) /\
     (inst.inst_opcode = PARAM ==> s.vs_params = s'.vs_params) /\
+    (inst.inst_opcode = FMP_PARAM ==> s.vs_params = s'.vs_params) /\
     (inst.inst_opcode = RETURNDATACOPY ==>
        s.vs_returndata = s'.vs_returndata) ==>
     ?v'. step_inst_base inst s' = OK v'
@@ -309,7 +312,7 @@ Proof
   >- ok_transfer_finish_tac
   >- ok_transfer_finish_tac
   >- ok_transfer_finish_tac
-  >- ok_transfer_finish_tac
+  >> ok_transfer_finish_tac
 QED
 
 (* Per-field output determinism: for each written state field (memory,
@@ -434,6 +437,10 @@ Theorem step_inst_base_scalar_agree:
     s1.vs_inst_idx = s2.vs_inst_idx /\
     s1.vs_prev_bb = s2.vs_prev_bb /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     (s1.vs_halted <=> s2.vs_halted) /\
     s1.vs_returndata = s2.vs_returndata /\
     (Eff_MEMORY IN read_effects inst.inst_opcode ==>
@@ -451,6 +458,10 @@ Theorem step_inst_base_scalar_agree:
     v1.vs_labels = v2.vs_labels /\
     v1.vs_code = v2.vs_code /\
     v1.vs_params = v2.vs_params /\
+    v1.vs_fmp = v2.vs_fmp /\
+    v1.vs_call_entry_fmp = v2.vs_call_entry_fmp /\
+    v1.vs_initial_fmp = v2.vs_initial_fmp /\
+    v1.vs_return_pc_token = v2.vs_return_pc_token /\
     v1.vs_prev_bb = v2.vs_prev_bb /\
     v1.vs_current_bb = v2.vs_current_bb /\
     v1.vs_inst_idx = v2.vs_inst_idx /\
@@ -563,7 +574,7 @@ Proof
       gvs[AllCaseEqs()] >>
       rpt (CHANGED_TAC (rpt (pairarg_tac >> gvs[]))) >>
       transfer_close_tac)
-  >- transfer_determined_finish_tac
+  >> transfer_determined_finish_tac
 QED
 
 
@@ -600,6 +611,10 @@ Theorem step_inst_base_output_vars_agree:
     s1.vs_inst_idx = s2.vs_inst_idx /\
     s1.vs_prev_bb = s2.vs_prev_bb /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     (s1.vs_halted <=> s2.vs_halted) /\
     s1.vs_returndata = s2.vs_returndata /\
     LENGTH s1.vs_memory = LENGTH s2.vs_memory /\
@@ -689,7 +704,7 @@ Proof
   >- output_vars_finish_tac
   >- output_vars_finish_tac
   >- output_vars_finish_tac
-  >- output_vars_finish_tac
+  >> output_vars_finish_tac
 QED
 
 (* Output variable determinism for effect-free ops: if operands and
@@ -707,6 +722,12 @@ Theorem step_inst_base_effect_free_output_determined_vars:
           eval_operand op s1 = eval_operand op s2) /\
     (inst.inst_opcode = PHI ==> s1.vs_prev_bb = s2.vs_prev_bb) /\
     (inst.inst_opcode = PARAM ==> s1.vs_params = s2.vs_params) /\
+    (inst.inst_opcode = FMP_PARAM ==> s1.vs_params = s2.vs_params) /\
+    (inst.inst_opcode = GETFMP ==> s1.vs_fmp = s2.vs_fmp) /\
+    (inst.inst_opcode = INITIAL_FMP ==>
+       s1.vs_initial_fmp = s2.vs_initial_fmp) /\
+    (inst.inst_opcode = RETPC_PARAM ==>
+       s1.vs_return_pc_token = s2.vs_return_pc_token) /\
     s1.vs_call_ctx = s2.vs_call_ctx /\
     s1.vs_tx_ctx = s2.vs_tx_ctx /\
     s1.vs_block_ctx = s2.vs_block_ctx /\
@@ -795,7 +816,7 @@ Proof
   >- transfer_determined_finish_tac  (* EXTCODEHASH *)
   >- transfer_determined_finish_tac  (* ASSIGN *)
   >- transfer_determined_finish_tac  (* PARAM *)
-  >- transfer_determined_finish_tac  (* OFFSET *)
+  >> transfer_determined_finish_tac  (* remaining effect-free opcodes *)
 QED
 
 

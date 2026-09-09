@@ -1088,7 +1088,7 @@ Proof
          finite_mapTheory.FLOOKUP_UPDATE] >>
   `step_inst fuel ctx assert_inst s_iz =
    Abort Revert_abort (revert_state (set_returndata [] s_iz))` by (
-    Cases_on `assert_inst` >> gvs[step_inst_non_invoke, step_inst_base_def]) >>
+    irule step_assert_abort >> simp[]) >>
   (* Step 5: Combine into run_insts *)
   simp[run_insts_append, run_insts_def] >>
   (* Step 6: execution_equiv UNIV between abort states *)
@@ -2099,11 +2099,14 @@ Theorem ac_or_iz_step:
        eval_operand op s_iz = eval_operand op s)
 Proof
   rpt strip_tac >>
-  simp[LET_THM, run_insts_def, step_inst_non_invoke,
-       step_inst_base_def, exec_pure2_def, exec_pure1_def,
-       update_var_def, eval_operand_def, lookup_var_def,
-       finite_mapTheory.FLOOKUP_UPDATE,
-       execution_equiv_def] >>
+  simp[LET_THM] >>
+  simp[run_insts_def] >>
+  simp[step_inst_non_invoke] >>
+  PURE_REWRITE_TAC[step_inst_base_def] >>
+  simp[venomInstTheory.opcode_case_def] >>
+  simp[exec_pure2_def, exec_pure1_def] >>
+  simp[update_var_def, eval_operand_def, lookup_var_def] >>
+  simp[finite_mapTheory.FLOOKUP_UPDATE, execution_equiv_def] >>
   rpt strip_tac >> Cases_on `op` >>
   fs[eval_operand_def, lookup_var_def, update_var_def,
      finite_mapTheory.FLOOKUP_UPDATE]

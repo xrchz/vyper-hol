@@ -36,7 +36,8 @@ Proof
     `!pairs ss. (FOLDL (\s' (out,val). update_var out val s') ss pairs
       ).vs_allocas = ss.vs_allocas` by
       (Induct >> rw[] >> Cases_on `h` >> simp[update_var_def]) >>
-    gvs[bind_outputs_def, AllCaseEqs(), merge_callee_state_def])
+    gvs[bind_outputs_def, AllCaseEqs(), merge_callee_state_def,
+        adopt_return_fmp_allocas])
   >>
   gvs[step_inst_non_invoke] >>
   `inst.inst_opcode <> ALLOCA` by
@@ -316,13 +317,15 @@ Proof
   ASM_REWRITE_TAC[]
 QED
 
-(* Non-effect-free eligible ops preserve all vars.
-   These ops (MSTORE, SSTORE, MCOPY, LOG, ASSERT, etc.) modify
-   side-effect fields only — vs_vars is untouched. *)
+(* Non-effect-free eligible ops other than DALLOCA preserve all vars.
+   Side-effect-only ops (MSTORE, SSTORE, MCOPY, LOG, ASSERT, etc.) leave
+   vs_vars untouched; DALLOCA returns the old FMP via its declared output and
+   is handled separately by dalloca_step_output_agree. *)
 Triviality side_effect_lookup_var[local]:
   (!off bytes s v.
      lookup_var v (write_memory_with_expansion off bytes s) = lookup_var v s) /\
   (!off val s v. lookup_var v (mstore off val s) = lookup_var v s) /\
+  (!off val s v. lookup_var v (istore off val s) = lookup_var v s) /\
   (!off val s v. lookup_var v (mstore8 off val s) = lookup_var v s) /\
   (!dst src sz s v. lookup_var v (mcopy dst src sz s) = lookup_var v s) /\
   (!key val s v. lookup_var v (sstore key val s) = lookup_var v s) /\
@@ -331,9 +334,38 @@ Triviality side_effect_lookup_var[local]:
   (!s v. lookup_var v (revert_state s) = lookup_var v s) /\
   (!rd s v. lookup_var v (set_returndata rd s) = lookup_var v s)
 Proof
-  rw[write_memory_with_expansion_def, mstore_def, mstore8_def,
+  rw[write_memory_with_expansion_def, mstore_def, istore_def, mstore8_def,
      mcopy_def, sstore_def, tstore_def, halt_state_def,
      revert_state_def, set_returndata_def, lookup_var_def]
+QED
+
+(* A successful DALLOCA writes the input free-memory pointer to its sole output. *)
+Triviality dalloca_base_output_lookup[local]:
+  !inst s r w.
+    inst.inst_opcode = DALLOCA /\
+    step_inst_base inst s = OK r /\
+    MEM w inst.inst_outputs ==>
+    lookup_var w r = SOME s.vs_fmp
+Proof
+  rpt strip_tac >>
+  gvs[Once step_inst_base_def, AllCaseEqs(), update_var_def,
+      lookup_var_def, FLOOKUP_UPDATE]
+QED
+
+Triviality dalloca_step_output_agree[local]:
+  !fuel ctx inst s1 s2 r1 r2 w.
+    step_inst fuel ctx inst s1 = OK r1 /\
+    step_inst fuel ctx inst s2 = OK r2 /\
+    inst.inst_opcode = DALLOCA /\
+    s1.vs_fmp = s2.vs_fmp /\
+    MEM w inst.inst_outputs ==>
+    lookup_var w r1 = lookup_var w r2
+Proof
+  rpt strip_tac >>
+  `inst.inst_opcode <> INVOKE` by gvs[] >>
+  `step_inst_base inst s1 = OK r1` by metis_tac[step_inst_non_invoke] >>
+  `step_inst_base inst s2 = OK r2` by metis_tac[step_inst_non_invoke] >>
+  metis_tac[dalloca_base_output_lookup]
 QED
 
 Theorem step_non_effect_free_preserves_all_vars[local]:
@@ -343,7 +375,8 @@ Theorem step_non_effect_free_preserves_all_vars[local]:
     ~is_terminator inst.inst_opcode /\
     ~is_alloca_op inst.inst_opcode /\
     ~is_ext_call_op inst.inst_opcode /\
-    inst.inst_opcode <> INVOKE ==>
+    inst.inst_opcode <> INVOKE /\
+    inst.inst_opcode <> DALLOCA ==>
     !v. lookup_var v s' = lookup_var v s
 Proof
   rpt strip_tac >>
@@ -422,6 +455,20 @@ Proof
   `!e. e IN read_effects inst_a.inst_opcode ==>
        e NOTIN write_effects inst_b.inst_opcode` by
     (gvs[DISJOINT_DEF, EXTENSION] >> metis_tac[]) >>
+  `step_inst_base inst_b ss = OK vb` by gvs[step_inst_non_invoke] >>
+  `Eff_FMP NOTIN write_effects inst_b.inst_opcode ==>
+   vb.vs_fmp = ss.vs_fmp` by
+    metis_tac[step_inst_base_preserves_fmp_no_write] >>
+  `vb.vs_call_entry_fmp = ss.vs_call_entry_fmp /\
+   vb.vs_initial_fmp = ss.vs_initial_fmp /\
+   vb.vs_return_pc_token = ss.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  `inst_a.inst_opcode = GETFMP ==> ss.vs_fmp = vb.vs_fmp` by (
+    strip_tac >>
+    `Eff_FMP IN read_effects inst_a.inst_opcode` by
+      gvs[read_effects_def] >>
+    `Eff_FMP NOTIN write_effects inst_b.inst_opcode` by res_tac >>
+    gvs[]) >>
   (* Account sub-field preservation: inst_b always preserves
      balance, nonce, code even when it writes STORAGE *)
   `!addr. (vb.vs_accounts addr).balance =
@@ -494,12 +541,22 @@ Proof
         `vb.vs_accounts = ss.vs_accounts` by gvs[] >> gvs[])
       >- gvs[]))
   >> (
-    (* Non-effect-free: all vars preserved *)
-    `!v. lookup_var v va = lookup_var v ss` by
-      metis_tac[step_non_effect_free_preserves_all_vars] >>
-    `!v. lookup_var v sba = lookup_var v vb` by
-      metis_tac[step_non_effect_free_preserves_all_vars] >>
-    gvs[])
+    Cases_on `inst_a.inst_opcode = DALLOCA`
+    >- (
+      `Eff_FMP IN read_effects inst_a.inst_opcode` by
+        gvs[read_effects_def] >>
+      `Eff_FMP NOTIN write_effects inst_b.inst_opcode` by res_tac >>
+      `ss.vs_fmp = vb.vs_fmp` by gvs[] >>
+      irule dalloca_step_output_agree >>
+      qexistsl_tac [`ctx`, `fuel`, `inst_a`, `ss`, `vb`] >>
+      ASM_REWRITE_TAC[])
+    >- (
+      (* Remaining non-effect-free eligible instructions are side-effect-only. *)
+      `!v. lookup_var v va = lookup_var v ss` by
+        metis_tac[step_non_effect_free_preserves_all_vars] >>
+      `!v. lookup_var v sba = lookup_var v vb` by
+        metis_tac[step_non_effect_free_preserves_all_vars] >>
+      gvs[]))
 QED
 
 (* ================================================================
@@ -620,19 +677,58 @@ Proof
   rw[exec_read1_def] >> gvs[AllCaseEqs()] >> metis_tac[]
 QED
 
+Triviality direct_single_output_step_structure[local]:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    (inst.inst_opcode = ASSIGN \/ inst.inst_opcode = PARAM \/
+     inst.inst_opcode = GETFMP \/ inst.inst_opcode = INITIAL_FMP \/
+     inst.inst_opcode = FMP_PARAM \/ inst.inst_opcode = RETPC_PARAM) ==>
+    ?out val. inst.inst_outputs = [out] /\ s' = update_var out val s
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+  gvs[] >> PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[opcode_case_def] >>
+  gvs[AllCaseEqs()] >> metis_tac[]
+QED
+
+Triviality bump_step_structure[local]:
+  !inst s s'.
+    inst.inst_opcode = BUMP /\ step_inst_base inst s = OK s' ==>
+    ?out1 val1 out2 val2.
+      inst.inst_outputs = [out1; out2] /\
+      s' = update_var out2 val2 (update_var out1 val1 s)
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
+  simp[Once step_inst_base_def] >>
+  gvs[AllCaseEqs()] >> metis_tac[]
+QED
+
 fun pure_step_finish_tac () =
   gvs[inst_wf_def] >>
   FIRST [
-    drule exec_pure1_structure >> strip_tac >> gvs[] >> metis_tac[],
-    drule exec_pure2_structure >> strip_tac >> gvs[] >> metis_tac[],
-    drule exec_pure3_structure >> strip_tac >> gvs[] >> metis_tac[],
-    drule exec_read0_structure >> strip_tac >> gvs[] >> metis_tac[],
-    drule exec_read1_structure >> strip_tac >> gvs[] >> metis_tac[],
-    gvs[AllCaseEqs()] >> metis_tac[]]
+    drule exec_pure1_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out,val)]` >> simp[],
+    drule exec_pure2_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out,val)]` >> simp[],
+    drule exec_pure3_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out,val)]` >> simp[],
+    drule exec_read0_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out,val)]` >> simp[],
+    drule exec_read1_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out,val)]` >> simp[],
+    drule direct_single_output_step_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out,val)]` >> simp[],
+    drule bump_step_structure >> strip_tac >> gvs[] >>
+      qexists_tac `[(out1,val1); (out2,val2)]` >> simp[],
+    gvs[AllCaseEqs()] >>
+      FIRST [
+        qexists_tac `[]` >> simp[],
+        qexists_tac `[(out,val)]` >> simp[]]]
 
-(* A pure (empty read/write effects), eligible step_inst_base either
-   produces no outputs (NOP) and returns the state unchanged, or produces
-   exactly one output via update_var. *)
+(* A pure (empty read/write effects), eligible step_inst_base changes only its
+   declared outputs, represented uniformly as a finite update_var sequence. *)
 Theorem pure_step_structure:
   !inst ss v2.
     step_inst_base inst ss = OK v2 /\
@@ -643,33 +739,25 @@ Theorem pure_step_structure:
     inst.inst_opcode <> INVOKE /\
     write_effects inst.inst_opcode = {} /\
     read_effects inst.inst_opcode = {} ==>
-    (inst.inst_outputs = [] /\ v2 = ss) \/
-    (?out val. inst.inst_outputs = [out] /\ v2 = update_var out val ss)
+    ?pairs.
+      MAP FST pairs = inst.inst_outputs /\
+      v2 = FOLDL (\s' (out,val). update_var out val s') ss pairs
 Proof
   rpt strip_tac >>
   Cases_on `inst.inst_opcode` >>
   gvs[is_terminator_def, is_alloca_op_def, is_ext_call_op_def,
       write_effects_def, read_effects_def] >>
-  qpat_x_assum `step_inst_base inst ss = OK v2` mp_tac >>
-  ASM_REWRITE_TAC[step_inst_base_def] >>
-  strip_tac >|
-  [pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac (),
-   pure_step_finish_tac (), pure_step_finish_tac (), pure_step_finish_tac ()]
+  FIRST [
+    qspecl_then [`inst`, `ss`, `v2`] mp_tac
+      direct_single_output_step_structure >>
+      (impl_tac >- ASM_REWRITE_TAC[]) >> strip_tac >>
+      qexists_tac `[(out,val)]` >> simp[],
+    qspecl_then [`inst`, `ss`, `v2`] mp_tac bump_step_structure >>
+      (impl_tac >- ASM_REWRITE_TAC[]) >> strip_tac >>
+      qexists_tac `[(out1,val1); (out2,val2)]` >> simp[],
+    qpat_x_assum `step_inst_base inst ss = OK v2` mp_tac >>
+      ASM_REWRITE_TAC[step_inst_base_def] >> strip_tac >>
+      pure_step_finish_tac ()]
 QED
 
 Triviality empty_effect_non_effect_free_opcode_cases[local]:
@@ -680,6 +768,81 @@ Triviality empty_effect_non_effect_free_opcode_cases[local]:
     op = ASSERT \/ op = ASSERT_UNREACHABLE
 Proof
   Cases >> EVAL_TAC
+QED
+
+Triviality foldl_update_var_lookup_nonmember[local]:
+  !pairs s w.
+    ~MEM w (MAP FST pairs) ==>
+    lookup_var w (FOLDL (\s' (out,v). update_var out v s') s pairs) =
+    lookup_var w s
+Proof
+  Induct
+  >- simp[]
+  >> rpt gen_tac >> PairCases_on `h` >> simp[] >> strip_tac >>
+     first_x_assum (qspec_then `update_var h0 h1 s` mp_tac) >>
+     simp[lookup_var_def, update_var_def, FLOOKUP_UPDATE]
+QED
+
+Triviality foldl_update_var_lookup_shadowed[local]:
+  !pairs s1 s2 w v.
+    ~MEM w (MAP FST pairs) ==>
+    lookup_var w
+      (FOLDL (\s' (out,v). update_var out v s') (update_var w v s1) pairs) =
+    lookup_var w
+      (FOLDL (\s' (out,v). update_var out v s') (update_var w v s2) pairs)
+Proof
+  rpt strip_tac >>
+  simp[foldl_update_var_lookup_nonmember, lookup_var_def,
+       update_var_def, FLOOKUP_UPDATE]
+QED
+
+Triviality foldl_update_var_lookup_member_determined[local]:
+  !pairs s1 s2 w.
+    MEM w (MAP FST pairs) ==>
+    lookup_var w
+      (FOLDL (\s' (out,v). update_var out v s') s1 pairs) =
+    lookup_var w
+      (FOLDL (\s' (out,v). update_var out v s') s2 pairs)
+Proof
+  Induct
+  >- simp[]
+  >> pop_assum $ mk_asm "ih" >>
+     rpt gen_tac >> PairCases_on `h` >> simp[] >> disch_tac >>
+     Cases_on `MEM w (MAP FST pairs)`
+     >- (asm_x "ih" irule >> ASM_REWRITE_TAC[])
+     >> `w = h0` by
+          (qpat_x_assum `w = h0 \/ MEM w (MAP FST pairs)` mp_tac >>
+           ASM_REWRITE_TAC[]) >>
+        gvs[] >> irule foldl_update_var_lookup_shadowed >> simp[]
+QED
+
+Triviality foldl_update_var_lookup_cong[local]:
+  !pairs s1 s2.
+    (!w. MEM w (MAP FST pairs) ==> lookup_var w s1 = lookup_var w s2) ==>
+    !w. MEM w (MAP FST pairs) ==>
+      lookup_var w
+        (FOLDL (\s' (out,v). update_var out v s') s1 pairs) =
+      lookup_var w
+        (FOLDL (\s' (out,v). update_var out v s') s2 pairs)
+Proof
+  rpt strip_tac >> irule foldl_update_var_lookup_member_determined >> simp[]
+QED
+
+Triviality step_inst_ok_frame_foldl[local]:
+  !pairs fuel ctx inst s s'.
+    step_inst fuel ctx inst s = OK s' /\
+    EVERY (\p. (!y. MEM (Var y) inst.inst_operands ==> FST p <> y) /\
+                ~MEM (FST p) inst.inst_outputs) pairs ==>
+    step_inst fuel ctx inst
+      (FOLDL (\st (out,v). update_var out v st) s pairs) =
+    OK (FOLDL (\st (out,v). update_var out v st) s' pairs)
+Proof
+  Induct
+  >- simp[]
+  >> rpt gen_tac >> PairCases_on `h` >> simp[] >> strip_tac >>
+     `step_inst fuel ctx inst (update_var h0 h1 s) =
+      OK (update_var h0 h1 s')` by metis_tac[step_inst_ok_frame] >>
+     first_x_assum irule >> simp[]
 QED
 
 (* Output agreement for pure, empty-effect, non-INVOKE opcodes.
@@ -704,7 +867,12 @@ Theorem pure_step_output_agree[local]:
     s1.vs_data_section = s2.vs_data_section /\
     s1.vs_code = s2.vs_code /\
     s1.vs_labels = s2.vs_labels /\
-    s1.vs_prev_hashes = s2.vs_prev_hashes ==>
+    s1.vs_prev_hashes = s2.vs_prev_hashes /\
+    (inst.inst_opcode = GETFMP ==> s1.vs_fmp = s2.vs_fmp) /\
+    (inst.inst_opcode = INITIAL_FMP ==>
+      s1.vs_initial_fmp = s2.vs_initial_fmp) /\
+    (inst.inst_opcode = RETPC_PARAM ==>
+      s1.vs_return_pc_token = s2.vs_return_pc_token) ==>
     !w. MEM w inst.inst_outputs ==> lookup_var w r1 = lookup_var w r2
 Proof
   rpt strip_tac >>
@@ -726,6 +894,7 @@ Proof
   qpat_x_assum `step_inst_base inst s1 = OK r1` mp_tac >>
   qpat_x_assum `step_inst_base inst s2 = OK r2` mp_tac >>
   ASM_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[venomInstTheory.opcode_case_def] >>
   gvs[AllCaseEqs()] >>
   rpt strip_tac >> gvs[] >>
   first_x_assum irule >> simp[]
@@ -751,7 +920,7 @@ Proof
 QED
 
 (* INVOKE preserves structural fields (prev_bb, params, contexts, etc.) *)
-Theorem invoke_preserves_structural[local]:
+Theorem invoke_preserves_structural:
   !fuel ctx inst s s'.
     step_inst fuel ctx inst s = OK s' /\
     inst.inst_opcode = INVOKE ==>
@@ -759,67 +928,35 @@ Theorem invoke_preserves_structural[local]:
     s'.vs_params = s.vs_params /\
     s'.vs_call_ctx = s.vs_call_ctx /\
     s'.vs_tx_ctx = s.vs_tx_ctx /\
+
     s'.vs_block_ctx = s.vs_block_ctx /\
     s'.vs_data_section = s.vs_data_section /\
     s'.vs_code = s.vs_code /\
     s'.vs_prev_hashes = s.vs_prev_hashes /\
-    s'.vs_labels = s.vs_labels
+    s'.vs_labels = s.vs_labels /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
 Proof
   rpt strip_tac >>
   gvs[Once step_inst_def, AllCaseEqs(), bind_outputs_def] >>
-  qspecl_then [`ZIP (inst.inst_outputs, vals)`,
-               `merge_callee_state s callee_s'`]
+  qspecl_then [`ZIP (inst.inst_outputs, ret.iret_values)`,
+               `adopt_return_fmp ret (merge_callee_state s callee_s')`]
     strip_assume_tac foldl_update_var_only_vars >>
-  gvs[merge_callee_state_def]
+  Cases_on `ret.iret_adopt_fmp` >>
+  gvs[merge_callee_state_def, adopt_return_fmp_def]
 QED
 
-(* Case 1 of invoke commutation: inst2 has no outputs *)
-Triviality invoke_commute_case_nil:
-  !fuel ctx inst1 inst2 ss v1 s12 s21.
+Triviality invoke_commute_case_foldl[local]:
+  !fuel ctx inst1 inst2 ss v1 pairs s12 s21.
     step_inst fuel ctx inst1 ss = OK v1 /\
-    step_inst fuel ctx inst2 ss = OK ss /\
+    step_inst fuel ctx inst2 ss =
+      OK (FOLDL (\s' (out,v). update_var out v s') ss pairs) /\
     step_inst fuel ctx inst2 v1 = OK s12 /\
-    step_inst fuel ctx inst1 ss = OK s21 /\
+    step_inst fuel ctx inst1
+      (FOLDL (\s' (out,v). update_var out v s') ss pairs) = OK s21 /\
     inst_wf inst1 /\ inst_wf inst2 /\
     inst1.inst_opcode = INVOKE /\
-    inst2.inst_outputs = [] /\
-    DISJOINT (set (inst_defs inst1)) (set (inst_defs inst2)) /\
-    DISJOINT (set (inst_defs inst2)) (set (inst_uses inst1)) /\
-    DISJOINT (set (inst_defs inst1)) (set (inst_uses inst2)) /\
-    effects_independent inst1.inst_opcode inst2.inst_opcode /\
-    ~is_terminator inst1.inst_opcode /\ ~is_terminator inst2.inst_opcode /\
-    ~is_alloca_op inst1.inst_opcode /\ ~is_alloca_op inst2.inst_opcode /\
-    ~is_ext_call_op inst1.inst_opcode /\ ~is_ext_call_op inst2.inst_opcode /\
-    commute_equiv (set (inst_defs inst1) UNION set (inst_defs inst2)) s12 s21 /\
-    s12.vs_allocas = v1.vs_allocas /\
-    s12.vs_alloca_next = v1.vs_alloca_next /\
-    (!w. MEM w (inst_defs inst1) ==> lookup_var w s12 = lookup_var w v1) ==>
-    s12 = s21
-Proof
-  rpt strip_tac >>
-  `s21 = v1` by gvs[] >>
-  gvs[] >>
-  `s12.vs_allocas = s21.vs_allocas` by
-    metis_tac[step_inst_preserves_allocas] >>
-  `s12.vs_alloca_next = s21.vs_alloca_next` by
-    metis_tac[step_inst_preserves_alloca_next] >>
-  irule commute_equiv_allocas_vars_eq >>
-  simp[] >>
-  qexists_tac `set (inst_defs inst1) UNION set (inst_defs inst2)` >>
-  simp[] >> rpt strip_tac >>
-  gvs[IN_UNION, inst_defs_def]
-QED
-
-(* Case 2 of invoke commutation: inst2 has one output *)
-Triviality invoke_commute_case_cons:
-  !fuel ctx inst1 inst2 ss v1 out val s12 s21.
-    step_inst fuel ctx inst1 ss = OK v1 /\
-    step_inst fuel ctx inst2 ss = OK (update_var out val ss) /\
-    step_inst fuel ctx inst2 v1 = OK s12 /\
-    step_inst fuel ctx inst1 (update_var out val ss) = OK s21 /\
-    inst_wf inst1 /\ inst_wf inst2 /\
-    inst1.inst_opcode = INVOKE /\
-    inst2.inst_outputs = [out] /\
+    MAP FST pairs = inst2.inst_outputs /\
     DISJOINT (set (inst_defs inst1)) (set (inst_defs inst2)) /\
     DISJOINT (set (inst_defs inst2)) (set (inst_uses inst1)) /\
     DISJOINT (set (inst_defs inst1)) (set (inst_uses inst2)) /\
@@ -831,32 +968,64 @@ Triviality invoke_commute_case_cons:
     s12.vs_allocas = v1.vs_allocas /\
     s12.vs_alloca_next = v1.vs_alloca_next /\
     (!w. MEM w (inst_defs inst1) ==> lookup_var w s12 = lookup_var w v1) /\
-    lookup_var out s12 = lookup_var out (update_var out val ss) ==>
+    (!w. MEM w inst2.inst_outputs ==>
+      lookup_var w s12 =
+      lookup_var w (FOLDL (\s' (out,v). update_var out v s') ss pairs)) ==>
     s12 = s21
 Proof
   rpt strip_tac >>
-  (* step_inst_ok_frame: inst1 over update_var = update_var over inst1 *)
-  qspecl_then [`fuel`, `ctx`, `inst1`, `ss`, `v1`, `out`, `val`]
-    mp_tac step_inst_ok_frame >>
-  (impl_tac >- (
-    simp[] >>
-    gvs[DISJOINT_DEF, EXTENSION, inst_defs_def, inst_uses_def] >>
-    metis_tac[mem_var_operand_vars])) >>
-  strip_tac >>
-  (* s21 = update_var out val v1 *)
+  `EVERY (\p. (!y. MEM (Var y) inst1.inst_operands ==> FST p <> y) /\
+               ~MEM (FST p) inst1.inst_outputs) pairs` by (
+    rw[listTheory.EVERY_MEM] >> PairCases_on `p` >> simp[] >>
+    `MEM p0 inst2.inst_outputs` by (
+      qpat_x_assum `MAP FST pairs = _` (fn th => rewrite_tac[GSYM th]) >>
+      simp[listTheory.MEM_MAP] >> qexists `(p0,p1)` >> simp[]) >>
+    `~MEM (Var p0) inst1.inst_operands` by (
+      strip_tac >>
+      `MEM p0 (inst_uses inst1)` by
+        (gvs[inst_uses_def] >> metis_tac[mem_var_operand_vars]) >>
+      `MEM p0 (inst_defs inst2)` by gvs[inst_defs_def] >>
+      gvs[DISJOINT_DEF, EXTENSION] >> metis_tac[]) >>
+    `~MEM p0 inst1.inst_outputs` by (
+      strip_tac >>
+      `MEM p0 (inst_defs inst1)` by gvs[inst_defs_def] >>
+      `MEM p0 (inst_defs inst2)` by gvs[inst_defs_def] >>
+      gvs[DISJOINT_DEF, EXTENSION] >> metis_tac[]) >>
+    simp[]) >>
+  `step_inst fuel ctx inst1
+      (FOLDL (\s' (out,v). update_var out v s') ss pairs) =
+    OK (FOLDL (\s' (out,v). update_var out v s') v1 pairs)` by
+      metis_tac[step_inst_ok_frame_foldl] >>
   gvs[] >>
+  qspecl_then [`pairs`, `v1`] strip_assume_tac foldl_update_var_only_vars >>
   irule commute_equiv_allocas_vars_eq >>
-  simp[update_var_def] >>
+  simp[] >>
   qexists_tac `set (inst_defs inst1) UNION set (inst_defs inst2)` >>
-  simp[] >> rpt strip_tac >> gvs[IN_UNION, inst_defs_def]
+  simp[] >> rpt strip_tac >> gvs[IN_UNION]
   >- (
-    (* w in inst1.inst_outputs: lookup_var w s12 = lookup_var w (update_var out val v1) *)
-    `lookup_var w s12 = lookup_var w v1` by metis_tac[] >>
-    gvs[update_var_def, lookup_var_def, FLOOKUP_UPDATE] >>
-    gvs[DISJOINT_DEF, EXTENSION, inst_defs_def] >> metis_tac[])
+    `~MEM w (MAP FST pairs)` by (
+      qpat_x_assum `MAP FST pairs = inst2.inst_outputs`
+        (fn th => rewrite_tac[th]) >>
+      gvs[DISJOINT_DEF, EXTENSION, inst_defs_def] >> metis_tac[]) >>
+    `lookup_var w
+       (FOLDL (\s' (out,v). update_var out v s') v1 pairs) =
+     lookup_var w v1` by
+      metis_tac[foldl_update_var_lookup_nonmember] >>
+    metis_tac[])
   >> (
-    (* w = out: lookup_var out s12 = lookup_var out (update_var out val v1) *)
-    gvs[update_var_def, lookup_var_def, FLOOKUP_UPDATE])
+    `MEM w (MAP FST pairs)` by
+      (qpat_x_assum `MAP FST pairs = inst2.inst_outputs`
+         (fn th => rewrite_tac[th]) >> gvs[inst_defs_def]) >>
+    `lookup_var w s12 =
+     lookup_var w
+       (FOLDL (\s' (out,v). update_var out v s') ss pairs)` by
+      metis_tac[inst_defs_def] >>
+    `lookup_var w
+       (FOLDL (\s' (out,v). update_var out v s') ss pairs) =
+     lookup_var w
+       (FOLDL (\s' (out,v). update_var out v s') v1 pairs)` by
+      metis_tac[foldl_update_var_lookup_member_determined] >>
+    metis_tac[])
 QED
 
 (* Standalone invoke commutation: INVOKE × pure-empty-effect.
@@ -890,7 +1059,9 @@ Proof
    v1.vs_call_ctx = ss.vs_call_ctx /\ v1.vs_tx_ctx = ss.vs_tx_ctx /\
    v1.vs_block_ctx = ss.vs_block_ctx /\ v1.vs_data_section = ss.vs_data_section /\
    v1.vs_code = ss.vs_code /\ v1.vs_prev_hashes = ss.vs_prev_hashes /\
-   v1.vs_labels = ss.vs_labels` by
+   v1.vs_labels = ss.vs_labels /\
+   v1.vs_initial_fmp = ss.vs_initial_fmp /\
+   v1.vs_return_pc_token = ss.vs_return_pc_token` by
     (irule invoke_preserves_structural >> simp[] >> metis_tac[]) >>
   (* 3: commute_equiv *)
   `commute_equiv (set (inst_defs inst1) UNION set (inst_defs inst2))
@@ -922,6 +1093,8 @@ Proof
       mp_tac step_preserves_non_output_vars >>
     simp[] >>
     gvs[DISJOINT_DEF, EXTENSION, inst_defs_def] >> metis_tac[]) >>
+  `inst2.inst_opcode = GETFMP ==> v1.vs_fmp = ss.vs_fmp` by
+    (strip_tac >> gvs[read_effects_def]) >>
   (* 10: inst2 output vars agree between s12 and v2 *)
   `!w. MEM w inst2.inst_outputs ==> lookup_var w s12 = lookup_var w v2` by (
     rpt strip_tac >> irule pure_step_output_agree >>
@@ -933,13 +1106,11 @@ Proof
       mp_tac step_preserves_non_output_vars >>
     simp[] >>
     gvs[DISJOINT_DEF, EXTENSION, inst_defs_def] >> metis_tac[]) >>
-  (* 12: Dispatch via pure_step_structure *)
+  (* 12: Use the finite output-update sequence from pure_step_structure. *)
   qspecl_then [`inst2`, `ss`, `v2`] mp_tac pure_step_structure >>
-  simp[] >> strip_tac >> gvs[]
-  >- (irule invoke_commute_case_nil >>
-      simp[] >> metis_tac[])
-  >> (irule invoke_commute_case_cons >>
-      simp[] >> metis_tac[])
+  simp[] >> strip_tac >> gvs[] >>
+  irule invoke_commute_case_foldl >>
+  simp[] >> metis_tac[]
 QED
 
 (* Extended commutativity: two data-independent, abort-compatible,
@@ -1038,6 +1209,39 @@ Proof
   simp[]
 QED
 
+Triviality effect_free_step_preserves_hidden_fields[local]:
+  !fuel ctx inst s s'.
+    step_inst fuel ctx inst s = OK s' /\
+    is_effect_free_op inst.inst_opcode ==>
+    s'.vs_fmp = s.vs_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
+Proof
+  rpt strip_tac >>
+  `~is_terminator inst.inst_opcode` by
+    metis_tac[is_effect_free_not_terminator] >>
+  `~is_alloca_op inst.inst_opcode /\
+   ~is_ext_call_op inst.inst_opcode /\
+   inst.inst_opcode <> INVOKE /\
+   Eff_FMP NOTIN write_effects inst.inst_opcode` by
+    (Cases_on `inst.inst_opcode` >>
+     gvs[is_effect_free_op_def, is_alloca_op_def, is_ext_call_op_def,
+         write_effects_def, empty_effects_def]) >>
+  `step_inst_base inst s = OK s'` by
+    metis_tac[effect_free_step_eq_base] >>
+  `s'.vs_fmp = s.vs_fmp` by (
+    qspecl_then [`inst`, `s`, `s'`] mp_tac
+      step_inst_base_preserves_fmp_no_write >>
+    simp[]) >>
+  `s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+   s'.vs_initial_fmp = s.vs_initial_fmp /\
+   s'.vs_return_pc_token = s.vs_return_pc_token` by (
+    qspecl_then [`inst`, `s`, `s'`] mp_tac
+      step_inst_base_preserves_stable_frame_metadata >>
+    simp[]) >>
+  simp[]
+QED
+
 (* If two states are state_equiv on some variable set and also agree on all
    variables in that set, then they are fully equivalent (state_equiv {}). *)
 Theorem state_equiv_fill_vars:
@@ -1058,6 +1262,11 @@ Triviality effect_free_output_determined[local]:
     step_inst fuel ctx inst s2 = OK r2 /\
     is_effect_free_op inst.inst_opcode /\
     inst.inst_opcode <> NOP /\
+    (inst.inst_opcode = GETFMP ==> s1.vs_fmp = s2.vs_fmp) /\
+    (inst.inst_opcode = INITIAL_FMP ==>
+      s1.vs_initial_fmp = s2.vs_initial_fmp) /\
+    (inst.inst_opcode = RETPC_PARAM ==>
+      s1.vs_return_pc_token = s2.vs_return_pc_token) /\
     state_equiv excl s1 s2 /\
     DISJOINT excl (set (inst_uses inst)) ==>
     !v. MEM v inst.inst_outputs ==> lookup_var v r1 = lookup_var v r2
@@ -1111,6 +1320,14 @@ Proof
   >- (imp_res_tac step_nop_identity >> gvs[]) >>
   Cases_on `inst2.inst_opcode = NOP`
   >- (imp_res_tac step_nop_identity >> gvs[]) >>
+  `v1.vs_fmp = ss.vs_fmp /\
+   v1.vs_initial_fmp = ss.vs_initial_fmp /\
+   v1.vs_return_pc_token = ss.vs_return_pc_token` by
+    metis_tac[effect_free_step_preserves_hidden_fields] >>
+  `v2.vs_fmp = ss.vs_fmp /\
+   v2.vs_initial_fmp = ss.vs_initial_fmp /\
+   v2.vs_return_pc_token = ss.vs_return_pc_token` by
+    metis_tac[effect_free_step_preserves_hidden_fields] >>
   (* Step 2: Chain state_equivs to get state_equiv (outs1 ∪ outs2) s12 s21 *)
   qabbrev_tac `both = set inst1.inst_outputs UNION set inst2.inst_outputs` >>
   `state_equiv both ss s12` by

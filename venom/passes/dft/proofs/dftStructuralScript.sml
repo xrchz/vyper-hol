@@ -7,7 +7,7 @@
 
 Theory dftStructural
 Ancestors
-  dftDefs venomExecSemantics venomEffects passSharedDefs venomInst
+  dftDefs venomExecSemantics venomEffects passSharedDefs venomInst fcgDefs
 
 (* ===== flip_operands basic properties ===== *)
 
@@ -55,7 +55,7 @@ Proof
   Cases_on `is_comparator i.inst_opcode` >> simp[] >>
   Cases_on `i.inst_opcode` >>
   fs[is_comparator_def, flip_comparison_opcode_def, is_barrier_def,
-     is_volatile_def, is_alloca_op_def]
+     is_volatile_def, is_alloca_op_def, is_raw_fmp_opcode_def]
 QED
 
 (* ===== Helper lemmas ===== *)
@@ -627,3 +627,352 @@ Proof
 QED
 
 
+
+Definition dft_inst_invokes_target_def:
+  dft_inst_invokes_target target inst <=>
+    inst.inst_opcode = INVOKE /\
+    ?rest. inst.inst_operands = Label target :: rest
+End
+
+Definition dft_invoke_targets_def:
+  dft_invoke_targets blocks =
+    MAP FST (get_invoke_targets (fn_insts_blocks blocks))
+End
+
+Definition dft_invoke_subset_def:
+  dft_invoke_subset before after <=>
+    EVERY (\target. MEM target (dft_invoke_targets before))
+      (dft_invoke_targets after)
+End
+
+Theorem dft_target_mem_insts[local]:
+  MEM target (MAP FST (get_invoke_targets insts)) <=>
+  EXISTS (dft_inst_invokes_target target) insts
+Proof
+  Induct_on `insts`
+  >- simp[get_invoke_targets_def]
+  >> gen_tac >> Cases_on `h.inst_opcode = INVOKE`
+  >- (Cases_on `h.inst_operands`
+      >- simp[get_invoke_targets_def, dft_inst_invokes_target_def]
+      >> Cases_on `h'` >>
+         simp[get_invoke_targets_def, dft_inst_invokes_target_def] >>
+         metis_tac[])
+  >> simp[get_invoke_targets_def, dft_inst_invokes_target_def] >>
+     metis_tac[]
+QED
+
+Theorem dft_target_mem_blocks[local]:
+  MEM target (dft_invoke_targets blocks) <=>
+  ?bb. MEM bb blocks /\
+       MEM target (MAP FST (get_invoke_targets bb.bb_instructions))
+Proof
+  simp[dft_invoke_targets_def, dft_target_mem_insts] >>
+  eq_tac >> strip_tac
+  >- (gvs[listTheory.EXISTS_MEM] >>
+      Induct_on `blocks`
+      >- gvs[fn_insts_blocks_def]
+      >> gvs[fn_insts_blocks_def] >> metis_tac[])
+  >> gvs[dft_target_mem_insts, listTheory.EXISTS_MEM] >>
+     Induct_on `blocks`
+  >- gvs[]
+  >> gvs[fn_insts_blocks_def] >> metis_tac[]
+QED
+
+Theorem dft_flippable_not_invoke[local]:
+  is_flippable op ==> op <> INVOKE
+Proof
+  Cases_on `op` >> EVAL_TAC
+QED
+
+Theorem dft_flip_opcode_not_invoke[local]:
+  is_flippable inst.inst_opcode ==>
+  (flip_operands inst).inst_opcode <> INVOKE
+Proof
+  rpt strip_tac >>
+  imp_res_tac dft_flippable_not_invoke >>
+  Cases_on `inst.inst_operands` >> fs[flip_operands_def] >>
+  Cases_on `t` >> fs[flip_operands_def] >>
+  Cases_on `t'` >> fs[flip_operands_def] >>
+  Cases_on `inst.inst_opcode` >>
+  gvs[is_flippable_def, is_commutative_def, is_comparator_def,
+      flip_comparison_opcode_def]
+QED
+
+Theorem dft_block_invoke_subset:
+  EVERY
+    (\target. MEM target
+      (MAP FST (get_invoke_targets bb.bb_instructions)))
+    (MAP FST (get_invoke_targets (dft_block order bb).bb_instructions))
+Proof
+  simp[listTheory.EVERY_MEM, dft_target_mem_insts] >>
+  rpt strip_tac >>
+  qpat_x_assum `EXISTS _ _` mp_tac >>
+  simp[listTheory.EXISTS_MEM] >> strip_tac >>
+  rename1 `dft_inst_invokes_target target inst` >>
+  `MEM inst (FILTER (\i. ~is_pseudo i.inst_opcode)
+      (dft_block order bb).bb_instructions)` by
+    (gvs[dft_inst_invokes_target_def, listTheory.MEM_FILTER] >>
+     simp[is_pseudo_def]) >>
+  drule dft_block_from_orig >>
+  simp[from_block_def] >> strip_tac
+  >- (qexists `j` >> gvs[])
+  >> imp_res_tac dft_flip_opcode_not_invoke >>
+     gvs[dft_inst_invokes_target_def]
+QED
+
+Theorem dft_invoke_subset_refl:
+  dft_invoke_subset blocks blocks
+Proof
+  simp[dft_invoke_subset_def, listTheory.EVERY_MEM]
+QED
+
+Theorem dft_invoke_subset_trans:
+  dft_invoke_subset a b /\ dft_invoke_subset b c ==>
+  dft_invoke_subset a c
+Proof
+  simp[dft_invoke_subset_def, listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem dft_FIND_MEM[local]:
+  FIND P xs = SOME x ==> MEM x xs
+Proof
+  qid_spec_tac `x` >> Induct_on `xs` >>
+  simp[listTheory.FIND_thm] >> rw[] >> metis_tac[]
+QED
+
+Theorem dft_map_update_invoke_subset[local]:
+  MEM chosen blocks ==>
+  dft_invoke_subset blocks
+    (MAP (\b. if b.bb_label = lbl then dft_block order chosen else b) blocks)
+Proof
+  strip_tac >> simp[dft_invoke_subset_def, listTheory.EVERY_MEM] >>
+  rpt strip_tac >>
+  gvs[dft_target_mem_blocks, listTheory.MEM_MAP] >>
+  Cases_on `b.bb_label = lbl` >> gvs[]
+  >- (`EVERY
+         (\target. MEM target
+           (MAP FST (get_invoke_targets chosen.bb_instructions)))
+         (MAP FST (get_invoke_targets
+           (dft_block order chosen).bb_instructions))` by
+        irule dft_block_invoke_subset >>
+      qpat_x_assum `EVERY _ _` mp_tac >>
+      simp[listTheory.EVERY_MEM, listTheory.MEM_MAP] >>
+      disch_then (qspec_then `FST y` mp_tac) >>
+      simp[listTheory.MEM_MAP] >> strip_tac >>
+      simp[dft_target_mem_blocks] >> metis_tac[])
+  >> simp[dft_target_mem_blocks] >> metis_tac[]
+QED
+
+Theorem dft_process_one_invoke_subset:
+  dft_invoke_subset st.dls_blocks
+    (FST (dft_process_one cfg lr fn st lbl)).dls_blocks
+Proof
+  simp[dft_process_one_def] >>
+  Cases_on `lookup_block lbl st.dls_blocks`
+  >- simp[dft_invoke_subset_refl]
+  >> simp[] >>
+     rpt (pairarg_tac >> gvs[]) >>
+     Cases_on `FLOOKUP st.dls_last_order lbl` >> gvs[]
+  >- (Cases_on `x = q` >> gvs[dft_invoke_subset_refl] >>
+      irule dft_map_update_invoke_subset >>
+      gvs[lookup_block_def] >> metis_tac[dft_FIND_MEM])
+  >> Cases_on `x' = order` >> gvs[dft_invoke_subset_refl] >>
+     irule dft_map_update_invoke_subset >>
+     gvs[lookup_block_def] >> metis_tac[dft_FIND_MEM]
+QED
+
+Theorem dft_loop_step_invoke_subset:
+  dft_invoke_subset (FST trip).dls_blocks
+    (FST (dft_loop_step cfg lr fn trip)).dls_blocks
+Proof
+  Cases_on `trip` >> PairCases_on `r` >>
+  simp[dft_loop_step_def] >>
+  Cases_on `r1` >> simp[dft_invoke_subset_refl] >>
+  Cases_on `r0` >> simp[dft_invoke_subset_refl] >>
+  Cases_on `dft_process_one cfg lr fn q h` >>
+  PairCases_on `r` >> simp[] >>
+  Cases_on `r1` >> simp[] >>
+  Cases_on `r0` >> simp[] >>
+  `dft_invoke_subset q.dls_blocks
+     (FST (dft_process_one cfg lr fn q h)).dls_blocks` by
+    irule dft_process_one_invoke_subset >>
+  gvs[]
+QED
+
+Theorem dft_funpow_invoke_subset:
+  !trip. dft_invoke_subset (FST trip).dls_blocks
+    (FST (FUNPOW (dft_loop_step cfg lr fn) n trip)).dls_blocks
+Proof
+  Induct_on `n`
+  >- simp[dft_invoke_subset_refl]
+  >> gen_tac >> simp[arithmeticTheory.FUNPOW_SUC] >>
+     metis_tac[dft_loop_step_invoke_subset, dft_invoke_subset_trans]
+QED
+
+Theorem dft_fn_invoke_subset:
+  EVERY (\target. MEM target (MAP FST (fcg_scan_function fn)))
+    (MAP FST (fcg_scan_function (dft_fn fn)))
+Proof
+  simp[dft_fn_def, fcg_scan_function_def, fn_insts_def] >>
+  pairarg_tac >> gvs[] >>
+  `dft_invoke_subset fn.fn_blocks final_st.dls_blocks` by
+    (`dft_invoke_subset
+       (FST
+         (<| dls_blocks := fn.fn_blocks; dls_from_to := FEMPTY;
+              dls_last_order := FEMPTY |>,
+          (cfg_analyze fn).cfg_dfs_post, F)).dls_blocks
+       (FST
+         (FUNPOW
+           (dft_loop_step (cfg_analyze fn) (liveness_analyze fn) fn)
+           (LENGTH fn.fn_blocks * LENGTH fn.fn_blocks)
+           (<| dls_blocks := fn.fn_blocks; dls_from_to := FEMPTY;
+                dls_last_order := FEMPTY |>,
+            (cfg_analyze fn).cfg_dfs_post, F))).dls_blocks` by
+       irule dft_funpow_invoke_subset >>
+     gvs[]) >>
+  gvs[dft_invoke_subset_def, dft_invoke_targets_def]
+QED
+
+
+(* ===== Raw FMP opcode preservation ===== *)
+Theorem dft_flip_no_raw[local]:
+  is_flippable inst.inst_opcode /\
+  ~is_raw_fmp_opcode inst.inst_opcode ==>
+  ~is_raw_fmp_opcode (flip_operands inst).inst_opcode
+Proof
+  rpt strip_tac >>
+  Cases_on `inst.inst_operands` >> fs[flip_operands_def] >>
+  Cases_on `t` >> fs[flip_operands_def] >>
+  Cases_on `t'` >> fs[flip_operands_def] >>
+  Cases_on `inst.inst_opcode` >>
+  gvs[is_flippable_def, is_commutative_def, is_comparator_def,
+      flip_comparison_opcode_def, is_raw_fmp_opcode_def]
+QED
+
+Theorem from_block_no_raw[local]:
+  from_block block_insts i /\
+  EVERY (\j. ~is_raw_fmp_opcode j.inst_opcode) block_insts ==>
+  ~is_raw_fmp_opcode i.inst_opcode
+Proof
+  simp[from_block_def, listTheory.EVERY_MEM] >>
+  metis_tac[dft_flip_no_raw]
+QED
+
+Theorem dft_block_no_raw[local]:
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode) bb.bb_instructions ==>
+  EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+        (dft_block order bb).bb_instructions
+Proof
+  simp[listTheory.EVERY_MEM] >> rpt strip_tac >>
+  Cases_on `is_pseudo i.inst_opcode`
+  >- (`MEM i (FILTER (\i. is_pseudo i.inst_opcode)
+                  (dft_block order bb).bb_instructions)` by
+        (simp[listTheory.MEM_FILTER]) >>
+      qpat_x_assum `MEM i (FILTER _ _)` mp_tac >>
+      rewrite_tac[dft_block_phis] >>
+      simp[listTheory.MEM_FILTER] >>
+      metis_tac[]) >>
+  `MEM i (FILTER (\i. ~is_pseudo i.inst_opcode)
+                (dft_block order bb).bb_instructions)` by
+    (simp[listTheory.MEM_FILTER]) >>
+  drule dft_block_from_orig >>
+  simp[from_block_def] >> metis_tac[dft_flip_no_raw]
+QED
+
+Definition dft_blocks_no_raw_def[local]:
+  dft_blocks_no_raw blocks <=>
+    EVERY (\bb. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                       bb.bb_instructions) blocks
+End
+
+Theorem dft_blocks_no_raw_fn_insts[local]:
+  dft_blocks_no_raw blocks <=>
+  !inst. MEM inst (fn_insts_blocks blocks) ==>
+         ~is_raw_fmp_opcode inst.inst_opcode
+Proof
+  rewrite_tac[dft_blocks_no_raw_def] >>
+  Induct_on `blocks` >>
+  simp[fn_insts_blocks_def, listTheory.EVERY_MEM,
+       listTheory.MEM_APPEND, DISJ_IMP_THM, FORALL_AND_THM]
+QED
+
+Theorem dft_map_update_no_raw[local]:
+  dft_blocks_no_raw blocks /\ MEM chosen blocks ==>
+  dft_blocks_no_raw
+    (MAP (\b. if b.bb_label = lbl then dft_block order chosen else b) blocks)
+Proof
+  simp[dft_blocks_no_raw_def, listTheory.EVERY_MAP] >>
+  strip_tac >>
+  irule listTheory.EVERY_MONOTONIC >>
+  qexists `\b. EVERY (\i. ~is_raw_fmp_opcode i.inst_opcode)
+                  b.bb_instructions` >> simp[] >>
+  rpt strip_tac >> Cases_on `x.bb_label = lbl` >> simp[] >>
+  irule dft_block_no_raw >>
+  qpat_x_assum `EVERY _ blocks` mp_tac >>
+  simp[listTheory.EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem dft_process_one_no_raw[local]:
+  dft_blocks_no_raw st.dls_blocks ==>
+  dft_blocks_no_raw (FST (dft_process_one cfg lr fn st lbl)).dls_blocks
+Proof
+  strip_tac >> simp[dft_process_one_def] >>
+  Cases_on `lookup_block lbl st.dls_blocks`
+  >- simp[]
+  >> simp[] >> rpt (pairarg_tac >> gvs[]) >>
+  Cases_on `FLOOKUP st.dls_last_order lbl` >> gvs[]
+  >- (Cases_on `x = q` >> gvs[] >>
+      irule dft_map_update_no_raw >> simp[] >>
+      gvs[lookup_block_def] >> metis_tac[dft_FIND_MEM])
+  >> Cases_on `x' = order` >> gvs[] >>
+     irule dft_map_update_no_raw >> simp[] >>
+     gvs[lookup_block_def] >> metis_tac[dft_FIND_MEM]
+QED
+
+Theorem dft_loop_step_no_raw[local]:
+  dft_blocks_no_raw (FST trip).dls_blocks ==>
+  dft_blocks_no_raw (FST (dft_loop_step cfg lr fn trip)).dls_blocks
+Proof
+  Cases_on `trip` >> PairCases_on `r` >>
+  simp[dft_loop_step_def] >>
+  Cases_on `r1` >> simp[] >>
+  Cases_on `r0` >> simp[] >>
+  Cases_on `dft_process_one cfg lr fn q h` >>
+  PairCases_on `r` >> simp[] >>
+  Cases_on `r1` >> simp[] >>
+  Cases_on `r0` >> simp[] >>
+  strip_tac >>
+  `dft_blocks_no_raw
+     (FST (dft_process_one cfg lr fn q h)).dls_blocks` by
+    (irule dft_process_one_no_raw >> simp[]) >>
+  gvs[]
+QED
+
+Theorem dft_funpow_no_raw[local]:
+  !trip. dft_blocks_no_raw (FST trip).dls_blocks ==>
+    dft_blocks_no_raw
+      (FST (FUNPOW (dft_loop_step cfg lr fn) n trip)).dls_blocks
+Proof
+  Induct_on `n`
+  >- simp[] >>
+  gen_tac >> simp[arithmeticTheory.FUNPOW_SUC] >>
+  metis_tac[dft_loop_step_no_raw]
+QED
+
+Theorem dft_fn_no_raw_fmp_ops:
+  no_raw_fmp_ops fn ==> no_raw_fmp_ops (dft_fn fn)
+Proof
+  simp[dft_fn_def, no_raw_fmp_ops_def, fn_insts_def,
+       GSYM dft_blocks_no_raw_fn_insts] >>
+  pairarg_tac >> gvs[] >> strip_tac >>
+  `dft_blocks_no_raw
+     (FST
+       (FUNPOW
+         (dft_loop_step (cfg_analyze fn) (liveness_analyze fn) fn)
+         (LENGTH fn.fn_blocks * LENGTH fn.fn_blocks)
+         (<| dls_blocks := fn.fn_blocks; dls_from_to := FEMPTY;
+              dls_last_order := FEMPTY |>,
+          (cfg_analyze fn).cfg_dfs_post, F))).dls_blocks` by
+    (irule dft_funpow_no_raw >> simp[]) >>
+  gvs[]
+QED

@@ -5,6 +5,11 @@
  * No proof dependencies -- only definition-level ancestors.
  *
  * TOP-LEVEL:
+ *   ctx_transform_correct -- semantic correctness for a context transform
+ *   checked_unit_transform_correct -- successful atomic unit transform contract
+ *   source_deployment_rel -- source target/module linkage
+ *   finalizer_correct -- successful finalizer safety/preserve contract
+ *   initial_codegen_state_rel -- context-plan initial FMP/token agreement
  *   return_data_encodes    -- Vyper return value ~ EVM returndata
  *   non_indexed_values     -- extract non-indexed event args
  *   non_indexed_types      -- extract non-indexed event arg types
@@ -27,6 +32,61 @@ Ancestors
   selectorDispatch
   codegenRel
   venomState
+  passSimulationDefs
+  assemblyFinalizer
+  asmTargetSafety
+
+(* ===== Generic Compiler Contracts ===== *)
+
+(* A context transform is correct when executions from the same initial
+   Venom state satisfy the generic pass-correctness contract. *)
+Definition ctx_transform_correct_def:
+  ctx_transform_correct R_ok R_term ctx ctx' s <=>
+    pass_correct R_ok R_term R_term
+      (\fuel. run_context fuel ctx s)
+      (\fuel. run_context fuel ctx' s)
+End
+
+(* The pipeline boundary keeps each context and its associated data segment
+   together in a compilation_unit.  Execution projects only the contexts. *)
+Definition checked_unit_transform_correct_def:
+  checked_unit_transform_correct
+    (pipeline : resolved_compiler_policy -> compilation_unit ->
+                pipeline_output option)
+    rpolicy R_ok R_term (unit : compilation_unit) s <=>
+    ?out. pipeline rpolicy unit = SOME out /\
+      ctx_transform_correct R_ok R_term
+        unit.cu_context out.po_unit.cu_context s
+End
+
+(* Every successful finalization is target-safe.  Preserve policy additionally
+   requires exact identity of the assembly instruction list. *)
+Definition finalizer_correct_def:
+  finalizer_correct rpolicy (finalizer : assembly_finalizer) <=>
+    !asm finalized_asm.
+      finalizer rpolicy asm = SOME finalized_asm ==>
+      assembly_target_safe rpolicy.rpol_target finalized_asm /\
+      (rpolicy.rpol_final_assembly = FAP_Preserve ==>
+       finalized_asm = asm)
+End
+
+(* The source target selects a module map, and the certified compile
+   environment selects exactly the source top-level statements being run. *)
+Definition source_deployment_rel_def:
+  source_deployment_rel tops am tx cenv <=>
+    ?mods. ALOOKUP am.sources tx.target = SOME mods /\
+           ALOOKUP mods cenv.ce_module = SOME tops
+End
+
+(* Code generation starts from the FMP certified by the context plan, while
+   the logical return continuation token is initially zero. *)
+Definition initial_codegen_state_rel_def:
+  initial_codegen_state_rel cp vs <=>
+    vs.vs_fmp = n2w cp.cp_initial_fmp /\
+    vs.vs_call_entry_fmp = n2w cp.cp_initial_fmp /\
+    vs.vs_initial_fmp = n2w cp.cp_initial_fmp /\
+    vs.vs_return_pc_token = 0w
+End
 
 (* ===== E2E Result Predicates ===== *)
 
@@ -234,7 +294,8 @@ End
 (* Full Vyper-EVM correspondence for a single external call.
    Packages the case split on call_external result:
    - Success: EVM halts, returndata + state effects match
-   - Assert/revert: EVM reverts, rollback state unchanged
+   - Assert/revert: outermost EVM execution reports REVERT; rollback is
+     applied by the caller rather than by this run boundary
    - Error: T (could be F under well-formedness)
    - Break/Continue/Return: F (never escape call_external) *)
 Definition vyper_evm_correspondence_def:
@@ -246,8 +307,7 @@ Definition vyper_evm_correspondence_def:
            return_data_encodes tenv ret v es' /\
            state_effects_match event_info tx.target tenv am' es'
      | (INR (AssertException _), _) =>
-         ?es'. run es = SOME (INR (SOME Reverted), es') /\
-               state_unchanged es es'
+         ?es'. run es = SOME (INR (SOME Reverted), es')
      | (INR (Error _), _) => T
      | (INR BreakException, _) => F
      | (INR ContinueException, _) => F
@@ -262,7 +322,8 @@ End
    with the bytecode loading condition.
    Calldata: EVM msgParams.data = Venom cc_calldata (selector+ABI args). *)
 Definition initial_evm_rel_def:
-  initial_evm_rel bytecode vs es <=>
+  initial_evm_rel cp bytecode vs es <=>
+    initial_codegen_state_rel cp vs /\
     ~NULL es.contexts /\
     let (ctxt, rb) = HD es.contexts in
       rb.accounts = vs.vs_accounts /\

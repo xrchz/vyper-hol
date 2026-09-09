@@ -28,7 +28,7 @@
 
 Theory cfgNormDefs
 Ancestors
-  cfgTransform venomWf venomExecSemantics
+  cfgTransform venomWf venomExecSemantics irSupply
 
 (* ===== Forwarding Store Detection ===== *)
 
@@ -213,4 +213,118 @@ End
 Definition cfg_norm_ctx_def:
   cfg_norm_ctx ctx =
     ctx with ctx_functions := MAP cfg_norm_fn ctx.ctx_functions
+End
+
+
+(* ===== Supply-aware configured transform ===== *)
+
+(* The legacy arithmetic/name-based normalizer above remains available for its
+   existing proof development.  Configured callers use this unit-wide supply
+   traversal instead. *)
+Definition build_forwarding_assigns_supply_def:
+  build_forwarding_assigns_supply s [] = ([],[],s) /\
+  build_forwarding_assigns_supply s (var::vars) =
+    case fresh_ir_var s of (new_var,s1) =>
+    case fresh_inst_id s1 of (id,s2) =>
+    case build_forwarding_assigns_supply s2 vars of
+      (rest_repls,rest_insts,s3) =>
+      ((var,new_var)::rest_repls,
+       <| inst_id := id; inst_opcode := ASSIGN;
+          inst_operands := [Var var]; inst_outputs := [new_var] |>
+         :: rest_insts,
+       s3)
+End
+
+Definition build_split_block_supply_def:
+  build_split_block_supply s pred_bb target_bb =
+    case fresh_ir_label s of (split_label,s1) =>
+    let fwd_vars = nub (phi_vars_needing_forward
+                          pred_bb.bb_label pred_bb
+                          target_bb.bb_instructions) in
+    case build_forwarding_assigns_supply s1 fwd_vars of
+      (var_repls,fwd_insts,s2) =>
+    case fresh_inst_id s2 of (jmp_id,s3) =>
+      (<| bb_label := split_label;
+          bb_instructions :=
+            fwd_insts ++
+            [<| inst_id := jmp_id; inst_opcode := JMP;
+                inst_operands := [Label target_bb.bb_label];
+                inst_outputs := [] |>] |>,
+       var_repls,s3)
+End
+
+Definition insert_split_supply_def:
+  insert_split_supply s func pred_bb target_bb =
+    case build_split_block_supply s pred_bb target_bb of
+      (split_bb,var_repls,s1) =>
+    let split_label = split_bb.bb_label in
+    let pred_bb' =
+      subst_label_terminator target_bb.bb_label split_label pred_bb in
+    let func1 = func with fn_blocks :=
+      replace_block pred_bb.bb_label pred_bb' func.fn_blocks in
+    let target_bb' = update_phis_for_split
+      pred_bb.bb_label split_label var_repls target_bb in
+    let func2 = func1 with fn_blocks :=
+      replace_block target_bb.bb_label target_bb' func1.fn_blocks in
+      (func2 with fn_blocks := func2.fn_blocks ++ [split_bb],s1)
+End
+
+Definition find_and_split_supply_def:
+  find_and_split_supply func s [] = (func,F,s) /\
+  find_and_split_supply func s (bb::rest) =
+    let preds = block_preds func bb.bb_label in
+    if LENGTH preds <= 1 then find_and_split_supply func s rest
+    else
+      case FIND (\p. num_succs p > 1) preds of
+        NONE => find_and_split_supply func s rest
+      | SOME pred_bb =>
+          (case insert_split_supply s func pred_bb bb of (func',s1) =>
+             (func',T,s1))
+End
+
+Definition cfg_norm_round_supply_def:
+  cfg_norm_round_supply s func =
+    find_and_split_supply func s func.fn_blocks
+End
+
+Definition cfg_norm_iter_supply_def:
+  cfg_norm_iter_supply 0 s func = (func,s) /\
+  cfg_norm_iter_supply (SUC n) s func =
+    case cfg_norm_round_supply s func of (func',changed,s1) =>
+      if changed then cfg_norm_iter_supply n s1 func'
+      else (func',s1)
+End
+
+Definition cfg_norm_function_supply_def:
+  cfg_norm_function_supply s func =
+    cfg_norm_iter_supply (2 * LENGTH func.fn_blocks) s func
+End
+
+Definition cfg_norm_functions_supply_def:
+  cfg_norm_functions_supply s [] = ([],s) /\
+  cfg_norm_functions_supply s (func::funcs) =
+    case cfg_norm_function_supply s func of (func',s1) =>
+    case cfg_norm_functions_supply s1 funcs of (funcs',s2) =>
+      (func'::funcs',s2)
+End
+
+Definition cfg_norm_context_supply_def:
+  cfg_norm_context_supply s ctx =
+    case cfg_norm_functions_supply s ctx.ctx_functions of (funcs,s1) =>
+      (ctx with ctx_functions := funcs,s1)
+End
+
+Definition cfg_norm_unit_supply_def:
+  cfg_norm_unit_supply s unit =
+    case cfg_norm_context_supply s unit.cu_context of (ctx,s1) =>
+      (unit with cu_context := ctx,s1)
+End
+
+Definition cfg_norm_configured_with_supply_def:
+  cfg_norm_configured_with_supply unit =
+    cfg_norm_unit_supply (init_ir_supply unit) unit
+End
+
+Definition cfg_norm_configured_def:
+  cfg_norm_configured unit = FST (cfg_norm_configured_with_supply unit)
 End

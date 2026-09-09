@@ -53,8 +53,9 @@ Proof
       venomEffectsTheory.all_effects_def,
       venomEffectsTheory.empty_effects_def,
       pred_setTheory.NOT_INSERT_EMPTY]) >>
-  `inst.inst_opcode <> PHI /\ inst.inst_opcode <> PARAM` by
-    gvs[ac_is_safe_between_def] >>
+  `inst.inst_opcode <> PHI /\ inst.inst_opcode <> PARAM /\
+   inst.inst_opcode <> FMP_PARAM` by
+    gvs[ac_is_safe_between_def, venomInstTheory.is_effect_free_op_def] >>
   `?s'. step_inst_base inst s = OK s'` by (
     irule effect_free_step_inst_base_ok >> gvs[] >>
     metis_tac[optionTheory.IS_SOME_DEF, optionTheory.NOT_SOME_NONE]) >>

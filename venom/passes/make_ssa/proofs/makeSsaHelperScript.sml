@@ -395,6 +395,78 @@ Proof
   BasicProvers.every_case_tac >> metis_tac[]
 QED
 
+(* Small output-arity interface used to keep opcode branches local. *)
+Theorem fdom_union_two_outputs_intro[local]:
+  !d x a b.
+    (x IN d \/ x = a \/ x = b) ==>
+    x IN d UNION set [a; b]
+Proof
+  simp[IN_UNION]
+QED
+
+Theorem step_inst_base_DRET_not_OK_local[local]:
+  !inst s r. inst.inst_opcode = DRET ==>
+    step_inst_base inst s <> OK r
+Proof
+  rpt strip_tac >>
+  gvs[step_inst_base_def] >>
+  Cases_on `inst.inst_outputs = []` >> gvs[] >>
+  Cases_on `parse_dret_shape inst` >> gvs[] >>
+  PairCases_on `x` >> gvs[] >>
+  Cases_on `eval_operands inst.inst_operands s` >> gvs[] >>
+  Cases_on `pair_dret_words
+    (TAKE (2 * x1) (DROP (1 + x0) x))` >> gvs[] >>
+  pairarg_tac >> gvs[]
+QED
+
+Theorem step_inst_base_RETFMP_not_OK_local[local]:
+  !inst s r. inst.inst_opcode = RETFMP ==>
+    step_inst_base inst s <> OK r
+Proof
+  rpt strip_tac >> gvs[step_inst_base_def] >>
+  Cases_on `eval_operands inst.inst_operands s` >> gvs[] >>
+  Cases_on `x` >> gvs[]
+QED
+
+val make_ssa_term_ok_jump_tac =
+  qpat_x_assum `step_inst_base _ _ = OK _` mp_tac >>
+  simp[step_inst_base_def, eval_operands_def, eval_operand_def,
+       AllCaseEqs()] >>
+  rpt CASE_TAC >> gvs[] >> rpt strip_tac >> pairarg_tac >> gvs[];
+
+Theorem step_inst_base_ok_terminator_jump_local[local]:
+  !inst s s'.
+    is_terminator inst.inst_opcode /\
+    step_inst_base inst s = OK s' ==>
+    inst.inst_opcode = JMP \/ inst.inst_opcode = JNZ \/
+    inst.inst_opcode = DJMP
+Proof
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
+  TRY (rename1 `inst.inst_opcode = DRET` >>
+       metis_tac[step_inst_base_DRET_not_OK_local]) >>
+  TRY (rename1 `inst.inst_opcode = RETFMP` >>
+       metis_tac[step_inst_base_RETFMP_not_OK_local]) >>
+  TRY (rename1 `inst.inst_opcode = RET` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = RETURN` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = REVERT` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = STOP` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = SINK` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = SELFDESTRUCT` >> make_ssa_term_ok_jump_tac) >>
+  TRY (rename1 `inst.inst_opcode = INVALID` >> make_ssa_term_ok_jump_tac)
+QED
+
+Theorem step_inst_base_as_step_inst_local[local]:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode ==>
+    step_inst 0 ARB inst s = OK s'
+Proof
+  rw[Once step_inst_def] >>
+  gvs[step_inst_base_def]
+QED
+
+
 (* step_inst_base only adds variables from inst_outputs.
    Key helper for vars_colon_free preservation.
    Strategy: ONCE_REWRITE to avoid full expansion, then per-opcode TRY. *)
@@ -403,34 +475,18 @@ Theorem step_inst_base_vars_subset[local]:
     step_inst_base inst s = OK s' ==>
     FDOM s'.vs_vars SUBSET FDOM s.vs_vars UNION set inst.inst_outputs
 Proof
-  rpt gen_tac >>
-  ONCE_REWRITE_TAC[step_inst_base_def] >>
-  Cases_on `inst.inst_opcode` >>
-  PURE_REWRITE_TAC[venomInstTheory.opcode_case_def] >>
-  (* Uniform handler for all exec_* helpers + direct cases *)
-  gvs[exec_pure1_def] >>
-  gvs[exec_pure2_def] >>
-  gvs[exec_pure3_def] >>
-  gvs[exec_read0_def, exec_read1_def] >>
-  gvs[exec_write2_def, exec_alloca_def] >>
-  gvs[exec_ext_call_def] >>
-  gvs[exec_delegatecall_def] >>
-  gvs[exec_create_def] >>
-  gvs[extract_venom_result_def] >>
-  gvs[AllCaseEqs(), LET_THM] >>
-  gvs[update_var_def, FDOM_FUPDATE] >>
-  gvs[jump_to_def, mcopy_def, mstore_def, mstore8_def] >>
-  gvs[sstore_def, tstore_def] >>
-  gvs[halt_state_def, revert_state_def, set_returndata_def] >>
-  rpt strip_tac >> gvs[SUBSET_DEF, IN_INSERT, IN_UNION] >>
-  (* Remaining: ext_call/staticcall/delegatecall/create/create2 lambda pairs,
-     DLOADBYTES, CODECOPY write_memory_with_expansion *)
-  TRY (gvs[write_memory_with_expansion_def, LET_THM] >> NO_TAC) >>
-  TRY (pairarg_tac >> gvs[update_var_def, FDOM_FUPDATE] >>
-       gvs[SUBSET_DEF, IN_INSERT, IN_UNION] >> NO_TAC) >>
-  TRY (Cases_on `result` >> gvs[AllCaseEqs()]) >>
-  TRY (Cases_on `y` >> gvs[AllCaseEqs()]) >>
-  rpt gen_tac >> strip_tac >> gvs[]
+  rpt gen_tac >> strip_tac >>
+  rw[SUBSET_DEF] >> rpt strip_tac >>
+  Cases_on `is_terminator inst.inst_opcode`
+  >- (drule_all step_inst_base_ok_terminator_jump_local >>
+      strip_tac >>
+      gvs[step_inst_base_def, jump_to_def, AllCaseEqs()]) >>
+  Cases_on `MEM x inst.inst_outputs`
+  >- simp[IN_UNION] >>
+  `lookup_var x s' = lookup_var x s` by
+    metis_tac[step_inst_base_as_step_inst_local,
+              venomInstProofsTheory.step_preserves_non_output_vars] >>
+  gvs[lookup_var_def, FLOOKUP_DEF, IN_UNION]
 QED
 
 (* FOLDL update_var adds output names to vs_vars *)
@@ -571,7 +627,7 @@ Proof
   gvs[extract_venom_result_def] >>
   gvs[AllCaseEqs(), LET_THM] >>
   gvs[update_var_def, FDOM_FUPDATE] >>
-  gvs[jump_to_def, mcopy_def, mstore_def, mstore8_def] >>
+  gvs[jump_to_def, mcopy_def, mstore_def, istore_def, mstore8_def] >>
   gvs[sstore_def, tstore_def] >>
   gvs[halt_state_def, revert_state_def, set_returndata_def] >>
   rpt strip_tac >> gvs[SUBSET_DEF, IN_INSERT, IN_UNION] >>
@@ -610,7 +666,9 @@ Proof
     rw[step_inst_def] >>
     gvs[AllCaseEqs()] >> rpt strip_tac >> gvs[] >>
     imp_res_tac bind_outputs_vars_subset >>
-    gvs[SUBSET_DEF, IN_UNION, merge_callee_state_def])
+    Cases_on `ret.iret_adopt_fmp` >>
+    gvs[SUBSET_DEF, IN_UNION, merge_callee_state_def,
+        adopt_return_fmp_def])
   >>
   rw[step_inst_non_invoke] >>
   imp_res_tac step_inst_base_vars_subset
@@ -639,7 +697,8 @@ Proof
     rw[step_inst_def] >>
     gvs[AllCaseEqs()] >> rpt strip_tac >> gvs[] >>
     imp_res_tac bind_outputs_vars_monotone >>
-    gvs[SUBSET_DEF, merge_callee_state_def])
+    Cases_on `ret.iret_adopt_fmp` >>
+    gvs[SUBSET_DEF, merge_callee_state_def, adopt_return_fmp_def])
   >>
   rw[step_inst_non_invoke] >>
   imp_res_tac step_inst_base_vars_monotone
@@ -816,7 +875,7 @@ Proof
   gvs[extract_venom_result_def] >>
   gvs[AllCaseEqs(), LET_THM] >>
   gvs[update_var_def, lookup_var_def, FLOOKUP_UPDATE] >>
-  gvs[jump_to_def, mcopy_def, mstore_def, mstore8_def] >>
+  gvs[jump_to_def, mcopy_def, mstore_def, istore_def, mstore8_def] >>
   gvs[sstore_def, tstore_def] >>
   gvs[halt_state_def, revert_state_def, set_returndata_def] >>
   rpt strip_tac >> gvs[FLOOKUP_UPDATE] >>
@@ -2692,23 +2751,29 @@ Theorem rename_inst_output_fresh[local]:
   !rs inst s1.
     inst.inst_opcode <> PHI /\
     EVERY colon_free inst.inst_outputs /\
+    bound_output_count inst.inst_opcode <= LENGTH inst.inst_outputs /\
     vars_colon_free s1 ==>
     output_fresh (latest_version rs) inst (SND (rename_inst rs inst)) s1
 Proof
-  rw[output_fresh_def] >> rpt strip_tac >>
-  Cases_on `inst.inst_outputs` >> gvs[] >>
-  `colon_free h` by gvs[] >>
-  `colon_free x` by metis_tac[vars_colon_free_def] >>
-  `x <> h` by (strip_tac >> gvs[]) >>
-  (* rename_inst for non-PHI: outputs come from rename_outputs *)
-  gvs[rename_inst_def, LET_THM] >>
-  pairarg_tac >> gvs[] >>
-  (* HD of rename_outputs (h::t) is version_var h ver for some ver *)
-  gvs[rename_outputs_def, LET_THM] >>
-  pairarg_tac >> gvs[] >>
-  pairarg_tac >> gvs[] >>
-  (* Now HD outs' = version_var h ver, and goal is latest_version rs x <> version_var h ver *)
-  metis_tac[latest_version_no_alias]
+  rpt strip_tac >> rw[output_fresh_def, LET_THM] >>
+  `ALL_DISTINCT (SND (rename_inst rs inst)).inst_outputs /\
+   LENGTH (SND (rename_inst rs inst)).inst_outputs = LENGTH inst.inst_outputs /\
+   !i. i < LENGTH inst.inst_outputs ==>
+     ?ver. EL i (SND (rename_inst rs inst)).inst_outputs =
+           version_var (EL i inst.inst_outputs) ver`
+    by metis_tac[rename_inst_output_props] >>
+  rpt conj_tac
+  >- simp[]
+  >- metis_tac[ALL_DISTINCT_TAKE]
+  >> rpt strip_tac >>
+     `colon_free (EL i inst.inst_outputs)` by gvs[EVERY_EL] >>
+     `colon_free x` by metis_tac[vars_colon_free_def] >>
+     `?ver. EL i (SND (rename_inst rs inst)).inst_outputs =
+             version_var (EL i inst.inst_outputs) ver` by
+       (`i < LENGTH inst.inst_outputs` by decide_tac >>
+        qpat_x_assum `!j. j < LENGTH inst.inst_outputs ==> _`
+          (qspec_then `i` mp_tac) >> simp[]) >>
+     metis_tac[latest_version_no_alias]
 QED
 
 (* inst_renamed sigma follows from inst_renamed (latest_version rs) when
@@ -2733,25 +2798,57 @@ Theorem output_fresh_from_freshness[local]:
   !sigma rs inst1 s1.
     inst1.inst_opcode <> PHI /\
     EVERY colon_free inst1.inst_outputs /\
+    bound_output_count inst1.inst_opcode <= LENGTH inst1.inst_outputs /\
     vars_colon_free s1 /\
     (!v. colon_free v ==> ?n. sigma v = version_var v n) ==>
     output_fresh sigma inst1 (SND (rename_inst rs inst1)) s1
 Proof
-  rw[output_fresh_def] >> rpt strip_tac >>
-  Cases_on `inst1.inst_outputs` >> gvs[] >>
-  `colon_free h` by gvs[] >>
-  `colon_free x` by metis_tac[vars_colon_free_def] >>
-  `x <> h` by (strip_tac >> gvs[]) >>
-  gvs[rename_inst_def, LET_THM] >>
-  pairarg_tac >> gvs[] >>
-  gvs[rename_outputs_def, LET_THM] >>
-  pairarg_tac >> gvs[] >>
-  pairarg_tac >> gvs[] >>
-  metis_tac[sigma_no_alias]
+  rpt strip_tac >> rw[output_fresh_def, LET_THM] >>
+  `ALL_DISTINCT (SND (rename_inst rs inst1)).inst_outputs /\
+   LENGTH (SND (rename_inst rs inst1)).inst_outputs = LENGTH inst1.inst_outputs /\
+   !i. i < LENGTH inst1.inst_outputs ==>
+     ?ver. EL i (SND (rename_inst rs inst1)).inst_outputs =
+           version_var (EL i inst1.inst_outputs) ver`
+    by metis_tac[rename_inst_output_props] >>
+  rpt conj_tac
+  >- simp[]
+  >- metis_tac[ALL_DISTINCT_TAKE]
+  >> rpt strip_tac >>
+     `colon_free (EL i inst1.inst_outputs)` by gvs[EVERY_EL] >>
+     `colon_free x` by metis_tac[vars_colon_free_def] >>
+     `?ver. EL i (SND (rename_inst rs inst1)).inst_outputs =
+             version_var (EL i inst1.inst_outputs) ver` by
+       (`i < LENGTH inst1.inst_outputs` by decide_tac >>
+        qpat_x_assum `!j. j < LENGTH inst1.inst_outputs ==> _`
+          (qspec_then `i` mp_tac) >> simp[]) >>
+     metis_tac[sigma_no_alias]
 QED
 
-(* ASSIGN: specific sigma — (HD out1 =+ HD out2) sigma.
-   Matches step_inst_base_renamed_sim's output format for opcode_has_output opcodes. *)
+(* When an opcode binds all of its syntactic outputs, output_sigma is exactly
+   the latest_version map produced by rename_inst. *)
+Theorem output_sigma_latest_rename_inst[local]:
+  !rs inst.
+    inst.inst_opcode <> PHI /\
+    bound_output_count inst.inst_opcode = LENGTH inst.inst_outputs ==>
+    output_sigma inst.inst_opcode inst.inst_outputs
+      (SND (rename_inst rs inst)).inst_outputs (latest_version rs) =
+    latest_version (FST (rename_inst rs inst))
+Proof
+  rpt strip_tac >> rw[FUN_EQ_THM, output_sigma_def] >>
+  `TAKE (bound_output_count inst.inst_opcode) inst.inst_outputs =
+   inst.inst_outputs` by simp[] >>
+  `LENGTH (SND (rename_inst rs inst)).inst_outputs =
+   LENGTH inst.inst_outputs` by metis_tac[rename_inst_outputs_length] >>
+  `TAKE (bound_output_count inst.inst_opcode)
+      (SND (rename_inst rs inst)).inst_outputs =
+   (SND (rename_inst rs inst)).inst_outputs` by simp[] >>
+  simp[] >>
+  gvs[rename_inst_def, LET_THM] >> pairarg_tac >> gvs[] >>
+  drule rename_outputs_multi_latest >> simp[TAKE_LENGTH_ID_rwt]
+QED
+
+(* ASSIGN follows the same all-output sigma interface as every other
+   non-INVOKE instruction. *)
 Theorem assign_renamed_sim[local]:
   !sigma inst1 inst2 s1 s2 s1'.
     ssa_sim sigma s1 s2 /\
@@ -2760,14 +2857,16 @@ Theorem assign_renamed_sim[local]:
     inst1.inst_opcode = ASSIGN /\
     step_inst_base inst1 s1 = OK s1' ==>
     ?s2'. step_inst_base inst2 s2 = OK s2' /\
-          ssa_sim ((HD inst1.inst_outputs =+ HD inst2.inst_outputs) sigma)
-                  s1' s2'
+          ssa_sim (output_sigma inst1.inst_opcode
+                     inst1.inst_outputs inst2.inst_outputs sigma) s1' s2'
 Proof
   rpt strip_tac >> gvs[inst_renamed_def, output_fresh_def] >>
   gvs[step_inst_base_def, AllCaseEqs()] >>
   imp_res_tac eval_operand_renamed >> gvs[] >>
   Cases_on `inst2.inst_outputs` >> gvs[] >>
-  irule ssa_sim_update_var >> gvs[lookup_var_def]
+  simp[output_sigma_def, bound_output_count_def, opcode_has_output_def] >>
+  irule ssa_sim_update_var >>
+  gvs[lookup_var_def, bound_output_count_def, opcode_has_output_def]
 QED
 
 (* setup_callee produces identical states under ssa_sim *)
@@ -2818,7 +2917,54 @@ QED
    non-aliasing (satisfied by pipeline via colon_free + latest_version).
  *)
 
-(* Non-terminator, non-INVOKE step_inst_base only returns OK or Error *)
+(* Precompute constructor-specific clauses so the generic theorem never
+   expands step_inst_base into one monolithic opcode case expression. *)
+local
+  val nt_ni_ops = List.filter (fn op_tm =>
+    let val nt = EVAL ``~is_terminator ^op_tm``
+        val ni = EVAL ``^op_tm <> INVOKE``
+    in aconv (rhs (concl nt)) T andalso aconv (rhs (concl ni)) T end
+  ) (TypeBase.constructors_of ``:opcode``);
+
+  val nt_ni_clauses = map (fn op_tm =>
+    SIMP_CONV (srw_ss()) [step_inst_base_def]
+      (mk_comb(mk_comb(``step_inst_base``,
+        ``inst with inst_opcode := ^op_tm``), ``st:venom_state``))
+  ) nt_ni_ops;
+
+  val exec_helper_defs = [
+    exec_pure1_def, exec_pure2_def, exec_pure3_def,
+    exec_read0_def, exec_read1_def, exec_write2_def,
+    exec_alloca_def, exec_ext_call_def, exec_create_def,
+    exec_delegatecall_def, LET_THM, AllCaseEqs()];
+
+  val per_op_not_halt_intret = map (fn (op_tm, clause) =>
+    prove(
+      ``inst.inst_opcode = ^op_tm ==>
+        (!v. step_inst_base inst st <> Halt v) /\
+        (!vals v. step_inst_base inst st <> IntRet vals v)``,
+      strip_tac >>
+      `inst with inst_opcode := ^op_tm = inst`
+        by simp[instruction_component_equality] >>
+      pop_assum (fn eq => ONCE_REWRITE_TAC [GSYM eq]) >>
+      ONCE_REWRITE_TAC [clause] >> simp exec_helper_defs)
+  ) (ListPair.zip(nt_ni_ops, nt_ni_clauses));
+in
+  val step_inst_base_not_halt_intret_combined =
+    LIST_CONJ per_op_not_halt_intret;
+end
+
+Triviality step_inst_base_not_halt_intret:
+  !inst s.
+    ~is_terminator inst.inst_opcode /\ inst.inst_opcode <> INVOKE ==>
+    (!v. step_inst_base inst s <> Halt v) /\
+    (!vals v. step_inst_base inst s <> IntRet vals v)
+Proof
+  rpt gen_tac >> Cases_on `inst.inst_opcode` >>
+  simp[is_terminator_def, step_inst_base_not_halt_intret_combined]
+QED
+
+(* Non-terminator, non-INVOKE step_inst_base only returns OK, Error, or Abort. *)
 Theorem step_inst_base_non_term_result[local]:
   !inst s.
     ~is_terminator inst.inst_opcode /\
@@ -2828,145 +2974,35 @@ Theorem step_inst_base_non_term_result[local]:
     (?a s'. step_inst_base inst s = Abort a s')
 Proof
   rpt strip_tac >>
-  Cases_on `step_inst_base inst s` >> gvs[] >>
-  (* Only Halt, Abort, IntRet remain — need contradiction *)
-  pop_assum (ASSUME_TAC o ONCE_REWRITE_RULE [step_inst_base_def]) >>
-  pop_assum mp_tac >>
-  Cases_on `inst.inst_opcode` >> simp[is_terminator_def] >>
-  PURE_REWRITE_TAC[exec_pure1_def] >>
-  PURE_REWRITE_TAC[exec_pure2_def] >>
-  PURE_REWRITE_TAC[exec_pure3_def] >>
-  PURE_REWRITE_TAC[exec_read0_def, exec_read1_def] >>
-  PURE_REWRITE_TAC[exec_write2_def, exec_alloca_def] >>
-  PURE_REWRITE_TAC[exec_ext_call_def] >>
-  PURE_REWRITE_TAC[exec_delegatecall_def] >>
-  PURE_REWRITE_TAC[exec_create_def] >>
-  PURE_REWRITE_TAC[extract_venom_result_def] >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.TOP_CASE_TAC >> TRY BasicProvers.TOP_CASE_TAC >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  TRY BasicProvers.FULL_CASE_TAC >> gvs[] >>
-  rpt strip_tac >> gvs[is_terminator_def]
+  drule_all step_inst_base_not_halt_intret >> strip_tac >>
+  Cases_on `step_inst_base inst s` >> gvs[]
 QED
 
-(* For non-INVOKE, non-terminator opcodes with opcode_has_output,
-   step_inst_base OK implies exactly one output *)
-Theorem opcode_has_output_single[local]:
-  !inst s s'.
-    opcode_has_output inst.inst_opcode /\
-    ~is_terminator inst.inst_opcode /\
-    inst.inst_opcode <> INVOKE /\
+(* Well-formed non-PHI/non-INVOKE instructions bind exactly the number of
+   outputs described by the semantic output_sigma interface. *)
+Theorem inst_wf_bound_output_count[local]:
+  !inst.
+    inst_wf inst /\
     inst.inst_opcode <> PHI /\
-    step_inst_base inst s = OK s' ==>
-    ?h. inst.inst_outputs = [h]
+    inst.inst_opcode <> INVOKE /\
+    ~is_terminator inst.inst_opcode ==>
+    bound_output_count inst.inst_opcode = LENGTH inst.inst_outputs
 Proof
-  rpt strip_tac >>
-  Cases_on `inst.inst_opcode` >>
-  gvs[opcode_has_output_def, is_terminator_def] >>
-  qpat_x_assum `step_inst_base inst s = OK s'` mp_tac >>
-  ASM_REWRITE_TAC[step_inst_base_def] >> gvs[] >> strip_tac >>
-  gvs[exec_pure1_def, exec_pure2_def, exec_pure3_def,
-      exec_read0_def, exec_read1_def, exec_alloca_def,
-      exec_ext_call_def, exec_delegatecall_def, exec_create_def,
-      extract_venom_result_def, AllCaseEqs(), LET_THM]
+  rw[inst_wf_def] >> Cases_on `inst.inst_opcode` >>
+  gvs[is_terminator_def, bound_output_count_def, opcode_has_output_def]
 QED
 
-(* Pure sigma bridge: the if-then-else sigma from step simulation
-   agrees with latest_version(rs') on all defined vars.
-   This is the single shared lemma for sigma tracking through one step. *)
-Theorem sigma_latest_bridge[local]:
-  !rs inst1 s1 s1' s2'.
-    inst1.inst_opcode <> PHI /\
-    inst1.inst_opcode <> INVOKE /\
-    ~is_terminator inst1.inst_opcode /\
-    (~opcode_has_output inst1.inst_opcode ==> inst1.inst_outputs = []) /\
-    step_inst_base inst1 s1 = OK s1' /\
-    ssa_sim (if opcode_has_output inst1.inst_opcode
-             then (HD inst1.inst_outputs =+ HD (SND (rename_inst rs inst1)).inst_outputs)
-                  (latest_version rs)
-             else latest_version rs) s1' s2' ==>
-    ssa_sim (latest_version (FST (rename_inst rs inst1))) s1' s2'
-Proof
-  rpt strip_tac >>
-  irule ssa_sim_sigma_replace >>
-  qexists_tac `if opcode_has_output inst1.inst_opcode
-               then (HD inst1.inst_outputs =+
-                     HD (SND (rename_inst rs inst1)).inst_outputs)
-                    (latest_version rs)
-               else latest_version rs` >> simp[] >>
-  rpt strip_tac >>
-  Cases_on `opcode_has_output inst1.inst_opcode`
-  >- (
-    gvs[] >>
-    `?h. inst1.inst_outputs = [h]` by metis_tac[opcode_has_output_single] >>
-    gvs[] >>
-    qspecl_then [`rs`, `inst1`] mp_tac rename_inst_single_output_evolution >>
-    simp[] >>
-    Cases_on `rename_inst rs inst1` >> simp[] >>
-    strip_tac >>
-    Cases_on `h = x` >> gvs[combinTheory.APPLY_UPDATE_THM]
-  )
-  >- (
-    gvs[] >>
-    mp_tac (Q.SPECL [`rs`, `inst1`] rename_inst_zero_output_evolution) >>
-    simp[]
-  )
-QED
-
-(* Bridge lemma: one non-terminator step through step_inst_base gives
-   ssa_sim (latest_version rs') s1' s2' where rs' = FST(rename_inst rs inst1).
-   Handles standard opcodes AND ASSIGN uniformly via sigma_latest_bridge. *)
+(* Bridge lemma: one well-formed non-terminator step evolves every bound
+   output and therefore reaches the latest_version map from rename_inst. *)
 Theorem step_base_sigma_bridge[local]:
   !rs inst1 s1 s2 s1'.
     ssa_sim (latest_version rs) s1 s2 /\
     vars_colon_free s1 /\
     EVERY colon_free inst1.inst_outputs /\
+    inst_wf inst1 /\
     inst1.inst_opcode <> PHI /\
     inst1.inst_opcode <> INVOKE /\
     ~is_terminator inst1.inst_opcode /\
-    (~opcode_has_output inst1.inst_opcode ==> inst1.inst_outputs = []) /\
     step_inst_base inst1 s1 = OK s1' ==>
     let inst2 = SND (rename_inst rs inst1) in
     let rs' = FST (rename_inst rs inst1) in
@@ -2975,33 +3011,29 @@ Theorem step_base_sigma_bridge[local]:
           vars_colon_free s1'
 Proof
   rpt strip_tac >> simp[LET_THM] >>
+  `bound_output_count inst1.inst_opcode = LENGTH inst1.inst_outputs` by
+    metis_tac[inst_wf_bound_output_count] >>
   `inst_renamed (latest_version rs) inst1 (SND (rename_inst rs inst1))` by
     metis_tac[rename_inst_produces_inst_renamed] >>
   `output_fresh (latest_version rs) inst1 (SND (rename_inst rs inst1)) s1` by
-    metis_tac[rename_inst_output_fresh] >>
+    (irule rename_inst_output_fresh >> simp[]) >>
   `vars_colon_free s1'` by metis_tac[vars_colon_free_step_inst_base] >>
-  (* Get s2' with if-then-else sigma, then bridge to latest_version rs' *)
   `?s2'. step_inst_base (SND (rename_inst rs inst1)) s2 = OK s2' /\
-     ssa_sim (if opcode_has_output inst1.inst_opcode
-              then (HD inst1.inst_outputs =+
-                    HD (SND (rename_inst rs inst1)).inst_outputs)
-                   (latest_version rs)
-              else latest_version rs) s1' s2'` by (
+     ssa_sim (output_sigma inst1.inst_opcode inst1.inst_outputs
+                (SND (rename_inst rs inst1)).inst_outputs
+                (latest_version rs)) s1' s2'` by (
     Cases_on `inst1.inst_opcode = ASSIGN`
-    >- (
-      drule_all assign_renamed_sim >> strip_tac >>
-      qexists_tac `s2'` >> gvs[opcode_has_output_def]
-    )
+    >- metis_tac[assign_renamed_sim]
     >- metis_tac[step_inst_base_renamed_sim]
   ) >>
   qexists_tac `s2'` >> simp[] >>
-  irule sigma_latest_bridge >> metis_tac[]
+  qpat_x_assum `ssa_sim (output_sigma _ _ _ _) _ _` mp_tac >>
+  simp[output_sigma_latest_rename_inst]
 QED
 
 (* ===== Generalized bridge lemmas (abstract sigma) ===== *)
 
-(* Generalized step_base bridge: takes abstract sigma, produces
-   if-then-else sigma update. No sigma_latest_bridge conversion. *)
+(* Generalized step_base bridge: preserve the all-output sigma boundary. *)
 Theorem step_base_sigma_bridge_gen[local]:
   !sigma inst1 inst2 s1 s2 s1'.
     ssa_sim sigma s1 s2 /\
@@ -3012,13 +3044,10 @@ Theorem step_base_sigma_bridge_gen[local]:
     inst1.inst_opcode <> PHI /\
     inst1.inst_opcode <> INVOKE /\
     ~is_terminator inst1.inst_opcode /\
-    (~opcode_has_output inst1.inst_opcode ==> inst1.inst_outputs = []) /\
     step_inst_base inst1 s1 = OK s1' ==>
     ?s2'. step_inst_base inst2 s2 = OK s2' /\
-          ssa_sim (if opcode_has_output inst1.inst_opcode
-                   then (HD inst1.inst_outputs =+ HD inst2.inst_outputs) sigma
-                   else sigma)
-                  s1' s2' /\
+          ssa_sim (output_sigma inst1.inst_opcode
+                     inst1.inst_outputs inst2.inst_outputs sigma) s1' s2' /\
           vars_colon_free s1'
 Proof
   rpt strip_tac >>
@@ -3026,7 +3055,7 @@ Proof
   Cases_on `inst1.inst_opcode = ASSIGN`
   >- (
     drule_all assign_renamed_sim >> strip_tac >>
-    qexists_tac `s2'` >> gvs[opcode_has_output_def]
+    qexists_tac `s2'` >> gvs[]
   )
   >- (
     drule_all step_inst_base_renamed_sim >> strip_tac >>
@@ -3085,9 +3114,16 @@ Proof
      (merge_callee_state s1 callee_s')
      (merge_callee_state s2 callee_s')`
     by metis_tac[merge_callee_ssa_sim] >>
+  `ssa_sim (latest_version rs)
+     (adopt_return_fmp ret (merge_callee_state s1 callee_s'))
+     (adopt_return_fmp ret (merge_callee_state s2 callee_s'))` by
+    (Cases_on `ret.iret_adopt_fmp` >>
+     gvs[adopt_return_fmp_def] >>
+     irule ssa_sim_fmp_update >> gvs[]) >>
   imp_res_tac bind_outputs_LENGTH >>
   imp_res_tac bind_outputs_FOLDL >> gvs[] >>
-  `LENGTH (SND (rename_inst rs inst1)).inst_outputs = LENGTH vals` by gvs[] >>
+  `LENGTH (SND (rename_inst rs inst1)).inst_outputs =
+   LENGTH ret.iret_values` by gvs[] >>
   imp_res_tac bind_outputs_LENGTH_SOME >>
   (* Step 4: Build side 2 *)
   simp[Once step_inst_def] >>
@@ -3101,10 +3137,14 @@ Proof
            version_var (EL i inst1.inst_outputs) ver` by
     (simp[Abbr `inst2`] >> metis_tac[rename_inst_output_props]) >>
   (* Non-aliasing: colon_free vars can't equal version_var outputs *)
-  `vars_colon_free (merge_callee_state s1 callee_s')` by
-    (irule vars_colon_free_merge_callee >> gvs[]) >>
+  `vars_colon_free
+     (adopt_return_fmp ret (merge_callee_state s1 callee_s'))` by
+    (Cases_on `ret.iret_adopt_fmp` >>
+     gvs[adopt_return_fmp_def, vars_colon_free_def, lookup_var_def,
+         merge_callee_state_def]) >>
   `!i. i < LENGTH inst1.inst_outputs ==>
-    !x. lookup_var x (merge_callee_state s1 callee_s') <> NONE ==>
+    !x. lookup_var x
+          (adopt_return_fmp ret (merge_callee_state s1 callee_s')) <> NONE ==>
         x <> EL i inst1.inst_outputs ==>
         latest_version rs x <> EL i inst2.inst_outputs` by (
     rpt strip_tac >>
@@ -3118,11 +3158,11 @@ Proof
      (FOLDL (\s (o1,o2). (o1 =+ o2) s)
         (latest_version rs) (ZIP (inst1.inst_outputs, inst2.inst_outputs)))
      (FOLDL (\st (nm,vl). update_var nm vl st)
-        (merge_callee_state s1 callee_s')
-        (ZIP (inst1.inst_outputs, vals)))
+        (adopt_return_fmp ret (merge_callee_state s1 callee_s'))
+        (ZIP (inst1.inst_outputs, ret.iret_values)))
      (FOLDL (\st (nm,vl). update_var nm vl st)
-        (merge_callee_state s2 callee_s')
-        (ZIP (inst2.inst_outputs, vals)))` by (
+        (adopt_return_fmp ret (merge_callee_state s2 callee_s'))
+        (ZIP (inst2.inst_outputs, ret.iret_values)))` by (
     irule foldl_update_var_ssa_sim >> gvs[]) >>
   (* Step 7: Bridge FOLDL sigma to latest_version rs' *)
   Cases_on `rename_outputs rs inst1.inst_outputs` >>
@@ -3185,17 +3225,27 @@ Proof
      (merge_callee_state s1 callee_s')
      (merge_callee_state s2 callee_s')`
     by metis_tac[merge_callee_ssa_sim] >>
+  `ssa_sim sigma
+     (adopt_return_fmp ret (merge_callee_state s1 callee_s'))
+     (adopt_return_fmp ret (merge_callee_state s2 callee_s'))` by
+    (Cases_on `ret.iret_adopt_fmp` >>
+     gvs[adopt_return_fmp_def] >>
+     irule ssa_sim_fmp_update >> gvs[]) >>
   imp_res_tac bind_outputs_LENGTH >>
   imp_res_tac bind_outputs_FOLDL >> gvs[] >>
-  `LENGTH inst2.inst_outputs = LENGTH vals` by gvs[] >>
+  `LENGTH inst2.inst_outputs = LENGTH ret.iret_values` by gvs[] >>
   imp_res_tac bind_outputs_LENGTH_SOME >>
   (* Build side 2 *)
   simp[Once step_inst_def] >>
   (* Non-aliasing via sigma freshness *)
-  `vars_colon_free (merge_callee_state s1 callee_s')` by
-    (irule vars_colon_free_merge_callee >> gvs[]) >>
+  `vars_colon_free
+     (adopt_return_fmp ret (merge_callee_state s1 callee_s'))` by
+    (Cases_on `ret.iret_adopt_fmp` >>
+     gvs[adopt_return_fmp_def, vars_colon_free_def, lookup_var_def,
+         merge_callee_state_def]) >>
   `!i. i < LENGTH inst1.inst_outputs ==>
-    !x. lookup_var x (merge_callee_state s1 callee_s') <> NONE ==>
+    !x. lookup_var x
+          (adopt_return_fmp ret (merge_callee_state s1 callee_s')) <> NONE ==>
         x <> EL i inst1.inst_outputs ==>
         sigma x <> EL i inst2.inst_outputs` by (
     rpt strip_tac >>
@@ -3335,9 +3385,9 @@ Theorem ok_step_sim_bridge[local]:
     vars_colon_free s1 /\
     EVERY colon_free inst1.inst_outputs /\
     ALL_DISTINCT inst1.inst_outputs /\
+    inst_wf inst1 /\
     inst1.inst_opcode <> PHI /\
     ~is_terminator inst1.inst_opcode /\
-    (~opcode_has_output inst1.inst_opcode ==> inst1.inst_outputs = []) /\
     step_inst fuel ctx inst1 s1 = OK v ==>
     ?s2'. step_inst fuel ctx (SND (rename_inst rs inst1)) s2 = OK s2' /\
           ssa_sim (latest_version (FST (rename_inst rs inst1))) v s2' /\
@@ -3735,6 +3785,8 @@ Resume lockstep_body[non_term]:
       (fn peel =>
         assume_tac (SIMP_RULE (srw_ss()) [step_eq] peel)) >>
     assume_tac step_eq) >>
+  `inst_wf inst1` by
+    (simp[Abbr `inst1`] >> metis_tac[EVERY_EL]) >>
   qunabbrev_tac `rs_at` >> BETA_TAC >>
   drule_all (SIMP_RULE std_ss [GSYM AND_IMP_INTRO]
     ok_step_sim_bridge) >>
@@ -4207,6 +4259,13 @@ Resume lockstep_body_gen[gen_non_term]:
       (fn peel =>
         assume_tac (SIMP_RULE (srw_ss()) [step_eq] peel)) >>
     assume_tac step_eq) >>
+  `inst_wf inst1` by
+    (simp[Abbr `inst1`] >> metis_tac[EVERY_EL]) >>
+  `bound_output_count inst1.inst_opcode <= LENGTH inst1.inst_outputs` by (
+    Cases_on `inst1.inst_opcode = INVOKE`
+    >- gvs[bound_output_count_def, opcode_has_output_def]
+    >- (`bound_output_count inst1.inst_opcode = LENGTH inst1.inst_outputs` by
+          metis_tac[inst_wf_bound_output_count] >> simp[])) >>
   (* Get output_fresh for gen bridges *)
   `output_fresh sigma inst1 inst2 s1` by (
     qpat_x_assum `inst2 = SND _` (fn eq => REWRITE_TAC [eq]) >>
@@ -4245,23 +4304,28 @@ QED
 Resume lockstep_body_gen[after_fs]:
   (* Goal already peeled by fs[step_inst_non_invoke] in bridge_done *)
   (* Define sigma' and establish FOLDL equivalence *)
-    qabbrev_tac `sigma' = if opcode_has_output inst1.inst_opcode
-                  then (HD inst1.inst_outputs =+ HD inst2.inst_outputs) sigma
-                  else sigma` >>
+  (* Track the semantic all-output map and expose its full ordered fold. *)
+    qabbrev_tac `sigma' = output_sigma inst1.inst_opcode
+                  inst1.inst_outputs inst2.inst_outputs sigma` >>
     sg `sigma' = FOLDL (\s (o1,o2). (o1 =+ o2) s) sigma
                (ZIP (inst1.inst_outputs, inst2.inst_outputs))`
     >- suspend "foldl_equiv" >>
-  (* Bridge sigma' through inst_idx update *)
+    qpat_assum `Abbrev (sigma' = _)` (fn ab =>
+      qpat_x_assum `ssa_sim _ v s2'` (fn sim =>
+        let val eq = REWRITE_RULE [markerTheory.Abbrev_def] ab
+        in assume_tac (REWRITE_RULE [GSYM eq] sim) end)) >>
+  (* Bridge sigma' through inst_idx update and expose its state equalities. *)
     qpat_x_assum `ssa_sim _ v s2'` (fn sim =>
-      assume_tac (Q.SPECL [`SUC j`, `SUC (j + n_phi)`]
-        (MATCH_MP ssa_sim_update_inst_idx sim))) >>
-  (* ssa_sim field equalities *)
-    qpat_x_assum `ssa_sim sigma' _ _` (fn sim =>
-      let val ss = srw_ss()
-          val h = SIMP_RULE ss [] (MATCH_MP ssa_sim_halted sim)
-          val c = SIMP_RULE ss [] (MATCH_MP ssa_sim_current_bb sim)
-          val p = SIMP_RULE ss [] (MATCH_MP ssa_sim_prev_bb sim)
-      in assume_tac h >> assume_tac c >> assume_tac p >> assume_tac sim end) >>
+      let
+        val sim' = Q.SPECL [`SUC j`, `SUC (j + n_phi)`]
+          (MATCH_MP ssa_sim_update_inst_idx sim)
+        val ss = srw_ss()
+        val h = SIMP_RULE ss [] (MATCH_MP ssa_sim_halted sim')
+        val c = SIMP_RULE ss [] (MATCH_MP ssa_sim_current_bb sim')
+        val p = SIMP_RULE ss [] (MATCH_MP ssa_sim_prev_bb sim')
+      in
+        assume_tac h >> assume_tac c >> assume_tac p >> assume_tac sim'
+      end) >>
   (* Invoke IH with sigma' and live_set ++ inst1.inst_outputs *)
     last_x_assum (qspec_then `LENGTH bb.bb_instructions - SUC j` mp_tac) >>
     (impl_tac >- simp[]) >>
@@ -4442,22 +4506,13 @@ Resume lockstep_body_gen[output_case2]:
 QED
 
 Resume lockstep_body_gen[foldl_equiv]:
-  simp[Abbr `sigma'`] >>
-  Cases_on `opcode_has_output inst1.inst_opcode` >> simp[]
-  >- (
-    `?h. inst1.inst_outputs = [h]` by
-      metis_tac[opcode_has_output_single] >>
-    gvs[] >>
-    Cases_on `inst2.inst_outputs` >> gvs[] >>
-    Cases_on `t` >> gvs[]
-  )
-  >- (
-    `inst1.inst_outputs = []` by (
-      first_x_assum (qspec_then `j` mp_tac) >>
-      simp[Abbr `inst1`, Abbr `j`]) >>
-    gvs[] >>
-    Cases_on `inst2.inst_outputs` >> gvs[]
-  )
+  `bound_output_count inst1.inst_opcode = LENGTH inst1.inst_outputs` by
+    metis_tac[inst_wf_bound_output_count] >>
+  `TAKE (bound_output_count inst1.inst_opcode) inst1.inst_outputs =
+   inst1.inst_outputs` by simp[] >>
+  `TAKE (bound_output_count inst1.inst_opcode) inst2.inst_outputs =
+   inst2.inst_outputs` by simp[] >>
+  simp[Abbr `sigma'`, output_sigma_def]
 QED
 
 Resume lockstep_body_gen[gen_invoke]:

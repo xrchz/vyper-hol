@@ -24,7 +24,9 @@
  *   copy_sarray_typed   — per-element SArray copy with different layouts
  *   copy_dynarray_typed — per-element DynArray copy with different layouts
  *
- * Mirrors Python: ~/vyper/vyper/codegen_venom/context.py, buffer.py, value.py
+ * Mirrors Python: vyper/codegen_venom/context.py:Context,
+ *                 vyper/codegen_venom/buffer.py:Buffer,
+ *                 vyper/codegen_venom/value.py:VyperValue
  *)
 
 Theory context
@@ -245,17 +247,69 @@ Definition compile_memory_to_transient_def:
 End
 
 (* ===== Allocate Buffer ===== *)
-(* Allocate memory buffer with provenance tracking.
+(* Allocate a fixed-capacity memory buffer with provenance tracking.
    Returns buffer in monad.
    buffer.buf_operand is the IR operand; buffer.buf_size is the allocation size.
    Use base_ptr buf for a LocatedValue with provenance.
-   Mirrors Python: context.py allocate_buffer → Buffer *)
+   Mirrors Python: vyper/codegen_venom/context.py:Context.new_internal_variable *)
 Definition compile_alloc_buffer_def:
   compile_alloc_buffer size =
     do op <- emit_op ALLOCA [Lit (n2w size)];
        return <| buf_operand := op; buf_size := size |>
     od
 End
+
+(* Runtime-sized allocation boundary.  The size is an SSA operand, so this
+   returns only the allocated pointer rather than fabricating a static buffer
+   capacity.  Mirrors Python:
+   vyper/codegen_venom/context.py:Context.new_internal_variable. *)
+Definition compile_alloc_dynamic_def:
+  compile_alloc_dynamic (size_op:operand) = emit_op DALLOCA [size_op]
+End
+
+Theorem compile_alloc_dynamic_result:
+  !(size_op:operand) (st:compile_state) (ptr:operand) (st':compile_state).
+  compile_alloc_dynamic size_op st = (ptr, st') ==>
+  ptr = Var ("%" ++ toString st.cs_next_var) /\
+  st'.cs_next_id = st.cs_next_id + 1 /\
+  st'.cs_next_var = st.cs_next_var + 1 /\
+  st'.cs_current_insts =
+    st.cs_current_insts ++
+      [mk_inst st.cs_next_id DALLOCA [size_op]
+         ["%" ++ toString st.cs_next_var]]
+Proof
+  simp[compile_alloc_dynamic_def, emit_op_def, fresh_id_def, fresh_var_def,
+       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def]
+QED
+
+(* Static allocation boundary.  Unlike compile_alloc_buffer, this exposes the
+   instruction ID as a separate result so fixed-placement metadata is keyed by
+   the emitted ALLOCA, never by its SSA output variable. *)
+Definition compile_alloc_buffer_with_id_def:
+  compile_alloc_buffer_with_id size =
+    do id <- fresh_id;
+       out <- fresh_var;
+       emit (mk_inst id ALLOCA [Lit (n2w size)] [out]);
+       return (id, <| buf_operand := Var out; buf_size := size |>)
+    od
+End
+
+Theorem compile_alloc_buffer_with_id_result:
+  !(size:num) (st:compile_state) (id:num) (buf:buffer) (st':compile_state).
+  compile_alloc_buffer_with_id size st = ((id, buf), st') ==>
+  id = st.cs_next_id /\
+  buf.buf_operand = Var ("%" ++ toString st.cs_next_var) /\
+  buf.buf_size = size /\
+  st'.cs_next_id = st.cs_next_id + 1 /\
+  st'.cs_next_var = st.cs_next_var + 1 /\
+  st'.cs_current_insts =
+    st.cs_current_insts ++
+      [mk_inst st.cs_next_id ALLOCA [Lit (n2w size)]
+         ["%" ++ toString st.cs_next_var]]
+Proof
+  simp[compile_alloc_buffer_with_id_def, fresh_id_def, fresh_var_def,
+       emit_def, comp_bind_def, comp_ignore_bind_def, comp_return_def]
+QED
 
 (* ===== Load/Store Storage ===== *)
 (* Mirrors Python: context.py load_storage
@@ -544,22 +598,27 @@ Definition compile_with_byte_offset_def:
 End
 
 (* ===== Store Memory for Bytestrings ===== *)
+(* Compute 32 + ceil32(actual_length), the exact memory range occupied by an
+   in-memory bytes/string value.  This boundary is also used by DRET lowering,
+   which publishes the same source range without first copying it. *)
+Definition compile_bytestring_copy_len_def:
+  compile_bytestring_copy_len val_op =
+    do src_len <- emit_op MLOAD [val_op];
+       padded_len <- emit_op ADD [src_len; Lit 31w];
+       let mask = i2w (- &32) : bytes32 in
+       do rounded <- emit_op AND [padded_len; Lit mask];
+          emit_op ADD [rounded; Lit 32w]
+       od
+    od
+End
+
 (* Copy bytestring to memory: copies 32 + ceil32(actual_length) bytes.
    Mirrors Python: context.py store_memory for _BytestringT.
    Placed before typed copy defs since they dispatch to it. *)
 Definition compile_store_bytestring_def:
   compile_store_bytestring val_op dst_op =
-    do (* Load actual length from val *)
-       src_len <- emit_op MLOAD [val_op];
-       (* ceil32(length) = (length + 31) & ~31 *)
-       padded_len <- emit_op ADD [src_len; Lit 31w];
-       (* ~31 = 0xffffffffffffffe0 *)
-       let mask = i2w (- &32) : bytes32 in
-       do rounded <- emit_op AND [padded_len; Lit mask];
-          (* Total copy: 32 (length word) + ceil32(length) *)
-          copy_len <- emit_op ADD [rounded; Lit 32w];
-          emit_void MCOPY [dst_op; val_op; copy_len]
-       od
+    do copy_len <- compile_bytestring_copy_len val_op;
+       emit_void MCOPY [dst_op; val_op; copy_len]
     od
 End
 
@@ -743,12 +802,14 @@ End
 (* compile_store_bytestring moved before typed copy defs (forward ref) *)
 
 (* ===== Load Memory ===== *)
-(* Mirrors Python: context.py load_memory
-   Primitive types: mload the value.
-   Complex types: return the pointer. *)
+(* Pinned convention (VYPER_PIN cd74ce4f57e3771aeeab8f061fa3be45bfe8a29c;
+   introduced by vyperlang/vyper@61507a045f34ab8ee5776de04c5b40ee1d1310e4,
+   vyper/codegen_venom/context.py:VenomCodegenContext.load_memory): MLOAD
+   primitive words and complex values whose memory representation is exactly
+   one 32-byte word; retain a pointer for larger complex values. *)
 Definition compile_load_memory_def:
-  compile_load_memory ptr_op is_prim_word =
-    if is_prim_word then
+  compile_load_memory ptr_op is_prim_word mem_size =
+    if is_prim_word \/ mem_size = 32 then
       emit_op MLOAD [ptr_op]
     else
       return ptr_op

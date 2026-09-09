@@ -11,13 +11,13 @@
  *   compile_assert     — assertion with revert
  *   compile_return     — return value or stop
  *
- * Mirrors Python codegen: ~/vyper/vyper/codegen_venom/stmt.py
+ * Mirrors Python codegen: vyper/codegen_venom/stmt.py:Stmt
  * Phase 1 scope: primitive types only (uint256, int256, int128, bool, address, bytes32)
  *)
 
 Theory stmtLowering
 Ancestors
-  exprLowering context compileEnv venomInst abiEncoder
+  exprLowering context compileEnv venomInst abiEncoder dretShapeDefs
 Libs
   monadsyntax
 
@@ -123,7 +123,7 @@ End
    Error(string) selector: 0x08c379a0
    Buffer layout: buf+0: selector word, buf+32: ABI-encoded (string,) tuple.
    Final revert from buf+28 with length 4 + encoded_len.
-   Mirrors Python: stmt.py _revert_with_reason *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_revert_with_reason *)
   (* KNOWN LIMITATION: Manual ABI encoding. Assumes msg_op is a memory pointer
      to [length][data] layout (correct for in-memory string literals).
      Python uses abi_encode_to_buf which handles storage/transient unwrap.
@@ -131,7 +131,7 @@ End
      correct in practice. *)
 (* Revert with Error(string) encoding using shared ABI encoder.
    Wraps message in TupleT((msg_typ,)) and uses compile_abi_encode_to_buf.
-   Mirrors Python: stmt.py _revert_with_reason.
+   Mirrors Python: vyper/codegen_venom/stmt.py:_revert_with_reason.
    msg_op: pointer to message in memory.
    msg_type: type of the message (usually StringT).
    msg_enc_info: ABI encoding info for the message type. *)
@@ -165,15 +165,22 @@ Definition compile_revert_with_reason_def:
 End
 
 (* ===== Internal Return ===== *)
-(* Lower internal function return: load values and pass via RET.
-   Mirrors Python: stmt.py _lower_internal_return
-   returns_count: number of stack-returned values.
-   return_pc: operand holding the return address.
+(* Pinned frontend convention (VYPER_PIN cd74ce4f57e3771aeeab8f061fa3be45bfe8a29c,
+   vyper/codegen_venom/stmt.py:_lower_internal_return): ordinary RET operands
+   are the user values followed by the separate return PC.  A dynamic DRET is
+   [Lit dynamic_count] ++ ordinary values ++ flattened (pointer,size) pairs in
+   source order ++ [return_pc], with dynamic_count > 0.  The count and return
+   PC are raw control operands, not user return values.  DRET lowering copies
+   the dynamic ranges with MCOPY, so the resolved frontend policy must reject a
+   target without CapMcopy before this raw form is emitted.
+
+   returns_count: number of stack-returned user values.
+   return_pc: operand holding the separate return address.
    return_buf: SOME ptr for memory return, NONE otherwise. *)
 (* ===== Load Tuple Elements for Stack Return ===== *)
 (* Load n elements from a memory pointer, each at 32-byte intervals.
    Returns list of loaded operands.
-   Mirrors Python: stmt.py _lower_internal_return tuple case *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_internal_return tuple case *)
 (* Load tuple elements from memory. Returns list of operands.
    Uses type_memory_bytes per element for proper stride.
    For word types: MLOAD the value.
@@ -196,6 +203,67 @@ Definition compile_load_tuple_elements_def:
      od)
 End
 
+Definition mk_dret_operands_def:
+  mk_dret_operands (ordinary : operand list)
+                   (dynamic : (operand # operand) list) return_pc =
+    if 0 < LENGTH dynamic /\ LENGTH dynamic < dimword(:256) then
+      SOME (Lit (n2w (LENGTH dynamic)) ::
+            ordinary ++
+            FLAT (MAP (\p. [FST p; SND p]) dynamic) ++
+            [return_pc])
+    else NONE
+End
+
+Theorem mk_dret_dynamic_payload_length:
+  LENGTH (FLAT (MAP (\p. [FST p; SND p]) dynamic)) =
+  2 * LENGTH dynamic
+Proof
+  Induct_on `dynamic` >> simp[]
+QED
+
+Theorem mk_dret_operands_parse:
+  mk_dret_operands ordinary dynamic return_pc = SOME ops ==>
+  parse_dret_shape (mk_inst id DRET ops outs) =
+    SOME (LENGTH ordinary, LENGTH dynamic)
+Proof
+  simp[mk_dret_operands_def, parse_dret_shape_def, mk_inst_def,
+       mk_dret_dynamic_payload_length] >>
+  strip_tac >> gvs[] >>
+  simp[mk_dret_dynamic_payload_length]
+QED
+
+Theorem mk_dret_operands_zero[simp]:
+  mk_dret_operands ordinary [] return_pc = NONE
+Proof
+  simp[mk_dret_operands_def]
+QED
+
+Theorem mk_dret_operands_overflow:
+  dimword(:256) <= LENGTH dynamic ==>
+  mk_dret_operands ordinary dynamic return_pc = NONE
+Proof
+  simp[mk_dret_operands_def]
+QED
+Definition compile_mcopy_guard_def:
+  compile_mcopy_guard cenv (supported : unit compiler) =
+    if cenv.ce_target CapMcopy then supported
+    else emit_inst INVALID [] []
+End
+
+Theorem compile_mcopy_guard_supported[simp]:
+  cenv.ce_target CapMcopy ==>
+  compile_mcopy_guard cenv supported = supported
+Proof
+  simp[compile_mcopy_guard_def]
+QED
+
+Theorem compile_mcopy_guard_unsupported[simp]:
+  ~cenv.ce_target CapMcopy ==>
+  compile_mcopy_guard cenv supported = emit_inst INVALID [] []
+Proof
+  simp[compile_mcopy_guard_def]
+QED
+
 Definition compile_internal_return_def:
   compile_internal_return cenv ret_val return_pc returns_count
                           ret_type src_type elem_types return_buf =
@@ -215,28 +283,43 @@ Definition compile_internal_return_def:
                           elem_types 0;
                emit_inst RET (elems ++ [return_pc]) []
             od
+    else if is_abi_dynamic cenv.ce_struct_fields ret_type then
+      (* At this boundary only a top-level bytes/string has one directly
+         representable dynamic source range.  Nested dynamic layouts are
+         rejected rather than being emitted with a malformed envelope. *)
+      case (return_buf, ret_val) of
+        (SOME buf_op, SOME val_op) =>
+          if is_bytestring_type ret_type /\
+             is_bytestring_type src_type then
+            (* The guard surrounds the complete size/DRET computation, so an
+               unsupported target emits INVALID before any MCOPY-dependent
+               raw behavior. *)
+            compile_mcopy_guard cenv
+              (do copy_len <- compile_bytestring_copy_len val_op;
+                  (case mk_dret_operands [] [(val_op, copy_len)] return_pc of
+                     SOME ops => emit_inst DRET ops []
+                   | NONE => emit_inst INVALID [] [])
+               od)
+          else emit_inst INVALID [] []
+      | _ => emit_inst INVALID [] []
     else
       case return_buf of
         SOME buf_op =>
           (case ret_val of
              NONE => emit_inst RET [return_pc] []
            | SOME val_op =>
-               (* Memory return: layout-aware copy to caller's buffer.
-                  Uses compile_store_memory_typed to handle type
-                  mismatch between source and declared return type.
-                  Mirrors Python: ctx.store_memory(ret_val, return_buffer,
-                    ret_typ, src_typ=ret_src_typ) *)
+               (* Fixed-size memory return: retain the ordinary buffered RET
+                  path. *)
                do compile_store_memory_typed cenv buf_op ret_type
                                              val_op src_type;
                   emit_inst RET [return_pc] []
                od)
-      | NONE =>
-          emit_inst RET [return_pc] []
+      | NONE => emit_inst RET [return_pc] []
 End
 
 (* ===== External Return ===== *)
 (* Lower external function return with ABI encoding.
-   Mirrors Python: stmt.py _lower_external_return *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_external_return *)
 Definition compile_external_return_def:
   compile_external_return ret_val is_prim_word is_raw_return
                           (ret_enc_info:abi_enc_info)
@@ -262,7 +345,7 @@ Definition compile_external_return_def:
               od
             else
               (* Complex: ABI encode to buffer, RETURN encoded_len bytes.
-                 Mirrors Python: stmt.py lower_Return → context.py _return_external
+                 Mirrors Python: vyper/codegen_venom/stmt.py:lower_Return → vyper/codegen_venom/context.py:Context.return_external
                  Uses compile_abi_encode_to_buf for proper ABI encoding. *)
               do buf_op_alloc <- compile_alloc_buffer max_return_size;
                  buf_op <- return buf_op_alloc.buf_operand;
@@ -275,7 +358,7 @@ End
 
 (* ===== Get Target Ptr ===== *)
 (* Full target pointer dispatch for assignments.
-   Mirrors Python: stmt.py _get_target_ptr
+   Mirrors Python: vyper/codegen_venom/stmt.py:_get_target_ptr
    Returns (operand, data_location option, type option).
    The type is threaded through for nested access (SubscriptTarget,
    AttributeTarget) to correctly resolve element/field types. *)
@@ -393,12 +476,12 @@ End
 (* ===== Assign Value ===== *)
 (* Dispatch assign by location and type.
 
-   Mirrors Python: stmt.py _assign_value *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_assign_value *)
 (* Store value to target with location-aware dispatch.
    For memory-to-memory complex types, stages through temp buffer for
    overlap safety. Skips staging when source was not originally in memory
    (e.g., materialized from storage → fresh buffer, no aliasing possible).
-   Mirrors Python: stmt.py _assign_value + _copy_complex_type
+   Mirrors Python: vyper/codegen_venom/stmt.py:_assign_value + _copy_complex_type
    NOTE: val_op is assumed to be a memory pointer for complex types.
    Callers use lower_value (unwrap_value handles materialization). *)
 (* src_loc: source data_location option (for staging decision).
@@ -408,7 +491,7 @@ End
    dynarray_info: NONE for non-dynarray types, SOME (elem_words, elem_mem_size) for DynArray.
    When SOME, uses dynarray_to_storage (copies only length + actual elems).
    When NONE, uses bulk word copy (copies all words).
-   Mirrors Python: context.py dispatch on isinstance(typ, DArrayT) *)
+   Mirrors Python: vyper/codegen_venom/context.py:Context.store_variable *)
 Definition compile_assign_value_def:
   compile_assign_value cenv dst_op dst_loc val_op is_prim_word
                        (src_loc : data_location option)
@@ -421,7 +504,7 @@ Definition compile_assign_value_def:
           (* Both memory: stage through temp buffer for overlap safety.
              Python: flat copy src→tmp (preserving src layout), then
              typed copy tmp→dst (converting layout if needed).
-             Mirrors Python: stmt.py _copy_complex_type + _store_complex_type *)
+             Mirrors Python: vyper/codegen_venom/stmt.py:_copy_complex_type + _store_complex_type *)
           let src_mem_size = type_memory_bytes cenv src_ty in
           do tmp_op_alloc <- compile_alloc_buffer src_mem_size;
              tmp_op <- return tmp_op_alloc.buf_operand;
@@ -436,7 +519,7 @@ Definition compile_assign_value_def:
         else if dst_ty ≠ src_ty then
           (* Different layouts: use typed copy (no staging needed — src is
              from a fresh buffer or non-memory source).
-             Mirrors Python: context.py store_memory src_typ != typ *)
+             Mirrors Python: vyper/codegen_venom/context.py:Context.store_memory *)
           compile_store_memory_typed cenv dst_op dst_ty val_op src_ty
         else
           (* Same layout, non-aliasing → flat copy *)
@@ -445,7 +528,7 @@ Definition compile_assign_value_def:
         (* Normalize source layout when types differ (non-bytestring).
            Storage/transient only understand destination layout, so convert
            src→dst layout in memory first.
-           Mirrors Python: stmt.py _store_complex_type normalization *)
+           Mirrors Python: vyper/codegen_venom/stmt.py:_store_complex_type normalization *)
         do val_op' <-
              (if ¬is_prim_word ∧ dst_ty ≠ src_ty
                  ∧ ¬(is_bytestring_type dst_ty ∧ is_bytestring_type src_ty) then
@@ -460,7 +543,7 @@ Definition compile_assign_value_def:
              (case dynarray_info of
                 SOME (ew, ems) =>
                   (* DynArray→storage: copy only length + actual elements.
-                     Mirrors Python: context.py _copy_dynarray_to_storage *)
+                     Mirrors Python: vyper/codegen_venom/context.py:Context.copy_dynarray_to_storage *)
                   compile_dynarray_to_storage val_op' dst_op ew ems F
               | NONE =>
                 if mem_size ≤ 32 then
@@ -522,7 +605,7 @@ End
    For word types: MLOAD the value.
    For complex types: compute pointer to element (base + offset).
    Uses type_memory_bytes per element for proper stride.
-   Mirrors Python: stmt.py _lower_tuple_unpack pass 1 *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_tuple_unpack pass 1 *)
 Definition compile_tuple_load_all_def:
   compile_tuple_load_all cenv src_op [] offset = return [] ∧
   compile_tuple_load_all cenv src_op (ty :: tys) offset =
@@ -530,9 +613,7 @@ Definition compile_tuple_load_all_def:
      do src_elem <-
           (if offset = 0 then return src_op
            else emit_op ADD [src_op; Lit (n2w offset)]);
-        elem_op <-
-          (if is_word_type ty then emit_op MLOAD [src_elem]
-           else return src_elem);  (* complex: return pointer *)
+        elem_op <- compile_load_memory src_elem (is_word_type ty) mem_size;
         rest_ops <- compile_tuple_load_all cenv src_op tys
                       (offset + mem_size);
         return (elem_op :: rest_ops)
@@ -563,12 +644,12 @@ End
    Uses compile_get_target_ptr for full target support (storage, subscript, etc.).
    Dispatches by element type: word types use compile_store_at_loc (single store),
    complex types use compile_assign_value (multi-word location-aware copy).
-   Mirrors Python: stmt.py _lower_tuple_unpack pass 2 *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_tuple_unpack pass 2 *)
 (* Store unpacked tuple elements to targets.
    src_tys: types from the RHS tuple (source element types).
    Each target may have a different declared type (dst_ty from get_target_ptr).
    Tuple elements are memory pointers → src_loc = SOME LocMemory.
-   Mirrors Python: stmt.py _lower_tuple_unpack pass 2 *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_tuple_unpack pass 2 *)
 Definition compile_tuple_store_all_def:
   compile_tuple_store_all cenv [] [] [] = return () ∧
   compile_tuple_store_all cenv (src_ty :: src_tys) (BaseTarget bt :: targets) (val_op :: vals) =
@@ -581,13 +662,18 @@ Definition compile_tuple_store_all_def:
        dst_ty <- return (case dst_ty_opt of SOME t => t | NONE => src_ty);
        is_prim <- return (is_word_type dst_ty);
        mem_sz <- return (type_memory_bytes cenv dst_ty);
-       (* Tuple elements: prim values are stack (src_loc=NONE), complex
-          pointers are into the already-staged buffer (src_loc=NONE to skip
-          re-staging in compile_assign_value, since the entire source tuple
-          is already staged). Mirrors Python pass 2 which calls
-          _store_complex_type directly (no staging wrapper). *)
-       compile_assign_value cenv dst_op dst_loc val_op is_prim
-                     NONE dst_ty src_ty NONE mem_sz;
+       src_mem_sz <- return (type_memory_bytes cenv src_ty);
+       src_is_word <- return (is_word_type src_ty \/ src_mem_sz = 32);
+       dst_is_word <- return (is_prim \/ mem_sz = 32);
+       (* Pass 1 materializes primitive and exactly-one-word complex values.
+          Consume that representation directly; larger complex values remain
+          pointers into the staged tuple. *)
+       (if src_is_word then
+          if dst_is_word then compile_store_at_loc dst_op val_op loc_opt
+          else emit_void INVALID []
+        else
+          compile_assign_value cenv dst_op dst_loc val_op is_prim
+                        NONE dst_ty src_ty NONE mem_sz);
        compile_tuple_store_all cenv src_tys targets vals
     od ∧
   (* Non-BaseTarget element: emit INVALID (shouldn't occur in valid AST) *)
@@ -602,7 +688,7 @@ End
    This ensures a, b = b, a works correctly (no aliasing issues).
    When any member is complex (!is_word_type), stage entire source
    tuple to temp buffer first to prevent aliasing corruption.
-   Mirrors Python: stmt.py _lower_tuple_unpack *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_tuple_unpack *)
 Definition compile_tuple_unpack_def:
   compile_tuple_unpack cenv ty targets src_op =
     let elem_types = (case ty of
@@ -615,17 +701,22 @@ Definition compile_tuple_unpack_def:
        We always stage when complex members exist (conservative but correct). *)
     let has_complex = EXISTS (λt. ¬is_word_type t) elem_types in
     let total_mem = SUM (MAP (type_memory_bytes cenv) elem_types) in
-    do staged_op <-
-         (if has_complex ∧ total_mem > 0 then
-            do staged_buf <- compile_alloc_buffer total_mem;
-               staged_ptr <- return staged_buf.buf_operand;
-               emit_void MCOPY [staged_ptr; src_op; Lit (n2w total_mem)];
-               return staged_ptr
-            od
-          else return src_op);
-       vals <- compile_tuple_load_all cenv staged_op elem_types 0;
-       compile_tuple_store_all cenv elem_types targets vals
-    od
+    if has_complex /\ total_mem > 0 /\
+       ~cenv.ce_target CapMcopy then
+      (* Reject before allocation or MCOPY-dependent staging. *)
+      emit_inst INVALID [] []
+    else
+      do staged_op <-
+           (if has_complex /\ total_mem > 0 then
+              do staged_buf <- compile_alloc_buffer total_mem;
+                 staged_ptr <- return staged_buf.buf_operand;
+                 emit_void MCOPY [staged_ptr; src_op; Lit (n2w total_mem)];
+                 return staged_ptr
+              od
+            else return src_op);
+         vals <- compile_tuple_load_all cenv staged_op elem_types 0;
+         compile_tuple_store_all cenv elem_types targets vals
+      od
 End
 
 (* ===== Range Loop Bound Checks ===== *)
@@ -633,7 +724,7 @@ End
    For signed types: assert start <= end using SGT.
    For unsigned: assert start <= end using GT.
    Also assert rounds <= rounds_bound.
-   Mirrors Python: stmt.py _lower_range_loop bound checks *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_range_loop bound checks *)
 Definition compile_range_bound_checks_def:
   compile_range_bound_checks start_op end_op rounds_op rounds_bound
                              is_signed =
@@ -655,7 +746,7 @@ End
    For memory: single mload/mcopy depending on size.
    For storage/transient: sload/tload for single slot, multi-slot loop.
    loc: source data_location (LocMemory, LocStorage, LocTransient, etc.)
-   Mirrors Python: stmt.py _lower_iter_loop body element copy *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_iter_loop body element copy *)
 (* Copy one for-loop element from source to loop variable (in memory).
    Dispatches by source location and element type.
 
@@ -664,7 +755,7 @@ End
    For memory bytestrings: uses compile_store_bytestring for runtime-length copy.
    For calldata/code >32B: uses CALLDATACOPY/CODECOPY (not MCOPY).
 
-   Mirrors Python: stmt.py _lower_iter_loop element copy dispatch *)
+   Mirrors Python: vyper/codegen_venom/stmt.py:_lower_iter_loop element copy dispatch *)
 Definition compile_iter_elem_copy_def:
   compile_iter_elem_copy cenv elem_ptr item_ptr elem_size
                          loc is_slot_addressed
@@ -746,7 +837,7 @@ Definition compile_stmt_def:
      Dispatches to compile_assign_value for proper complex type handling.
      dst_ty = vtyp (declared type), src_ty = expr_type e (expression type).
      These may differ for subtype assignments (e.g. Bytes[540] → Bytes[704]).
-     Mirrors Python: stmt.py lower_AnnAssign → _assign_value *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_AnnAssign → _assign_value *)
   compile_stmt cenv lctx ty (AnnAssign id vtyp e) =
     (let src_ty = expr_type e in
      do vlwl_result <- lower_value_with_loc compile_expr cenv vtyp e;
@@ -763,7 +854,9 @@ Definition compile_stmt_def:
               | _ => NONE) in
              compile_assign_value cenv (Lit (n2w offset)) LocMemory val_op
                                   is_prim src_loc vtyp src_ty da_info mem_size
-         | _ => return ())
+         | _ =>
+             (* Unsupported: AnnAssign without its preallocated memory binding. *)
+             emit_void INVALID [])
      od) ∧
 
   (* Assign: store to target (memory, storage, transient, code).
@@ -771,7 +864,7 @@ Definition compile_stmt_def:
      dst_ty from compile_get_target_ptr (target's declared type),
      src_ty from expr_type e (expression's type). These may differ
      for subtype assignments (e.g., DynArray[Bytes[540]] → DynArray[Bytes[704]]).
-     Mirrors Python: stmt.py lower_Assign with _assign_value *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_Assign with _assign_value *)
   compile_stmt cenv lctx ty (Assign (BaseTarget bt) e) =
     (let src_ty = expr_type e in
      do tgt_result <- compile_get_target_ptr cenv bt;
@@ -793,34 +886,42 @@ Definition compile_stmt_def:
         (case dst_loc_opt of
            SOME loc => compile_assign_value cenv dst_op loc val_op is_prim
                         src_loc dst_ty src_ty da_info mem_size
-         | NONE => return ())
+         | NONE =>
+             (* Unsupported: unresolved assignment targets must not disappear. *)
+             emit_void INVALID [])
      od) ∧
 
   (* AugAssign: load + binop + store.
      Handles memory, storage, transient targets.
-     Mirrors Python: stmt.py lower_AugAssign *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_AugAssign *)
   compile_stmt cenv lctx ty (AugAssign target_ty bt bop e) =
     do tgt_result <- compile_get_target_ptr cenv bt;
        dst_op <- return (FST tgt_result);
        dst_loc_opt <- return (FST (SND tgt_result));
        (* Python order: get_target → load current → eval RHS → binop → store *)
-       load_opc <- return (case dst_loc_opt of
-                             SOME LocStorage => SLOAD
-                           | SOME LocTransient => TLOAD
-                           | _ => MLOAD);
-       store_opc <- return (case dst_loc_opt of
-                              SOME LocStorage => SSTORE
-                            | SOME LocTransient => TSTORE
-                            | _ => MSTORE);
-       cur_op <- emit_op load_opc [dst_op];
-       rhs_op <- lower_value compile_expr cenv target_ty e;
-       res_op <- compile_binop bop cur_op rhs_op target_ty;
-       emit_void store_opc [dst_op; res_op]
+       (case dst_loc_opt of
+          NONE =>
+            (* Unsupported: unresolved augmented-assignment target. *)
+            emit_void INVALID []
+        | SOME loc =>
+            do load_opc <- return (case loc of
+                                      LocStorage => SLOAD
+                                    | LocTransient => TLOAD
+                                    | _ => MLOAD);
+               store_opc <- return (case loc of
+                                       LocStorage => SSTORE
+                                     | LocTransient => TSTORE
+                                     | _ => MSTORE);
+               cur_op <- emit_op load_opc [dst_op];
+               rhs_op <- lower_value compile_expr cenv target_ty e;
+               res_op <- compile_binop bop cur_op rhs_op target_ty;
+               emit_void store_opc [dst_op; res_op]
+            od)
     od ∧
 
   (* Assert: evaluate condition, handle failure.
      Three cases: bare assert, UNREACHABLE, or with reason string.
-     Mirrors Python: stmt.py lower_Assert, _assert_with_reason *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_Assert, _assert_with_reason *)
   compile_stmt cenv lctx ty (Assert cond_e AssertBare) =
     (* Bare assert: revert 0,0 on failure *)
     do cond_op <- lower_value compile_expr cenv (BaseT BoolT) cond_e;
@@ -859,7 +960,7 @@ Definition compile_stmt_def:
     od ∧
 
   (* Log: event emission with indexed topics + ABI-encoded data.
-     Mirrors Python: stmt.py lower_Log.
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_Log.
      CRITICAL: evaluate ALL args in AST order first (for side-effect ordering),
      then split into indexed (topics) and non-indexed (data).
      1. Evaluate all args in AST order
@@ -902,7 +1003,7 @@ Definition compile_stmt_def:
 
 
   (* Raise: revert with optional reason.
-     Mirrors Python: stmt.py lower_Raise
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_Raise
      Three cases: bare raise (revert 0,0), UNREACHABLE (INVALID),
      or with reason (Error(string) encoding). *)
   compile_stmt cenv lctx ty (Raise RaiseBare) =
@@ -917,7 +1018,7 @@ Definition compile_stmt_def:
      od) ∧
 
   (* Return NONE: emit STOP for external (with unlock), RET for internal.
-     Mirrors Python: stmt.py lower_Return → _lower_external_return (unlocks first) *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_Return → _lower_external_return (unlocks first) *)
   compile_stmt cenv lctx ty (Return NONE) =
     (case FLOOKUP cenv.ce_vars "__return_pc__" of
        SOME (MemLoc rpc_off _) =>
@@ -936,7 +1037,7 @@ Definition compile_stmt_def:
          od) ∧
 
   (* Return (SOME e): compile value, dispatch internal vs external.
-     Mirrors Python: stmt.py lower_Return.
+     Mirrors Python: vyper/codegen_venom/stmt.py:lower_Return.
      Internal functions: uses compile_internal_return with returns_count from cenv.
      External functions: uses compile_external_return with ABI encoding. *)
   compile_stmt cenv lctx ty (Return (SOME e)) =
@@ -958,7 +1059,7 @@ Definition compile_stmt_def:
                   | _ => return NONE);
                (* elem_types: for tuple/struct returns, use element types.
                   Python: hasattr(ret_typ, "tuple_items") matches TupleT + StructT.
-                  Mirrors Python: stmt.py _lower_internal_return *)
+                  Mirrors Python: vyper/codegen_venom/stmt.py:_lower_internal_return *)
                elem_types <- return (case ty of
                    TupleT tys => tys
                  | StructT nsid =>
@@ -970,7 +1071,7 @@ Definition compile_stmt_def:
             od
         | _ =>
             (* External return: ABI encoding + nonreentrant unlock.
-               Mirrors Python: stmt.py _lower_external_return which unlocks
+               Mirrors Python: vyper/codegen_venom/stmt.py:_lower_external_return which unlocks
                before encoding/returning.
                Normalize when ret_src_typ ≠ ret_typ for non-prim,
                non-bytestring-to-bytestring. Python lines 936-945. *)
@@ -1056,7 +1157,7 @@ Definition compile_stmt_def:
      od) ∧
 
   (* Assign with TupleTarget: tuple unpacking.
-     Mirrors Python: stmt.py _lower_tuple_unpack
+     Mirrors Python: vyper/codegen_venom/stmt.py:_lower_tuple_unpack
      First evaluate RHS, then assign each element to its target. *)
   compile_stmt cenv lctx ty (Assign (TupleTarget targets) e) =
     do src_op <- lower_value compile_expr cenv ty e;
@@ -1083,7 +1184,7 @@ Definition compile_stmt_def:
        else_terminated <- return (block_is_terminated cs_after_else);
        emit_jmp_if_not_terminated exit_lbl;
        (* Exit block: only needed if at least one branch is non-terminated.
-          Mirrors Python: stmt.py L488-494 *)
+          Mirrors Python: vyper/codegen_venom/stmt.py:L488-494 *)
        if ¬then_terminated ∨ ¬else_terminated then
          do new_block exit_lbl; return () od
        else return ()
@@ -1101,7 +1202,7 @@ Definition compile_stmt_def:
      PRECONDITION (static ranges): start <= end for unsigned, start <=_s end for
      signed. If violated, the loop would run ~2^256 iterations until fuel exhausts.
      Vyper's type checker guarantees this for static ranges (both are literals).
-     Mirrors Python: stmt.py _lower_range_loop *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:_lower_range_loop *)
   compile_stmt cenv lctx ty (For id fty (Range start_e end_e) bound body) =
     (let is_signed = is_signed_type fty in
      do start_op <- lower_value compile_expr cenv fty start_e;
@@ -1139,7 +1240,9 @@ Definition compile_stmt_def:
         (case FLOOKUP cenv.ce_vars id of
            SOME (MemLoc offset _) =>
              emit_void MSTORE [Lit (n2w offset); Var counter_var]
-         | _ => return ());
+         | _ =>
+             (* Unsupported: a range loop variable requires a memory binding. *)
+             emit_void INVALID []);
         compile_stmts cenv (InLoop exit_lbl incr_lbl) ty body;
         (* Only JMP to incr if body didn't terminate (e.g. via break/return) *)
         emit_jmp_if_not_terminated incr_lbl;
@@ -1168,7 +1271,7 @@ Definition compile_stmt_def:
      sees modified values. Vyper's type checker forbids mutation of the iterated
      array during the loop, so this is correct for well-typed programs.
      Correctness theorem needs precondition: loop body does not modify arr_e.
-     Mirrors Python: stmt.py _lower_iter_loop *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:_lower_iter_loop *)
   compile_stmt cenv lctx ty (For id fty (Array arr_e) bound body) =
     (let is_dynamic = infer_array_is_dynamic cenv arr_e in
      let loc = infer_array_location cenv arr_e in
@@ -1227,7 +1330,9 @@ Definition compile_stmt_def:
            SOME (MemLoc off _) =>
              compile_iter_elem_copy cenv elem_ptr (Lit (n2w off)) elem_size
                                     loc slot_addr fty arr_elem_ty
-         | _ => return ());
+         | _ =>
+             (* Unsupported: an iteration variable requires a memory binding. *)
+             emit_void INVALID []);
         compile_stmts cenv (InLoop exit_lbl incr_lbl) ty body;
         (* Only JMP to incr if body didn't terminate *)
         emit_jmp_if_not_terminated incr_lbl;
@@ -1257,7 +1362,7 @@ Definition compile_stmt_def:
 
   (* Compile a list of statements.
      Skips dead code after terminating statements (return, raise, break, continue).
-     Mirrors Python: stmt.py _lower_body with is_terminated check *)
+     Mirrors Python: vyper/codegen_venom/stmt.py:_lower_body with is_terminated check *)
   compile_stmts cenv lctx ty [] = return () ∧
   compile_stmts cenv lctx ty (s::ss) =
     do cs <- comp_get;

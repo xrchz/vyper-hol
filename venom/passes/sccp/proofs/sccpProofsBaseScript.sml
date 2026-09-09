@@ -15,7 +15,8 @@
  *   fn' = sccp_function fn
  *       = SOME (fn with block "entry" = [STOP])
  *         (ASSERT(Lit 1w) becomes NOP under SCCP, clear_nops removes it)
- *   s   = ARB with <|vs_inst_idx := 1; vs_current_bb := "entry"|>
+ *   s   = init_venom_state "entry" with
+ *           <|vs_inst_idx := 1; vs_current_bb := "entry"|>
  *   fuel = 1, ctx = ARB
  *
  * With vs_inst_idx = 1:
@@ -47,7 +48,7 @@ Libs
 
 (* The counterexample function *)
 Definition cx_fn_def:
-  cx_fn = ir_function "test_fn"
+  cx_fn = mk_raw_function "test_fn"
     [basic_block "entry"
        [instruction 0 ASSERT [Lit 1w] [];
         instruction 1 STOP [] []]]
@@ -107,7 +108,7 @@ Triviality cx_wl_step[local]:
        df_boundary <|sl_vals := FEMPTY; sl_targets := {} |> old lbl)
     (df_process_block Forward <|sl_vals := FEMPTY; sl_targets := {} |>
       sccp_join sccp_transfer_inst sccp_edge_transfer
-      (ir_function "test_fn"
+      (mk_raw_function "test_fn"
         [basic_block "entry"
           [instruction 0 ASSERT [Lit 1w] []; instruction 1 STOP [] []]])
       (SOME ("entry", <|sl_vals := FEMPTY; sl_targets := {} |>))
@@ -191,7 +192,7 @@ Proof
   qexists_tac `ARB` >>
   qexists_tac `cx_fn` >>
   simp[cx_sccp_function, cx_ssa] >>
-  qexists_tac `(ARB:venom_state) with
+  qexists_tac `(init_venom_state "entry") with
     <|vs_inst_idx := 1; vs_current_bb := "entry"; vs_halted := F|>` >>
   simp[lift_result_def] >>
   EVAL_TAC
@@ -1462,7 +1463,7 @@ Triviality sccp_terminator_opcode_cases[local]:
     is_terminator op ==>
     op = JMP \/ op = JNZ \/ op = DJMP \/ op = RET \/
     op = RETURN \/ op = REVERT \/ op = STOP \/ op = SINK \/
-    op = SELFDESTRUCT \/ op = INVALID
+    op = SELFDESTRUCT \/ op = INVALID \/ op = DRET \/ op = RETFMP
 Proof
   Cases \\ gvs[is_terminator_def]
 QED
@@ -1528,6 +1529,8 @@ Proof
   >- term_succ_base_tac
   >- term_succ_base_tac
   >- term_succ_base_tac
+  >- term_succ_base_tac
+  >- (term_succ_base_tac >> pairarg_tac >> gvs[])
   >- term_succ_base_tac
   >- term_succ_base_tac
   >- term_succ_base_tac

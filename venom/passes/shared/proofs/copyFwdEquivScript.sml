@@ -204,11 +204,11 @@ QED
 Theorem copy_fwd_cross_equiv:
   ∀mem dst_addr src_addr sz.
     let mem_after_copy = (mcopy dst_addr src_addr sz
-                           <| vs_memory := mem |>).vs_memory in
+                           ((init_venom_state "") with vs_memory := mem)).vs_memory in
     cross_mem_region_equiv mem_after_copy dst_addr mem src_addr sz
 Proof
   rw[cross_mem_region_equiv_def, LET_THM] >> rpt strip_tac >>
-  mp_tac (Q.SPECL [`<| vs_memory := mem |>`, `dst_addr`, `src_addr`, `sz`]
+  mp_tac (Q.SPECL [`((init_venom_state "") with vs_memory := mem)`, `dst_addr`, `src_addr`, `sz`]
     mcopy_establishes_equiv) >> simp[LET_THM] >>
   disch_then drule >> simp[]
 QED

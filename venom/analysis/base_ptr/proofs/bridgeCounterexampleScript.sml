@@ -24,17 +24,14 @@ Ancestors
 
 (* Minimal function: ALLOCA producing "ptr" + MCOPY with variable size *)
 Definition ce_fn_def:
-  ce_fn : ir_function = <|
-    fn_name := "ce_test";
-    fn_blocks := [
-      <| bb_label := "entry";
-         bb_instructions := [
-           mk_inst 0 ALLOCA [Lit (n2w 64)] ["ptr"];
-           mk_inst 1 MCOPY [Var "ptr"; Var "src"; Var "sz"] []
-         ]
-      |>
-    ]
-  |>
+  ce_fn : ir_function = mk_raw_function "ce_test" [
+    <| bb_label := "entry";
+       bb_instructions := [
+         mk_inst 0 ALLOCA [Lit (n2w 64)] ["ptr"];
+         mk_inst 1 MCOPY [Var "ptr"; Var "src"; Var "sz"] []
+       ]
+    |>
+  ]
 End
 
 (* State: alloca at id=0, base=0, size=64; "ptr"=0w in alloca region;
@@ -141,7 +138,8 @@ QED
 Theorem ce_alloca_roots:
   alloca_roots ce_fn = {"ptr"}
 Proof
-  simp[alloca_roots_def, ce_fn_def, fn_insts_def, mk_inst_def, inst_output_def, EXTENSION] >>
+  simp[alloca_roots_def, ce_fn_def, mk_raw_function_def, fn_insts_def,
+       mk_inst_def, inst_output_def, EXTENSION] >>
   gen_tac >> gvs[fn_insts_blocks_def, MEM, AllCaseEqs()] >> eq_tac >> rpt strip_tac >> gvs[]
   >- (qexists `<|inst_id := 0; inst_opcode := ALLOCA; inst_operands := [Lit 64w]; inst_outputs := ["ptr"]|>` >> simp[])
   >> pop_assum mp_tac >> simp[]
@@ -162,7 +160,7 @@ QED
 Theorem ce_bp_ptrs_bounded:
   bp_ptrs_bounded ce_bp ce_fn ce_state
 Proof
-  simp[bp_ptrs_bounded_def] >> rpt strip_tac >> gvs[ce_fn_def, AllCaseEqs()] >>
+  simp[bp_ptrs_bounded_def] >> rpt strip_tac >> gvs[ce_fn_def, mk_raw_function_def, AllCaseEqs()] >>
   gvs[mem_write_ops_def, mem_read_ops_def, mk_inst_def, AllCaseEqs(),
       ce_bp_segment_from_ops_mcopy_write, ce_bp_segment_from_ops_mcopy_read,
       IS_SOME_DEF, ce_memloc_within_alloca_write, ce_memloc_within_alloca_read]
@@ -218,7 +216,8 @@ Proof
   first_x_assum (qspec_then `0` assume_tac) >>
   first_x_assum (qspec_then `64` assume_tac) >>
   first_x_assum mp_tac >>
-  simp[ce_fn_def, ce_mem_write_ops_mcopy, ce_state_def, FLOOKUP_UPDATE,
+  simp[ce_fn_def, mk_raw_function_def, ce_mem_write_ops_mcopy,
+       ce_state_def, FLOOKUP_UPDATE,
        ce_w2n_9999, ce_w2n_0] >>
   EVAL_TAC >> decide_tac
 QED

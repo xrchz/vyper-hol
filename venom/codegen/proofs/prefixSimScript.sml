@@ -21,8 +21,18 @@ Libs
 (* ===== Prefix op definition ===== *)
 
 Definition is_prefix_op_def:
-  is_prefix_op (SOEmit _) = F /\
-  is_prefix_op _ = T
+  is_prefix_op (SOPush op) = T /\
+  is_prefix_op (SOPop n) = T /\
+  is_prefix_op (SOSwap n) = T /\
+  is_prefix_op (SODup n) = T /\
+  is_prefix_op (SOPoke n op) = T /\
+  is_prefix_op (SOSpill off) = T /\
+  is_prefix_op (SORestore off) = T /\
+  is_prefix_op (SOEmit name) = F /\
+  is_prefix_op SOInitialFmp = T /\
+  is_prefix_op (SOLabel lbl) = T /\
+  is_prefix_op (SOPushLabel lbl) = T /\
+  is_prefix_op (SOPushOfst lbl off) = T
 End
 
 (* ===== Shared tactic infrastructure ===== *)
@@ -171,9 +181,9 @@ Proof
 QED
 
 Theorem exec_prefix_step_preserves:
-  !op inst lo o2pc (st:asm_state) st'.
+  !initial_fmp op inst lo o2pc (st:asm_state) st'.
     is_prefix_op op /\
-    MEM inst (exec_stack_op op) /\
+    MEM inst (exec_stack_op initial_fmp op) /\
     asm_step lo o2pc inst st = AsmOK st' ==> ^side_fields
 Proof
   Cases_on `op`
@@ -189,6 +199,7 @@ Proof
   (* SOSpill-MSt *)  >- (gvs[] \\ metis_tac[prefix_mstore_preserves])
   (* SORestore-Push*)>- (gvs[] \\ metis_tac[prefix_push_preserves])
   (* SORestore-ML *) >- (gvs[] \\ metis_tac[prefix_mload_preserves])
+  (* SOInitialFmp *)  >- (gvs[] \\ metis_tac[prefix_push_preserves])
   (* SOLabel *)      >- metis_tac[prefix_label_preserves]
   (* SOPushLabel *)  >- metis_tac[prefix_pushlabel_preserves]
   (* SOPushOfst *)   >- metis_tac[prefix_pushofst_preserves]

@@ -30,8 +30,7 @@ Triviality exec_pure1_renamed:
     ssa_sim sigma s1 s2 /\
     inst2.inst_operands = MAP (renamed_operand sigma) inst1.inst_operands /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_pure1 f inst1 s1 = OK s1' ==>
     ?s2'. exec_pure1 f inst2 s2 = OK s2' /\
@@ -49,8 +48,7 @@ Triviality exec_pure2_renamed:
     ssa_sim sigma s1 s2 /\
     inst2.inst_operands = MAP (renamed_operand sigma) inst1.inst_operands /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_pure2 f inst1 s1 = OK s1' ==>
     ?s2'. exec_pure2 f inst2 s2 = OK s2' /\
@@ -75,8 +73,7 @@ Triviality exec_pure3_renamed:
     ssa_sim sigma s1 s2 /\
     inst2.inst_operands = MAP (renamed_operand sigma) inst1.inst_operands /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_pure3 f inst1 s1 = OK s1' ==>
     ?s2'. exec_pure3 f inst2 s2 = OK s2' /\
@@ -102,8 +99,7 @@ Triviality exec_read0_renamed:
   !f inst1 inst2 sigma s1 s2 s1'.
     ssa_sim sigma s1 s2 /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     f s1 = f s2 /\
     exec_read0 f inst1 s1 = OK s1' ==>
@@ -121,8 +117,7 @@ Triviality exec_read1_renamed:
     ssa_sim sigma s1 s2 /\
     inst2.inst_operands = MAP (renamed_operand sigma) inst1.inst_operands /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     (!v. f v s1 = f v s2) /\
     exec_read1 f inst1 s1 = OK s1' ==>
@@ -141,8 +136,7 @@ Triviality exec_mload_renamed:
     ssa_sim sigma s1 s2 /\
     inst2.inst_operands = MAP (renamed_operand sigma) inst1.inst_operands /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_read1 (\addr s. mload (w2n addr) s) inst1 s1 = OK s1' ==>
     ?s2'. exec_read1 (\addr s. mload (w2n addr) s) inst2 s2 = OK s2' /\
@@ -259,8 +253,7 @@ Triviality exec_ext_call_renamed:
   !sigma inst1 inst2 s1 s2 s1' gas addr_w value ao as_ ro rs is_static.
     ssa_sim sigma s1 s2 /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_ext_call inst1 s1 gas addr_w value ao as_ ro rs is_static = OK s1' ==>
     ?s2'. exec_ext_call inst2 s2 gas addr_w value ao as_ ro rs is_static = OK s2' /\
@@ -289,8 +282,7 @@ Triviality exec_delegatecall_renamed:
   !sigma inst1 inst2 s1 s2 s1' gas addr_w ao as_ ro rs.
     ssa_sim sigma s1 s2 /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_delegatecall inst1 s1 gas addr_w ao as_ ro rs = OK s1' ==>
     ?s2'. exec_delegatecall inst2 s2 gas addr_w ao as_ ro rs = OK s2' /\
@@ -321,8 +313,7 @@ Triviality exec_create_renamed:
   !sigma inst1 inst2 s1 s2 s1' value offset sz salt_opt.
     ssa_sim sigma s1 s2 /\
     LENGTH inst2.inst_outputs = LENGTH inst1.inst_outputs /\
-    (inst1.inst_outputs <> [] ==>
-     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+    (!x. lookup_var x s1 <> NONE /\ x <> HD inst1.inst_outputs ==>
          sigma x <> HD inst2.inst_outputs) /\
     exec_create inst1 s1 value offset sz salt_opt = OK s1' ==>
     ?s2'. exec_create inst2 s2 value offset sz salt_opt = OK s2' /\
@@ -375,11 +366,62 @@ Proof
   rw[ssa_sim_def, lookup_var_def]
 QED
 
+(* One-output opcodes expose the legacy HD-shaped freshness fact consumed by
+   the existing execution-category helpers. *)
+Triviality output_fresh_one:
+  !sigma inst1 inst2 s1.
+    output_fresh sigma inst1 inst2 s1 /\
+    bound_output_count inst1.inst_opcode = 1 ==>
+    (inst1.inst_outputs <> [] ==>
+     !x. ~MEM x inst1.inst_outputs /\ lookup_var x s1 <> NONE ==>
+         sigma x <> HD inst2.inst_outputs)
+Proof
+  rw[output_fresh_def] >>
+  first_x_assum (qspecl_then [`0`, `x`] mp_tac) >>
+  gvs[EL, HD] >> disch_then irule >>
+  Cases_on `inst1.inst_outputs` >> gvs[]
+QED
+
+Triviality output_sigma_fresh_one:
+  !sigma inst1 inst2 s1.
+    output_fresh sigma inst1 inst2 s1 /\
+    bound_output_count inst1.inst_opcode = 1 ==>
+    output_sigma inst1.inst_opcode inst1.inst_outputs inst2.inst_outputs sigma =
+      (HD inst1.inst_outputs =+ HD inst2.inst_outputs) sigma
+Proof
+  rw[output_fresh_def] >> irule output_sigma_one >>
+  gvs[] >>
+  Cases_on `inst1.inst_outputs` >> Cases_on `inst2.inst_outputs` >> gvs[]
+QED
+
 (* ==========================================================================
    Main theorem: step_inst_base_renamed_sim
    Uses STEP_BASE_REDUCE_TAC from ssaRenamedSimLib to avoid expanding
    the monolithic step_inst_base_def across many goals.
    ========================================================================== *)
+
+(* Two ordered variable updates, in the exact shape used by BUMP. *)
+Triviality ssa_sim_update_var2:
+  !sigma s1 s2 ptr next h h' v1 v2.
+    ssa_sim sigma s1 s2 /\ h <> h' /\
+    (!i x. i < 2 /\ lookup_var x s1 <> NONE /\
+           x <> EL i [ptr; next] ==>
+           sigma x <> EL i [h; h']) ==>
+    ssa_sim ((next =+ h') ((ptr =+ h) sigma))
+      (update_var next v2 (update_var ptr v1 s1))
+      (update_var h' v2 (update_var h v1 s2))
+Proof
+  rpt strip_tac >>
+  `ssa_sim
+     (FOLDL (\s (o1,o2). (o1 =+ o2) s) sigma
+        (ZIP ([ptr; next], [h; h'])))
+     (FOLDL (\st (nm,vl). update_var nm vl st) s1
+        (ZIP ([ptr; next], [v1; v2])))
+     (FOLDL (\st (nm,vl). update_var nm vl st) s2
+        (ZIP ([h; h'], [v1; v2])))` by
+    (irule foldl_update_var_ssa_sim >> simp[]) >>
+  gvs[]
+QED
 
 Theorem step_inst_base_renamed_sim:
   !sigma inst1 inst2 s1 s2 s1'.
@@ -392,14 +434,18 @@ Theorem step_inst_base_renamed_sim:
     inst1.inst_opcode <> ASSIGN /\
     step_inst_base inst1 s1 = OK s1' ==>
     ?s2'. step_inst_base inst2 s2 = OK s2' /\
-          ssa_sim (if opcode_has_output inst1.inst_opcode
-                   then (HD inst1.inst_outputs =+ HD inst2.inst_outputs) sigma
-                   else sigma)
+          ssa_sim (output_sigma inst1.inst_opcode
+                     inst1.inst_outputs inst2.inst_outputs sigma)
                   s1' s2'
 Proof
   rpt gen_tac >> strip_tac >>
-  gvs[inst_renamed_def, output_fresh_def] >>
-  Cases_on `inst1.inst_opcode` >> gvs[is_terminator_def] >>
+  gvs[inst_renamed_def] >>
+  Cases_on `inst1.inst_opcode` >>
+  gvs[is_terminator_def, bound_output_count_def, opcode_has_output_def] >>
+  imp_res_tac output_fresh_one >>
+  imp_res_tac output_sigma_fresh_one >>
+  gvs[output_fresh_def, bound_output_count_def, opcode_has_output_def] >>
+  simp[output_sigma_zero, bound_output_count_def, opcode_has_output_def] >>
   gvs (List.take (step_base_reduces, 10)) >>
   gvs (List.take (List.drop (step_base_reduces, 10), 10)) >>
   gvs (List.take (List.drop (step_base_reduces, 20), 10)) >>
@@ -435,7 +481,7 @@ Proof
        irule exec_write2_renamed >>
        conj_tac >- first_assum ACCEPT_TAC >>
        qexists_tac `s1` >>
-       gvs[mstore_def, mstore8_def, sstore_def, tstore_def,
+       gvs[mstore_def, istore_def, mstore8_def, sstore_def, tstore_def,
            contract_storage_def, contract_transient_def,
            ssa_sim_def] >> NO_TAC) >>
   gvs[exec_read0_def] >>
@@ -469,23 +515,46 @@ Proof
        irule ssa_sim_update_var >> gvs[lookup_var_def] >> NO_TAC) >>
   (* Phase 7: LOG needs Cases_on rest to simplify HD (MAP f rest) *)
   TRY (Cases_on `rest` >> gvs[]) >>
+  (* DALLOCA updates the synchronized free-memory pointer and one output. *)
+  TRY (irule ssa_sim_fmp_update_var >> gvs[] >> NO_TAC) >>
+  (* Metadata reads only update one corresponding fresh variable. *)
+  TRY (irule ssa_sim_update_var >> gvs[lookup_var_def] >> NO_TAC) >>
+  (* Dedicated two-output BUMP simulation at the ssa_sim abstraction boundary. *)
+  TRY (irule ssa_sim_update_var2 >> gvs[] >> NO_TAC) >>
   (* Phase 8: state-modifying / trivial — sigma unchanged (opcode_has_output = F) *)
   gvs[mcopy_def, write_memory_with_expansion_def] >>
-  gvs[mload_def, mstore_def, mstore8_def] >>
+  gvs[mload_def, mstore_def, istore_def, mstore8_def] >>
   gvs[sload_def, sstore_def, contract_storage_def] >>
   gvs[tload_def, tstore_def, contract_transient_def] >>
   gvs[ssa_sim_def] >>
+  (* Finish residual synchronized metadata reads after record normalization. *)
+  TRY (rpt strip_tac >>
+       gvs[FLOOKUP_UPDATE, combinTheory.APPLY_UPDATE_THM] >> NO_TAC) >>
   gvs[update_var_def, lookup_var_def] >>
+  (* Pointwise variable-map obligations for one-output metadata/FMP updates. *)
+  TRY (rpt strip_tac >> Cases_on `x = out` >>
+       gvs[FLOOKUP_UPDATE, combinTheory.APPLY_UPDATE_THM] >> NO_TAC) >>
+  (* BUMP binds two outputs in order; indexed freshness discharges both map updates. *)
+  TRY (Cases_on `next_out = ptr_out` >>
+       gvs[FLOOKUP_UPDATE, combinTheory.APPLY_UPDATE_THM] >>
+       rpt strip_tac >>
+       Cases_on `x = ptr_out` >>
+       gvs[FLOOKUP_UPDATE, combinTheory.APPLY_UPDATE_THM] >>
+       Cases_on `x = next_out` >>
+       gvs[FLOOKUP_UPDATE, combinTheory.APPLY_UPDATE_THM] >>
+       qpat_assum `!i x. _` (qspecl_then [`0`, `x`] mp_tac) >>
+       qpat_assum `!i x. _` (qspecl_then [`1`, `x`] mp_tac) >>
+       simp[] >> NO_TAC) >>
   gvs[GSYM MAP_APPEND, rich_listTheory.MAP_HD] >>
-  qmatch_goalsub_abbrev_tac `s2.vs_logs ++ [log_entry] = _` >>
-  qexists_tac `s2 with vs_logs := s2.vs_logs ++ [log_entry]` >>
-  simp[Abbr`log_entry`] >>
-  qexists_tac `off` >>
-  `MAP (renamed_operand sigma) l1 ++
-     [renamed_operand sigma h; renamed_operand sigma h'] =
-   MAP (renamed_operand sigma) (l1 ++ [h; h'])` by simp[] >>
-  ASM_REWRITE_TAC[] >>
-  simp[rich_listTheory.MAP_HD, ssa_sim_def, lookup_var_def]
+  TRY (qmatch_goalsub_abbrev_tac `s2.vs_logs ++ [log_entry] = _` >>
+       qexists_tac `s2 with vs_logs := s2.vs_logs ++ [log_entry]` >>
+       simp[Abbr`log_entry`] >>
+       qexists_tac `off` >>
+       `MAP (renamed_operand sigma) l1 ++
+          [renamed_operand sigma h; renamed_operand sigma h'] =
+        MAP (renamed_operand sigma) (l1 ++ [h; h'])` by simp[] >>
+       ASM_REWRITE_TAC[] >>
+       simp[rich_listTheory.MAP_HD, ssa_sim_def, lookup_var_def] >> NO_TAC)
 QED
 
 (* ==========================================================================
@@ -551,7 +620,7 @@ val term_resolve_post_tac =
   TRY (imp_res_tac eval_operands_renamed >> gvs[execution_equiv_UNIV]) >>
   TRY (qexists_tac `sigma` >> irule jump_to_ssa_sim >> simp[]) >>
   gvs[ssa_result_equiv_def, execution_equiv_UNIV, halt_state_def,
-      set_returndata_def, revert_state_def];
+      set_returndata_def, revert_state_def, ssa_sim_def];
 
 val term_resolve_tac =
   term_resolve_pre_tac >>
@@ -663,6 +732,68 @@ Proof
   term_setup_tac >> gvs step_base_reduces >> term_resolve_tac
 QED
 
+Triviality step_term_retfmp:
+  !sigma inst1 inst2 s1 s2.
+    ssa_sim sigma s1 s2 /\ inst_renamed sigma inst1 inst2 /\
+    inst1.inst_opcode = RETFMP /\
+    (!e. step_inst_base inst1 s1 <> Error e) ==>
+    ssa_result_equiv (step_inst_base inst1 s1) (step_inst_base inst2 s2)
+Proof
+  term_setup_tac >> gvs step_base_reduces >> term_resolve_tac
+QED
+
+Triviality mcopy_ssa_sim:
+  !sigma dst src sz s1 s2.
+    ssa_sim sigma s1 s2 ==>
+    ssa_sim sigma (mcopy dst src sz s1) (mcopy dst src sz s2)
+Proof
+  rw[ssa_sim_def, mcopy_def, write_memory_with_expansion_def, lookup_var_def]
+QED
+
+Triviality pack_dret_dynamic_ssa_sim:
+  !sigma cursor pairs s1 s2 p1 c1 s1' p2 c2 s2'.
+    ssa_sim sigma s1 s2 /\
+    pack_dret_dynamic cursor pairs s1 = (p1,c1,s1') /\
+    pack_dret_dynamic cursor pairs s2 = (p2,c2,s2') ==>
+    p1 = p2 /\ c1 = c2 /\ ssa_sim sigma s1' s2'
+Proof
+  Induct_on `pairs` >- gvs[pack_dret_dynamic_def] >>
+  rpt gen_tac >> PairCases_on `h` >>
+  simp[Ntimes pack_dret_dynamic_def 2] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  rpt strip_tac >> gvs[] >>
+  metis_tac[mcopy_ssa_sim]
+QED
+
+Triviality parse_dret_shape_renamed:
+  !sigma inst1 inst2.
+    inst2.inst_operands = MAP (renamed_operand sigma) inst1.inst_operands ==>
+    parse_dret_shape inst2 = parse_dret_shape inst1
+Proof
+  rpt gen_tac >> strip_tac >>
+  Cases_on `inst1.inst_operands` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def] >>
+  Cases_on `h` >>
+  gvs[dretShapeDefsTheory.parse_dret_shape_def, renamed_operand_def]
+QED
+
+Triviality step_term_dret:
+  !sigma inst1 inst2 s1 s2.
+    ssa_sim sigma s1 s2 /\ inst_renamed sigma inst1 inst2 /\
+    inst1.inst_opcode = DRET /\
+    (!e. step_inst_base inst1 s1 <> Error e) ==>
+    ssa_result_equiv (step_inst_base inst1 s1) (step_inst_base inst2 s2)
+Proof
+  term_setup_tac >>
+  `parse_dret_shape inst2 = parse_dret_shape inst1` by
+    metis_tac[parse_dret_shape_renamed] >>
+  gvs step_base_reduces >> term_resolve_tac >>
+  rpt (pairarg_tac >> gvs[]) >>
+  `ssa_sim sigma s1 s2` by gvs[ssa_sim_def] >>
+  drule_all pack_dret_dynamic_ssa_sim >> strip_tac >>
+  gvs[ssa_result_equiv_def, execution_equiv_UNIV, ssa_sim_def]
+QED
+
 val step_term_lemmas = [step_term_jmp, step_term_jnz, step_term_djmp,
   step_term_ret, step_term_return, step_term_revert, step_term_selfdestruct,
   step_term_stop, step_term_sink, step_term_invalid];
@@ -678,7 +809,18 @@ Theorem step_terminator_ssa_sim:
 Proof
   rpt gen_tac >> strip_tac >>
   Cases_on `inst1.inst_opcode` >> gvs[is_terminator_def] >>
-  metis_tac step_term_lemmas
+  TRY (drule_all step_term_jmp >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_jnz >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_djmp >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_ret >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_return >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_revert >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_selfdestruct >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_stop >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_sink >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_retfmp >> simp[] >> NO_TAC) >>
+  TRY (drule_all step_term_dret >> simp[] >> NO_TAC) >>
+  drule_all step_term_invalid >> simp[]
 QED
 
 (* For terminators returning OK, the input sigma is preserved.
@@ -700,6 +842,7 @@ Proof
   Cases_on `inst1.inst_opcode` >> gvs[is_terminator_def] >>
   gvs step_base_reduces >>
   gvs[renamed_operand_def, extract_labels_renamed, AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >>
   TRY (imp_res_tac eval_operand_renamed >> gvs[AllCaseEqs()]) >>
   TRY (irule jump_to_ssa_sim >> simp[])
 QED

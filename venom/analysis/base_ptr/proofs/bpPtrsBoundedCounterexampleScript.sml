@@ -23,18 +23,15 @@ Ancestors
 
 (* Function: ALLOCA 64 -> "ptr", ADD [ptr; k] -> "ptr2", MSTORE [ptr2; data] *)
 Definition ce3_fn_def:
-  ce3_fn : ir_function = <|
-    fn_name := "ce3_test";
-    fn_blocks := [
-      <| bb_label := "entry";
-         bb_instructions := [
-           mk_inst 0 ALLOCA [Lit (n2w 64)] ["ptr"];
-           mk_inst 1 ADD [Var "ptr"; Var "k"] ["ptr2"];
-           mk_inst 2 MSTORE [Var "ptr2"; Var "data"] []
-         ]
-      |>
-    ]
-  |>
+  ce3_fn : ir_function = mk_raw_function "ce3_test" [
+    <| bb_label := "entry";
+       bb_instructions := [
+         mk_inst 0 ALLOCA [Lit (n2w 64)] ["ptr"];
+         mk_inst 1 ADD [Var "ptr"; Var "k"] ["ptr2"];
+         mk_inst 2 MSTORE [Var "ptr2"; Var "data"] []
+       ]
+    |>
+  ]
 End
 
 (* State: alloca id=0, base=0, size=64; ptr=0w, ptr2=0w, k=9999w, data=0w *)
@@ -118,7 +115,8 @@ QED
 Theorem ce3_alloca_roots:
   alloca_roots ce3_fn = {"ptr"}
 Proof
-  simp[alloca_roots_def, ce3_fn_def, fn_insts_def, mk_inst_def, inst_output_def, EXTENSION] >>
+  simp[alloca_roots_def, ce3_fn_def, mk_raw_function_def, fn_insts_def,
+       mk_inst_def, inst_output_def, EXTENSION] >>
   gen_tac >> gvs[fn_insts_blocks_def, MEM, AllCaseEqs()] >> eq_tac >> rpt strip_tac >> gvs[]
   >- (qexists `<|inst_id := 0; inst_opcode := ALLOCA; inst_operands := [Lit 64w]; inst_outputs := ["ptr"]|>` >> simp[])
   >> pop_assum mp_tac >> simp[]
@@ -263,7 +261,7 @@ Theorem ce3_alloca_safe_access:
 Proof
   simp[alloca_safe_access_def, ce3_pointer_derived_vars] >>
   rpt strip_tac >>
-  gvs[ce3_fn_def, MEM] >>
+  gvs[ce3_fn_def, mk_raw_function_def, MEM] >>
   gvs[ce3_mem_write_ops_alloca, ce3_mem_read_ops_alloca] >>
   gvs[ce3_mem_write_ops_add, ce3_mem_read_ops_add] >>
   gvs[ce3_mem_write_ops_mstore, ce3_mem_read_ops_mstore,
@@ -304,7 +302,7 @@ Theorem ce3_alloca_safe_access_v:
 Proof
   simp[alloca_safe_access_def, ce3_pointer_derived_vars] >>
   rpt strip_tac >>
-  gvs[ce3_fn_def, MEM] >>
+  gvs[ce3_fn_def, mk_raw_function_def, MEM] >>
   gvs[ce3_mem_write_ops_alloca, ce3_mem_read_ops_alloca] >>
   gvs[ce3_mem_write_ops_add, ce3_mem_read_ops_add] >>
   gvs[ce3_mem_write_ops_mstore, ce3_mem_read_ops_mstore,
@@ -327,7 +325,8 @@ Theorem step_preserves_safety_counterexample:
 Proof
   map_every qexists
     [`ce3_fn`, `ce3_roots`, `ce3_inst`, `ce3_bb`, `ce3_state`, `ce3_v`] >>
-  simp[ce3_fn_def, ce3_inst_def, ce3_bb_def, ce3_step_inst_base,
+  simp[ce3_fn_def, mk_raw_function_def, ce3_inst_def, ce3_bb_def,
+       ce3_step_inst_base,
        ce3_not_terminator, ce3_not_ext_call_op,
        ce3_alloca_safe_access, ce3_ptrs_in_alloca_bounds_s,
        ce3_not_ptrs_in_alloca_bounds_v, ce3_alloca_safe_access_v]

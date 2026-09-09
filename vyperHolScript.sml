@@ -7,6 +7,9 @@
  *)
 Theory vyperHol
 Ancestors
+  (* foundational policy, compilation-unit, state, and semantics interfaces *)
+  venomPolicyTypes venomCompilerTypes venomCompilerWf unitLabelMap irSupply
+  venomState venomExecSemantics
   (* syntax, frontend, semantics *)
   jsonToVyper
   vyperTestRunner

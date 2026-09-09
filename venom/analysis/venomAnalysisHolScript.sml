@@ -5,11 +5,13 @@ Ancestors
   venomWf
   venomEffects
   venomInstProps
+  (* configured per-function schedule runner and structural guarantees *)
+  venomFnScheduleRunnerProps
   memLocDefs
   memLocProps
   (* cfg *)
   cfgAnalysis
-  (* fcg *)
+  (* fcg: public executable + postorder/correctness interface *)
   fcgAnalysis
   (* dataflow framework *)
   dataflowAnalysis
@@ -21,6 +23,8 @@ Ancestors
   dominatorAnalysis
   (* base pointer *)
   basePtrAnalysis
+  (* conservative FMP reclaim analysis *)
+  fmpReclaimProps
   (* available expression *)
   availExprAnalysis
   (* stack order *)

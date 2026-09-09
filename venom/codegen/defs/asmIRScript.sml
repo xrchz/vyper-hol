@@ -51,6 +51,7 @@ Datatype:
   | SOSpill num                     (* spill TOS to memory offset *)
   | SORestore num                   (* restore from memory offset to TOS *)
   | SOEmit string                   (* EVM opcode name *)
+  | SOInitialFmp                    (* deferred context-wide initial FMP *)
   | SOLabel string                  (* JUMPDEST label *)
   | SOPushLabel string              (* push label address *)
   | SOPushOfst string num           (* push (label + offset) *)
@@ -158,7 +159,17 @@ Definition venom_to_evm_name_def:
   venom_to_evm_name JMP = NONE ∧
   venom_to_evm_name JNZ = NONE ∧
   venom_to_evm_name DJMP = NONE ∧
+  (* Extended-core operations must be lowered before legacy codegen. *)
+  venom_to_evm_name DALLOCA = NONE ∧
+  venom_to_evm_name DRET = NONE ∧
+  venom_to_evm_name GETFMP = NONE ∧
+  venom_to_evm_name SETFMP = NONE ∧
+  venom_to_evm_name RETFMP = NONE ∧
+  venom_to_evm_name INITIAL_FMP = NONE ∧
+  venom_to_evm_name BUMP = NONE ∧
   venom_to_evm_name INVOKE = NONE ∧
+  venom_to_evm_name FMP_PARAM = NONE ∧
+  venom_to_evm_name RETPC_PARAM = NONE ∧
   venom_to_evm_name RET = NONE ∧
   venom_to_evm_name LOG = NONE ∧             (* needs LOG{n} *)
   venom_to_evm_name ASSERT = NONE ∧

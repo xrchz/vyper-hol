@@ -14,7 +14,7 @@
  * Each returns the new contract address.
  * Salt parameter triggers CREATE2 instead of CREATE.
  *
- * Mirrors Python: ~/vyper/vyper/codegen_venom/builtins/create.py
+ * Mirrors Python: vyper/codegen_venom/builtins/create.py
  *)
 
 Theory builtinCreate
@@ -148,13 +148,14 @@ Definition compile_create_proxy_def:
 End
 
 (* ===== create_copy_of ===== *)
-(* Mirrors Python: create.py lower_create_copy_of
+(* Mirrors Python:
+   vyper/codegen_venom/builtins/create.py:CreateCopyOf.build_IR
    Clone existing contract bytecode:
    1. Get code size via EXTCODESIZE, assert non-zero
-   2. Build 11-byte initcode preamble (PUSH3 codesize, codecopy, return)
-   3. Use MEMTOP for buffer start (after all alloca buffers)
+   2. Reserve code_size + 32 runtime bytes for the preamble word and code
+   3. Build 11-byte initcode preamble (PUSH3 codesize, codecopy, return)
    4. MSTORE preamble (with codesize embedded), EXTCODECOPY code after
-   5. CREATE/CREATE2 from buf at memtop+21 with preamble_len+codesize
+   5. CREATE/CREATE2 from allocation+21 with preamble_len+codesize
 
    Preamble bytes (11): encodes PUSH3(sz) + CODECOPY + RETURN pattern.
    Codesize is embedded in the preamble via SHL+OR. *)
@@ -166,8 +167,9 @@ Definition compile_create_copy_def:
        code_size <- emit_op EXTCODESIZE [target_op];
        (* Assert target has code *)
        emit_void ASSERT [code_size];
-       (* Use MEMTOP as buffer start (past all alloca buffers) *)
-       mem_ofst <- emit_op MEMTOP [];
+       (* Reserve the full preamble word plus copied runtime code. *)
+       alloc_size <- emit_op ADD [code_size; Lit 32w];
+       mem_ofst <- compile_alloc_dynamic alloc_size;
        (* Build preamble with embedded codesize: shift codesize into position.
           Preamble template (11 bytes): 62 00 00 00 3d 81 60 0b 3d 39 f3
           PUSH3(sz) RDS DUP2 PUSH1(0x0B) RDS CODECOPY RETURN
@@ -199,11 +201,12 @@ Definition compile_create_copy_def:
 End
 
 (* ===== create_from_blueprint ===== *)
-(* Mirrors Python: create.py lower_create_from_blueprint
+(* Mirrors Python:
+   vyper/codegen_venom/builtins/create.py:CreateFromBlueprint.build_IR
    Deploy from ERC-5202 blueprint contract:
    1. Read bytecode from blueprint (skipping code_offset prefix)
-   2. Append ABI-encoded ctor args if any (or raw args)
-   3. Use MEMTOP for buffer start
+   2. Compute and reserve the complete runtime CREATE extent
+   3. Append ABI-encoded ctor args if any (or raw args)
    4. CREATE or CREATE2
 
    args_ptr / args_len: pre-encoded constructor arguments to append.
@@ -219,20 +222,22 @@ Definition compile_create_blueprint_def:
        (* Assert blueprint has code after preamble (sgt because underflow) *)
        has_code <- emit_op SGT [code_size; Lit 0w];
        emit_void ASSERT [has_code];
-       (* Use MEMTOP for buffer start (past all alloca buffers) *)
-       mem_ofst <- emit_op MEMTOP [];
+       (* Compute the complete contiguous CREATE extent before allocating. *)
+       total_len <-
+         (case args_info of
+            NONE => return code_size
+          | SOME (_, args_len) => emit_op ADD [code_size; args_len]);
+       mem_ofst <- compile_alloc_dynamic total_len;
        (* Copy blueprint code (skipping preamble) to mem_ofst *)
        emit_void EXTCODECOPY
          [target_op; mem_ofst; code_offset_op; code_size];
        (* Append constructor args if present *)
-       total_len <-
-         (case args_info of
-            NONE => return code_size
-          | SOME (args_ptr, args_len) =>
-              do args_dest <- emit_op ADD [mem_ofst; code_size];
-                 emit_void MCOPY [args_dest; args_ptr; args_len];
-                 emit_op ADD [code_size; args_len]
-              od);
+       (case args_info of
+          NONE => return ()
+        | SOME (args_ptr, args_len) =>
+            do args_dest <- emit_op ADD [mem_ofst; code_size];
+               emit_void MCOPY [args_dest; args_ptr; args_len]
+            od);
        (* Create *)
        result <-
          (case salt_opt of

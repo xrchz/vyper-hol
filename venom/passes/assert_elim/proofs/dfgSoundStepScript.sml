@@ -398,6 +398,69 @@ Proof
   rpt conj_tac >> (first_assum ACCEPT_TAC ORELSE metis_tac[])
 QED
 
+
+(* Extending an environment preserves DFG soundness when old values are
+   unchanged and every tracked definition present afterwards was already
+   present before the extension.  Operand closure keeps all variable operands
+   of those old tracked definitions in the unchanged part of the environment. *)
+Theorem dfg_sound_fresh_untracked_extension:
+  !dfg env env'.
+    dfg_sound dfg env /\
+    (!x. x IN FDOM env ==> FLOOKUP env' x = FLOOKUP env x) /\
+    (!v dinst. dfg_get_def dfg v = SOME dinst /\
+       v IN FDOM env' /\ dfg_tracked_opcode dinst.inst_opcode ==>
+       v IN FDOM env) /\
+    (!v dinst u. dfg_get_def dfg v = SOME dinst /\
+       v IN FDOM env /\ dfg_tracked_opcode dinst.inst_opcode /\
+       MEM (Var u) dinst.inst_operands ==> u IN FDOM env)
+    ==>
+    dfg_sound dfg env'
+Proof
+  rpt strip_tac >> fs[dfg_sound_def] >> rpt conj_tac
+  >- (PURE_ONCE_REWRITE_TAC[dfg_assign_sound_def] >> rpt strip_tac >>
+      `v IN FDOM env` by metis_tac[dfg_tracked_opcode_def] >>
+      `u IN FDOM env` by
+        metis_tac[dfg_tracked_opcode_def, listTheory.MEM] >>
+      qpat_x_assum `dfg_assign_sound dfg env` mp_tac >>
+      PURE_ONCE_REWRITE_TAC[dfg_assign_sound_def] >> strip_tac >>
+      first_x_assum drule_all >> metis_tac[])
+  >- (PURE_ONCE_REWRITE_TAC[dfg_iszero_sound_def] >> rpt strip_tac >>
+      `v IN FDOM env'` by fs[flookup_thm] >>
+      `v IN FDOM env` by metis_tac[dfg_tracked_opcode_def] >>
+      `tv IN FDOM env` by
+        metis_tac[dfg_tracked_opcode_def, listTheory.MEM] >>
+      `FLOOKUP env v = SOME w` by metis_tac[] >>
+      `FLOOKUP env' tv = FLOOKUP env tv` by metis_tac[] >>
+      qpat_x_assum `dfg_iszero_sound dfg env` mp_tac >>
+      PURE_ONCE_REWRITE_TAC[dfg_iszero_sound_def] >> strip_tac >>
+      first_x_assum drule_all >> metis_tac[])
+  >- (PURE_ONCE_REWRITE_TAC[dfg_eq_sound_def] >> rpt strip_tac >>
+      `v IN FDOM env'` by fs[flookup_thm] >>
+      `v IN FDOM env` by metis_tac[dfg_tracked_opcode_def] >>
+      `FLOOKUP env v = SOME w` by metis_tac[] >>
+      `!u. MEM (Var u) [lhs; rhs] ==>
+           u IN FDOM env /\ FLOOKUP env' u = FLOOKUP env u` by
+        (rpt gen_tac >> strip_tac >> conj_tac >>
+         metis_tac[dfg_tracked_opcode_def, listTheory.MEM]) >>
+      qpat_x_assum `dfg_eq_sound dfg env` mp_tac >>
+      PURE_ONCE_REWRITE_TAC[dfg_eq_sound_def] >> strip_tac >>
+      first_x_assum drule_all >> strip_tac >>
+      rpt conj_tac >> rpt strip_tac >>
+      metis_tac[listTheory.MEM])
+  >- (PURE_ONCE_REWRITE_TAC[dfg_compare_sound_def] >> rpt strip_tac >>
+      `v IN FDOM env'` by fs[flookup_thm] >>
+      `v IN FDOM env` by metis_tac[dfg_tracked_opcode_def] >>
+      `FLOOKUP env v = SOME w` by metis_tac[] >>
+      `!u. MEM (Var u) [lhs; rhs] ==>
+           u IN FDOM env /\ FLOOKUP env' u = FLOOKUP env u` by
+        (rpt gen_tac >> strip_tac >> conj_tac >>
+         metis_tac[dfg_tracked_opcode_def, listTheory.MEM]) >>
+      qpat_x_assum `dfg_compare_sound dfg env` mp_tac >>
+      PURE_ONCE_REWRITE_TAC[dfg_compare_sound_def] >> strip_tac >>
+      first_x_assum drule_all >> strip_tac >>
+      rpt conj_tac >> rpt strip_tac >>
+      metis_tac[listTheory.MEM])
+QED
 (* Every instruction in a well-formed function's flat instruction list
    satisfies inst_wf. *)
 Theorem fn_insts_inst_wf:
@@ -410,7 +473,7 @@ Proof
   Induct >> simp[fn_insts_blocks_def, MEM_APPEND] >> metis_tac[]
 QED
 
-(* A well-formed non-INVOKE instruction has at most one output. *)
+(* A well-formed instruction other than INVOKE or BUMP has at most one output. *)
 fun inst_wf_output_tac () = rpt strip_tac >> gvs[]
 
 fun dfg_eq_condition_tac () =
@@ -432,23 +495,13 @@ fun step_vars_fupdate_finish_tac () =
      lookup_var_def, FLOOKUP_UPDATE, FDOM_FUPDATE]
 
 Theorem inst_wf_noninvoke_outputs_at_most_one:
-  !inst. inst_wf inst /\ inst.inst_opcode <> INVOKE ==>
+  !inst. inst_wf inst /\ inst.inst_opcode <> INVOKE /\
+         inst.inst_opcode <> BUMP ==>
     LENGTH inst.inst_outputs <= 1
 Proof
   PURE_ONCE_REWRITE_TAC[inst_wf_def] >>
-  Cases_on `inst.inst_opcode` >|
-  [inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (),
-   inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac (), inst_wf_output_tac ()]
+  Cases_on `inst.inst_opcode` >>
+  inst_wf_output_tac ()
 QED
 
 (* Helper: if a well-formed step_inst_base adds a new variable to vs_vars,
@@ -456,7 +509,7 @@ QED
 Theorem step_inst_base_new_var_singleton:
   !inst s s' v.
     step_inst_base inst s = OK s' /\ inst_wf inst /\
-    ~is_terminator inst.inst_opcode /\
+    ~is_terminator inst.inst_opcode /\ inst.inst_opcode <> BUMP /\
     v NOTIN FDOM s.vs_vars /\ v IN FDOM s'.vs_vars ==>
     inst.inst_outputs = [v]
 Proof
@@ -491,23 +544,20 @@ Theorem step_inst_base_vars_fupdate:
   ==>
     s'.vs_vars = s.vs_vars |+ (out, THE (FLOOKUP s'.vs_vars out))
 Proof
-  rw[step_inst_base_def] >>
-  gvs[AllCaseEqs(), is_terminator_def] >|
-  [step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (),
-   step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac (), step_vars_fupdate_finish_tac ()]
+  rpt strip_tac >>
+  `!v. v <> out ==> lookup_var v s' = lookup_var v s` by
+    (drule_all venomInstProofs1Theory.step_inst_base_preserves_all >>
+     simp[]) >>
+  `!v. FLOOKUP s'.vs_vars v =
+       FLOOKUP (s.vs_vars |+ (out, THE (FLOOKUP s'.vs_vars out))) v` by
+    (gen_tac >> Cases_on `v = out`
+     >- (gvs[FLOOKUP_UPDATE] >>
+         Cases_on `FLOOKUP s'.vs_vars out` >> gvs[flookup_thm])
+     >> `FLOOKUP s'.vs_vars v = FLOOKUP s.vs_vars v` by
+          (qpat_x_assum `!v. v <> out ==> _` (qspec_then `v` mp_tac) >>
+           simp[lookup_var_def]) >>
+        simp[FLOOKUP_UPDATE]) >>
+  metis_tac[FLOOKUP_EXT, FUN_EQ_THM]
 QED
 
 (* SSA uniqueness: DFG entry for a variable maps to the unique instruction
@@ -749,6 +799,38 @@ Proof
   rpt gen_tac >> DISCH_TAC >> fs[] >>
   (* Derive key facts *)
   `inst_wf inst` by metis_tac[fn_insts_inst_wf] >>
+  Cases_on `inst.inst_opcode = BUMP`
+  >- (`FDOM s'.vs_vars = FDOM s.vs_vars UNION set inst.inst_outputs` by
+        (irule venomExecPropsTheory.step_inst_base_fdom >> simp[]) >>
+      `!x. x IN FDOM s.vs_vars ==>
+           FLOOKUP s'.vs_vars x = FLOOKUP s.vs_vars x` by
+        (rpt strip_tac >>
+         `~MEM x inst.inst_outputs` by metis_tac[] >>
+         `lookup_var x s' = lookup_var x s` by
+           metis_tac[step_preserves_non_output_vars] >>
+         fs[lookup_var_def]) >>
+      `!v dinst. dfg_get_def (dfg_build_function fn) v = SOME dinst /\
+         v IN FDOM s'.vs_vars /\ dfg_tracked_opcode dinst.inst_opcode ==>
+         v IN FDOM s.vs_vars` by
+        (rpt strip_tac >> CCONTR_TAC >>
+         `MEM v inst.inst_outputs` by
+           (qpat_x_assum `v IN FDOM s'.vs_vars` mp_tac >>
+            ASM_REWRITE_TAC[] >> simp[]) >>
+         `MEM v dinst.inst_outputs /\ MEM dinst (fn_insts fn)` by
+           metis_tac[dfg_build_function_correct] >>
+         `dinst = inst` by metis_tac[] >>
+         `~dfg_tracked_opcode BUMP` by simp[dfg_tracked_opcode_def] >>
+         metis_tac[]) >>
+      conj_tac
+      >- (mp_tac (Q.SPECL [`dfg_build_function fn`, `s.vs_vars`,
+                            `s'.vs_vars`]
+                           dfg_sound_fresh_untracked_extension) >>
+          impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+          simp[])
+      >- (rpt strip_tac >>
+          `v IN FDOM s.vs_vars` by metis_tac[] >>
+          `u IN FDOM s.vs_vars` by metis_tac[] >>
+          fs[])) >>
   `inst.inst_outputs = [out]` by
     (mp_tac (Q.SPECL [`inst`, `s`, `s'`, `out`]
        step_inst_base_new_var_singleton) >>

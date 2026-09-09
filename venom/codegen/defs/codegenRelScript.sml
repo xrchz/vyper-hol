@@ -76,11 +76,11 @@ Definition read_byte_def:
     if i < LENGTH mem then EL i mem else (0w : byte)
 End
 
-(* Memories agree outside the spill region [sa_fn_eom, sa_next_offset).
-   The spill allocator starts at sa_fn_eom and grows upward to
+(* Memories agree outside the spill region [sa_spill_base, sa_next_offset).
+   The spill allocator starts at sa_spill_base and grows upward to
    sa_next_offset. This range may contain active or freed spill data
    that differs between Venom and asm. Everywhere else must agree:
-   - below sa_fn_eom: user memory
+   - below sa_spill_base: user memory
    - at/above sa_next_offset: both zero or user-written
 
    NOTE: lengths may differ (asm memory may be longer due to spill
@@ -91,8 +91,144 @@ End
    memory pointer, which the compiler controls. *)
 Definition memory_rel_def:
   memory_rel (alloc : spill_alloc) venom_mem asm_mem ⇔
-    ∀i. ¬(alloc.sa_fn_eom ≤ i ∧ i < alloc.sa_next_offset) ⇒
+    ∀i. ¬(alloc.sa_spill_base ≤ i ∧ i < alloc.sa_next_offset) ⇒
       read_byte i venom_mem = read_byte i asm_mem
+End
+
+(* ===== Source Memory Write Footprints ===== *)
+
+(* A direct source write is described by its destination byte offset and
+   length.  These footprints are computed from the pre-state operands, not
+   from a pre/post memory diff, so idempotent writes are still represented. *)
+Definition fixed_source_write_range_def:
+  fixed_source_write_range s dst_op value_op len =
+    case (eval_operand dst_op s, eval_operand value_op s) of
+      (SOME dst,SOME value) => [(w2n dst,len)]
+    | _ => []
+End
+
+Definition sized_source_write_range_def:
+  sized_source_write_range s dst_op src_op size_op =
+    case (eval_operand dst_op s, eval_operand src_op s,
+          eval_operand size_op s) of
+      (SOME dst,SOME src,SOME sz) => [(w2n dst,w2n sz)]
+    | _ => []
+End
+
+(* DRET copies each dynamic return value to a distinct destination cursor;
+   the cursor advances by the padded size, while the actual write length is
+   the unpadded size used by pack_dret_dynamic. *)
+Definition dret_source_write_ranges_def:
+  dret_source_write_ranges (cursor:bytes32) [] = [] /\
+  dret_source_write_ranges cursor ((src,sz)::rest) =
+    (w2n cursor,w2n sz) ::
+    dret_source_write_ranges
+      (cursor + n2w (ceil32 (w2n sz))) rest
+End
+
+Definition source_memory_write_ranges_def:
+  source_memory_write_ranges inst s =
+    case inst.inst_opcode of
+      MSTORE =>
+        (case inst.inst_operands of
+           [dst_op; value_op] => fixed_source_write_range s dst_op value_op 32
+         | _ => [])
+    | MSTORE8 =>
+        (case inst.inst_operands of
+           [dst_op; value_op] => fixed_source_write_range s dst_op value_op 1
+         | _ => [])
+    | ISTORE =>
+        (case inst.inst_operands of
+           [dst_op; value_op] => fixed_source_write_range s dst_op value_op 32
+         | _ => [])
+    | MCOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | CALLDATACOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | RETURNDATACOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | DLOADBYTES =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | CODECOPY =>
+        (case inst.inst_operands of
+           [dst_op; src_op; size_op] =>
+             sized_source_write_range s dst_op src_op size_op
+         | _ => [])
+    | EXTCODECOPY =>
+        (case inst.inst_operands of
+           [addr_op; dst_op; src_op; size_op] =>
+             (case eval_operand addr_op s of
+                SOME addr => sized_source_write_range s dst_op src_op size_op
+              | NONE => [])
+         | _ => [])
+    | CALL =>
+        (case inst.inst_operands of
+           [gas_op; addr_op; value_op; args_off_op; args_size_op;
+            ret_off_op; ret_size_op] =>
+             (case (eval_operand gas_op s, eval_operand addr_op s,
+                    eval_operand value_op s, eval_operand args_off_op s,
+                    eval_operand args_size_op s, eval_operand ret_off_op s,
+                    eval_operand ret_size_op s) of
+                (SOME gas,SOME addr,SOME value,SOME args_off,SOME args_size,
+                 SOME ret_off,SOME ret_size) => [(w2n ret_off,w2n ret_size)]
+              | _ => [])
+         | _ => [])
+    | STATICCALL =>
+        (case inst.inst_operands of
+           [gas_op; addr_op; args_off_op; args_size_op;
+            ret_off_op; ret_size_op] =>
+             (case (eval_operand gas_op s, eval_operand addr_op s,
+                    eval_operand args_off_op s, eval_operand args_size_op s,
+                    eval_operand ret_off_op s, eval_operand ret_size_op s) of
+                (SOME gas,SOME addr,SOME args_off,SOME args_size,
+                 SOME ret_off,SOME ret_size) => [(w2n ret_off,w2n ret_size)]
+              | _ => [])
+         | _ => [])
+    | DELEGATECALL =>
+        (case inst.inst_operands of
+           [gas_op; addr_op; args_off_op; args_size_op;
+            ret_off_op; ret_size_op] =>
+             (case (eval_operand gas_op s, eval_operand addr_op s,
+                    eval_operand args_off_op s, eval_operand args_size_op s,
+                    eval_operand ret_off_op s, eval_operand ret_size_op s) of
+                (SOME gas,SOME addr,SOME args_off,SOME args_size,
+                 SOME ret_off,SOME ret_size) => [(w2n ret_off,w2n ret_size)]
+              | _ => [])
+         | _ => [])
+    | DRET =>
+        (case parse_dret_shape inst of
+           NONE => []
+         | SOME (ordinary,dynamic) =>
+             (case eval_operands inst.inst_operands s of
+                NONE => []
+              | SOME vals =>
+                  (case pair_dret_words
+                    (TAKE (2 * dynamic) (DROP (1 + ordinary) vals)) of
+                     NONE => []
+                   | SOME pairs =>
+                       dret_source_write_ranges s.vs_call_entry_fmp pairs)))
+    | _ => []
+End
+(* Every nonempty source-write interval is disjoint from the compiler-owned
+   half-open spill interval [sa_spill_base,sa_next_offset). *)
+Definition source_memory_writes_disjoint_def:
+  source_memory_writes_disjoint (alloc:spill_alloc) inst s <=>
+    EVERY (\(off,len).
+      len = 0 \/ off + len <= alloc.sa_spill_base \/
+      alloc.sa_next_offset <= off)
+      (source_memory_write_ranges inst s)
 End
 
 (* ===== Spill Safety Conditions ===== *)
@@ -105,9 +241,49 @@ End
    programs, it must be assumed. *)
 Definition step_mem_safe_def:
   step_mem_safe (alloc : spill_alloc) vs vs' ⇔
-    ∀i. alloc.sa_fn_eom ≤ i ∧ i < alloc.sa_next_offset ⇒
+    ∀i. alloc.sa_spill_base ≤ i ∧ i < alloc.sa_next_offset ⇒
       read_byte i vs.vs_memory = read_byte i vs'.vs_memory
 End
+
+(* Simulation safety keeps post-hoc source preservation and intentional
+   write/spill disjointness as independent obligations. *)
+Definition inst_memory_safe_def:
+  inst_memory_safe (alloc:spill_alloc) inst vs vs' <=>
+    step_mem_safe alloc vs vs' /\
+    source_memory_writes_disjoint alloc inst vs
+End
+
+Theorem source_memory_write_ranges_ISTORE_lit[simp]:
+  source_memory_write_ranges
+    (instruction id ISTORE [Lit off; Lit value] []) s = [(w2n off,32)]
+Proof
+  simp[source_memory_write_ranges_def, fixed_source_write_range_def,
+       venomStateTheory.eval_operand_def]
+QED
+
+Theorem source_memory_write_ranges_ADD[simp]:
+  source_memory_write_ranges
+    (instruction id ADD operands outputs) s = []
+Proof
+  simp[source_memory_write_ranges_def]
+QED
+
+Theorem source_memory_write_ranges_MSTORE8_lit[simp]:
+  source_memory_write_ranges
+    (instruction id MSTORE8 [Lit off; Lit value] []) s = [(w2n off,1)]
+Proof
+  simp[source_memory_write_ranges_def, fixed_source_write_range_def,
+       venomStateTheory.eval_operand_def]
+QED
+
+Theorem source_memory_write_ranges_MCOPY_lit[simp]:
+  source_memory_write_ranges
+    (instruction id MCOPY [Lit dst; Lit src; Lit sz] []) s =
+    [(w2n dst,w2n sz)]
+Proof
+  simp[source_memory_write_ranges_def, sized_source_write_range_def,
+       venomStateTheory.eval_operand_def]
+QED
 
 (* Memory is pre-expanded to cover the spill high-water mark.
    Ensures MEMTOP agrees between Venom and asm from the start.
@@ -127,10 +303,10 @@ End
 
    Memory model:
    - plan_spill_rel: active spill slots have correct values
-   - memory_rel: memories agree outside [sa_fn_eom, sa_next_offset)
+   - memory_rel: memories agree outside [sa_spill_base, sa_next_offset)
    - step_mem_safe: Venom steps don't modify the spill region
 
-   The spill region boundary (sa_fn_eom) comes from the pipeline
+   The spill region boundary (sa_spill_base) comes from the pipeline
    (concretize_mem_loc sets it). step_mem_safe is a precondition
    on the input program / initial state.
 

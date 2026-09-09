@@ -101,6 +101,10 @@ Datatype:
     vs_labels : (string, bytes32) fmap; (* Label->address map for data offset labels *)
     vs_code : byte list;             (* Own bytecode (CODECOPY/EXTCODECOPY) *)
     vs_params : bytes32 list;        (* Function parameters (read by PARAM) *)
+    vs_fmp : bytes32;                (* Mutable raw free-memory pointer *)
+    vs_call_entry_fmp : bytes32;     (* Free-memory pointer at frame entry *)
+    vs_initial_fmp : bytes32;        (* Compile-time-resolved initial pointer *)
+    vs_return_pc_token : bytes32;    (* Logical return continuation token *)
     vs_prev_hashes : bytes32 list;  (* Recent block hashes for EVM BLOCKHASH *)
     vs_allocas : (num, num # num) fmap;  (* inst_id -> (offset, size), per frame *)
     vs_alloca_next : num  (* bump pointer: next free alloca offset *)
@@ -162,6 +166,10 @@ Definition init_venom_state_def:
     vs_labels := FEMPTY;
     vs_code := [];
     vs_params := [];
+    vs_fmp := 0w;
+    vs_call_entry_fmp := 0w;
+    vs_initial_fmp := 0w;
+    vs_return_pc_token := 0w;
     vs_prev_hashes := [];
     vs_allocas := FEMPTY;
     vs_alloca_next := 0
@@ -340,4 +348,14 @@ Theorem inst_idx_update_id[simp]:
   s.vs_inst_idx = 0 ==> s with vs_inst_idx := 0 = s
 Proof
   rw[fetch "-" "venom_state_component_equality"]
+QED
+
+Theorem init_venom_state_fmp_fields[local]:
+  ∀entry.
+    (init_venom_state entry).vs_fmp = 0w ∧
+    (init_venom_state entry).vs_call_entry_fmp = 0w ∧
+    (init_venom_state entry).vs_initial_fmp = 0w ∧
+    (init_venom_state entry).vs_return_pc_token = 0w
+Proof
+  simp[init_venom_state_def]
 QED

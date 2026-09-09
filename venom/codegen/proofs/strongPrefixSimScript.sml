@@ -73,6 +73,7 @@ Definition apply_simple_op_def:
   apply_simple_op lo (SOSpill _) ps = ps /\
   apply_simple_op lo (SORestore _) ps = ps /\
   apply_simple_op lo (SOEmit _) ps = ps /\
+  apply_simple_op lo SOInitialFmp ps = ps /\
   apply_simple_op lo (SOPoke _ _) ps = ps
 End
 
@@ -85,13 +86,19 @@ End
 (* Simple op: doesn't modify memory, is a prefix op *)
 Definition is_simple_stack_op_def:
   is_simple_stack_op (SOPush (Lit _)) = T /\
+  is_simple_stack_op (SOPush (Var _)) = F /\
   is_simple_stack_op (SOPush (Label _)) = T /\
   is_simple_stack_op (SOPop _) = T /\
   is_simple_stack_op (SOSwap _) = T /\
   is_simple_stack_op (SODup _) = T /\
+  is_simple_stack_op (SOPoke _ _) = F /\
+  is_simple_stack_op (SOSpill _) = F /\
+  is_simple_stack_op (SORestore _) = F /\
+  is_simple_stack_op (SOEmit _) = F /\
+  is_simple_stack_op SOInitialFmp = F /\
   is_simple_stack_op (SOLabel _) = T /\
   is_simple_stack_op (SOPushLabel _) = T /\
-  is_simple_stack_op _ = F
+  is_simple_stack_op (SOPushOfst _ _) = F
 End
 
 (* =========================================================================
@@ -170,6 +177,20 @@ Proof
   mp_tac (INST_TYPE [alpha |-> ``:256``]
     word_of_bytes_encode_roundtrip) >>
   simp[dim256, dividesTheory.divides_def] >>
+  qexists_tac `32` >> simp[]
+QED
+
+Theorem push_encode_num_roundtrip[local]:
+  word_of_bytes F (0w:bytes32)
+    (REVERSE (encode_num_bytes n)) = n2w n
+Proof
+  rewrite_tac[GSYM byteTheory.word_of_bytes_le_def] >>
+  mp_tac (INST [``bs:word8 list`` |->
+                  ``REVERSE (encode_num_bytes n)``]
+    (INST_TYPE [alpha |-> ``:256``]
+      cv_stdTheory.word_of_bytes_le_eq_num_of_bytes)) >>
+  simp[dim256, num_of_bytes_encode_roundtrip,
+       dividesTheory.divides_def] >>
   qexists_tac `32` >> simp[]
 QED
 
@@ -274,6 +295,27 @@ Proof
   >> first_assum ACCEPT_TAC
 QED
 
+
+Theorem initial_fmp_push_venom_asm_rel:
+  !lo o2pc prog ps vs st initial_fmp.
+    venom_asm_rel lo ps vs st /\
+    asm_block_at prog st.as_pc [AsmPush (encode_num_bytes initial_fmp)] ==>
+    ?st'. asm_steps lo o2pc prog 1 st = AsmOK st' /\
+          venom_asm_rel lo
+            (ps with ps_stack := SNOC (Lit (n2w initial_fmp)) ps.ps_stack)
+            vs st' /\
+          st'.as_pc = st.as_pc + 1
+Proof
+  rpt strip_tac >>
+  irule single_inst_venom_asm_rel >> conj_tac
+  >- (qexistsl_tac [`AsmPush (encode_num_bytes initial_fmp)`,
+                     `n2w initial_fmp :: st.as_stack`] >>
+      simp[asm_step_push_ok, push_encode_num_roundtrip] >>
+      irule plan_stack_rel_push >>
+      gvs[venom_asm_rel_def] >>
+      simp[operand_val_def])
+  >> first_assum ACCEPT_TAC
+QED
 (* SOPush (Label _) / SOPushLabel *)
 Theorem simple_op_push_label[local]:
   !lo o2pc prog ps vs st lbl.
@@ -430,15 +472,15 @@ QED
    ========================================================================= *)
 
 Theorem simple_op_venom_asm_rel:
-  !lo o2pc prog op ps vs st.
+  !initial_fmp lo o2pc prog op ps vs st.
     is_simple_stack_op op /\
     FST (stack_op_wf lo op (LENGTH ps.ps_stack)) /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (exec_stack_op op) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (exec_stack_op op)) st =
+    asm_block_at prog st.as_pc (exec_stack_op initial_fmp op) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (exec_stack_op initial_fmp op)) st =
             AsmOK st' /\
           venom_asm_rel lo (apply_simple_op lo op ps) vs st' /\
-          st'.as_pc = st.as_pc + LENGTH (exec_stack_op op)
+          st'.as_pc = st.as_pc + LENGTH (exec_stack_op initial_fmp op)
 Proof
   rpt gen_tac >> strip_tac >>
   Cases_on `op` >>
@@ -468,15 +510,15 @@ QED
    ========================================================================= *)
 
 Theorem simple_prefix_venom_asm_rel:
-  !ops lo o2pc prog ps vs st.
+  !ops initial_fmp lo o2pc prog ps vs st.
     EVERY is_simple_stack_op ops /\
     prefix_wf lo (LENGTH ps.ps_stack) ops /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan ops) ==>
-    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st =
+    asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
+    ?st'. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st =
             AsmOK st' /\
           venom_asm_rel lo (apply_simple_ops lo ops ps) vs st' /\
-          st'.as_pc = st.as_pc + LENGTH (execute_plan ops)
+          st'.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 Proof
   Induct_on `ops`
   >- (rpt strip_tac >>
@@ -489,21 +531,21 @@ Proof
    prefix_wf lo (SND (stack_op_wf lo op (LENGTH ps.ps_stack))) ops` by
     (fs[prefix_wf_cons] >> pairarg_tac >> gvs[]) >>
   (* Decompose asm_block_at for append *)
-  `asm_block_at prog st.as_pc (exec_stack_op op) /\
-   asm_block_at prog (st.as_pc + LENGTH (exec_stack_op op))
-     (FLAT (MAP exec_stack_op ops))` by
-    (qpat_x_assum `asm_block_at _ _ (exec_stack_op op ++ _)` mp_tac >>
+  `asm_block_at prog st.as_pc (exec_stack_op initial_fmp op) /\
+   asm_block_at prog (st.as_pc + LENGTH (exec_stack_op initial_fmp op))
+     (FLAT (MAP (exec_stack_op initial_fmp) ops))` by
+    (qpat_x_assum `asm_block_at _ _ (exec_stack_op initial_fmp op ++ _)` mp_tac >>
      REWRITE_TAC[asm_block_at_append] >> simp[]) >>
   (* Apply single-op lemma *)
   mp_tac simple_op_venom_asm_rel >>
-  disch_then (qspecl_then [`lo`, `o2pc`, `prog`, `op`, `ps`, `vs`, `st`]
+  disch_then (qspecl_then [`initial_fmp`, `lo`, `o2pc`, `prog`, `op`, `ps`, `vs`, `st`]
     mp_tac) >>
   simp[] >> strip_tac >>
   `LENGTH (apply_simple_op lo op ps).ps_stack =
    SND (stack_op_wf lo op (LENGTH ps.ps_stack))`
     by simp[apply_simple_op_length] >>
   (* Apply IH *)
-  first_x_assum (qspecl_then [`lo`, `o2pc`, `prog`,
+  first_x_assum (qspecl_then [`initial_fmp`, `lo`, `o2pc`, `prog`,
     `apply_simple_op lo op ps`, `vs`, `st'`] mp_tac) >>
   gvs[] >> strip_tac >>
   (* Compose asm_steps *)

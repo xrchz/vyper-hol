@@ -8,7 +8,7 @@
  *   compile_raw_revert  — revert with custom data
  *   compile_selfdestruct — destroy contract
  *
- * Mirrors Python: ~/vyper/vyper/codegen_venom/builtins/system.py
+ * Mirrors Python: vyper/codegen_venom/builtins/system.py
  *)
 
 Theory builtinSystem
@@ -31,14 +31,15 @@ Datatype:
 End
 
 (* ===== msg.data special case ===== *)
-(* Mirrors Python: system.py _is_msg_data + context.py allocate_dyn.
-   When raw_call data arg is msg.data, copy all calldata to memory at memtop
-   (scratch space past static allocations). MEMTOP lowers to EVM MSIZE at
-   assembly time. Returns (data_ptr, data_len). *)
+(* Mirrors Python:
+   vyper/codegen_venom/builtins/system.py:_is_msg_data and
+   vyper/codegen_venom/context.py:Context.new_internal_variable.
+   When raw_call data is msg.data, reserve its runtime calldata length and copy
+   all calldata into that fresh region. Returns (data_ptr, data_len). *)
 Definition compile_msg_data_to_memory_def:
   compile_msg_data_to_memory =
-    do data_ptr <- emit_op MEMTOP [];
-       data_len <- emit_op CALLDATASIZE [];
+    do data_len <- emit_op CALLDATASIZE [];
+       data_ptr <- compile_alloc_dynamic data_len;
        emit_void CALLDATACOPY [data_ptr; Lit 0w; data_len];
        return (data_ptr, data_len)
     od

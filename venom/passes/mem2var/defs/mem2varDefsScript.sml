@@ -226,6 +226,9 @@ Definition m2v_equiv_def:
     s1.vs_labels = s2.vs_labels /\
     s1.vs_code = s2.vs_code /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_prev_hashes = s2.vs_prev_hashes /\
     s1.vs_allocas = s2.vs_allocas /\
     s1.vs_alloca_next = s2.vs_alloca_next

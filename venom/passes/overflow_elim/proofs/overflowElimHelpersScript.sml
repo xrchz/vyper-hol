@@ -177,6 +177,65 @@ Proof
        dfg_arith_sound_fempty, dfg_compare_full_sound_fempty]
 QED
 
+(* Fresh outputs of an untracked instruction preserve the extended arithmetic
+   predicates: every tracked result and each of its variable operands remains
+   in the unchanged part of the environment. *)
+Theorem dfg_arith_sound_fresh_untracked_extension:
+  !dfg env env'.
+    dfg_arith_sound dfg env /\
+    (!x. x IN FDOM env ==> FLOOKUP env' x = FLOOKUP env x) /\
+    (!v dinst. dfg_get_def dfg v = SOME dinst /\
+       v IN FDOM env' /\ dfg_tracked_opcode dinst.inst_opcode ==>
+       v IN FDOM env) /\
+    (!v dinst u. dfg_get_def dfg v = SOME dinst /\
+       v IN FDOM env /\ dfg_tracked_opcode dinst.inst_opcode /\
+       MEM (Var u) dinst.inst_operands ==> u IN FDOM env) ==>
+    dfg_arith_sound dfg env'
+Proof
+  rpt strip_tac >> PURE_ONCE_REWRITE_TAC[dfg_arith_sound_def] >>
+  rpt strip_tac >>
+  `dfg_tracked_opcode inst.inst_opcode` by
+    simp[dfg_tracked_opcode_def] >>
+  `v IN FDOM env` by metis_tac[] >>
+  `FLOOKUP env' v = FLOOKUP env v` by metis_tac[] >>
+  `!u. MEM (Var u) [op1; op2] ==> u IN FDOM env` by metis_tac[] >>
+  `eval_op_env op1 env' = eval_op_env op1 env` by
+    (Cases_on `op1` >> gvs[eval_op_env_def]) >>
+  `eval_op_env op2 env' = eval_op_env op2 env` by
+    (Cases_on `op2` >> gvs[eval_op_env_def]) >>
+  qpat_x_assum `dfg_arith_sound dfg env` mp_tac >>
+  PURE_ONCE_REWRITE_TAC[dfg_arith_sound_def] >> strip_tac >>
+  first_x_assum drule_all >> metis_tac[]
+QED
+
+Theorem dfg_compare_full_sound_fresh_untracked_extension:
+  !dfg env env'.
+    dfg_compare_full_sound dfg env /\
+    (!x. x IN FDOM env ==> FLOOKUP env' x = FLOOKUP env x) /\
+    (!v dinst. dfg_get_def dfg v = SOME dinst /\
+       v IN FDOM env' /\ dfg_tracked_opcode dinst.inst_opcode ==>
+       v IN FDOM env) /\
+    (!v dinst u. dfg_get_def dfg v = SOME dinst /\
+       v IN FDOM env /\ dfg_tracked_opcode dinst.inst_opcode /\
+       MEM (Var u) dinst.inst_operands ==> u IN FDOM env) ==>
+    dfg_compare_full_sound dfg env'
+Proof
+  rpt strip_tac >> PURE_ONCE_REWRITE_TAC[dfg_compare_full_sound_def] >>
+  rpt strip_tac >>
+  `dfg_tracked_opcode inst.inst_opcode` by
+    simp[dfg_tracked_opcode_def] >>
+  `v IN FDOM env` by metis_tac[] >>
+  `FLOOKUP env' v = FLOOKUP env v` by metis_tac[] >>
+  `!u. MEM (Var u) [op1; op2] ==> u IN FDOM env` by metis_tac[] >>
+  `eval_op_env op1 env' = eval_op_env op1 env` by
+    (Cases_on `op1` >> gvs[eval_op_env_def]) >>
+  `eval_op_env op2 env' = eval_op_env op2 env` by
+    (Cases_on `op2` >> gvs[eval_op_env_def]) >>
+  qpat_x_assum `dfg_compare_full_sound dfg env` mp_tac >>
+  PURE_ONCE_REWRITE_TAC[dfg_compare_full_sound_def] >> strip_tac >>
+  first_x_assum drule_all >> metis_tac[]
+QED
+
 (* --- Preservation through step_inst --- *)
 
 (* eval_op_env on vs_vars = eval_operand *)
@@ -268,6 +327,39 @@ Proof
          metis_tac[step_terminator_preserves_vars]) >>
       ASM_REWRITE_TAC[]) >>
   `step_inst_base inst s = OK s'` by (fs[step_inst_def] >> gvs[]) >>
+  `inst_wf inst` by metis_tac[fn_insts_inst_wf] >>
+  Cases_on `inst.inst_opcode = BUMP`
+  >- (`FDOM s'.vs_vars = FDOM s.vs_vars UNION set inst.inst_outputs` by
+        (irule venomExecPropsTheory.step_inst_base_fdom >> simp[]) >>
+      `!x. x IN FDOM s.vs_vars ==>
+           FLOOKUP s'.vs_vars x = FLOOKUP s.vs_vars x` by
+        (rpt strip_tac >>
+         `~MEM x inst.inst_outputs` by metis_tac[] >>
+         `lookup_var x s' = lookup_var x s` by
+           metis_tac[step_preserves_non_output_vars] >>
+         fs[lookup_var_def]) >>
+      `!v dinst. dfg_get_def (dfg_build_function fn) v = SOME dinst /\
+         v IN FDOM s'.vs_vars /\ dfg_tracked_opcode dinst.inst_opcode ==>
+         v IN FDOM s.vs_vars` by
+        (rpt strip_tac >> CCONTR_TAC >>
+         `MEM v inst.inst_outputs` by
+           (qpat_x_assum `v IN FDOM s'.vs_vars` mp_tac >>
+            ASM_REWRITE_TAC[] >> simp[]) >>
+         `MEM v dinst.inst_outputs /\ MEM dinst (fn_insts fn)` by
+           metis_tac[dfg_build_function_correct] >>
+         `dinst = inst` by metis_tac[] >>
+         `~dfg_tracked_opcode BUMP` by simp[dfg_tracked_opcode_def] >>
+         metis_tac[]) >>
+      rpt conj_tac
+      >- (mp_tac (Q.SPECL [`dfg_build_function fn`, `s.vs_vars`,
+                            `s'.vs_vars`]
+                           dfg_arith_sound_fresh_untracked_extension) >>
+          impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[])
+      >- (mp_tac (Q.SPECL [`dfg_build_function fn`, `s.vs_vars`,
+                            `s'.vs_vars`]
+                           dfg_compare_full_sound_fresh_untracked_extension) >>
+          impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[])
+      >- first_assum ACCEPT_TAC) >>
   Cases_on `?out. out NOTIN FDOM s.vs_vars /\ out IN FDOM s'.vs_vars`
   >- (fs[] >>
       `inst_wf inst` by metis_tac[fn_insts_inst_wf] >>
@@ -279,6 +371,7 @@ Proof
            TRY (qpat_x_assum `step_inst_base inst s = OK s'` ACCEPT_TAC) >>
            TRY (qpat_x_assum `inst_wf inst` ACCEPT_TAC) >>
            TRY (qpat_x_assum `~is_terminator inst.inst_opcode` ACCEPT_TAC) >>
+           TRY (qpat_x_assum `inst.inst_opcode <> BUMP` ACCEPT_TAC) >>
            TRY (qpat_x_assum `out NOTIN FDOM s.vs_vars` ACCEPT_TAC) >>
            TRY (qpat_x_assum `out IN FDOM s'.vs_vars` ACCEPT_TAC)) >>
          DISCH_THEN ACCEPT_TAC) >>

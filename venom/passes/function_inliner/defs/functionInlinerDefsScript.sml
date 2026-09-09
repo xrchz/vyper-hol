@@ -81,12 +81,14 @@ Definition clone_basic_block_def:
          MAP (clone_instruction prefix fn_block_labels) bb.bb_instructions |>
 End
 
+(* Clone by updating the callee record: only identity name and blocks change.
+   ABI, noinline, forced-allocation, EOM, and FMP metadata stay with the callee. *)
 Definition clone_function_def:
   clone_function prefix func =
     let labels = fn_labels func in
-    <| fn_name := STRCAT prefix func.fn_name;
-       fn_blocks :=
-         MAP (clone_basic_block prefix labels) func.fn_blocks |>
+    func with <| fn_name := STRCAT prefix func.fn_name;
+                 fn_blocks :=
+                   MAP (clone_basic_block prefix labels) func.fn_blocks |>
 End
 
 (* ===== Parameter / Return Rewriting ===== *)
@@ -181,6 +183,8 @@ End
    3. Rewrite cloned blocks: PARAM → ASSIGN, RET → assigns + JMP
    4. Append return block and cloned blocks to caller
    5. Truncated call block gets JMP to cloned entry *)
+(* The result is always the caller itself or a caller record update changing
+   only fn_blocks; callee metadata is never transferred to the caller. *)
 Definition inline_call_site_def:
   inline_call_site prefix return_label caller_fn callee_fn
       call_bb_lbl call_idx =
@@ -225,6 +229,7 @@ End
 (* After inlining, successors of the return block may have PHIs
    referencing the original call block. Update to reference return block.
    Matches Python _fix_phi. *)
+(* PHI repair is likewise a block-only update of the caller-derived function. *)
 Definition fix_inline_phis_def:
   fix_inline_phis orig_label new_label return_bb func =
     let succ_labels = bb_succs return_bb in
@@ -316,31 +321,16 @@ End
 
 (* ===== Call Walk (Postorder DFS) ===== *)
 
-(* Postorder DFS over the call graph.
-   Matches Python _build_call_walk: for each function, DFS into callees
-   first, then append self. Skips already-visited functions. *)
-Definition call_walk_dfs_def:
-  (call_walk_dfs fcg fn_name visited =
-    if MEM fn_name visited then (visited, [])
-    else
-      let visited' = fn_name :: visited in
-      let callees = fcg_get_callees fcg fn_name in
-      let (visited'', callee_walk) =
-        call_walk_dfs_list fcg callees visited' in
-      (visited'', SNOC fn_name callee_walk)) ∧
-  (call_walk_dfs_list fcg [] visited = (visited, [])) ∧
-  (call_walk_dfs_list fcg (fn_name::rest) visited =
-    let (vis', walk1) = call_walk_dfs fcg fn_name visited in
-    let (vis'', walk2) = call_walk_dfs_list fcg rest vis' in
-    (vis'', walk1 ++ walk2))
-Termination
-  cheat
+(* Compatibility alias for the shared total FCG postorder traversal. *)
+Definition build_call_walk_def:
+  build_call_walk fcg entry_name = fcg_postorder fcg entry_name
 End
 
-Definition build_call_walk_def:
-  build_call_walk fcg entry_name =
-    SND (call_walk_dfs fcg entry_name [])
-End
+Theorem build_call_walk_eq_fcg_postorder:
+  ∀fcg entry. build_call_walk fcg entry = fcg_postorder fcg entry
+Proof
+  simp[build_call_walk_def]
+QED
 
 (* ===== Candidate Selection ===== *)
 

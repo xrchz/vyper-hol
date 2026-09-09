@@ -25,7 +25,7 @@
 
 Theory compileEnv
 Ancestors
-  valueEncoding venomExecSemantics venomInst
+  valueEncoding venomExecSemantics venomInst venomPolicyTypes
   vyperState vyperContext vyperValue vyperABI contractABI
   byte keccak finite_map pred_set
 Libs
@@ -286,6 +286,8 @@ End
 (* Static info about the compilation target *)
 Datatype:
   compile_env = <|
+    (* Resolved target capabilities used by target-sensitive raw lowering. *)
+    ce_target : target_capabilities;
     ce_vars : (string, var_location) fmap;
     ce_storage_layout : (string, bytes32) fmap;
     ce_module : num option;
@@ -404,6 +406,15 @@ Definition comp_set_def:
   comp_set (cs':compile_state) (_:compile_state) = ((), cs')
 End
 
+
+Theorem comp_bind_assoc:
+  comp_bind (comp_bind m f) g =
+  comp_bind m (\x. comp_bind (f x) g)
+Proof
+  rw[FUN_EQ_THM]
+  >> Cases_on `m x`
+  >> simp[comp_bind_def]
+QED
 (* Congruence rule for comp_bind — needed for recursive definitions using the monad *)
 Theorem comp_bind_cong[defncong]:
   ∀m1 m2 f1 f2.
@@ -873,8 +884,10 @@ Definition result_rel_def:
   (result_rel ret_tv cenv cx (INL (), vs') (OK ss') =
     state_rel cenv cx vs' ss') ∧
   (* Internal return: state + return values *)
-  (result_rel ret_tv cenv cx (INR (ReturnException v), vs') (IntRet vals ss') =
-    (state_rel cenv cx vs' ss' ∧ intret_vals_match ret_tv v vals)) ∧
+  (result_rel ret_tv cenv cx (INR (ReturnException v), vs') (IntRet ir ss') =
+    (state_rel cenv cx vs' ss' ∧
+     intret_vals_match ret_tv v ir.iret_values ∧
+     ir.iret_adopt_fmp = NONE)) ∧
   (* External return → Halt with ABI-encoded data *)
   (result_rel ret_tv cenv cx (INR (ReturnException v), vs') (Halt ss') =
     state_rel cenv cx vs' ss') ∧

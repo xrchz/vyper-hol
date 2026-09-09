@@ -625,11 +625,11 @@ End
 
 (* ===== Ensure Well-Formed ===== *)
 
-(* Instruction sort key: PHI/PARAM → 0, regular → 1, terminator → 2.
-   Matches Python's ensure_well_formed. *)
+(* Instruction sort key: PHI/parameter pseudos → 0, regular → 1,
+   terminator → 2.  All parameter metadata must remain in the prefix. *)
 Definition inst_sort_key_def:
   inst_sort_key inst =
-    if inst.inst_opcode = PHI ∨ inst.inst_opcode = PARAM then 0n
+    if inst.inst_opcode = PHI ∨ is_param_opcode inst.inst_opcode then 0n
     else if is_terminator inst.inst_opcode then 2n
     else 1n
 End

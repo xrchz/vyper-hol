@@ -497,7 +497,7 @@ Triviality step_inst_assert_equiv:
     MEM inst.inst_opcode [ASSERT; ASSERT_UNREACHABLE] ==>
     result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
 Proof
-  rw[] >> simp[step_inst_base_def] >>
+  rw[] >> ASM_REWRITE_TAC[step_inst_base_def] >>
   imp_res_tac eval_operand_equiv >>
   CASE_TAC >> gvs[result_equiv_def] >>
   CASE_TAC >> gvs[result_equiv_def] >>
@@ -613,7 +613,8 @@ Proof
   `s1.vs_immutables = s2.vs_immutables` by
     fs[state_equiv_def, execution_equiv_def] >>
   rpt CASE_TAC >> gvs[result_equiv_def, revert_equiv_def,
-    state_equiv_def, execution_equiv_def, lookup_var_def]
+    state_equiv_def, execution_equiv_def, lookup_var_def,
+    istore_def, mstore_def]
 QED
 
 (* DLOADBYTES/CODECOPY: copy from data section/code to memory, 3 operands *)
@@ -1242,6 +1243,239 @@ Proof
   irule step_inst_create2_equiv >> simp[]
 QED
 
+Triviality step_inst_getfmp_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = GETFMP ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  simp[step_inst_base_def] >>
+  rpt CASE_TAC >> gvs[result_equiv_def, revert_equiv_def] >>
+  `s1.vs_fmp = s2.vs_fmp` by
+    fs[state_equiv_def, execution_equiv_def] >>
+  gvs[] >> irule update_var_preserves >> simp[]
+QED
+
+Triviality step_inst_initial_fmp_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = INITIAL_FMP ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  simp[step_inst_base_def] >>
+  rpt CASE_TAC >> gvs[result_equiv_def, revert_equiv_def] >>
+  `s1.vs_initial_fmp = s2.vs_initial_fmp` by
+    fs[state_equiv_def, execution_equiv_def] >>
+  gvs[] >> irule update_var_preserves >> simp[]
+QED
+
+Triviality step_inst_retpc_param_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = RETPC_PARAM ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  simp[step_inst_base_def] >>
+  rpt CASE_TAC >> gvs[result_equiv_def, revert_equiv_def] >>
+  `s1.vs_return_pc_token = s2.vs_return_pc_token` by
+    fs[state_equiv_def, execution_equiv_def] >>
+  gvs[] >> irule update_var_preserves >> simp[]
+QED
+
+Triviality step_inst_fmp_param_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = FMP_PARAM ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  `s1.vs_params = s2.vs_params` by
+    fs[state_equiv_def, execution_equiv_def] >>
+  gvs[] >> simp[step_inst_base_def] >>
+  rpt CASE_TAC >> gvs[result_equiv_def, revert_equiv_def] >>
+  irule update_var_preserves >> simp[]
+QED
+
+Triviality step_inst_setfmp_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = SETFMP ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  simp[step_inst_base_def] >>
+  Cases_on `inst.inst_operands` >>
+  simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(op : operand) :: ops` >>
+  Cases_on `ops` >> simp[result_equiv_def, revert_equiv_def] >>
+  Cases_on `inst.inst_outputs` >>
+  simp[result_equiv_def, revert_equiv_def] >>
+  `eval_operand op s1 = eval_operand op s2` by
+    (irule eval_operand_equiv >> qexists `vars` >> simp[]) >>
+  Cases_on `eval_operand op s2` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  fs[state_equiv_def, execution_equiv_def, lookup_var_def]
+QED
+
+Triviality step_inst_dalloca_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = DALLOCA ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  simp[step_inst_base_def] >>
+  Cases_on `inst.inst_operands` >>
+  simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(size_op : operand) :: ops` >>
+  Cases_on `ops` >> simp[result_equiv_def, revert_equiv_def] >>
+  Cases_on `inst.inst_outputs` >>
+  simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(out : string) :: outs` >>
+  Cases_on `outs` >> simp[result_equiv_def, revert_equiv_def] >>
+  `eval_operand size_op s1 = eval_operand size_op s2` by
+    (irule eval_operand_equiv >> qexists `vars` >> simp[]) >>
+  Cases_on `eval_operand size_op s2` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  `s1.vs_fmp = s2.vs_fmp` by
+    fs[state_equiv_def, execution_equiv_def] >>
+  gvs[] >> irule update_var_preserves >>
+  fs[state_equiv_def, execution_equiv_def, lookup_var_def]
+QED
+
+Triviality step_inst_bump_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = BUMP ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  simp[step_inst_base_def] >>
+  Cases_on `inst.inst_operands` >>
+  simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(base_op : operand) :: ops` >>
+  Cases_on `ops` >> simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(base_op : operand) :: size_op :: ops` >>
+  Cases_on `ops` >> simp[result_equiv_def, revert_equiv_def] >>
+  Cases_on `inst.inst_outputs` >>
+  simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(ptr_out : string) :: outs` >>
+  Cases_on `outs` >> simp[result_equiv_def, revert_equiv_def] >>
+  rename1 `(ptr_out : string) :: next_out :: outs` >>
+  Cases_on `outs` >> simp[result_equiv_def, revert_equiv_def] >>
+  `eval_operand base_op s1 = eval_operand base_op s2` by
+    (irule eval_operand_equiv >> qexists `vars` >> simp[]) >>
+  `eval_operand size_op s1 = eval_operand size_op s2` by
+    (irule eval_operand_equiv >> qexists `vars` >> simp[]) >>
+  Cases_on `eval_operand base_op s2` >>
+  Cases_on `eval_operand size_op s2` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  irule update_var_preserves >>
+  irule update_var_preserves >> simp[]
+QED
+
+Triviality mcopy_preserves_state_equiv:
+  !vars dst src sz s1 s2. state_equiv vars s1 s2 ==>
+    state_equiv vars (mcopy dst src sz s1) (mcopy dst src sz s2)
+Proof
+  rpt strip_tac >>
+  `s1.vs_memory = s2.vs_memory` by
+    gvs[state_equiv_def, execution_equiv_def] >>
+  simp[mcopy_def] >>
+  irule write_memory_with_expansion_preserves >> simp[]
+QED
+
+Triviality pack_dret_dynamic_equiv:
+  !vars cursor pairs s1 s2 p1 c1 s1' p2 c2 s2'.
+    state_equiv vars s1 s2 /\
+    pack_dret_dynamic cursor pairs s1 = (p1,c1,s1') /\
+    pack_dret_dynamic cursor pairs s2 = (p2,c2,s2') ==>
+    p1 = p2 /\ c1 = c2 /\ state_equiv vars s1' s2'
+Proof
+  Induct_on `pairs` >- gvs[pack_dret_dynamic_def] >>
+  rpt gen_tac >> PairCases_on `h` >>
+  simp[Ntimes pack_dret_dynamic_def 2] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  rpt strip_tac >> gvs[] >>
+  metis_tac[mcopy_preserves_state_equiv]
+QED
+
+Triviality step_inst_retfmp_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = RETFMP ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt strip_tac >>
+  `eval_operands inst.inst_operands s1 = eval_operands inst.inst_operands s2` by
+    metis_tac[eval_operands_equiv] >>
+  simp[step_inst_base_def] >>
+  Cases_on `eval_operands inst.inst_operands s2` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  Cases_on `x` >>
+  gvs[result_equiv_def, revert_equiv_def,
+      state_equiv_def, execution_equiv_def, lookup_var_def]
+QED
+
+Triviality step_inst_dret_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    inst.inst_opcode = DRET ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt strip_tac >>
+  `eval_operands inst.inst_operands s1 = eval_operands inst.inst_operands s2` by
+    metis_tac[eval_operands_equiv] >>
+  `s1.vs_call_entry_fmp = s2.vs_call_entry_fmp` by
+    gvs[state_equiv_def, execution_equiv_def] >>
+  simp[Ntimes step_inst_base_def 2] >>
+  Cases_on `inst.inst_outputs` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  Cases_on `parse_dret_shape inst` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  PairCases_on `x` >>
+  Cases_on `eval_operands inst.inst_operands s2` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  Cases_on `pair_dret_words
+    (TAKE (2 * x1) (DROP (1 + x0) x))` >>
+  gvs[result_equiv_def, revert_equiv_def] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  drule_all pack_dret_dynamic_equiv >> strip_tac >>
+  gvs[result_equiv_def, state_equiv_def, execution_equiv_def] >>
+  rpt strip_tac >> first_x_assum drule >> simp[lookup_var_def]
+QED
+
+(* New raw-FMP and hidden-parameter opcodes preserve execution equivalence. *)
+Triviality step_inst_fmp_opcode_equiv:
+  !vars inst s1 s2.
+    state_equiv vars s1 s2 /\
+    (!x. MEM (Var x) inst.inst_operands ==> x NOTIN vars) /\
+    MEM inst.inst_opcode
+      [DALLOCA; GETFMP; SETFMP; INITIAL_FMP; BUMP; FMP_PARAM; RETPC_PARAM] ==>
+    result_equiv vars (step_inst_base inst s1) (step_inst_base inst s2)
+Proof
+  rpt strip_tac >> gvs[]
+  >- (irule step_inst_dalloca_equiv >> simp[])
+  >- (irule step_inst_getfmp_equiv >> simp[])
+  >- (irule step_inst_setfmp_equiv >> simp[])
+  >- (irule step_inst_initial_fmp_equiv >> simp[])
+  >- (irule step_inst_bump_equiv >> simp[])
+  >- (irule step_inst_fmp_param_equiv >> simp[])
+  >- (irule step_inst_retpc_param_equiv >> simp[])
+QED
+
 (* ==========================================================================
    step_inst_base: Main theorem — dispatches to helpers
    ========================================================================== *)
@@ -1320,6 +1554,13 @@ Proof
       drule_all step_inst_delegatecall_equiv >> simp[],
     `MEM inst.inst_opcode [CREATE;CREATE2]` by simp[] >>
       drule_all step_inst_create_equiv >> simp[],
+    `MEM inst.inst_opcode
+       [DALLOCA; GETFMP; SETFMP; INITIAL_FMP; BUMP; FMP_PARAM; RETPC_PARAM]`
+      by simp[] >> drule_all step_inst_fmp_opcode_equiv >> simp[],
+    `inst.inst_opcode = DRET` by simp[] >>
+      drule_all step_inst_dret_equiv >> simp[],
+    `inst.inst_opcode = RETFMP` by simp[] >>
+      drule_all step_inst_retfmp_equiv >> simp[],
     `inst.inst_opcode = ALLOCA` by simp[] >>
       drule_all step_inst_alloca_equiv >> simp[],
     (* INVOKE: handled in module sem, falls to Error in step_inst_base.

@@ -561,48 +561,7 @@ QED
 
 Finalise emit_one_input_wf_len;
 
-(* ===== emit_input_plan: FOLDL of emit_one_input ===== *)
-
-(* Generalized FOLDL invariant for prefix_wf.
-   Proves that FOLDL of emit_one_input preserves prefix_wf+end_len. *)
-Theorem emit_input_plan_foldl_wf_len[local]:
-  !ops opc nl acc_ops ps lo n.
-    opc <> INVOKE ==>
-    (!l. MEM (Label l) ops ==> IS_SOME (FLOOKUP lo l)) ==>
-    prefix_wf lo n acc_ops ==>
-    prefix_end_len lo n acc_ops = LENGTH ps.ps_stack ==>
-    let (result_ops, ps') =
-      FOLDL (\(acc_ops, ps) op.
-        let (step_ops, ps') = emit_one_input opc nl op ps in
-          (acc_ops ++ step_ops, ps'))
-        (acc_ops, ps) ops in
-    prefix_wf lo n result_ops /\
-    prefix_end_len lo n result_ops = LENGTH ps'.ps_stack
-Proof
-  Induct >> simp[LET_THM] >>
-  rpt gen_tac >> rpt disch_tac >>
-  simp[FOLDL, LET_THM] >>
-  Cases_on `emit_one_input opc nl h ps` >> gvs[UNCURRY_DEF] >>
-  rename1 `emit_one_input _ _ h _ = (h_ops, ps1)` >>
-  (* Establish wf/len for h_ops from emit_one_input_wf_len *)
-  `prefix_wf lo (LENGTH ps.ps_stack) h_ops /\
-   prefix_end_len lo (LENGTH ps.ps_stack) h_ops = LENGTH ps1.ps_stack` by (
-    qspecl_then [`opc`, `nl`, `h`, `ps`, `lo`]
-      mp_tac (REWRITE_RULE [LET_THM] emit_one_input_wf_len) >>
-    simp[] >>
-    (impl_tac >- (rpt strip_tac >> gvs[])) >>
-    simp[]
-  ) >>
-  (* Compose: prefix_wf for acc_ops ++ h_ops *)
-  `prefix_wf lo n (acc_ops ++ h_ops) /\
-   prefix_end_len lo n (acc_ops ++ h_ops) = LENGTH ps1.ps_stack` by
-    metis_tac[prefix_wf_append, prefix_end_len_append] >>
-  (* Apply IH — simp[LET_THM] expands let in IH conclusion and resolves *)
-  first_x_assum
-    (qspecl_then [`opc`, `nl`, `acc_ops ++ h_ops`, `ps1`, `lo`, `n`]
-     mp_tac) >>
-  simp[LET_THM]
-QED
+(* ===== emit_input_plan: structural traversal of emit_one_input ===== *)
 
 Theorem emit_input_plan_wf_len:
   !operands opc next_liveness ps lo.
@@ -614,16 +573,26 @@ Theorem emit_input_plan_wf_len:
       (FST (emit_input_plan opc operands next_liveness ps)) =
       LENGTH (SND (emit_input_plan opc operands next_liveness ps)).ps_stack
 Proof
+  Induct
+  >- simp[emit_input_plan_def, prefix_wf_def, prefix_end_len_def] >>
   rpt gen_tac >> rpt disch_tac >>
-  simp[emit_input_plan_def] >>
-  Cases_on `FOLDL (\(acc_ops,ps) op.
-    (\(step_ops,ps'). (acc_ops ++ step_ops, ps'))
-      (emit_one_input opc next_liveness op ps)) ([],ps) operands` >>
-  simp[] >>
-  qspecl_then [`operands`, `opc`, `next_liveness`, `[]`,
-    `ps`, `lo`, `LENGTH ps.ps_stack`]
-    mp_tac (REWRITE_RULE [LET_THM] emit_input_plan_foldl_wf_len) >>
-  simp[prefix_wf_def, prefix_end_len_def]
+  Cases_on `emit_one_input opc (operand_vars operands ++ next_liveness) h ps` >>
+  rename1 `emit_one_input _ _ h _ = (h_ops, ps1)` >>
+  Cases_on `emit_input_plan opc operands next_liveness ps1` >>
+  rename1 `emit_input_plan _ operands _ _ = (rest_ops, ps2)` >>
+  `prefix_wf lo (LENGTH ps.ps_stack) h_ops /\
+   prefix_end_len lo (LENGTH ps.ps_stack) h_ops = LENGTH ps1.ps_stack` by
+    (qspecl_then [`opc`, `operand_vars operands ++ next_liveness`, `h`, `ps`, `lo`]
+       mp_tac (REWRITE_RULE [LET_THM] emit_one_input_wf_len) >>
+     simp[] >>
+     (impl_tac >- (rpt strip_tac >> gvs[])) >>
+     simp[]) >>
+  `prefix_wf lo (LENGTH ps1.ps_stack) rest_ops /\
+   prefix_end_len lo (LENGTH ps1.ps_stack) rest_ops = LENGTH ps2.ps_stack` by
+    (first_x_assum (qspecl_then [`opc`, `next_liveness`, `ps1`, `lo`] mp_tac) >>
+     simp[]) >>
+  gvs[emit_input_plan_def] >>
+  metis_tac[prefix_wf_append, prefix_end_len_append]
 QED
 
 (* ===== reduce_depth_plan: iterated spills ===== *)
@@ -638,10 +607,10 @@ Proof
 QED
 
 (* select_spill_candidate returns a value ≤ 16 and < LENGTH stk *)
-Theorem select_spill_candidate_bound[local]:
-  !stk forbidden target_dist cand.
+Theorem select_spill_candidate_bound:
+  !stk forbidden target_dist target_len cand.
     1 <= LENGTH stk ==>
-    select_spill_candidate stk forbidden target_dist = SOME cand ==>
+    select_spill_candidate stk forbidden target_dist target_len = SOME cand ==>
     cand <= 16 /\ cand < LENGTH stk
 Proof
   rpt gen_tac >> rpt disch_tac >>
@@ -655,6 +624,15 @@ Proof
   simp[]
 QED
 
+Theorem select_spill_candidate_below_target:
+  !stk forbidden target_dist target_len cand.
+    select_spill_candidate stk forbidden target_dist target_len = SOME cand ==>
+    target_len <= cand
+Proof
+  rpt strip_tac >> fs[select_spill_candidate_def, LET_THM] >>
+  imp_res_tac FIND_SOME_MEM >> gvs[]
+QED
+
 (* stack_get_depth = SOME implies stack is non-empty *)
 Theorem stack_get_depth_nonempty[local]:
   !op stk d. stack_get_depth op stk = SOME d ==> 1 <= LENGTH stk
@@ -664,35 +642,36 @@ Proof
 QED
 
 Theorem reduce_depth_plan_wf_len:
-  !fuel target_ops target_op ps lo.
-    let (ops, ps') = reduce_depth_plan fuel target_ops target_op ps in
+  !fuel target_ops target_op f target_len ps lo.
+    let (ops, ps') =
+      reduce_depth_plan fuel target_ops target_op f target_len ps in
     prefix_wf lo (LENGTH ps.ps_stack) ops /\
     prefix_end_len lo (LENGTH ps.ps_stack) ops = LENGTH ps'.ps_stack
 Proof
   Induct >> simp[reduce_depth_plan_def, LET_THM] >>
   rpt gen_tac >>
-  Cases_on `stack_get_depth target_op ps.ps_stack` >> simp[] >>
+  Cases_on `stack_get_unfixed_depth target_op f target_len ps.ps_stack` >>
+  simp[] >>
   IF_CASES_TAC >> simp[] >>
-  Cases_on `select_spill_candidate ps.ps_stack target_ops x` >> simp[] >>
-  simp[LET_THM] >>
+  IF_CASES_TAC >> simp[] >>
+  Cases_on `select_spill_candidate ps.ps_stack target_ops x target_len` >>
+  simp[] >> simp[LET_THM] >>
   Cases_on `do_spill_at x' ps` >> gvs[UNCURRY_DEF] >>
   rename1 `do_spill_at _ _ = (s_ops, ps1)` >>
-  Cases_on `reduce_depth_plan fuel target_ops target_op ps1` >>
+  Cases_on `reduce_depth_plan fuel target_ops target_op f target_len ps1` >>
   gvs[UNCURRY_DEF] >>
-  rename1 `reduce_depth_plan _ _ _ _ = (r_ops, ps2)` >>
-  (* Establish do_spill_at preconditions from select_spill_candidate *)
+  rename1 `reduce_depth_plan _ _ _ _ _ _ = (r_ops, ps2)` >>
   `1 <= LENGTH ps.ps_stack` by
-    metis_tac[stack_get_depth_nonempty] >>
+    (drule stack_get_unfixed_depth_bound >> simp[]) >>
   `x' <= 16 /\ x' < LENGTH ps.ps_stack` by
     metis_tac[select_spill_candidate_bound] >>
-  (* do_spill_at wf/len *)
   qspecl_then [`x'`, `ps`, `lo`]
     mp_tac (REWRITE_RULE [LET_THM] do_spill_at_wf_len) >> simp[] >>
   strip_tac >>
-  (* IH on fuel for reduce_depth_plan *)
-  first_x_assum (qspecl_then [`target_ops`, `target_op`, `ps1`, `lo`]
-    mp_tac) >> simp[LET_THM] >>
-  strip_tac >>
+  first_x_assum
+    (qspecl_then [`target_ops`, `target_op`, `f`, `target_len`, `ps1`, `lo`]
+      mp_tac) >>
+  simp[LET_THM] >> strip_tac >>
   irule prefix_wf_len_append >> metis_tac[]
 QED
 
@@ -795,9 +774,9 @@ QED
 
 (* select_spill_candidate returns value < target_dist *)
 Theorem select_spill_candidate_lt_dist[local]:
-  !stk forbidden target_dist cand.
+  !stk forbidden target_dist target_len cand.
     1 <= target_dist ==>
-    select_spill_candidate stk forbidden target_dist = SOME cand ==>
+    select_spill_candidate stk forbidden target_dist target_len = SOME cand ==>
     cand < target_dist
 Proof
   rpt gen_tac >> rpt disch_tac >>
@@ -812,8 +791,8 @@ QED
 
 (* select_spill_candidate picks non-forbidden item *)
 Theorem select_spill_candidate_not_forbidden[local]:
-  !stk forbidden target_dist cand.
-    select_spill_candidate stk forbidden target_dist = SOME cand ==>
+  !stk forbidden target_dist target_len cand.
+    select_spill_candidate stk forbidden target_dist target_len = SOME cand ==>
     cand < LENGTH stk ==>
     ~MEM (stack_peek cand stk) forbidden
 Proof
@@ -1012,11 +991,12 @@ Proof
   irule stack_pop_get_depth >> simp[]
 QED
 
-(* When depth <= 16, reduce_depth_plan is identity *)
+(* When the selected unfixed depth is at most 16, reduction is identity. *)
 Theorem reduce_depth_plan_le_16:
-  !fuel target_ops target_op ps d.
-    stack_get_depth target_op ps.ps_stack = SOME d /\ d <= 16 ==>
-    reduce_depth_plan fuel target_ops target_op ps = ([], ps)
+  !fuel target_ops target_op f target_len ps d.
+    stack_get_unfixed_depth target_op f target_len ps.ps_stack = SOME d /\
+    d <= 16 ==>
+    reduce_depth_plan fuel target_ops target_op f target_len ps = ([], ps)
 Proof
   Cases_on `fuel` >> simp[reduce_depth_plan_def]
 QED
@@ -1032,61 +1012,67 @@ Proof
        listTheory.REVERSE_SNOC, stack_find_def]
 QED
 
-(* reduce_depth_plan preserves stack_get_depth = SOME and dist >= 16 *)
-Theorem reduce_depth_plan_dist_ge:
-  !fuel target_ops target_op ps d.
-    MEM target_op target_ops /\
-    stack_get_depth target_op ps.ps_stack = SOME d /\ d > 16 ==>
-    let (_, ps') = reduce_depth_plan fuel target_ops target_op ps in
-    ?d'. stack_get_depth target_op ps'.ps_stack = SOME d' /\ 16 <= d'
+Theorem reduce_depth_plan_protected_identity:
+  !fuel target_ops target_op f target_len ps.
+    f + 1 < target_len ==>
+    reduce_depth_plan fuel target_ops target_op f target_len ps = ([],ps)
 Proof
-  Induct_on `fuel`
-  >- (
-    (* fuel = 0: ps' = ps, d' = d > 16 >= 16 *)
-    simp[reduce_depth_plan_def, LET_THM] >> metis_tac[]
-  ) >>
-  rpt strip_tac >> simp[reduce_depth_plan_def, LET_THM] >>
-  (* stack_get_depth matches hypothesis *)
-  imp_res_tac stack_get_depth_bound >>
-  Cases_on `select_spill_candidate ps.ps_stack target_ops d`
-  >- (
-    (* NONE: return ([], ps) *)
-    simp[] >> metis_tac[]
-  ) >>
-  rename1 `select_spill_candidate _ _ _ = SOME cand` >>
-  simp[] >>
-  Cases_on `do_spill_at cand ps` >>
-  rename1 `do_spill_at cand ps = (spill_ops, ps1)` >>
-  simp[] >>
-  (* cand < d from select_spill_candidate_lt_dist *)
-  `cand < d` by
-    (qspecl_then [`ps.ps_stack`, `target_ops`, `d`, `cand`]
-      mp_tac select_spill_candidate_lt_dist >> simp[]) >>
-  `cand < LENGTH ps.ps_stack` by simp[] >>
-  (* stack_peek cand ps.ps_stack <> target_op *)
-  `~MEM (stack_peek cand ps.ps_stack) target_ops` by
-    (qspecl_then [`ps.ps_stack`, `target_ops`, `d`, `cand`]
-      mp_tac select_spill_candidate_not_forbidden >> simp[]) >>
-  `stack_peek cand ps.ps_stack <> target_op` by metis_tac[MEM] >>
-  (* do_spill_at decreases depth to d-1 *)
-  `stack_get_depth target_op ps1.ps_stack = SOME (d - 1)` by
-    (`ps1 = SND (do_spill_at cand ps)` by simp[] >>
-     metis_tac[do_spill_at_get_depth]) >>
-  Cases_on `reduce_depth_plan fuel target_ops target_op ps1` >>
-  rename1 `reduce_depth_plan _ _ _ _ = (rest_ops, ps2)` >>
-  simp[] >>
-  (* Case split: d-1 > 16 or d-1 <= 16 *)
-  Cases_on `d - 1 > 16`
-  >- (
-    (* d-1 > 16: apply IH *)
-    first_x_assum (qspecl_then [`target_ops`, `target_op`, `ps1`, `d - 1`]
+  Cases >> simp[reduce_depth_plan_def]
+QED
+
+(* Reduction preserves a deep unfixed occurrence; safe candidates lie below
+   the finalized target window and cannot remove the selected operand. *)
+Theorem reduce_depth_plan_dist_ge:
+  !fuel target_ops target_op f target_len ps d.
+    MEM target_op target_ops /\
+    stack_get_unfixed_depth target_op f target_len ps.ps_stack = SOME d /\
+    d > 16 ==>
+    let (_, ps') =
+      reduce_depth_plan fuel target_ops target_op f target_len ps in
+    ?d'. stack_get_unfixed_depth target_op f target_len ps'.ps_stack = SOME d' /\
+         16 <= d'
+Proof
+  Induct
+  >- (rpt strip_tac >> simp[reduce_depth_plan_def] >>
+      qexists `d` >> simp[]) >>
+  rpt gen_tac >> strip_tac >>
+  Cases_on `f + 1 < target_len`
+  >- (simp[reduce_depth_plan_def] >> qexists `d` >> simp[]) >>
+  `target_len <= f + 1` by decide_tac >>
+  `stack_get_depth target_op ps.ps_stack = SOME d` by
+    metis_tac[stack_get_unfixed_depth_empty_window] >>
+  simp[reduce_depth_plan_def] >>
+  Cases_on `select_spill_candidate ps.ps_stack target_ops d target_len`
+  >- (simp[] >> qexists `d` >> simp[]) >>
+  `1 <= LENGTH ps.ps_stack` by
+    metis_tac[stack_get_depth_nonempty] >>
+  `x < d` by
+    (qspecl_then [`ps.ps_stack`, `target_ops`, `d`, `target_len`, `x`]
+       mp_tac select_spill_candidate_lt_dist >> simp[]) >>
+  `x <= 16 /\ x < LENGTH ps.ps_stack` by
+    metis_tac[select_spill_candidate_bound] >>
+  `stack_peek x ps.ps_stack <> target_op` by
+    metis_tac[select_spill_candidate_not_forbidden] >>
+  `stack_get_depth target_op (SND (do_spill_at x ps)).ps_stack =
+     SOME (d - 1)` by
+    metis_tac[do_spill_at_get_depth] >>
+  `stack_get_unfixed_depth target_op f target_len
+     (SND (do_spill_at x ps)).ps_stack = SOME (d - 1)` by
+    metis_tac[stack_get_unfixed_depth_empty_window] >>
+  Cases_on `do_spill_at x ps` >>
+  rename1 `do_spill_at x ps = (spill_ops, ps1)` >>
+  gvs[] >>
+  Cases_on `d - 1 = 16`
+  >- (`reduce_depth_plan fuel target_ops target_op f target_len ps1 =
+         ([], ps1)` by
+        (irule reduce_depth_plan_le_16 >> simp[]) >>
+      simp[] >> qexists `16` >> simp[]) >>
+  `d - 1 > 16` by decide_tac >>
+  first_x_assum
+    (qspecl_then [`target_ops`, `target_op`, `f`, `target_len`, `ps1`, `d - 1`]
       mp_tac) >>
-    simp[LET_THM]
-  ) >>
-  (* d-1 <= 16: reduce_depth_plan returns ([], ps1) *)
-  `reduce_depth_plan fuel target_ops target_op ps1 = ([], ps1)` by
-    (irule reduce_depth_plan_le_16 >> qexists_tac `d - 1` >> simp[]) >>
-  gvs[]
+  Cases_on `reduce_depth_plan fuel target_ops target_op f target_len ps1` >>
+  simp[]
 QED
 
 (* stack_poke preserves length *)
@@ -1196,42 +1182,50 @@ Theorem reorder_one_wf_len:
 Proof
   rpt strip_tac >>
   simp[reorder_one_def, LET_THM] >>
-  Cases_on `stack_get_depth op ps.ps_stack`
+  Cases_on `stack_get_unfixed_depth op
+    (LENGTH target_ops - (target_idx + 1)) (LENGTH target_ops) ps.ps_stack`
   >- (
     simp[] >>
     Cases_on `FLOOKUP ps.ps_spilled op`
-    >- simp[prefix_wf_def, prefix_end_len_def]
-    >>
+    >- simp[prefix_wf_def, prefix_end_len_def] >>
     simp[] >>
     Cases_on `do_restore op ps` >>
     rename1 `do_restore op ps = (restore_ops, ps1)` >> simp[] >>
     `stack_get_depth op ps1.ps_stack = SOME 0` by
       (qspecl_then [`op`, `ps`, `x`] mp_tac do_restore_get_depth_zero >>
        simp[]) >>
+    `stack_get_unfixed_depth op
+       (LENGTH target_ops - (target_idx + 1)) (LENGTH target_ops)
+       ps1.ps_stack = SOME 0` by
+      metis_tac[stack_get_unfixed_depth_zero] >>
     simp[] >>
     suspend "none_restore"
-  )
-  >>
-  rename1 `stack_get_depth op ps.ps_stack = SOME d` >>
+  ) >>
+  rename1 `stack_get_unfixed_depth op _ _ ps.ps_stack = SOME d` >>
   simp[] >>
-  imp_res_tac stack_get_depth_bound >>
+  drule stack_get_unfixed_depth_bound >> strip_tac >>
   IF_CASES_TAC
   >- (
     simp[] >>
-    Cases_on `reduce_depth_plan (LENGTH ps.ps_stack) target_ops op ps` >>
-    rename1 `reduce_depth_plan _ _ _ _ = (reduce_ops, ps2)` >>
+    Cases_on `reduce_depth_plan (LENGTH ps.ps_stack) target_ops op
+      (LENGTH target_ops - (target_idx + 1)) (LENGTH target_ops) ps` >>
+    rename1 `reduce_depth_plan _ _ _ _ _ _ = (reduce_ops, ps2)` >>
     simp[] >>
-    qspecl_then [`LENGTH ps.ps_stack`, `target_ops`, `op`, `ps`, `lo`]
+    qspecl_then [`LENGTH ps.ps_stack`, `target_ops`, `op`,
+      `LENGTH target_ops - (target_idx + 1)`, `LENGTH target_ops`, `ps`, `lo`]
       mp_tac (REWRITE_RULE [LET_THM] reduce_depth_plan_wf_len) >>
     simp[] >> strip_tac >>
-    `?d'. stack_get_depth op ps2.ps_stack = SOME d' /\ 16 <= d'` by
-      (qspecl_then [`LENGTH ps.ps_stack`, `target_ops`, `op`, `ps`, `d`]
+    `?d'. stack_get_unfixed_depth op
+             (LENGTH target_ops - (target_idx + 1)) (LENGTH target_ops)
+             ps2.ps_stack = SOME d' /\ 16 <= d'` by
+      (qspecl_then [`LENGTH ps.ps_stack`, `target_ops`, `op`,
+         `LENGTH target_ops - (target_idx + 1)`, `LENGTH target_ops`,
+         `ps`, `d`]
          mp_tac (REWRITE_RULE [LET_THM] reduce_depth_plan_dist_ge) >>
        simp[]) >>
     simp[] >>
     suspend "some_deep"
-  )
-  >>
+  ) >>
   simp[] >>
   suspend "some_shallow"
 QED
@@ -1285,7 +1279,7 @@ Resume reorder_one_wf_len[none_restore]:
 QED
 
 Resume reorder_one_wf_len[some_deep]:
-  imp_res_tac stack_get_depth_bound >>
+  drule stack_get_unfixed_depth_bound >> strip_tac >>
   `LENGTH target_ops < target_idx + (LENGTH ps2.ps_stack + 1) /\
    0 < target_idx + LENGTH ps2.ps_stack /\
    0 < LENGTH ps2.ps_stack` by decide_tac >>
@@ -1429,7 +1423,10 @@ Theorem generate_emit_ops_some[local,simp]:
     venom_to_evm_name inst.inst_opcode = SOME name ==>
     generate_emit_ops inst ltc ps = ([SOEmit name], ps)
 Proof
-  rpt strip_tac >> simp[generate_emit_ops_def, LET_THM]
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode = INITIAL_FMP` >> gvs[venom_to_evm_name_def] >>
+  Cases_on `inst.inst_opcode = BUMP` >> gvs[venom_to_evm_name_def] >>
+  simp[generate_emit_ops_def, LET_THM]
 QED
 
 (* regular_plan_prefix_wf_gen below supersedes the old regular_plan_prefix_wf.
@@ -1467,6 +1464,8 @@ Theorem regular_plan_empty_prefix:
       ([SOEmit name], ps_out)
 Proof
   rpt strip_tac >>
+  Cases_on `inst.inst_opcode = INITIAL_FMP` >> gvs[venom_to_evm_name_def] >>
+  Cases_on `inst.inst_opcode = BUMP` >> gvs[venom_to_evm_name_def] >>
   simp[generate_regular_inst_plan_def] >>
   simp[emit_input_plan_nil] >>
   simp[] >>

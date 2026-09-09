@@ -15,7 +15,7 @@ Ancestors
   codegenRel stackOpSim stackOpAsmSim
   asmSem stackPlanTypes planExec stackModel
   strongPrefixSim instSimHelpers blockSimHelpers
-  asmToBytecodeProofs
+  asmToBytecodeProofs venomState
   list rich_list byte
 Libs BasicProvers
 
@@ -232,11 +232,117 @@ Proof
   )
 QED
 
+Theorem el_mstore_expand_read_byte[local]:
+  !i off mem.
+    i < LENGTH
+      (if off + 32 > LENGTH mem then
+         mem ++ REPLICATE (off + 32 - LENGTH mem) 0w
+       else mem) ==>
+    EL i
+      (if off + 32 > LENGTH mem then
+         mem ++ REPLICATE (off + 32 - LENGTH mem) 0w
+       else mem) =
+    (if i < LENGTH mem then EL i mem else 0w)
+Proof
+  rpt strip_tac >> IF_CASES_TAC >> gvs[] >>
+  Cases_on `i < LENGTH mem`
+  >- simp[EL_APPEND1]
+  >> simp[EL_APPEND2, EL_REPLICATE]
+QED
+
+Theorem read_byte_mstore_outside:
+  !off (v:bytes32) s i.
+    ~(off <= i /\ i < off + 32) ==>
+    read_byte i (mstore off v s).vs_memory = read_byte i s.vs_memory
+Proof
+  rpt strip_tac >>
+  simp[read_byte_def, mstore_def, LET_THM, len_w2b] >>
+  qabbrev_tac `expanded =
+    if off + 32 > LENGTH s.vs_memory then
+      s.vs_memory ++ REPLICATE (off + 32 - LENGTH s.vs_memory) 0w
+    else s.vs_memory` >>
+  `off + 32 <= LENGTH expanded` by
+    (simp[Abbr `expanded`] >> IF_CASES_TAC >> simp[]) >>
+  `off + (32 + (LENGTH expanded - (off + 32))) = LENGTH expanded`
+    by decide_tac >>
+  simp[] >>
+  Cases_on `i < LENGTH expanded`
+  >- (simp[] >> Cases_on `i < off`
+      >- (simp[EL_APPEND1, LENGTH_APPEND, EL_TAKE] >>
+          unabbrev_all_tac >> irule el_mstore_expand_read_byte >> simp[])
+      >> `i >= off + 32` by decide_tac >>
+         simp[EL_APPEND2, LENGTH_APPEND, LENGTH_DROP, len_w2b] >>
+         `~(i < off + 32)` by decide_tac >> simp[EL_DROP] >>
+         unabbrev_all_tac >> irule el_mstore_expand_read_byte >> simp[])
+  >> `~(i < LENGTH s.vs_memory)` suffices_by simp[] >>
+     `LENGTH s.vs_memory <= LENGTH expanded` by
+       (simp[Abbr `expanded`] >> IF_CASES_TAC >> simp[LENGTH_APPEND]) >>
+     decide_tac
+QED
+
+
+Theorem read_byte_splice_inside[local]:
+  !expanded bytes off n i.
+    LENGTH bytes = n /\ off + n <= LENGTH expanded /\
+    off <= i /\ i < off + n ==>
+    read_byte i (TAKE off expanded ++ bytes ++ DROP (off + n) expanded) =
+    EL (i - off) bytes
+Proof
+  rpt strip_tac >>
+  `LENGTH (TAKE off expanded) = off` by simp[LENGTH_TAKE_EQ] >>
+  `i < LENGTH (TAKE off expanded ++ bytes ++ DROP (off + n) expanded)` by
+    simp[LENGTH_APPEND] >>
+  simp[read_byte_def, EL_APPEND2, EL_APPEND1, LENGTH_APPEND]
+QED
+
+Theorem read_byte_mstore_mem_write32_inside:
+  !off (v:bytes32) s am i.
+    off <= i /\ i < off + 32 ==>
+    read_byte i (mstore off v s).vs_memory =
+    read_byte i (mem_write32 off v am)
+Proof
+  rpt strip_tac >>
+  qabbrev_tac `sexpanded =
+    if off + 32 > LENGTH s.vs_memory then
+      s.vs_memory ++ REPLICATE (off + 32 - LENGTH s.vs_memory) 0w
+    else s.vs_memory` >>
+  qabbrev_tac `aexpanded = asm_expand_memory (off + 32) am` >>
+  `off + 32 <= LENGTH sexpanded` by
+    (simp[Abbr `sexpanded`] >> IF_CASES_TAC >> simp[]) >>
+  `off + 32 <= LENGTH aexpanded` by simp[Abbr `aexpanded`] >>
+  simp[mstore_def, mem_write32_def, LET_THM] >>
+  `read_byte i
+      (TAKE off sexpanded ++ word_to_bytes v T ++
+       DROP (off + 32) sexpanded) = EL (i - off) (word_to_bytes v T)` by
+    (irule read_byte_splice_inside >> simp[len_w2b]) >>
+  `read_byte i
+      (TAKE off aexpanded ++ word_to_bytes v T ++
+       DROP (off + 32) aexpanded) = EL (i - off) (word_to_bytes v T)` by
+    (irule read_byte_splice_inside >> simp[len_w2b]) >>
+  metis_tac[]
+QED
+
+Theorem memory_rel_mstore_mem_write32:
+  !alloc off (v:bytes32) s am.
+    memory_rel alloc s.vs_memory am ==>
+    memory_rel alloc (mstore off v s).vs_memory
+                     (mem_write32 off v am)
+Proof
+  rpt gen_tac >> strip_tac >>
+  rewrite_tac[memory_rel_def] >> rpt strip_tac >>
+  Cases_on `off <= i /\ i < off + 32`
+  >- (irule read_byte_mstore_mem_write32_inside >> simp[]) >>
+  `read_byte i s.vs_memory = read_byte i am` by
+    (qpat_x_assum `memory_rel alloc s.vs_memory am` mp_tac >>
+     rewrite_tac[memory_rel_def] >>
+     disch_then (qspec_then `i` irule) >> simp[]) >>
+  metis_tac[read_byte_mstore_outside, read_byte_mem_write32_outside]
+QED
 (* memory_rel preserved: writes to spill region don't affect outside *)
 Theorem memory_rel_mem_write32:
   !alloc vm am off (v:bytes32).
     memory_rel alloc vm am /\
-    alloc.sa_fn_eom <= off /\
+    alloc.sa_spill_base <= off /\
     off + 32 <= alloc.sa_next_offset ==>
     memory_rel alloc vm (mem_write32 off v am)
 Proof
@@ -487,7 +593,7 @@ Theorem spill_op_venom_asm_rel:
     LENGTH ps.ps_stack >= 1 /\
     off < dimword(:256) /\
     op = stack_peek 0 ps.ps_stack /\
-    ps.ps_alloc.sa_fn_eom <= off /\
+    ps.ps_alloc.sa_spill_base <= off /\
     (!op2 off2. FLOOKUP ps.ps_spilled op2 = SOME off2 ==>
                 off2 + 32 <= off \/ off + 32 <= off2) /\
     asm_block_at prog st.as_pc

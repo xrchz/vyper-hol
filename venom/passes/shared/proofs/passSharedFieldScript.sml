@@ -83,6 +83,97 @@ Proof
             step_base_preserves_logs]
 QED
 
+Theorem step_inst_base_preserves_stable_frame_metadata:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE ==>
+    s'.vs_call_entry_fmp = s.vs_call_entry_fmp /\
+    s'.vs_initial_fmp = s.vs_initial_fmp /\
+    s'.vs_return_pc_token = s.vs_return_pc_token
+Proof
+  rpt strip_tac >>
+  drule venomInstProofs1Theory.step_inst_base_preserves_all >> simp[]
+QED
+
+Theorem step_inst_base_preserves_fmp_no_write:
+  !inst s s'.
+    step_inst_base inst s = OK s' /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE /\
+    Eff_FMP NOTIN write_effects inst.inst_opcode ==>
+    s'.vs_fmp = s.vs_fmp
+Proof
+  rpt strip_tac >>
+  `inst.inst_opcode <> SETFMP` by
+    (strip_tac >> gvs[write_effects_def]) >>
+  `inst.inst_opcode <> DALLOCA` by
+    (strip_tac >> gvs[write_effects_def]) >>
+  metis_tac[venomInstProofs1Theory.step_inst_base_preserves_fmp_ordinary]
+QED
+
+Theorem step_inst_base_ordinary_fmp_agreement:
+  !inst s1 s2 v1 v2.
+    step_inst_base inst s1 = OK v1 /\
+    step_inst_base inst s2 = OK v2 /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE /\
+    (!op. MEM op inst.inst_operands ==>
+          eval_operand op s1 = eval_operand op s2) /\
+    s1.vs_fmp = s2.vs_fmp ==>
+    v1.vs_fmp = v2.vs_fmp
+Proof
+  rpt strip_tac >>
+  Cases_on `inst.inst_opcode = SETFMP`
+  >- (gvs[step_inst_base_def, AllCaseEqs()] >> metis_tac[]) >>
+  Cases_on `inst.inst_opcode = DALLOCA`
+  >- (gvs[step_inst_base_def, AllCaseEqs()] >> simp[update_var_def]) >>
+  imp_res_tac venomInstProofs1Theory.step_inst_base_preserves_fmp_ordinary >>
+  metis_tac[]
+QED
+
+Theorem step_inst_base_ordinary_frame_agreement:
+  !inst s1 s2 v1 v2.
+    step_inst_base inst s1 = OK v1 /\
+    step_inst_base inst s2 = OK v2 /\
+    ~is_terminator inst.inst_opcode /\
+    ~is_alloca_op inst.inst_opcode /\
+    ~is_ext_call_op inst.inst_opcode /\
+    inst.inst_opcode <> INVOKE /\
+    (!op. MEM op inst.inst_operands ==>
+          eval_operand op s1 = eval_operand op s2) /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token ==>
+    v1.vs_fmp = v2.vs_fmp /\
+    v1.vs_call_entry_fmp = v2.vs_call_entry_fmp /\
+    v1.vs_initial_fmp = v2.vs_initial_fmp /\
+    v1.vs_return_pc_token = v2.vs_return_pc_token
+Proof
+  rpt strip_tac >>
+  `v1.vs_call_entry_fmp = s1.vs_call_entry_fmp /\
+   v1.vs_initial_fmp = s1.vs_initial_fmp /\
+   v1.vs_return_pc_token = s1.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  `v2.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+   v2.vs_initial_fmp = s2.vs_initial_fmp /\
+   v2.vs_return_pc_token = s2.vs_return_pc_token` by
+    metis_tac[step_inst_base_preserves_stable_frame_metadata] >>
+  Cases_on `inst.inst_opcode = SETFMP`
+  >- (gvs[step_inst_base_def, AllCaseEqs()] >> metis_tac[]) >>
+  Cases_on `inst.inst_opcode = DALLOCA`
+  >- (gvs[step_inst_base_def, AllCaseEqs()] >> simp[update_var_def]) >>
+  imp_res_tac venomInstProofs1Theory.step_inst_base_preserves_fmp_ordinary >>
+  metis_tac[]
+QED
+
 (* Combined preservation theorem: all field preservation facts in one.
    Use with targeted qpat_x_assum to avoid metis search with multiple
    step_inst assumptions. *)
@@ -291,6 +382,13 @@ Proof
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
 QED
 
 (* Lift to step_inst (adds INVOKE + ALLOCA exclusions).
@@ -314,6 +412,17 @@ Proof
   `step_inst_base inst (s with vs_memory := m) =
    OK (s' with vs_memory := m)` by metis_tac[step_inst_base_mem_frame] >>
   gvs[step_inst_non_invoke]
+QED
+
+(* Error results from pure binary operations are memory-independent. *)
+Theorem exec_pure2_mem_error[local]:
+  !f inst s e m.
+    exec_pure2 f inst s = Error e ==>
+    exec_pure2 f inst (s with vs_memory := m) = Error e
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `exec_pure2 f inst s = Error e` mp_tac >>
+  simp[exec_pure2_def, AllCaseEqs()]
 QED
 
 (* Error case: same error regardless of memory replacement *)
@@ -343,6 +452,16 @@ Proof
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- mem_frame_finish_tac
+  >- (qpat_x_assum `step_inst_base inst s = Error e` mp_tac >>
+      PURE_REWRITE_TAC[step_inst_base_def] >>
+      ASM_REWRITE_TAC[opcode_case_def] >>
+      simp[exec_pure2_mem_error])
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
   >- mem_frame_finish_tac
@@ -489,6 +608,14 @@ Proof
   simp[mstore_def, write_memory_with_expansion_def]
 QED
 
+
+Theorem istore_trans[local,simp]:
+  !addr val (s:venom_state) t.
+    istore addr val (s with vs_transient := t) =
+    (istore addr val s) with vs_transient := t
+Proof
+  simp[istore_def, mstore_trans]
+QED
 Theorem mstore8_trans[local,simp]:
   !addr val (s:venom_state) t.
     mstore8 addr val (s with vs_transient := t) =
@@ -535,6 +662,13 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_terminator_def, is_alloca_op_def, is_ext_call_op_def,
       write_effects_def, read_effects_def, all_effects_def, empty_effects_def]
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
@@ -698,6 +832,13 @@ Proof
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
   >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
+  >- trans_frame_finish_tac
 QED
 
 (* ----------------------------------------------------------------
@@ -785,6 +926,14 @@ Proof
   simp[mstore_def, write_memory_with_expansion_def]
 QED
 
+
+Theorem istore_acct[local,simp]:
+  !addr val (s:venom_state) f.
+    istore addr val (s with vs_accounts updated_by f) =
+    (istore addr val s) with vs_accounts updated_by f
+Proof
+  simp[istore_def, mstore_acct]
+QED
 Theorem mstore8_acct[local,simp]:
   !addr val (s:venom_state) f.
     mstore8 addr val (s with vs_accounts updated_by f) =
@@ -917,6 +1066,13 @@ Proof
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
 QED
 
 Theorem step_inst_base_acct_error_frame:
@@ -937,6 +1093,13 @@ Proof
   Cases_on `inst.inst_opcode` >>
   gvs[is_terminator_def, is_alloca_op_def, is_ext_call_op_def,
       write_effects_def, read_effects_def, all_effects_def, empty_effects_def]
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
+  >- acct_frame_finish_tac
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac
   >- acct_frame_finish_tac

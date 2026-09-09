@@ -21,41 +21,41 @@ Libs markerLib
 Theorem plan_seq_sim:
   !lo o2pc prog vs ps1 ps2 ps3 ops1 ops2 st.
     venom_asm_rel lo ps1 vs st /\
-    asm_block_at prog st.as_pc (execute_plan (ops1 ++ ops2)) /\
+    asm_block_at prog st.as_pc (execute_plan initial_fmp (ops1 ++ ops2)) /\
     (!st1.
       venom_asm_rel lo ps1 vs st1 /\
-      asm_block_at prog st1.as_pc (execute_plan ops1) ==>
+      asm_block_at prog st1.as_pc (execute_plan initial_fmp ops1) ==>
       ?st2.
-        asm_steps lo o2pc prog (LENGTH (execute_plan ops1)) st1 = AsmOK st2 /\
+        asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops1)) st1 = AsmOK st2 /\
         venom_asm_rel lo ps2 vs st2 /\
-        st2.as_pc = st1.as_pc + LENGTH (execute_plan ops1)) /\
+        st2.as_pc = st1.as_pc + LENGTH (execute_plan initial_fmp ops1)) /\
     (!st2.
       venom_asm_rel lo ps2 vs st2 /\
-      asm_block_at prog st2.as_pc (execute_plan ops2) ==>
+      asm_block_at prog st2.as_pc (execute_plan initial_fmp ops2) ==>
       ?st3.
-        asm_steps lo o2pc prog (LENGTH (execute_plan ops2)) st2 = AsmOK st3 /\
+        asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops2)) st2 = AsmOK st3 /\
         venom_asm_rel lo ps3 vs st3 /\
-        st3.as_pc = st2.as_pc + LENGTH (execute_plan ops2)) ==>
+        st3.as_pc = st2.as_pc + LENGTH (execute_plan initial_fmp ops2)) ==>
     ?st3.
       asm_steps lo o2pc prog
-        (LENGTH (execute_plan (ops1 ++ ops2))) st = AsmOK st3 /\
+        (LENGTH (execute_plan initial_fmp (ops1 ++ ops2))) st = AsmOK st3 /\
       venom_asm_rel lo ps3 vs st3 /\
-      st3.as_pc = st.as_pc + LENGTH (execute_plan (ops1 ++ ops2))
+      st3.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp (ops1 ++ ops2))
 Proof
   rpt gen_tac >> strip_tac >>
-  `asm_block_at prog st.as_pc (execute_plan ops1) /\
-   asm_block_at prog (st.as_pc + LENGTH (execute_plan ops1))
-     (execute_plan ops2)` by
+  `asm_block_at prog st.as_pc (execute_plan initial_fmp ops1) /\
+   asm_block_at prog (st.as_pc + LENGTH (execute_plan initial_fmp ops1))
+     (execute_plan initial_fmp ops2)` by
     fs[execute_plan_append, asm_block_at_append] >>
-  `?st2. asm_steps lo o2pc prog (LENGTH (execute_plan ops1)) st = AsmOK st2 /\
+  `?st2. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops1)) st = AsmOK st2 /\
          venom_asm_rel lo ps2 vs st2 /\
-         st2.as_pc = st.as_pc + LENGTH (execute_plan ops1)` by
+         st2.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops1)` by
     (first_x_assum (qspec_then `st` mp_tac) >> simp[]) >>
-  `asm_block_at prog st2.as_pc (execute_plan ops2)` by
+  `asm_block_at prog st2.as_pc (execute_plan initial_fmp ops2)` by
     ASM_REWRITE_TAC[] >>
-  `?st3. asm_steps lo o2pc prog (LENGTH (execute_plan ops2)) st2 = AsmOK st3 /\
+  `?st3. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops2)) st2 = AsmOK st3 /\
          venom_asm_rel lo ps3 vs st3 /\
-         st3.as_pc = st2.as_pc + LENGTH (execute_plan ops2)` by
+         st3.as_pc = st2.as_pc + LENGTH (execute_plan initial_fmp ops2)` by
     (first_x_assum (qspec_then `st2` mp_tac) >> simp[]) >>
   qexists_tac `st3` >>
   simp[execute_plan_append, LENGTH_APPEND] >>
@@ -69,15 +69,15 @@ QED
    =================================================================== *)
 
 Definition step_sim_ok_def:
-  step_sim_ok f lo o2pc prog vs =
+  step_sim_ok initial_fmp f lo o2pc prog vs =
     !item ps ops ps1 st.
       f item ps = (ops, ps1) /\
       venom_asm_rel lo ps vs st /\
-      asm_block_at prog st.as_pc (execute_plan ops) ==>
+      asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
       ?st1.
-        asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st = AsmOK st1 /\
+        asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st1 /\
         venom_asm_rel lo ps1 vs st1 /\
-        st1.as_pc = st.as_pc + LENGTH (execute_plan ops)
+        st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops)
 End
 
 (* ===================================================================
@@ -170,39 +170,39 @@ QED
    =================================================================== *)
 
 Definition step_sim_ok_inv_def:
-  step_sim_ok_inv P f lo o2pc prog vs =
+  step_sim_ok_inv initial_fmp P f lo o2pc prog vs =
     !item ps ops ps1 st.
       P ps /\
       f item ps = (ops, ps1) /\
       venom_asm_rel lo ps vs st /\
-      asm_block_at prog st.as_pc (execute_plan ops) ==>
+      asm_block_at prog st.as_pc (execute_plan initial_fmp ops) ==>
       ?st1.
-        asm_steps lo o2pc prog (LENGTH (execute_plan ops)) st = AsmOK st1 /\
+        asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp ops)) st = AsmOK st1 /\
         venom_asm_rel lo ps1 vs st1 /\
-        st1.as_pc = st.as_pc + LENGTH (execute_plan ops) /\
+        st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp ops) /\
         P ps1
 End
 
 Theorem step_sim_ok_from_inv:
   !P f lo o2pc prog vs.
-    step_sim_ok_inv (K T) f lo o2pc prog vs ==>
-    step_sim_ok f lo o2pc prog vs
+    step_sim_ok_inv initial_fmp (K T) f lo o2pc prog vs ==>
+    step_sim_ok initial_fmp f lo o2pc prog vs
 Proof
   simp[step_sim_ok_def, step_sim_ok_inv_def]
 QED
 
 Theorem plan_steps_sim_inv:
   !(items : 'a list) f lo o2pc prog vs ps all_ops ps_final st P.
-    step_sim_ok_inv P f lo o2pc prog vs /\
+    step_sim_ok_inv initial_fmp P f lo o2pc prog vs /\
     P ps /\
     plan_steps f items ps = (all_ops, ps_final) /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan all_ops) ==>
+    asm_block_at prog st.as_pc (execute_plan initial_fmp all_ops) ==>
     ?st_final.
-      asm_steps lo o2pc prog (LENGTH (execute_plan all_ops)) st =
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp all_ops)) st =
         AsmOK st_final /\
       venom_asm_rel lo ps_final vs st_final /\
-      st_final.as_pc = st.as_pc + LENGTH (execute_plan all_ops) /\
+      st_final.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp all_ops) /\
       P ps_final
 Proof
   Induct >>
@@ -218,28 +218,28 @@ Proof
   Cases_on `plan_steps f items ps1` >>
   rename1 `plan_steps f items ps1 = (rest_ops, ps_rest)` >>
   simp[] >> strip_tac >> rpt BasicProvers.VAR_EQ_TAC >>
-  qpat_x_assum `asm_block_at _ _ (execute_plan _)` mp_tac >>
+  qpat_x_assum `asm_block_at _ _ (execute_plan initial_fmp _)` mp_tac >>
   simp[execute_plan_append, asm_block_at_append] >>
   strip_tac >>
   SUBGOAL_THEN
-    ``?st1. asm_steps lo o2pc prog (LENGTH (execute_plan step_ops)) st =
+    ``?st1. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp step_ops)) st =
               AsmOK st1 /\
             venom_asm_rel lo ps1 vs st1 /\
-            st1.as_pc = st.as_pc + LENGTH (execute_plan step_ops) /\
+            st1.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp step_ops) /\
             P ps1``
     STRIP_ASSUME_TAC
   THENL [
-    qpat_x_assum `step_sim_ok_inv _ _ _ _ _ _` mp_tac >>
+    qpat_x_assum `step_sim_ok_inv _ _ _ _ _ _ _` mp_tac >>
     simp[step_sim_ok_inv_def] >>
     disch_then (qspecl_then [`h`, `ps`, `step_ops`, `ps1`, `st`]
       mp_tac) >> simp[],
     ALL_TAC
   ] >>
   SUBGOAL_THEN
-    ``?st2. asm_steps lo o2pc prog (LENGTH (execute_plan rest_ops)) st1 =
+    ``?st2. asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp rest_ops)) st1 =
               AsmOK st2 /\
             venom_asm_rel lo ps_final vs st2 /\
-            st2.as_pc = st1.as_pc + LENGTH (execute_plan rest_ops) /\
+            st2.as_pc = st1.as_pc + LENGTH (execute_plan initial_fmp rest_ops) /\
             P ps_final``
     STRIP_ASSUME_TAC
   THENL [
@@ -259,15 +259,15 @@ QED
 (* plan_steps_sim is the special case with trivial invariant *)
 Theorem plan_steps_sim:
   !(items : 'a list) f lo o2pc prog vs ps all_ops ps_final st.
-    step_sim_ok f lo o2pc prog vs /\
+    step_sim_ok initial_fmp f lo o2pc prog vs /\
     plan_steps f items ps = (all_ops, ps_final) /\
     venom_asm_rel lo ps vs st /\
-    asm_block_at prog st.as_pc (execute_plan all_ops) ==>
+    asm_block_at prog st.as_pc (execute_plan initial_fmp all_ops) ==>
     ?st_final.
-      asm_steps lo o2pc prog (LENGTH (execute_plan all_ops)) st =
+      asm_steps lo o2pc prog (LENGTH (execute_plan initial_fmp all_ops)) st =
         AsmOK st_final /\
       venom_asm_rel lo ps_final vs st_final /\
-      st_final.as_pc = st.as_pc + LENGTH (execute_plan all_ops)
+      st_final.as_pc = st.as_pc + LENGTH (execute_plan initial_fmp all_ops)
 Proof
   rpt strip_tac >>
   qspecl_then [`items`, `f`, `lo`, `o2pc`, `prog`, `vs`, `ps`,

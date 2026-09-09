@@ -318,6 +318,8 @@ Theorem transform_inst_pseudo_iff:
   !dfg inst.
     is_pseudo (transform_inst dfg inst).inst_opcode <=>
     inst.inst_opcode = PARAM \/
+    inst.inst_opcode = FMP_PARAM \/
+    inst.inst_opcode = RETPC_PARAM \/
     (inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE)
 Proof
   rpt gen_tac >>
@@ -370,10 +372,7 @@ Triviality transform_inst_pseudo_phi:
     (transform_inst dfg inst).inst_opcode = PHI
 Proof
   rpt strip_tac >>
-  `inst.inst_opcode = PARAM \/
-   (inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE)` by
-    metis_tac[transform_inst_pseudo_iff] >>
-  Cases_on `inst.inst_opcode` >> gvs[transform_inst_phi_iff]
+  fs[transform_inst_pseudo_iff, transform_inst_phi_iff]
 QED
 
 Triviality phi_prefix_tail:
@@ -412,7 +411,7 @@ Triviality filter_pseudo_transform_phi_prefix:
            (EL i l).inst_opcode = PHI) ==>
     FILTER (\inst. is_pseudo inst.inst_opcode) (MAP (transform_inst dfg) l) =
     FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) l ++
-    FILTER (\inst. inst.inst_opcode = PARAM) l
+    FILTER (\inst. is_param_opcode inst.inst_opcode) l
 Proof
   gen_tac >> Induct_on `l` >> simp[] >> rpt strip_tac >>
   sg `(!i j. i < j /\ j < LENGTH l /\ (EL j l).inst_opcode = PHI ==>
@@ -424,12 +423,12 @@ Proof
         (qspecl_then [`SUC i`, `SUC j`] mp_tac) >> simp[]) >>
   sg `FILTER (\inst. is_pseudo inst.inst_opcode) (MAP (transform_inst dfg) l) =
       FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) l ++
-      FILTER (\inst. inst.inst_opcode = PARAM) l`
+      FILTER (\inst. is_param_opcode inst.inst_opcode) l`
   >- metis_tac[] >>
   Cases_on `h.inst_opcode = PHI`
   >- (Cases_on `phi_single_origin dfg h` >>
       simp[transform_inst_phi_iff, transform_inst_kept_phi,
-           transform_inst_pseudo_iff, is_pseudo_def]) >>
+           transform_inst_pseudo_iff, is_pseudo_def, is_param_opcode_def]) >>
   sg `EVERY (\inst. inst.inst_opcode <> PHI) l`
   >- (simp[EVERY_EL] >> rpt strip_tac >>
       qpat_x_assum `!i j. i < j /\ j < SUC (LENGTH l) /\
@@ -438,9 +437,9 @@ Proof
         (qspecl_then [`0`, `SUC n`] mp_tac) >> simp[]) >>
   sg `FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) l = []`
   >- (irule filter_kept_phi_empty_when_no_phi >> simp[]) >>
-  Cases_on `h.inst_opcode = PARAM` >>
-  simp[transform_inst_param_iff, transform_inst_pseudo_iff,
-       transform_inst_def, phi_single_origin_def, is_phi_inst_def]
+  Cases_on `is_param_opcode h.inst_opcode` >>
+  gvs[transform_inst_pseudo_iff, is_param_opcode_iff,
+      transform_inst_def, phi_single_origin_def, is_phi_inst_def]
 QED
 
 Triviality terminator_opcode_not_phi:
@@ -460,7 +459,7 @@ Proof
   rpt strip_tac >>
   fs[bb_well_formed_def, transform_insts_def] >>
   qabbrev_tac `phis = FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) insts` >>
-  qabbrev_tac `params = FILTER (\inst. inst.inst_opcode = PARAM) insts` >>
+  qabbrev_tac `params = FILTER (\inst. is_param_opcode inst.inst_opcode) insts` >>
   qabbrev_tac `regulars = FILTER (\inst. ~is_pseudo inst.inst_opcode /\ ~is_terminator inst.inst_opcode)
                          (MAP (transform_inst dfg) insts)` >>
   qabbrev_tac `terms = FILTER (\inst. is_terminator inst.inst_opcode)
@@ -476,7 +475,7 @@ Proof
   >- (simp[EVERY_APPEND, Abbr `params`, Abbr `regulars`, Abbr `terms`,
            EVERY_MEM, MEM_FILTER] >>
       conj_tac
-      >- (rpt strip_tac >> Cases_on `inst.inst_opcode` >> fs[is_pseudo_def]) >>
+      >- (rpt strip_tac >> Cases_on `inst.inst_opcode` >> fs[is_pseudo_def, is_param_opcode_def]) >>
       rpt strip_tac >> metis_tac[terminator_opcode_not_phi]) >>
   gvs[APPEND_ASSOC] >>
   qspecl_then [`\inst. inst.inst_opcode = PHI`, `phis`,
@@ -551,7 +550,7 @@ Theorem transform_insts_decompose_phi_prefix:
     bb_well_formed <| bb_label := lbl; bb_instructions := insts |> ==>
     transform_insts dfg insts =
       FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) insts ++
-      FILTER (\inst. inst.inst_opcode = PARAM) insts ++
+      FILTER (\inst. is_param_opcode inst.inst_opcode) insts ++
       MAP (transform_inst dfg)
         (FILTER (\inst. ?origin. phi_single_origin dfg inst = SOME origin)
           (TAKE (phi_prefix_length insts) insts)) ++
@@ -563,7 +562,7 @@ Proof
   simp[transform_insts_def, LET_DEF] >>
   `FILTER (\inst. is_pseudo inst.inst_opcode) (MAP (transform_inst dfg) insts) =
    FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) insts ++
-   FILTER (\inst. inst.inst_opcode = PARAM) insts` by
+   FILTER (\inst. is_param_opcode inst.inst_opcode) insts` by
     (irule filter_pseudo_transform_phi_prefix >>
      fs[bb_well_formed_def]) >>
   `FILTER (\inst. ~is_pseudo inst.inst_opcode /\ ~is_terminator inst.inst_opcode)
@@ -627,7 +626,7 @@ Theorem transform_insts_phi_prefix_exact:
 Proof
   rpt strip_tac >> simp[LET_DEF] >>
   qabbrev_tac `kept = FILTER (\inst. inst.inst_opcode = PHI /\ phi_single_origin dfg inst = NONE) insts` >>
-  qabbrev_tac `params = FILTER (\inst. inst.inst_opcode = PARAM) insts` >>
+  qabbrev_tac `params = FILTER (\inst. is_param_opcode inst.inst_opcode) insts` >>
   qabbrev_tac `regulars = FILTER (\inst. ~is_pseudo inst.inst_opcode /\ ~is_terminator inst.inst_opcode)
                          (MAP (transform_inst dfg) insts)` >>
   qabbrev_tac `terms = FILTER (\inst. is_terminator inst.inst_opcode)
@@ -643,7 +642,7 @@ Proof
     (simp[EVERY_APPEND, Abbr `params`, Abbr `regulars`, Abbr `terms`,
           EVERY_MEM, MEM_FILTER] >>
      conj_tac
-     >- (rpt strip_tac >> Cases_on `inst.inst_opcode` >> fs[is_pseudo_def]) >>
+     >- (rpt strip_tac >> Cases_on `inst.inst_opcode` >> fs[is_pseudo_def, is_param_opcode_def]) >>
      rpt strip_tac >> metis_tac[terminator_opcode_not_phi]) >>
   rpt conj_tac
   >- (qpat_x_assum `transform_insts dfg insts = _` (fn th => rewrite_tac[th]) >>

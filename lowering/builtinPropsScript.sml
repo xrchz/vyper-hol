@@ -197,8 +197,7 @@ Definition ptr_load_val_def:
     (let data = ss.vs_call_ctx.cc_calldata in
      let bytes = TAKE 32 (DROP (w2n addr) data ++ REPLICATE 32 0w) in
      word_of_bytes T (0w:bytes32) bytes) ∧
-  ptr_load_val T LocCode addr ss =
-    (case FLOOKUP ss.vs_immutables (w2n addr) of SOME v => v | NONE => 0w) ∧
+  ptr_load_val T LocCode addr ss = mload (w2n addr) ss ∧
   ptr_load_val F LocCode addr ss =
     (let bytes = TAKE 32 (DROP (w2n addr) ss.vs_data_section ++
                           REPLICATE 32 0w) in
@@ -1751,8 +1750,7 @@ Theorem step_ILOAD_result[local]:
      | Abort a ss' => Abort a ss'
      | IntRet vs ss' => IntRet vs ss'
      | Error e => Error e) =
-      OK (update_var out
-        (case FLOOKUP ss.vs_immutables (w2n v1) of SOME v => v | NONE => 0w) ss)
+      OK (update_var out (mload (w2n v1) ss) ss)
 Proof
   rw[step_inst_base_def, exec_read1_def, mk_inst_def]
 QED

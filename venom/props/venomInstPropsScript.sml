@@ -221,7 +221,6 @@ QED
 Theorem step_istore_preserves:
   !fuel ctx inst s s'.
     step_inst fuel ctx inst s = OK s' /\ inst.inst_opcode = ISTORE ==>
-    s'.vs_memory = s.vs_memory /\
     s'.vs_transient = s.vs_transient /\
     s'.vs_accounts = s.vs_accounts /\
     s'.vs_logs = s.vs_logs /\
@@ -619,6 +618,30 @@ Proof
   Cases_on `eval_operand h s` >> fs[]
 QED
 
+
+Theorem step_inst_base_BLOBHASH_local[local]:
+  inst.inst_opcode = BLOBHASH ==>
+  step_inst_base inst s =
+    exec_read1
+      (\v s. let idx = w2n v in
+             let hashes = s.vs_tx_ctx.tc_blobhashes in
+             if idx < LENGTH hashes then EL idx hashes else 0w)
+      inst s
+Proof
+  strip_tac >>
+  pure_once_rewrite_tac[venomExecSemanticsTheory.step_inst_base_def] >>
+  simp[]
+QED
+
+Theorem step_inst_base_BLOBBASEFEE_local[local]:
+  inst.inst_opcode = BLOBBASEFEE ==>
+  step_inst_base inst s =
+    exec_read0 (\s. s.vs_block_ctx.bc_blobbasefee) inst s
+Proof
+  strip_tac >>
+  pure_once_rewrite_tac[venomExecSemanticsTheory.step_inst_base_def] >>
+  simp[]
+QED
 val effect_free_ok_tac =
   fs[venomExecSemanticsTheory.step_inst_base_def,
      venomStateTheory.eval_operand_def] >>
@@ -628,6 +651,8 @@ val effect_free_ok_tac =
   TRY (irule exec_read0_ok >> fs[] >> NO_TAC) >>
   TRY (irule exec_read1_ok >> fs[] >> NO_TAC) >>
   TRY (simp[] >> NO_TAC) >>
+  TRY (Cases_on `inst.inst_outputs` >> fs[] >>
+       Cases_on `t` >> fs[] >> NO_TAC) >>
   TRY (`eval_operand (Label lbl) s <> NONE` by (fs[] >> metis_tac[]) >>
        fs[venomStateTheory.eval_operand_def] >> NO_TAC) >>
   Cases_on `inst.inst_operands` >> fs[] >> Cases_on `t` >> fs[] >>
@@ -639,12 +664,28 @@ val effect_free_ok_tac =
   TRY ((`eval_operand h' s <> NONE` by metis_tac[]) >>
        Cases_on `eval_operand h' s` >> fs[]);
 
+val blobhash_ok_tac =
+  qpat_assum `inst.inst_opcode = BLOBHASH` (fn _ =>
+    simp[step_inst_base_BLOBHASH_local] >>
+    simp[venomExecSemanticsTheory.exec_read1_def] >>
+    Cases_on `inst.inst_operands` >> fs[] >>
+    Cases_on `inst.inst_outputs` >> fs[] >>
+    (`eval_operand h s <> NONE` by metis_tac[]) >>
+    Cases_on `eval_operand h s` >> fs[]);
+
+val blobbasefee_ok_tac =
+  qpat_assum `inst.inst_opcode = BLOBBASEFEE` (fn _ =>
+    simp[step_inst_base_BLOBBASEFEE_local] >>
+    simp[venomExecSemanticsTheory.exec_read0_def] >>
+    Cases_on `inst.inst_outputs` >> fs[] >>
+    Cases_on `t` >> fs[]);
 Theorem effect_free_step_inst_base_ok:
   !inst s.
     inst_wf inst /\
     is_effect_free_op inst.inst_opcode /\
     inst.inst_opcode <> PHI /\
     inst.inst_opcode <> PARAM /\
+    inst.inst_opcode <> FMP_PARAM /\
     (!op. MEM op inst.inst_operands ==> eval_operand op s <> NONE) ==>
     ?s'. step_inst_base inst s = OK s'
 Proof
@@ -709,6 +750,13 @@ Proof
   >- effect_free_ok_tac
   >- effect_free_ok_tac
   >- effect_free_ok_tac
-  >- effect_free_ok_tac
+  >> TRY (blobhash_ok_tac >> NO_TAC)
+  >> TRY (blobbasefee_ok_tac >> NO_TAC)
+  >> TRY (qpat_assum `inst.inst_opcode = SHA3`
+            (fn _ => effect_free_ok_tac) >> NO_TAC)
+  >> TRY (qpat_assum `inst.inst_opcode = DLOAD`
+            (fn _ => effect_free_ok_tac) >> NO_TAC)
+  >> qpat_assum `inst.inst_opcode = OFFSET`
+       (fn _ => effect_free_ok_tac)
 QED
 

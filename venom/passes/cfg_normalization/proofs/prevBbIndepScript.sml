@@ -86,6 +86,13 @@ Proof
   simp[mstore_def, LET_THM]
 QED
 
+Theorem istore_prev_bb[local]:
+  !off v s p. istore off v (s with vs_prev_bb := p) =
+              (istore off v s) with vs_prev_bb := p
+Proof
+  simp[istore_def, mstore_prev_bb]
+QED
+
 Theorem mstore8_prev_bb[local]:
   !off v s p. mstore8 off v (s with vs_prev_bb := p) =
               (mstore8 off v s) with vs_prev_bb := p
@@ -342,7 +349,7 @@ QED
 val prev_bb_rw = [eval_op_prev_bb, eval_ops_prev_bb, update_var_prev_bb,
               write_mem_prev_bb, read_mem_prev_bb, jump_to_prev_bb,
               halt_state_prev_bb, revert_state_prev_bb, set_returndata_prev_bb,
-              mstore_prev_bb, mstore8_prev_bb,
+              mstore_prev_bb, istore_prev_bb, mstore8_prev_bb,
               sstore_prev_bb, tstore_prev_bb, mcopy_prev_bb,
               mload_prev_bb, sload_prev_bb, tload_prev_bb,
               exec_result_map_prev_bb_def];
@@ -433,7 +440,20 @@ Proof
   >- prev_bb_opcode_tac (* ASSIGN *)
   >- prev_bb_opcode_tac (* NOP *)
   >- prev_bb_opcode_tac (* ALLOCA *)
+  >- prev_bb_opcode_tac (* DALLOCA *)
+  >- prev_bb_opcode_tac (* DRET *)
+  >- prev_bb_opcode_tac (* GETFMP *)
+  >- prev_bb_opcode_tac (* SETFMP *)
+  >- prev_bb_opcode_tac (* RETFMP *)
+  >- prev_bb_opcode_tac (* INITIAL_FMP *)
+  >- (strip_tac >> gvs[] >>
+      ASM_REWRITE_TAC[step_inst_base_def] >>
+      simp[eval_op_prev_bb, exec_result_map_prev_bb_def] >>
+      BasicProvers.EVERY_CASE_TAC >>
+      simp[update_var_def, exec_result_map_prev_bb_def]) (* BUMP *)
   >- prev_bb_opcode_tac (* INVOKE *)
+  >- prev_bb_opcode_tac (* FMP_PARAM *)
+  >- prev_bb_opcode_tac (* RETPC_PARAM *)
   >- prev_bb_opcode_tac (* CALLER *)
   >- prev_bb_opcode_tac (* CALLVALUE *)
   >- prev_bb_opcode_tac (* CALLDATALOAD *)

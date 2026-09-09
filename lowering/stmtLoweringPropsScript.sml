@@ -42,8 +42,7 @@ End
    Entry block is the block that was current at the start of compilation. *)
 Definition assemble_function_def:
   assemble_function (st:compile_state) (st':compile_state) =
-    <| fn_name := st.cs_current_bb;
-       fn_blocks := assemble_blocks st' |>
+    mk_raw_function st.cs_current_bb (assemble_blocks st')
 End
 
 (* Run multi-block compiled code.

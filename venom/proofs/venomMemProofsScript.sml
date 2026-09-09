@@ -682,6 +682,24 @@ Proof
   >- simp[AllCaseEqs()]
 QED
 
+Triviality effect_free_fmp_not_terminal[local]:
+  !inst (s:venom_state).
+    (inst.inst_opcode = FMP_PARAM \/ inst.inst_opcode = RETPC_PARAM \/
+     inst.inst_opcode = GETFMP \/ inst.inst_opcode = INITIAL_FMP \/
+     inst.inst_opcode = BUMP) ==>
+    (!s'. step_inst_base inst s <> Halt s') /\
+    (!a s'. step_inst_base inst s <> Abort a s') /\
+    (!v s'. step_inst_base inst s <> IntRet v s')
+Proof
+  rpt gen_tac >> strip_tac >> gvs[] >>
+  ASM_REWRITE_TAC[step_inst_base_def]
+  >- simp[AllCaseEqs()]
+  >- simp[AllCaseEqs()]
+  >- simp[AllCaseEqs()]
+  >- simp[AllCaseEqs()]
+  >- simp[AllCaseEqs()]
+QED
+
 Triviality effect_free_opcode_cases[local]:
   !op. is_effect_free_op op ==>
     (op = ISZERO \/ op = NOT) \/
@@ -701,7 +719,9 @@ Triviality effect_free_opcode_cases[local]:
     (op = MLOAD \/ op = SLOAD \/ op = TLOAD \/ op = ILOAD \/
      op = DLOAD \/ op = BLOCKHASH \/ op = BLOBHASH \/ op = BALANCE \/
      op = CALLDATALOAD \/ op = EXTCODESIZE \/ op = EXTCODEHASH) \/
-    (op = SHA3 \/ op = PHI \/ op = ASSIGN \/ op = PARAM \/ op = NOP)
+    (op = SHA3 \/ op = PHI \/ op = ASSIGN \/ op = PARAM \/ op = NOP) \/
+    (op = FMP_PARAM \/ op = RETPC_PARAM \/ op = GETFMP \/
+     op = INITIAL_FMP \/ op = BUMP)
 Proof
   Cases >> EVAL_TAC
 QED
@@ -723,8 +743,24 @@ Proof
     qspecl_then [`inst`, `s`] mp_tac effect_free_pure3_not_terminal >> gvs[] >> NO_TAC,
     qspecl_then [`inst`, `s`] mp_tac effect_free_read0_not_terminal >> gvs[] >> NO_TAC,
     qspecl_then [`inst`, `s`] mp_tac effect_free_read1_not_terminal >> gvs[] >> NO_TAC,
-    qspecl_then [`inst`, `s`] mp_tac effect_free_direct_not_terminal >> gvs[] >> NO_TAC
+    qspecl_then [`inst`, `s`] mp_tac effect_free_direct_not_terminal >> gvs[] >> NO_TAC,
+    qspecl_then [`inst`, `s`] mp_tac effect_free_fmp_not_terminal >> gvs[] >> NO_TAC
   ]
+QED
+
+Triviality pack_dret_dynamic_preserves_alloca_fields[local]:
+  !pairs cursor (s:venom_state) ptrs final_cursor s'.
+    pack_dret_dynamic cursor pairs s = (ptrs,final_cursor,s') ==>
+    s'.vs_allocas = s.vs_allocas /\
+    s'.vs_alloca_next = s.vs_alloca_next
+Proof
+  Induct >- simp[pack_dret_dynamic_def] >>
+  rpt gen_tac >> PairCases_on `h` >>
+  simp[Once pack_dret_dynamic_def] >>
+  pairarg_tac >> gvs[] >>
+  first_x_assum drule >>
+  simp[mcopy_def, write_memory_with_expansion_def] >>
+  rpt strip_tac >> gvs[]
 QED
 
 Triviality opcode_alloca_field_class[local]:
@@ -733,7 +769,8 @@ Triviality opcode_alloca_field_class[local]:
     is_mem_write_op op \/
     is_ext_call_op op \/
     op = SSTORE \/ op = TSTORE \/ op = ISTORE \/ op = LOG \/
-    op = ASSERT \/ op = ASSERT_UNREACHABLE \/ is_terminator op
+    op = ASSERT \/ op = ASSERT_UNREACHABLE \/
+    op = DALLOCA \/ op = SETFMP \/ is_terminator op
 Proof
   Cases >> EVAL_TAC
 QED
@@ -757,6 +794,17 @@ Proof
   >- (qspecl_then [`inst`, `s`] mp_tac effect_free_step_not_terminal >> gvs[])
 QED
 
+Triviality step_inst_base_fmp_write_alloca_fields[local]:
+  !inst (s:venom_state) s'.
+    (step_inst_base inst s = OK s' \/ step_inst_base inst s = Halt s' \/
+     (?a. step_inst_base inst s = Abort a s') \/
+     (?v. step_inst_base inst s = IntRet v s')) /\
+    (inst.inst_opcode = DALLOCA \/ inst.inst_opcode = SETFMP) ==>
+    s'.vs_allocas = s.vs_allocas /\ s'.vs_alloca_next = s.vs_alloca_next
+Proof
+  rpt strip_tac >> alloca_field_finish_tac
+QED
+
 Triviality step_inst_base_mem_write_alloca_fields[local]:
   !inst (s:venom_state) s'.
     (step_inst_base inst s = OK s' \/
@@ -769,7 +817,17 @@ Triviality step_inst_base_mem_write_alloca_fields[local]:
 Proof
   rpt gen_tac >> DISCH_TAC >>
   Cases_on `inst.inst_opcode` >> gvs[is_mem_write_op_def] >>
-  alloca_field_finish_tac
+  qpat_x_assum `step_inst_base inst s = _` mp_tac >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[] >>
+  strip_tac >>
+  fs[exec_write2_def] >>
+  gvs[AllCaseEqs()] >>
+  fs[mstore_def, mstore8_def, mcopy_def, write_memory_with_expansion_def,
+     lookup_var_def, update_var_def, contract_storage_def,
+     halt_state_def, set_returndata_def] >>
+  TRY (pairarg_tac >> gvs[] >>
+       drule pack_dret_dynamic_preserves_alloca_fields >> simp[])
 QED
 
 Triviality step_inst_base_ext_call_alloca_fields[local]:
@@ -817,6 +875,13 @@ Triviality step_inst_base_tstore_alloca_fields[local]:
     s'.vs_allocas = s.vs_allocas /\ s'.vs_alloca_next = s.vs_alloca_next
 Proof
   rpt strip_tac >> alloca_field_finish_tac
+QED
+
+Triviality istore_preserves_alloca_fields[local,simp]:
+  (istore offset value s).vs_allocas = s.vs_allocas /\
+  (istore offset value s).vs_alloca_next = s.vs_alloca_next
+Proof
+  simp[istore_def, mstore_def]
 QED
 
 Triviality step_inst_base_istore_alloca_fields[local]:
@@ -872,8 +937,17 @@ Triviality step_inst_base_terminator_alloca_fields[local]:
     s'.vs_allocas = s.vs_allocas /\ s'.vs_alloca_next = s.vs_alloca_next
 Proof
   rpt gen_tac >> DISCH_TAC >>
+  Cases_on `inst.inst_opcode = DRET`
+  >- (qspecl_then [`inst`, `s`, `s'`] mp_tac
+        step_inst_base_mem_write_alloca_fields >>
+      impl_tac >- gvs[is_mem_write_op_def] >> gvs[]) >>
   Cases_on `inst.inst_opcode` >> gvs[is_terminator_def] >>
-  alloca_field_finish_tac
+  qpat_x_assum `step_inst_base inst s = _` mp_tac >>
+  PURE_ONCE_REWRITE_TAC[step_inst_base_def] >>
+  ASM_REWRITE_TAC[] >>
+  simp[] >>
+  strip_tac >>
+  alloca_field_solve_tac
 QED
 
 (* Combined non-ALLOCA, non-INVOKE step_inst_base alloca-field preservation. *)
@@ -901,6 +975,8 @@ Proof
   >- (qspecl_then [`inst`, `s`, `s'`] mp_tac step_inst_base_log_alloca_fields >> impl_tac >- gvs[] >> gvs[])
   >- (qspecl_then [`inst`, `s`, `s'`] mp_tac step_inst_base_assert_alloca_fields >> impl_tac >- gvs[] >> gvs[])
   >- (qspecl_then [`inst`, `s`, `s'`] mp_tac step_inst_base_assert_unreachable_alloca_fields >> impl_tac >- gvs[] >> gvs[])
+  >- (qspecl_then [`inst`, `s`, `s'`] mp_tac step_inst_base_fmp_write_alloca_fields >> impl_tac >- gvs[] >> gvs[])
+  >- (qspecl_then [`inst`, `s`, `s'`] mp_tac step_inst_base_fmp_write_alloca_fields >> impl_tac >- gvs[] >> gvs[])
   >- (qspecl_then [`inst`, `s`, `s'`] mp_tac step_inst_base_terminator_alloca_fields >> impl_tac >- gvs[] >> gvs[])
 QED
 
@@ -1021,6 +1097,15 @@ Proof
   metis_tac[]
 QED
 
+Theorem adopt_return_fmp_alloca_inv[local]:
+  !ir s. alloca_inv s ==> alloca_inv (adopt_return_fmp ir s)
+Proof
+  rpt strip_tac >> Cases_on `ir.iret_adopt_fmp` >>
+  gvs[adopt_return_fmp_def, alloca_inv_def,
+      allocas_non_overlapping_def, alloca_next_valid_def] >>
+  conj_tac >> first_assum ACCEPT_TAC
+QED
+
 Theorem result_alloca_inv_mono[local]:
   !n0 n1 r. n0 <= n1 /\ result_alloca_inv n1 r ==> result_alloca_inv n0 r
 Proof
@@ -1057,8 +1142,11 @@ Proof
       gvs[bind_outputs_def, AllCaseEqs()] >>
       conj_tac
       >- (irule foldl_update_var_inv >>
+          irule adopt_return_fmp_alloca_inv >>
           irule merge_callee_inv >> gvs[])
-      >- gvs[foldl_update_var_alloca_fields, merge_callee_state_def]
+      >- (Cases_on `i.iret_adopt_fmp` >>
+          gvs[adopt_return_fmp_def, foldl_update_var_alloca_fields,
+              merge_callee_state_def])
     )
     >> Cases_on `inst.inst_opcode = ALLOCA`
     >- (

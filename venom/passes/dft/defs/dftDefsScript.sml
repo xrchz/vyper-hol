@@ -32,7 +32,7 @@ Ancestors
 Definition effects_to_list_def:
   effects_to_list effs =
     FILTER (\e. e IN effs)
-      [Eff_STORAGE; Eff_TRANSIENT; Eff_MEMORY;
+      [Eff_STORAGE; Eff_TRANSIENT; Eff_MEMORY; Eff_FMP;
        Eff_IMMUTABLES; Eff_RETURNDATA; Eff_LOG; Eff_BALANCE; Eff_EXTCODE]
 End
 
@@ -182,10 +182,13 @@ Definition add_alloca_deps_def:
 End
 
 (* Barrier predicate: instructions that bi_independent cannot handle.
-   Volatile ops (INVOKE, ext_call, MSTORE, ...) and alloca ops have implicit
-   state dependencies not captured by the effects system. *)
+   Volatile ops (INVOKE, ext_call, MSTORE, ...), alloca ops, and raw FMP ops
+   have implicit state dependencies that must be ordered conservatively. *)
 Definition is_barrier_def:
-  is_barrier inst <=> is_volatile inst.inst_opcode \/ is_alloca_op inst.inst_opcode
+  is_barrier inst <=>
+    is_volatile inst.inst_opcode \/
+    is_alloca_op inst.inst_opcode \/
+    is_raw_fmp_opcode inst.inst_opcode
 End
 
 (* Pass 1: each non-phi after a barrier gets that barrier as a dep.
@@ -238,6 +241,7 @@ Definition build_full_eda_def:
       (add_barrier_deps block_insts
         (add_abort_deps block_insts (build_eda block_insts)))
 End
+
 
 (* ===== Combined Dependencies ===== *)
 
@@ -452,6 +456,7 @@ Definition dft_block_def:
                       eda offspring_map entries in
     bb with bb_instructions := phis ++ scheduled
 End
+
 
 (* ===== Function-Level Transform with StackOrder Convergence ===== *)
 

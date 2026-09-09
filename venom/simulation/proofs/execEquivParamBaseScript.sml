@@ -56,6 +56,10 @@ Theorem vsr_R_ok_fields:
     s1.vs_current_bb = s2.vs_current_bb /\
     s1.vs_inst_idx = s2.vs_inst_idx /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_logs = s2.vs_logs /\
     s1.vs_immutables = s2.vs_immutables /\
     s1.vs_data_section = s2.vs_data_section /\
@@ -79,6 +83,10 @@ Theorem vsr_R_term_fields:
     s1.vs_returndata = s2.vs_returndata /\
     s1.vs_halted = s2.vs_halted /\
     s1.vs_params = s2.vs_params /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_logs = s2.vs_logs /\
     s1.vs_immutables = s2.vs_immutables /\
     s1.vs_data_section = s2.vs_data_section /\
@@ -226,6 +234,14 @@ Proof
   vsr_field_update_proof ()
 QED
 
+Theorem vsr_fmp_R_ok:
+  !R_ok R_term fmp s1 s2.
+    valid_state_rel R_ok R_term /\ R_ok s1 s2 ==>
+    R_ok (s1 with vs_fmp := fmp) (s2 with vs_fmp := fmp)
+Proof
+  vsr_field_update_proof ()
+QED
+
 Theorem vsr_inst_idx_R_ok:
   !R_ok R_term n s1 s2.
     valid_state_rel R_ok R_term /\ R_ok s1 s2 ==>
@@ -297,6 +313,16 @@ Proof
   vsr_reconstruct_R_ok_tac `s1` `s2`
 QED
 
+
+Theorem vsr_istore:
+  !R_ok R_term off v s1 s2.
+    valid_state_rel R_ok R_term /\ R_ok s1 s2 ==>
+    R_ok (istore off v s1) (istore off v s2)
+Proof
+  rw[istore_def] >>
+  imp_res_tac vsr_R_ok_fields >> gvs[] >>
+  metis_tac[vsr_mstore, vsr_immutables_R_ok]
+QED
 Theorem vsr_mstore8:
   !R_ok R_term off v s1 s2.
     valid_state_rel R_ok R_term /\ R_ok s1 s2 ==>

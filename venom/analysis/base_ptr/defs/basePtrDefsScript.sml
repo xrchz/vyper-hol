@@ -303,8 +303,13 @@ Definition bp_get_write_location_def:
   bp_get_write_location result inst addr_sp =
     case addr_sp of
       AddrSp_Memory =>
-        (* Special cases first *)
-        if inst.inst_opcode = DLOAD then
+        (* Raw frame operations have no representable frame-relative segment.
+           Only DRET has a memory effect; the other raw operations are proven
+           non-memory operations by the shared effect table. *)
+        if is_raw_fmp_opcode inst.inst_opcode then
+          if Eff_MEMORY ∈ write_effects inst.inst_opcode then ml_undefined
+          else ml_empty
+        else if inst.inst_opcode = DLOAD then
           <| ml_offset := SOME 0; ml_size := SOME 32;
              ml_alloca := NONE; ml_volatile := F |>
         else if inst.inst_opcode = INVOKE then ml_undefined
@@ -354,7 +359,12 @@ Definition bp_get_read_location_def:
   bp_get_read_location result inst addr_sp =
     case addr_sp of
       AddrSp_Memory =>
-        if inst.inst_opcode = DLOAD then
+        (* Raw frame operations use an unknown memory segment exactly when
+           their conservative effect table says they may read memory. *)
+        if is_raw_fmp_opcode inst.inst_opcode then
+          if Eff_MEMORY ∈ read_effects inst.inst_opcode then ml_undefined
+          else ml_empty
+        else if inst.inst_opcode = DLOAD then
           <| ml_offset := SOME 0; ml_size := SOME 32;
              ml_alloca := NONE; ml_volatile := F |>
         else if inst.inst_opcode ∈ {ILOAD; INVOKE; RET} then ml_undefined
@@ -449,4 +459,3 @@ Definition bp_get_read_location_def:
         else ml_empty
     | AddrSp_Immutables => ml_empty  (* ILOAD reads via Memory case *)
 End
-

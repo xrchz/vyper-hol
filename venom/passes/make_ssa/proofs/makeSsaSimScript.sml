@@ -229,6 +229,17 @@ Proof
   gvs[lookup_var_def]
 QED
 
+(* Helper: adopting the same returned FMP preserves state equivalence. *)
+Triviality adopt_return_fmp_se:
+  !ir s1 s2 vars.
+    state_equiv vars s1 s2 ==>
+    state_equiv vars (adopt_return_fmp ir s1) (adopt_return_fmp ir s2)
+Proof
+  rpt strip_tac >> Cases_on `ir.iret_adopt_fmp` >>
+  gvs[adopt_return_fmp_def, state_equiv_def, execution_equiv_def,
+      lookup_var_def]
+QED
+
 (* Helper: FOLDL update_var preserves state_equiv *)
 Triviality foldl_update_var_se:
   !pairs s1 s2 vars.
@@ -281,6 +292,10 @@ Proof
     `state_equiv vars (merge_callee_state s1 v)
                       (merge_callee_state s2 v)` by
       (irule merge_callee_se >> gvs[]) >>
+    `state_equiv vars
+       (adopt_return_fmp i (merge_callee_state s1 v))
+       (adopt_return_fmp i (merge_callee_state s2 v))` by
+      (irule adopt_return_fmp_se >> gvs[]) >>
     simp[bind_outputs_def] >>
     IF_CASES_TAC >> gvs[result_equiv_def] >>
     irule foldl_update_var_se >> gvs[])

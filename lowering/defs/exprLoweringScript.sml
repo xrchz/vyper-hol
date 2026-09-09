@@ -2031,7 +2031,7 @@ Definition compile_call_def:
     let arg_types = MAP expr_type args in
     let (arg_vals, st1) = compile_multi_exprs cfn cenv args st in
     let (return_buf, st2) =
-      (if returns_count > 0 then
+      (if returns_count > 0 /\ (1 < returns_count \/ args <> []) then
          let (rbuf, st_b) = compile_alloc_buffer (32 * returns_count) st1 in
          (SOME rbuf, st_b)
        else if return_buf_size > 0 then

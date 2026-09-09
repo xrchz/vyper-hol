@@ -196,6 +196,30 @@ Definition clear_nops_function_def:
     fn with fn_blocks := MAP clear_nops_block fn.fn_blocks
 End
 
+Theorem clear_nops_function_identity_metadata_eq:
+  !fn. fn_identity_metadata_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_identity_metadata_eq_def]
+QED
+
+Theorem clear_nops_function_static_input_eq:
+  !fn. fn_static_input_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_static_input_eq_def]
+QED
+
+Theorem clear_nops_function_static_layout_eq:
+  !fn. fn_static_layout_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_static_layout_eq_def]
+QED
+
+Theorem clear_nops_function_fmp_convention_eq:
+  !fn. fn_fmp_convention_eq (clear_nops_function fn) fn
+Proof
+  simp[clear_nops_function_def, fn_fmp_convention_eq_def]
+QED
+
 (* ===== Transitive use computation ===== *)
 
 (* Collect output variables of instructions that use any variable in vars.
@@ -282,14 +306,11 @@ End
    through normal EVM stack scheduling:
    - ASSIGN: copy instruction, no stack slot consumed
    - PHI: pseudo-instruction, lowered to parallel copies on CFG edges
-   - PARAM: pseudo-instruction, lowered to stack input
+   - PARAM/FMP_PARAM/RETPC_PARAM: pseudo-instructions lowered to hidden inputs
    - OFFSET: handled specially in venom_to_assembly (direct label+offset emit) *)
 Definition sue_count_exempt_def:
-  sue_count_exempt ASSIGN = T /\
-  sue_count_exempt PHI = T /\
-  sue_count_exempt PARAM = T /\
-  sue_count_exempt OFFSET = T /\
-  sue_count_exempt _ = F
+  sue_count_exempt opc <=>
+    opc = ASSIGN \/ opc = PHI \/ opc = OFFSET \/ is_param_opcode opc
 End
 
 (* Count uses of variable v across non-exempt instructions in a block. *)

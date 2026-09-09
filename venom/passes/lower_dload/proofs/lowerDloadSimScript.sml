@@ -349,7 +349,8 @@ val term_idx_tac =
   rpt strip_tac >>
   qpat_x_assum `step_inst_base inst s = OK v` mp_tac >>
   simp[step_inst_base_def, jump_to_def] >>
-  gvs[AllCaseEqs(), PULL_EXISTS] >> rw[] >> gvs[];
+  gvs[AllCaseEqs(), PULL_EXISTS] >> rw[] >> gvs[] >>
+  TRY (pairarg_tac >> pairarg_tac >> gvs[]);
 
 Theorem step_inst_base_term_OK_idx_0[local]:
   !inst s v.
@@ -360,6 +361,8 @@ Theorem step_inst_base_term_OK_idx_0[local]:
 Proof
   gen_tac >> Cases_on `inst.inst_opcode` >>
   simp[is_terminator_def]
+  >- term_idx_tac
+  >- term_idx_tac
   >- term_idx_tac
   >- term_idx_tac
   >- term_idx_tac

@@ -9,7 +9,7 @@
 Theory lowerDloadClassify
 Ancestors
   lowerDloadDefs stateEquiv venomExecProps venomInstProps instIdxIndep
-  venomExecSemantics venomInst venomState finite_map
+  venomExecSemantics venomInst venomState finite_map opcodeClass
 
 (* ===== Cross-block invariant ===== *)
 
@@ -29,6 +29,10 @@ Definition ld_ok_def:
     s1.vs_code = s2.vs_code /\
     s1.vs_params = s2.vs_params /\
     s1.vs_prev_hashes = s2.vs_prev_hashes /\
+    s1.vs_fmp = s2.vs_fmp /\
+    s1.vs_call_entry_fmp = s2.vs_call_entry_fmp /\
+    s1.vs_initial_fmp = s2.vs_initial_fmp /\
+    s1.vs_return_pc_token = s2.vs_return_pc_token /\
     s1.vs_current_bb = s2.vs_current_bb /\
     s1.vs_inst_idx = s2.vs_inst_idx /\
     s1.vs_prev_bb = s2.vs_prev_bb
@@ -91,6 +95,14 @@ Theorem ld_ok_write_memory:
 Proof
   rw[ld_ok_def, write_memory_with_expansion_def, LET_THM,
      lookup_var_def]
+QED
+
+Theorem ld_ok_istore:
+  !vars off val s1 s2.
+    ld_ok vars s1 s2 ==>
+    ld_ok vars (istore off val s1) (istore off val s2)
+Proof
+  rw[ld_ok_def, istore_def, mstore_def, lookup_var_def]
 QED
 
 (* ===== eval_operand agreement under ld_ok ===== *)
@@ -193,6 +205,7 @@ Proof
   simp[]
 QED
 
+
 (* ===== Generic operand agreement tactic ===== *)
 
 (* Derives eval_operand agreement for ALL operands in assumptions.
@@ -273,6 +286,7 @@ val ld_classify_one_tac =
   gvs[] >>
   TRY (irule ld_ok_update_var >> gvs[ld_ok_def] >> NO_TAC) >>
   TRY (irule ld_ok_write_memory >> gvs[ld_ok_def] >> NO_TAC) >>
+  TRY (irule ld_ok_istore >> gvs[ld_ok_def] >> NO_TAC) >>
   gvs[ld_ok_def, lookup_var_def, update_var_def, FLOOKUP_UPDATE];
 
 Theorem step_inst_base_ld_ok_classify:
@@ -290,6 +304,12 @@ Theorem step_inst_base_ld_ok_classify:
 Proof
   gen_tac >> Cases_on `inst.inst_opcode` >>
   simp[is_terminator_def, reads_memory_def]
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
+  >- ld_classify_one_tac
   >- ld_classify_one_tac
   >- ld_classify_one_tac
   >- ld_classify_one_tac
@@ -533,16 +553,14 @@ Proof
   gvs[AllCaseEqs()]
 QED
 
-val step_base_result_tac =
-  rw[step_inst_base_def] >>
-  gvs[AllCaseEqs(), is_terminator_def];
-
 Theorem step_inst_base_no_halt_ld[local]:
   !inst s s'.
     step_inst_base inst s = Halt s' ==>
     is_terminator inst.inst_opcode
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule step_inst_base_halt_opcodes >> strip_tac >>
+  gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_no_intret_ld[local]:
@@ -550,7 +568,9 @@ Theorem step_inst_base_no_intret_ld[local]:
     step_inst_base inst s = IntRet vs s' ==>
     is_terminator inst.inst_opcode
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule step_inst_base_intret_opcodes >> strip_tac >>
+  gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_abort_opcode_ld[local]:
@@ -561,7 +581,9 @@ Theorem step_inst_base_abort_opcode_ld[local]:
     inst.inst_opcode = ASSERT_UNREACHABLE \/
     inst.inst_opcode = RETURNDATACOPY
 Proof
-  step_base_result_tac
+  rpt strip_tac >>
+  drule step_inst_base_abort_opcodes >> strip_tac >>
+  gvs[is_terminator_def]
 QED
 
 Theorem step_inst_base_not_halt_abort[local]:

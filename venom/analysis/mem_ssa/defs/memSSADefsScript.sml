@@ -527,4 +527,3 @@ Definition transient_ssa_analyze_def:
   transient_ssa_analyze cfg dom bp fn =
     mem_ssa_build cfg dom bp fn AddrSp_Transient
 End
-

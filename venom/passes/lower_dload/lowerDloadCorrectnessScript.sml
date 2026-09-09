@@ -1,8 +1,10 @@
 (*
- * Lower DLOAD Pass -- Correctness Statement
+ * Lower DLOAD Pass -- Legacy Semantic-Model Correctness Statement
  *
- * Expanding dload/dloadbytes to alloca+offset+codecopy+mload preserves
- * non-memory state given a valid code layout.
+ * This theory concerns the arithmetic-ID lower_dload_function model only.
+ * It does not certify the configured supply-aware transform or O1 composition.
+ * Within that legacy model, expanding dload/dloadbytes to
+ * alloca+offset+codecopy+mload preserves non-memory state given a valid layout.
  *
  * For OK (continuation) states: ld_ok holds (memory prefix-compatible).
  * For terminal (Halt/Abort) states: ld_equiv holds (no memory guarantee).
@@ -12,6 +14,8 @@ Theory lowerDloadCorrectness
 Ancestors
   lowerDloadSim venomWf
 
+(* Legacy/model-only theorem: its statement and proof intentionally remain about
+   lower_dload_function and do not apply to lower_dload_configured. *)
 Theorem lower_dload_function_correct:
   !fuel ctx fn s.
     wf_function fn /\ fn_inst_wf fn /\ code_layout_valid s /\
