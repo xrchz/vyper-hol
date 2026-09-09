@@ -67,6 +67,11 @@ val checker_defs =
    lookup_callable_function_def,
    well_formed_type_def,
    is_numeric_type_def,
+   is_uint_type_def,
+   is_bool_type_def,
+   is_flag_type_def,
+   is_comparable_type_def,
+   env_item_type_def,
    assignable_type_def,
    hashmap_key_type_def,
    defaults_env_def,
@@ -83,6 +88,7 @@ val checker_defs =
    vyperMiscTheory.string_to_num_def,
    vyperValueTheory.evaluate_type_def,
    vyperValueTheory.type_slot_size_def,
+   vfmConstantsTheory.word_size_def,
    vyperValueTheory.compatible_bound_def,
    vyperValueTheory.within_int_bound_def,
    expr_type_def,
@@ -106,6 +112,7 @@ val checker_defs =
    pairTheory.FST,
    pairTheory.SND,
    pairTheory.UNCURRY_DEF,
+   listTheory.LIST_REL_def,
    numposrepTheory.l2n_def]
 
 (* Work around HOL issue #2055. Install empty-set membership before the list
