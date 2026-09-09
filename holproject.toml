@@ -6,7 +6,7 @@ name = "vyper-hol"
 version = "0.2.2"
 
 [build]
-roots = ["vyperHolScript.sml", "semantics/vyperCheckContractLibTestScript.sml", "frontend/vyperCheckContractFrontendLibTestScript.sml"]
+roots = ["vyperHolScript.sml", "semantics/vyperCheckContractLibTestScript.sml", "frontend/vyperCheckContractFrontendLibTestScript.sml", "tests/vyperCheckContractTraceLibTestScript.sml"]
 
 [dependencies.verifereum]
 git = "https://github.com/verifereum/verifereum.git"

@@ -9,6 +9,21 @@ open jsonToVyperTheory
    annotated_ast : term,
    storage_layout : term}
 
+ type translated_input =
+  {in_deploy : bool,
+   address : term,
+   sources : term,
+   import_map : term,
+   storage_layout : term}
+
+ type checked_result =
+  {input : vyperCheckContractLib.check_input,
+   modules : term,
+   layouts : term,
+   address : term,
+   artifact : term,
+   theorem : thm}
+
 fun require_closed what tm =
   if null (free_vars tm) then ()
   else raise Fail ("vyperCheckContractFrontendLib: open " ^ what)
@@ -70,19 +85,11 @@ in
     (listSyntax.mk_list (main_source::kept, source_ty), rest)
 end
 
-fun prepare_check_input
-    {in_deploy, address, annotated_ast, storage_layout} = let
+fun prepare_translated_input
+    {in_deploy, address, sources, import_map, storage_layout} = let
   val () = app (fn (name, tm) => require_closed name tm)
-    [("address", address), ("annotated AST", annotated_ast),
-     ("storage layout", storage_layout)]
-  val translation = eval_closed "annotated AST translation"
-    (apply "translate_annotated_ast" [annotated_ast])
-  val translated = optionSyntax.dest_some translation
-    handle HOL_ERR _ => raise Fail
-      "vyperCheckContractFrontendLib: annotated AST translation rejected"
-  val translated = remove_interface_sources annotated_ast translated
-  val (sources, rest) = pairSyntax.dest_pair translated
-  val (_, import_map) = pairSyntax.dest_pair rest
+    [("address", address), ("translated sources", sources),
+     ("import map", import_map), ("storage layout", storage_layout)]
   val modules = eval_closed "storage-slot annotation"
     (apply "annotate_sources_slots" [storage_layout, sources])
   val layout_pair = eval_closed "storage layout extraction"
@@ -94,8 +101,34 @@ in
    address = address, modules = modules}
 end
 
-fun check_contract input =
-  vyperCheckContractLib.check_contract (prepare_check_input input)
+fun prepare_check_input
+    {in_deploy, address, annotated_ast, storage_layout} = let
+  val () = require_closed "annotated AST" annotated_ast
+  val translation = eval_closed "annotated AST translation"
+    (apply "translate_annotated_ast" [annotated_ast])
+  val translated = optionSyntax.dest_some translation
+    handle HOL_ERR _ => raise Fail
+      "vyperCheckContractFrontendLib: annotated AST translation rejected"
+  val translated = remove_interface_sources annotated_ast translated
+  val (sources, rest) = pairSyntax.dest_pair translated
+  val (_, import_map) = pairSyntax.dest_pair rest
+in
+  prepare_translated_input
+    {in_deploy = in_deploy, address = address, sources = sources,
+     import_map = import_map, storage_layout = storage_layout}
+end
+
+fun check_contract_result frontend_input = let
+  val input = prepare_check_input frontend_input
+  val theorem = vyperCheckContractLib.check_contract input
+  val (_, result) = dest_eq (concl theorem)
+  val artifact = optionSyntax.dest_some result
+in
+  {input = input, modules = #modules input, layouts = #layouts input,
+   address = #address input, artifact = artifact, theorem = theorem}
+end
+
+fun check_contract input = #theorem (check_contract_result input)
 
 fun check_contract_file {in_deploy, address, path} =
   check_contract
