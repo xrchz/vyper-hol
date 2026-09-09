@@ -46,14 +46,6 @@ Datatype:
   |>
 End
 
-(* Extract storage_layout from json_storage_layout, transforming keys using import_map.
-   Input keys are (alias_opt, var_name), output keys are (source_id_opt, var_name). *)
-Definition extract_storage_layout_def:
-  extract_storage_layout import_map (jsl: json_storage_layout) : storage_layout # storage_layout =
-    (transform_storage_layout import_map (MAP (λ(key, info). (key, info.slot)) jsl.storage),
-     transform_storage_layout import_map (MAP (λ(key, info). (key, info.slot)) jsl.transient))
-End
-
 val () = cv_auto_trans extract_storage_layout_def;
 
 Definition compute_selector_names_def:

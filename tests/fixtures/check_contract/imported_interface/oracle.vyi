@@ -1,0 +1,3 @@
+@external
+@view
+def read_value(x: uint256) -> uint256: ...
