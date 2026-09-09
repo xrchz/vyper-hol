@@ -54,6 +54,8 @@ The semantics is organised into layers:
 - **Interpreter** — the main definitional interpreter (`evaluate_def`), function lookup and calling conventions, the termination proof, and the top-level entry-points.
 - **Type checking** — partial type-checking definitions (`vyperTypeCheck`), including `satisfies_type`, `well_typed_expr`, and related predicates.
 
+The logical contract type checker can be evaluated on closed direct inputs, compiler JSON, or deployment traces using a reusable kernel-checked SML API. See the [contract checker evaluator guide](docs/check-contract-evaluator.md) for its trust model, interfaces, examples, and fixture-generation procedure.
+
 The interpreter is written in a state-exception monad. Exceptions are used for semantic errors (e.g., looking up a variable that was not bound), legitimate runtime exceptions (e.g., failed assertions), and control flow for internal function calls and loops (`return`, `break`, `continue`).
 
 Termination is proved for the interpreter, validating Vyper's design as a total language (this does not rely on gas consumption, which is invisible at the Vyper source level). The termination argument uses the facts that internal function calls cannot recurse (even indirectly) and that all loops have an explicit (syntactic) bound.
