@@ -34,6 +34,42 @@ fun apply name arguments =
   foldl (fn (argument, function) => inst_apply function argument)
     (prim_mk_const {Thy = "jsonToVyper", Name = name}) arguments
 
+fun annotated_ast_imports annotated_ast =
+  case strip_comb annotated_ast of
+    (_, [_, imports]) => imports
+  | _ => raise Fail
+      "vyperCheckContractFrontendLib: expected JAnnotatedAST term"
+
+fun imported_module_path import_tm =
+  case strip_comb import_tm of
+    (_, [_, path, _, _, _]) => stringSyntax.fromHOLstring path
+  | _ => raise Fail
+      "vyperCheckContractFrontendLib: malformed imported module"
+
+(* Interface ASTs contribute nominal/signature information during translation,
+   but they are not runtime modules for check_contract. Translation preserves
+   import order, so remove precisely those translated imports whose compiler
+   path has the .vyi suffix. *)
+fun remove_interface_sources annotated_ast translated = let
+  val (sources, rest) = pairSyntax.dest_pair translated
+  val (source_entries, source_ty) = listSyntax.dest_list sources
+  val (imports, _) = listSyntax.dest_list (annotated_ast_imports annotated_ast)
+  val (main_source, imported_sources) = case source_entries of
+      main::others => (main, others)
+    | [] => raise Fail
+        "vyperCheckContractFrontendLib: translation has no main source"
+  val kept = List.mapPartial
+    (fn (import_tm, source_tm) =>
+      if String.isSuffix ".vyi" (imported_module_path import_tm)
+      then NONE else SOME source_tm)
+    (ListPair.zipEq (imports, imported_sources))
+    handle ListPair.UnequalLengths => raise Fail
+      "vyperCheckContractFrontendLib: import/source count mismatch"
+in
+  pairSyntax.mk_pair
+    (listSyntax.mk_list (main_source::kept, source_ty), rest)
+end
+
 fun prepare_check_input
     {in_deploy, address, annotated_ast, storage_layout} = let
   val () = app (fn (name, tm) => require_closed name tm)
@@ -44,6 +80,7 @@ fun prepare_check_input
   val translated = optionSyntax.dest_some translation
     handle HOL_ERR _ => raise Fail
       "vyperCheckContractFrontendLib: annotated AST translation rejected"
+  val translated = remove_interface_sources annotated_ast translated
   val (sources, rest) = pairSyntax.dest_pair translated
   val (_, import_map) = pairSyntax.dest_pair rest
   val modules = eval_closed "storage-slot annotation"

@@ -17,5 +17,8 @@ end;
 
 val _ = check_fixture "simple.json";
 val _ = check_fixture "storage.json";
+val _ = check_fixture "imported_struct/main.json";
+val _ = check_fixture "imported_flag/main.json";
+val _ = check_fixture "imported_interface/main.json";
 
 val _ = export_theory ();

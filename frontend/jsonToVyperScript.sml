@@ -1,6 +1,6 @@
 Theory jsonToVyper
 Ancestors
-  integer alist rich_list jsonAST vyperAST vyperStorage jsonToVyperType jsonToVyperTopLevel
+  integer alist rich_list jsonAST vyperAST jsonToVyperType jsonToVyperTopLevel
 Libs
   intLib
 
@@ -9,7 +9,8 @@ Libs
    metadata and imported module ASTs. *)
 Definition max_nonnegative_source_id_def:
   max_nonnegative_source_id [] = 0 ∧
-  max_nonnegative_source_id (JImportedModule src_id _ _ _ _ :: rest) =
+  max_nonnegative_source_id
+      (JImportedModule (src_id : int) _ _ _ _ :: rest) =
     MAX (Num src_id) (max_nonnegative_source_id rest)
 End
 
@@ -21,16 +22,16 @@ End
 
 Definition build_module_identity_map_aux_def:
   build_module_identity_map_aux all_imports next [] = [] ∧
-  build_module_identity_map_aux all_imports next
-      (JImportedModule src_id _ resolved_path _ _ :: rest) =
-    let canonical_id =
+  build_module_identity_map_aux all_imports (next : num)
+      (JImportedModule (src_id : int) _ resolved_path _ _ :: rest) =
+    let canonical_id : int =
       if source_id_occurrences src_id all_imports = 1 then src_id else &next in
     (resolved_path,canonical_id) ::
       build_module_identity_map_aux all_imports (next + 1) rest
 End
 
 Definition build_module_identity_map_def:
-  build_module_identity_map main_src_id imports =
+  build_module_identity_map (main_src_id : int) imports =
     build_module_identity_map_aux imports
       (MAX (Num main_src_id) (max_nonnegative_source_id imports) + 1) imports
 End
@@ -167,7 +168,9 @@ End
    layout, transforming optional import aliases into source IDs. *)
 Definition extract_storage_layout_def:
   extract_storage_layout import_map
-      (jsl : json_storage_layout) : storage_layout # storage_layout =
+      (jsl : json_storage_layout) :
+      (((num option # string) # num) list) #
+      (((num option # string) # num) list) =
     (transform_storage_layout import_map
        (MAP (λ(key, info). (key, info.slot)) jsl.storage),
      transform_storage_layout import_map

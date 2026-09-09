@@ -66,6 +66,7 @@ val checker_defs =
    lookup_function_def,
    lookup_callable_function_def,
    well_formed_type_def,
+   is_numeric_type_def,
    assignable_type_def,
    hashmap_key_type_def,
    defaults_env_def,
@@ -104,7 +105,8 @@ val checker_defs =
    optionTheory.THE_DEF,
    pairTheory.FST,
    pairTheory.SND,
-   pairTheory.UNCURRY_DEF]
+   pairTheory.UNCURRY_DEF,
+   numposrepTheory.l2n_def]
 
 (* Work around HOL issue #2055. Install empty-set membership before the list
    rules so ALL_DISTINCT does not retain the problematic prior IN treatment. *)
