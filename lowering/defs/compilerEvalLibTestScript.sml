@@ -104,12 +104,76 @@ val blockless_plan_rhs = rhs (concl blockless_plan_eval)
 val () = if optionSyntax.is_none blockless_plan_rhs then ()
          else raise Fail "noncanonical blockless function was not rejected"
 
-(* Evaluate the repository's checked codegen_assembly_fuel definition on the
-   same empty context, now including policy and target-safety checks. *)
+(* Evaluate bounded liveness independently before composing it with function
+   planning. A STOP-only block has no uses or definitions, so every program
+   point has the empty live-variable set. *)
+val stop_function =
+  ``(mk_raw_function "stop_fn"
+       [<| bb_label := "entry";
+           bb_instructions := [mk_inst 0 STOP [] []] |>]) with <|
+      fn_eom := SOME 0;
+      fn_fmp_signature :=
+        SOME <| fms_has_fmp_param := F; fms_publishes := F |> |>``
+val stop_dfg_eval =
+  compilerEvalLib.final_codegen_conv ``dfg_build_function ^stop_function``
+val stop_dfg = rhs (concl stop_dfg_eval)
+val stop_dfg_lookup_eval = compilerEvalLib.final_codegen_conv
+  ``(FLOOKUP (^stop_dfg).dfg_ids 0,
+     FLOOKUP (^stop_dfg).dfg_uses "unused",
+     FLOOKUP (^stop_dfg).dfg_defs "unused")``
+val stop_inst =
+  ``<| inst_id := 0; inst_opcode := STOP;
+      inst_operands := []; inst_outputs := [] |>``
+val stop_dfg_lookups =
+  ``(SOME ^stop_inst, NONE, NONE) :
+      instruction option # instruction list option # instruction option``
+val () = if rhs (concl stop_dfg_lookup_eval) ~~ stop_dfg_lookups then ()
+         else raise Fail
+           ("single-block STOP DFG produced: " ^
+            term_to_string (rhs (concl stop_dfg_lookup_eval)))
+
+val stop_liveness_eval =
+  compilerEvalLib.final_codegen_conv ``liveness_analyze_fuel 8 ^stop_function``
+val stop_liveness = rhs (concl stop_liveness_eval)
+val stop_live_entry_eval = compilerEvalLib.final_codegen_conv
+  ``(FLOOKUP (^stop_liveness).ds_boundary "entry",
+     FLOOKUP (^stop_liveness).ds_inst ("entry", 0),
+     FLOOKUP (^stop_liveness).ds_inst ("entry", 1))``
+val stop_live_entry =
+  ``(SOME [], SOME [], SOME []) :
+      string list option # string list option # string list option``
+val () = if rhs (concl stop_live_entry_eval) ~~ stop_live_entry then ()
+         else raise Fail "single-block STOP liveness was not empty"
+
+(* Compose the now-independent CFG, DFG, and liveness computations through
+   bounded function planning. *)
+val stop_plan_eval = compilerEvalLib.final_codegen_conv
+  ``generate_fn_plan_fuel 8 ^stop_function 0 0``
+val stop_plan_rhs = rhs (concl stop_plan_eval)
+val () = if optionSyntax.is_some stop_plan_rhs then ()
+         else raise Fail
+           ("single-block STOP planning produced: " ^
+            term_to_string stop_plan_rhs)
+
 val prague_policy =
   ``<| rpol_target := prague_capabilities;
       rpol_frontend_dispatch := Linear;
       rpol_final_assembly := FAP_Optimize |>``
+
+val stop_context = ``mk_venom_context [^stop_function] (SOME "stop_fn")``
+val stop_unit =
+  ``<| cu_context := ^stop_context; cu_data_segment := [] |>``
+val stop_codegen_eval = compilerEvalLib.final_codegen_conv
+  ``OPTION_MAP assemble (codegen_assembly_fuel 8 ^prague_policy ^stop_unit)``
+val stop_codegen_bytes =
+  ``SOME [0x5Bw; 0x00w; 0x5Bw; 0x5Fw; 0x80w; 0xFDw] : byte list option``
+val () = if rhs (concl stop_codegen_eval) ~~ stop_codegen_bytes then ()
+         else raise Fail
+           ("single-block STOP codegen produced: " ^
+            term_to_string (rhs (concl stop_codegen_eval)))
+
+(* Evaluate the repository's checked codegen_assembly_fuel definition on the
+   same empty context, now including policy and target-safety checks. *)
 val empty_unit =
   ``<| cu_context := ^empty_context;
       cu_data_segment := [] |>``
