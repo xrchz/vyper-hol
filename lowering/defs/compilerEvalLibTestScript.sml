@@ -1,5 +1,5 @@
 Theory compilerEvalLibTest
-Ancestors symbolResolve
+Ancestors codegen
 Libs compilerEvalLib
 
 val plan_tm =
@@ -55,6 +55,73 @@ val () = if rhs (concl supplied_tail_eval) ~~ supplied_tail_bytes then ()
          else raise Fail
            ("supplied-plan codegen tail produced: " ^
             term_to_string (rhs (concl supplied_tail_eval)))
+
+(* Add context-plan generation independently of instruction planning.  The
+   empty context exercises global-reserved/EOM checks and plan finalization,
+   while its empty function list means no function planner is invoked. *)
+val empty_context = ``mk_venom_context [] NONE``
+val empty_context_plan_eval =
+  compilerEvalLib.final_codegen_conv
+    ``generate_context_plan_fuel 8 ^empty_context``
+val empty_context_plan =
+  ``SOME <| cp_regions := [];
+            cp_max_static_eom := 0;
+            cp_peak_spill_end := 0;
+            cp_initial_fmp := 0 |>``
+val () = if rhs (concl empty_context_plan_eval) ~~ empty_context_plan then ()
+         else raise Fail
+           ("empty context planning produced: " ^
+            term_to_string (rhs (concl empty_context_plan_eval)))
+
+val empty_context_codegen_eval =
+  compilerEvalLib.final_codegen_conv
+    ``case generate_context_plan_fuel 8 ^empty_context of
+        NONE => NONE
+      | SOME plan =>
+          SOME (assemble
+            (execute_plan plan.cp_initial_fmp (context_plan_ops plan)))``
+val empty_context_codegen_bytes =
+  ``SOME [0x5Bw; 0x5Fw; 0x80w; 0xFDw] : byte list option``
+val () =
+  if rhs (concl empty_context_codegen_eval) ~~ empty_context_codegen_bytes
+  then ()
+  else raise Fail "empty context plan-to-bytecode evaluation failed"
+
+(* Introduce a nonempty function list while keeping the function block list
+   empty. This crosses into generate_fn_plan_fuel but avoids instruction and
+   CFG traversal, giving a small first diagnostic for function planning. *)
+val blockless_function =
+  ``(mk_raw_function "empty_fn" []) with <|
+      fn_eom := SOME 0;
+      fn_fmp_signature :=
+        SOME <| fms_has_fmp_param := F; fms_publishes := F |> |>``
+val blockless_context =
+  ``mk_venom_context [^blockless_function] NONE``
+val blockless_plan_eval =
+  compilerEvalLib.final_codegen_conv
+    ``generate_context_plan_fuel 8 ^blockless_context``
+val blockless_plan_rhs = rhs (concl blockless_plan_eval)
+val () = if optionSyntax.is_none blockless_plan_rhs then ()
+         else raise Fail "noncanonical blockless function was not rejected"
+
+(* Evaluate the repository's checked codegen_assembly_fuel definition on the
+   same empty context, now including policy and target-safety checks. *)
+val prague_policy =
+  ``<| rpol_target := prague_capabilities;
+      rpol_frontend_dispatch := Linear;
+      rpol_final_assembly := FAP_Optimize |>``
+val empty_unit =
+  ``<| cu_context := ^empty_context;
+      cu_data_segment := [] |>``
+val checked_codegen_eval =
+  compilerEvalLib.final_codegen_conv
+    ``codegen_assembly_fuel 8 ^prague_policy ^empty_unit``
+val checked_codegen_asm =
+  ``SOME [AsmLabel "revert"; AsmPush []; AsmOp "DUP1"; AsmOp "REVERT"]``
+val () = if rhs (concl checked_codegen_eval) ~~ checked_codegen_asm then ()
+         else raise Fail
+           ("checked empty codegen produced: " ^
+            term_to_string (rhs (concl checked_codegen_eval)))
 
 (* The exported instance is immutable while callers may extend a copy. *)
 val copied_compset =
