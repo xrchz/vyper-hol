@@ -75,6 +75,21 @@ val conversion_check = vyperCheckContractLib.check_contract
    address = zero_address, modules = conversion_modules}
 val () = assert_some conversion_check
 
+(* len() requires sized-type classification to compute. *)
+val sized_modules =
+  ``([(NONE,
+       [FunctionDecl External Pure F F "array_len"
+          [("xs", ArrayT (BaseT AddressT) (Dynamic 4))] []
+          (BaseT (UintT 256))
+          [Return (SOME
+             (Builtin (BaseT (UintT 256)) Len
+               [Name (ArrayT (BaseT AddressT) (Dynamic 4)) "xs"]))]])]
+      : (num option # toplevel list) list)``
+val sized_check = vyperCheckContractLib.check_contract
+  {in_deploy = false, layouts = empty_layouts,
+   address = zero_address, modules = sized_modules}
+val () = assert_some sized_check
+
 (* The conversion itself computes rejection to NONE. The success-only API must
    fail closed on that result. *)
 val recursive_modules =

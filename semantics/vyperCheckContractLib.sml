@@ -72,6 +72,7 @@ val checker_defs =
    is_uint_type_def,
    is_bool_type_def,
    is_flag_type_def,
+   is_sized_type_def,
    is_comparable_type_def,
    env_item_type_def,
    assignable_type_def,
