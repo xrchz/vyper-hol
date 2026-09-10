@@ -163,8 +163,26 @@ frontend.
 Before committing generated JSON, replace compiler `resolved_path` values with
 stable fixture-relative paths. For imports, preserve relative directory
 structure and rewrite every occurrence consistently so canonical source
-identity is unchanged. Reject generated output that still contains the local
-checkout root, `/home/`, `/tmp/`, or the generating username.
+identity is unchanged. Compiler-inferred type names can also contain resolved
+paths, including paths to Vyper's built-in interfaces, so sanitization must be
+recursive rather than limited to fields named `resolved_path`.
+
+`tests/sanitize_check_contract_json.py` merges the one- or two-object compiler
+output, applies recursive replacements, emits canonical JSON, and rejects
+remaining `/home/` or `/tmp/` strings. For example:
+
+```sh
+vyper -f annotated_ast,layout contract.vy > compiler-output.jsonl
+python3 tests/sanitize_check_contract_json.py \
+  compiler-output.jsonl contract.json \
+  --replace "$PWD/=my_fixture/" \
+  --replace "/path/to/vyper/builtins/interfaces/=ethereum/ercs/" \
+  --forbid "$USER"
+```
+
+Use a temporary output when sanitizing a file in place, since input is read
+before output is written. Add `--forbid` for the local checkout root, generating
+username, or other machine-specific values not covered by the defaults.
 
 The Flex Daddy example and its exact provenance are in
 `tests/fixtures/check_contract/third_party/flex/`. It is checked in both
