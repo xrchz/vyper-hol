@@ -1,0 +1,9 @@
+#pragma version 0.5.0a3
+
+struct Record:
+    value: uint256
+
+@external
+@view
+def get_record() -> Record:
+    ...

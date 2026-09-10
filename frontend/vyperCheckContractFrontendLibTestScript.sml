@@ -29,6 +29,7 @@ val _ = check_fixture false "nonreentrant/main.json";
 val _ = check_fixture true "deployment/main.json";
 val _ = check_fixture false "third_party/flex/daddy/daddy.json";
 val _ = check_fixture true "third_party/flex/daddy/daddy.json";
+val _ = check_fixture false "interface_struct_return/main.json";
 
 val multimodule_path = fixture_dir ^ "multimodule_storage/main.json";
 val multimodule_input = vyperCheckContractFrontendLib.prepare_check_input
