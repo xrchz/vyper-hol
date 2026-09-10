@@ -60,6 +60,36 @@ val internal_check = vyperCheckContractLib.check_contract
    address = zero_address, modules = internal_modules}
 val () = assert_some internal_check
 
+(* Compiler-generated integer conversions require valid_conversion to compute. *)
+val conversion_modules =
+  ``([(NONE,
+       [FunctionDecl External Pure F F "widen"
+          [("x", BaseT (UintT 8))] [] (BaseT (UintT 256))
+          [Return (SOME
+             (TypeBuiltin (BaseT (UintT 256)) Convert
+               (BaseT (UintT 256))
+               [Name (BaseT (UintT 8)) "x"]))]])]
+      : (num option # toplevel list) list)``
+val conversion_check = vyperCheckContractLib.check_contract
+  {in_deploy = false, layouts = empty_layouts,
+   address = zero_address, modules = conversion_modules}
+val () = assert_some conversion_check
+
+(* len() requires sized-type classification to compute. *)
+val sized_modules =
+  ``([(NONE,
+       [FunctionDecl External Pure F F "array_len"
+          [("xs", ArrayT (BaseT AddressT) (Dynamic 4))] []
+          (BaseT (UintT 256))
+          [Return (SOME
+             (Builtin (BaseT (UintT 256)) Len
+               [Name (ArrayT (BaseT AddressT) (Dynamic 4)) "xs"]))]])]
+      : (num option # toplevel list) list)``
+val sized_check = vyperCheckContractLib.check_contract
+  {in_deploy = false, layouts = empty_layouts,
+   address = zero_address, modules = sized_modules}
+val () = assert_some sized_check
+
 (* The conversion itself computes rejection to NONE. The success-only API must
    fail closed on that result. *)
 val recursive_modules =

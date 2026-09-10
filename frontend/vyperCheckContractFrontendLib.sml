@@ -61,10 +61,11 @@ fun imported_module_path import_tm =
   | _ => raise Fail
       "vyperCheckContractFrontendLib: malformed imported module"
 
-(* Interface ASTs contribute nominal/signature information during translation,
-   but they are not runtime modules for check_contract. Translation preserves
-   import order, so remove precisely those translated imports whose compiler
-   path has the .vyi suffix. *)
+(* Interface translation already removes ellipsis-bodied function stubs. Keep
+   an interface source when nominal declarations remain, since their source ID
+   is part of the nominal type identity needed by check_contract. Drop only
+   empty .vyi sources; in particular, builtin interfaces may share source IDs.
+   Translation preserves import order. *)
 fun remove_interface_sources annotated_ast translated = let
   val (sources, rest) = pairSyntax.dest_pair translated
   val (source_entries, source_ty) = listSyntax.dest_list sources
@@ -73,9 +74,14 @@ fun remove_interface_sources annotated_ast translated = let
       main::others => (main, others)
     | [] => raise Fail
         "vyperCheckContractFrontendLib: translation has no main source"
+  fun source_is_empty source_tm = let
+    val (_, toplevels) = pairSyntax.dest_pair source_tm
+    val (entries, _) = listSyntax.dest_list toplevels
+  in null entries end
   val kept = List.mapPartial
     (fn (import_tm, source_tm) =>
-      if String.isSuffix ".vyi" (imported_module_path import_tm)
+      if String.isSuffix ".vyi" (imported_module_path import_tm) andalso
+         source_is_empty source_tm
       then NONE else SOME source_tm)
     (ListPair.zipEq (imports, imported_sources))
     handle ListPair.UnequalLengths => raise Fail
