@@ -262,6 +262,37 @@ val () = if rhs (concl jump_codegen_eval) ~~ jump_codegen_bytes then ()
            ("two-block JMP codegen produced: " ^
             term_to_string (rhs (concl jump_codegen_eval)))
 
+(* Exercise divergent control flow and both symbolic targets of JNZ. *)
+val branch_function =
+  ``(mk_raw_function "branch_fn"
+       [<| bb_label := "entry";
+           bb_instructions :=
+             [mk_inst 0 ASSIGN [Lit 1w] ["cond"];
+              mk_inst 1 JNZ
+                [Var "cond"; Label "nonzero"; Label "zero"] []] |>;
+        <| bb_label := "nonzero";
+           bb_instructions := [mk_inst 2 STOP [] []] |>;
+        <| bb_label := "zero";
+           bb_instructions := [mk_inst 3 STOP [] []] |>]) with <|
+      fn_eom := SOME 0;
+      fn_fmp_signature :=
+        SOME <| fms_has_fmp_param := F; fms_publishes := F |> |>``
+val branch_context =
+  ``mk_venom_context [^branch_function] (SOME "branch_fn")``
+val branch_unit =
+  ``<| cu_context := ^branch_context; cu_data_segment := [] |>``
+val branch_codegen_eval = compilerEvalLib.final_codegen_conv
+  ``OPTION_MAP assemble
+      (codegen_assembly_fuel 24 ^prague_policy ^branch_unit)``
+val branch_codegen_bytes =
+  ``SOME [0x5Bw; 0x60w; 0x01w; 0x61w; 0x00w; 0x0Dw; 0x57w;
+          0x61w; 0x00w; 0x0Bw; 0x56w; 0x5Bw; 0x00w; 0x5Bw; 0x00w;
+          0x5Bw; 0x5Fw; 0x80w; 0xFDw] : byte list option``
+val () = if rhs (concl branch_codegen_eval) ~~ branch_codegen_bytes then ()
+         else raise Fail
+           ("three-block JNZ codegen produced: " ^
+            term_to_string (rhs (concl branch_codegen_eval)))
+
 val checked_codegen_eval =
   compilerEvalLib.final_codegen_conv
     ``codegen_assembly_fuel 8 ^prague_policy ^empty_unit``
