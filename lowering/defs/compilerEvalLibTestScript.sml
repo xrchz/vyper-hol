@@ -145,6 +145,55 @@ val stop_live_entry =
 val () = if rhs (concl stop_live_entry_eval) ~~ stop_live_entry then ()
          else raise Fail "single-block STOP liveness was not empty"
 
+(* Exercise PHI stack-slot renaming independently of CFG traversal. *)
+val phi_inst =
+  ``mk_inst 5 PHI
+      [Label "left"; Var "left_v"; Label "right"; Var "right_v"]
+      ["result"]``
+val phi_state =
+  ``(init_plan_state 0) with ps_stack := [Var "right_v"]``
+val phi_plan_eval = compilerEvalLib.final_codegen_conv
+  ``generate_phi_plan ^phi_inst [] ^phi_state``
+val phi_plan =
+  ``([SOPoke 0 (Var "result")],
+     <| ps_stack := [Var "result"];
+        ps_spilled := FEMPTY;
+        ps_alloc := <| sa_free_slots := []; sa_next_offset := 0;
+                       sa_spill_base := 0 |>;
+        ps_label_counter := 0 |>)``
+val () = if rhs (concl phi_plan_eval) ~~ phi_plan then ()
+         else raise Fail
+           ("direct PHI plan produced: " ^
+            term_to_string (rhs (concl phi_plan_eval)))
+
+(* Integrate PHI handling with block planning without introducing branch
+   traversal yet. *)
+val phi_block =
+  ``<| bb_label := "join";
+      bb_instructions := [^phi_inst; mk_inst 6 STOP [] []] |>``
+val phi_only_function =
+  ``(mk_raw_function "phi_only" [^phi_block]) with <|
+      fn_eom := SOME 0;
+      fn_fmp_signature :=
+        SOME <| fms_has_fmp_param := F; fms_publishes := F |> |>``
+val phi_block_plan_eval = compilerEvalLib.final_codegen_conv
+  ``generate_block_plan
+      (liveness_analyze_fuel 8 ^phi_only_function)
+      (dfg_build_function ^phi_only_function)
+      (cfg_analyze ^phi_only_function)
+      ^phi_only_function ^phi_block ^phi_state``
+val phi_block_plan =
+  ``SOME ([SOLabel "join"; SOPoke 0 (Var "result"); SOEmit "STOP"],
+          <| ps_stack := [Var "result"];
+             ps_spilled := FEMPTY;
+             ps_alloc := <| sa_free_slots := []; sa_next_offset := 0;
+                            sa_spill_base := 0 |>;
+             ps_label_counter := 0 |>)``
+val () = if rhs (concl phi_block_plan_eval) ~~ phi_block_plan then ()
+         else raise Fail
+           ("PHI block planning produced: " ^
+            term_to_string (rhs (concl phi_block_plan_eval)))
+
 (* Compose the now-independent CFG, DFG, and liveness computations through
    bounded function planning. *)
 val stop_plan_eval = compilerEvalLib.final_codegen_conv
