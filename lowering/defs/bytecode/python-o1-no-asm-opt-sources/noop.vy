@@ -1,0 +1,3 @@
+@external
+def foo():
+    pass

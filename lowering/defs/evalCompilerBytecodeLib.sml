@@ -1,8 +1,8 @@
 (*
- * Eval compiler bytecode fixtures
+ * Independent Python compiler bytecode oracle reader
  *
  * TOP-LEVEL:
- *   read_hex_bytes -- read deploy/runtime hex fixture into a bytecode pair term
+ *   read_hex_bytes -- read pinned-Python deploy/runtime oracle bytes into a term
  *)
 
 structure evalCompilerBytecodeLib = struct
@@ -49,8 +49,8 @@ fun fixture_line line =
 fun resolve_bytecode_fixture filename =
   let
     val candidates =
-      [OS.Path.concat ("bytecode", filename),
-       OS.Path.concat ("lowering/defs/bytecode", filename)]
+      [OS.Path.concat ("bytecode/python-o1-no-asm-opt", filename),
+       OS.Path.concat ("lowering/defs/bytecode/python-o1-no-asm-opt", filename)]
   in
     case List.find
            (fn path => OS.FileSys.access (path, [OS.FileSys.A_READ]))

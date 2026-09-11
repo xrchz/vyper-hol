@@ -1,0 +1,146 @@
+#!/bin/sh
+# Generate/check an independent bytecode oracle using the pinned Python Vyper.
+set -eu
+
+mode=check
+vyper_repo=${VYPER_REPO:-}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --check) mode=check ;;
+    --update) mode=update ;;
+    --compare-hol) mode=compare ;;
+    --vyper-repo)
+      shift
+      [ "$#" -gt 0 ] || { echo "--vyper-repo requires a path" >&2; exit 2; }
+      vyper_repo=$1
+      ;;
+    *)
+      echo "usage: $0 [--check|--update|--compare-hol] --vyper-repo PATH" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
+pin=$(tr -d '[:space:]' < "$repo_dir/VYPER_PIN")
+sources=$script_dir/bytecode/python-o1-no-asm-opt-sources
+oracle=$script_dir/bytecode/python-o1-no-asm-opt
+
+[ -n "$vyper_repo" ] || {
+  echo "set VYPER_REPO or pass --vyper-repo PATH" >&2
+  exit 2
+}
+vyper_repo=$(CDPATH= cd -- "$vyper_repo" && pwd)
+command -v git >/dev/null 2>&1 || { echo "git not found" >&2; exit 2; }
+command -v uv >/dev/null 2>&1 || { echo "uv not found" >&2; exit 2; }
+[ "$(uv --version)" = "uv 0.10.11" ] || {
+  echo "oracle generation requires uv 0.10.11" >&2
+  exit 2
+}
+
+actual=$(git -C "$vyper_repo" rev-parse HEAD)
+[ "$actual" = "$pin" ] || {
+  echo "Vyper checkout is $actual; VYPER_PIN requires $pin" >&2
+  exit 1
+}
+if [ -n "$(git -C "$vyper_repo" status --porcelain --untracked-files=all)" ]; then
+  echo "Vyper checkout is not clean; refusing non-reproducible generation" >&2
+  exit 1
+fi
+
+stage=$(mktemp -d "${TMPDIR:-/tmp}/vyper-o1-oracle.XXXXXX")
+trap 'rm -rf "$stage"' EXIT HUP INT TERM
+staged_vyper=$stage/vyper-src
+venv=$stage/venv
+generated=$stage/generated
+constraints=$script_dir/python-o1-oracle-constraints.txt
+
+# Clone only committed objects, so ignored files and local environments in the
+# supplied checkout cannot enter the compiler package.
+git clone --quiet --no-checkout --no-local "$vyper_repo" "$staged_vyper"
+git -c advice.detachedHead=false -C "$staged_vyper" checkout --quiet --detach "$pin"
+
+UV_PYTHON_INSTALL_DIR="$stage/python" \
+  UV_CONSTRAINT="$constraints" UV_BUILD_CONSTRAINT="$constraints" \
+  uv venv --quiet --managed-python --python 3.11.11 "$venv"
+UV_PYTHON_INSTALL_DIR="$stage/python" \
+  UV_CONSTRAINT="$constraints" UV_BUILD_CONSTRAINT="$constraints" \
+  SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VYPER=0.5.0a4+cd74ce4f \
+  uv pip install --quiet --python "$venv/bin/python" "$staged_vyper"
+
+# -I and the cleared Python environment prevent module-path shadowing.
+env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP \
+  "$venv/bin/python" -I "$script_dir/python_o1_bytecode_oracle.py" \
+  --expected-commit "$pin" --expected-python 3.11.11 --generator-uv 0.10.11 \
+  --expected-install-root "$venv" --sources "$sources" \
+  --hol-programs "$script_dir/evalCompilerScript.sml" --output "$generated"
+
+count=$(find "$generated" -type f -name '*.hex' | wc -l | tr -d ' ')
+total=$(find "$generated" -type f | wc -l | tr -d ' ')
+[ "$count" = 23 ] && [ "$total" = 24 ] && [ -f "$generated/provenance.json" ] || {
+  echo "generator produced $count fixtures and $total files, expected 23 and 24" >&2
+  exit 1
+}
+
+mismatches=0
+if [ "$mode" = update ]; then
+  rm -rf "$oracle"
+  mkdir -p "$oracle"
+  cp "$generated/provenance.json" "$oracle/provenance.json"
+else
+  if [ ! -f "$oracle/provenance.json" ] || \
+     ! cmp -s "$generated/provenance.json" "$oracle/provenance.json"; then
+    echo "stale or missing Python oracle provenance.json" >&2
+    mismatches=$((mismatches + 1))
+  fi
+  oracle_count=$(find "$oracle" -type f -name '*.hex' 2>/dev/null | wc -l | tr -d ' ')
+  oracle_total=$(find "$oracle" -type f 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$oracle_count" != 23 ] || [ "$oracle_total" != 24 ]; then
+    echo "committed Python oracle has $oracle_count fixtures and $oracle_total files; expected 23 and 24" >&2
+    mismatches=$((mismatches + 1))
+  fi
+fi
+for generated_file in "$generated"/*.hex; do
+  name=$(basename "$generated_file")
+  case "$mode" in
+    update)
+      cp "$generated_file" "$oracle/$name"
+      ;;
+    check|compare)
+      if [ ! -f "$oracle/$name" ] || ! cmp -s "$generated_file" "$oracle/$name"; then
+        echo "stale or missing Python oracle: $name" >&2
+        mismatches=$((mismatches + 1))
+      fi
+      ;;
+  esac
+done
+
+if [ "$mode" != update ]; then
+  for committed in "$oracle"/*.hex; do
+    [ -e "$committed" ] || continue
+    [ -f "$generated/$(basename "$committed")" ] || {
+      echo "unexpected Python oracle: $(basename "$committed")" >&2
+      mismatches=$((mismatches + 1))
+    }
+  done
+fi
+
+[ "$mismatches" -eq 0 ] || {
+  echo "$mismatches fixture mismatch(es)" >&2
+  exit 1
+}
+case "$mode" in
+  update)
+    echo "updated 23 independent Python O1/no-assembly-opt oracle fixtures"
+    ;;
+  check)
+    echo "all 23 Python O1/no-assembly-opt oracle fixtures reproduce from VYPER_PIN"
+    ;;
+  compare)
+    echo "Python oracle reproduced; running fresh HOL bytecode parity evaluation"
+    (cd "$repo_dir" && holbuild --tactic-timeout "${HOL_PARITY_TACTIC_TIMEOUT:-600}")
+    echo "all 23 HOL evaluations match the pinned Python O1/no-assembly-opt oracle"
+    ;;
+esac

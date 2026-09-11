@@ -133,7 +133,8 @@ The matrix should eventually identify exact Python modules, classes, and functio
 | HOL file/area | Purpose | Status | Notes |
 |---|---|---|---|
 | `lowering/defs/evalCompilerScript.sml` | compiler smoke fixtures | unknown | Regenerate only after parity updates are understood. |
-| `lowering/defs/evalCompilerBytecodeScript.sml` | bytecode fixture comparison | unknown | Record compiler flags, EVM version, and metadata policy. |
+| `lowering/defs/evalCompilerBytecodeScript.sml` | fresh HOL-to-Python bytecode parity test | failing: 17 bytecode mismatches, 6 checked-guard rejections | Every EVAL theorem requires exact equality with the independent Python oracle. No HOL-generated `.hex` outputs are committed. The four loops fail the current PHI-dominance guard, and two internal calls fail FMP input arity because their return PC is still lowered as `PARAM`. |
+| `lowering/defs/python-o1-bytecode-fixtures`, `python_o1_bytecode_oracle.py`, and `bytecode/python-o1-no-asm-opt*/` | independently generated pinned-Python O1 bytecode oracle and comparison entrypoint | reproducible from pin | The generator verifies the clean checkout against `VYPER_PIN` and compiles tracked sources in a locked, isolated environment with the pinned `PASSES_O1` lowering pipeline, Prague, metadata disabled, and final assembly optimization disabled to match HOL's identity finalizer. CI reproduces the Python oracle with `--check`; `--compare-hol` performs fresh HOL evaluation against it and exits nonzero on the current discrepancies. |
 | `tests/vyper-test-exports` and generators | language-test AST/metadata export | uses repository pin by policy | Keep aligned with `VYPER_PIN`. |
 
 ## Audit workflow
