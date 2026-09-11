@@ -127,6 +127,16 @@ Definition fmp_point_well_located_def:
          SND p <= LENGTH bb.bb_instructions
 End
 
+Theorem fmp_point_well_located_compute[compute]:
+  fmp_point_well_located fn p <=>
+    case lookup_block (FST p) fn.fn_blocks of
+      NONE => F
+    | SOME bb => SND p <= LENGTH bb.bb_instructions
+Proof
+  Cases_on `lookup_block (FST p) fn.fn_blocks` >>
+  simp[fmp_point_well_located_def]
+QED
+
 Definition fmp_find_dalloca_at_aux_def:
   fmp_find_dalloca_at_aux (base:string) (lbl:string) [] (n:num) = NONE /\
   fmp_find_dalloca_at_aux (base:string) (lbl:string)
@@ -202,6 +212,17 @@ Definition fmp_inst_has_unsafe_derived_use_def:
         ~fmp_transparent_opcode inst.inst_opcode
 End
 
+Theorem fmp_inst_has_unsafe_derived_use_compute[compute]:
+  fmp_inst_has_unsafe_derived_use vars inst <=>
+    EXISTS
+      (λv. MEM v (inst_uses inst) /\
+           ~fmp_direct_memory_use inst v /\
+           ~fmp_transparent_opcode inst.inst_opcode)
+      vars
+Proof
+  simp[fmp_inst_has_unsafe_derived_use_def, listTheory.EXISTS_MEM]
+QED
+
 Definition fmp_target_pinned_def:
   fmp_target_pinned fn base <=>
     EXISTS (fmp_inst_has_unsafe_derived_use (fmp_derived_vars fn base))
@@ -232,6 +253,31 @@ Definition fmp_restore_target_ok_def:
       ~fmp_target_pinned fn base /\
       EVERY (\cap. ~fmp_capture_veto fn live p cap) captures
 End
+
+Definition fmp_restore_target_ok_exec_def:
+  fmp_restore_target_ok_exec infos ctx fn live captures p root_var <=>
+    fmp_info_valid ctx infos /\ MEM fn ctx.ctx_functions /\
+    fmp_point_well_located fn p /\
+    (case fmp_find_dalloca root_var fn.fn_blocks of
+       NONE => F
+     | SOME (def_lbl,def_i,dalloca) =>
+         dalloca.inst_opcode = DALLOCA /\
+         dalloca.inst_outputs = [root_var] /\
+         fmp_definition_dominates fn def_lbl def_i p /\
+         EVERY (λv. ~MEM v (live_vars_at live (FST p) (SND p)))
+           (fmp_derived_vars fn root_var) /\
+         ~fmp_target_pinned fn root_var /\
+         EVERY (λcap. ~fmp_capture_veto fn live p cap) captures)
+End
+
+Theorem fmp_restore_target_ok_compute[compute]:
+  fmp_restore_target_ok infos ctx fn live captures p root_var <=>
+  fmp_restore_target_ok_exec infos ctx fn live captures p root_var
+Proof
+  Cases_on `fmp_find_dalloca root_var fn.fn_blocks` >>
+  simp[fmp_restore_target_ok_def, fmp_restore_target_ok_exec_def] >>
+  PairCases_on `x` >> simp[]
+QED
 
 Definition fmp_stack_reclaimable_def:
   fmp_stack_reclaimable infos ctx fn live captures p stack <=>
@@ -280,6 +326,17 @@ Definition fmp_reclaim_plan_ok_def:
     !p base. FLOOKUP plan p = SOME base ==>
       fmp_reclaim_entry_ok infos ctx fn p base
 End
+
+Theorem fmp_reclaim_plan_ok_compute[compute]:
+  fmp_reclaim_plan_ok infos ctx fn plan <=>
+    FEVERY
+      (λ(p,base). fmp_reclaim_entry_ok infos ctx fn p base)
+      plan
+Proof
+  simp[fmp_reclaim_plan_ok_def, finite_mapTheory.FEVERY_DEF,
+       finite_mapTheory.FLOOKUP_DEF] >>
+  metis_tac[]
+QED
 
 Definition fmp_candidate_plan_def:
   fmp_candidate_plan infos ctx fn states =

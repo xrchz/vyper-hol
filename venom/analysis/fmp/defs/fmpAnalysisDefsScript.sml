@@ -204,4 +204,43 @@ Definition fmp_info_valid_def:
          fmp_join_target_info infos targets (fmp_direct_info fn) = SOME info)
 End
 
+(* Executable view of the finite context-wide validity contract. *)
+Theorem fmp_info_valid_compute[compute]:
+  fmp_info_valid ctx infos <=>
+    ctx_distinct_fn_names ctx /\
+    EVERY (λfn. IS_SOME (FLOOKUP infos fn.fn_name)) ctx.ctx_functions /\
+    EVERY
+      (λfn.
+        case fn.fn_fmp_signature of
+          NONE => T
+        | SOME sig =>
+            fmp_signature_matches_fn ctx fn /\
+            FLOOKUP infos fn.fn_name =
+              SOME (fmp_info_of_signature sig))
+      ctx.ctx_functions /\
+    EVERY
+      (λfn.
+        case fn.fn_fmp_signature of
+          SOME sig => T
+        | NONE =>
+            case fmp_function_targets ctx fn of
+              NONE => F
+            | SOME targets =>
+                case FLOOKUP infos fn.fn_name of
+                  NONE => F
+                | SOME info =>
+                    fmp_join_target_info infos targets
+                      (fmp_direct_info fn) = SOME info)
+      ctx.ctx_functions
+Proof
+  simp[fmp_info_valid_def, listTheory.EVERY_MEM] >>
+  eq_tac >> rpt strip_tac >> gvs[] >>
+  Cases_on `fn.fn_fmp_signature` >> gvs[] >>
+  TRY (Cases_on `fmp_function_targets ctx fn` >> gvs[]) >>
+  TRY (Cases_on `FLOOKUP infos fn.fn_name` >> gvs[]) >>
+  rpt (qpat_x_assum `!f. MEM f ctx.ctx_functions ==> _`
+         (qspec_then `fn` mp_tac)) >>
+  simp[] >> res_tac >> gvs[]
+QED
+
 val _ = export_theory();

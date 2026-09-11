@@ -214,6 +214,32 @@ Definition function_forced_metadata_ok_def:
       fn.fn_forced_alloc_positions
 End
 
+(* This check sits inside the `lowering_context_ok` guard on the main lowering
+   path, so `computeLib` must be able to decide it or evaluation of the whole
+   compiler stops at the `if`.  `finite_mapLib.add_finite_map_compset` supplies
+   FLOOKUP/FUNION/FDOM/FUPDATE_LIST equations but no FEVERY equations at all --
+   HOL keeps those in a separate compset (`FEVERY_cs`) reachable only through
+   `fevery_EXPAND_CONV`, which EVAL never calls.  Register them persistently so
+   every descendant theory inherits them, rather than patching each call site:
+   the SML fixture libraries are not the only consumers, and EVAL_TAC in proofs
+   resolves against the global compset that those libraries never touch.
+
+   The chain terminates by peeling one FUPDATE per step:
+     FEVERY P (f |+ (x,y))                       -> P (x,y) /\ FEVERY P (DRESTRICT f (COMPL {x}))
+     FEVERY P (DRESTRICT (f |+ (k,v)) (COMPL s)) -> (~(k IN s) ==> P (k,v)) /\ ...
+     FEVERY P (DRESTRICT FEMPTY (COMPL s))       -> FEVERY P FEMPTY -> T
+   FUPDATE_LIST_THM is already in the compset, so maps built with FUPDATE_LIST
+   reach that shape without needing FEVERY_FUPDATE_LIST (which is conditional on
+   ALL_DISTINCT and so is not a plain compset rewrite). *)
+val _ = computeLib.add_persistent_funs [
+  "finite_map.FEVERY_FEMPTY",
+  "finite_map.FEVERY_FUPDATE",
+  "finite_map.DRESTRICT_FEMPTY",
+  "finite_map.FEVERY_DRESTRICT_COMPL",
+  "pred_set.IN_INSERT",
+  "pred_set.NOT_IN_EMPTY"
+]
+
 
 Theorem forced_pairs_for_name_all_distinct:
   !metadata name.

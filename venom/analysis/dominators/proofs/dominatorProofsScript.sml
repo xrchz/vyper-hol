@@ -2339,7 +2339,7 @@ QED
    Proof: SNOC induction. Base: dom(entry) = {entry}. Step: decompose
    SNOC x ls into LRC ls entry x and R x c. x is pred of c, so
    d ∈ dom(c)\{c} ⊆ ⋂dom(p) ⊆ dom(x). IH on shorter path ls. *)
-Triviality dom_on_every_path:
+Theorem dom_on_every_path:
   !fn bb ls c.
     wf_function fn /\
     entry_block fn = SOME bb /\
@@ -2403,7 +2403,7 @@ QED
    Entry: d on every path to entry ⟹ d = entry (by trivial path []).
    Post-fixpoint: d on every path to c, d ≠ c ⟹ d on every path to pred p
    (extend path to p by one step p→c to get path to c, apply hypothesis). *)
-Triviality on_every_path_dom:
+Theorem on_every_path_dom:
   !fn bb d c.
     wf_function fn /\
     entry_block fn = SOME bb /\

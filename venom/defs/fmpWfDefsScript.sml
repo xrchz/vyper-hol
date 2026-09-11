@@ -259,4 +259,337 @@ Definition fmp_lowered_context_wf_def:
       invoke_layout_wf ctx inst)
 End
 
+(* ==========================================================================
+   Executable views of finite FMP well-formedness checks.
+   ========================================================================== *)
+
+Theorem no_raw_fmp_ops_compute[compute]:
+  no_raw_fmp_ops fn <=>
+    EVERY (λinst. ~is_raw_fmp_opcode inst.inst_opcode) (fn_insts fn)
+Proof
+  simp[venomInstTheory.no_raw_fmp_ops_def, listTheory.EVERY_MEM]
+QED
+
+Theorem invoke_input_arity_ok_compute[compute]:
+  invoke_input_arity_ok callee sig inst <=>
+    inst.inst_opcode = INVOKE /\
+    inst.inst_operands <> [] /\
+    IS_SOME (get_label (HD inst.inst_operands)) /\
+    LENGTH (TL inst.inst_operands) =
+      LENGTH (fn_user_param_insts callee) +
+        (if sig.fms_has_fmp_param then 1 else 0)
+Proof
+  Cases_on `inst.inst_operands` >>
+  simp[callLayoutDefsTheory.invoke_input_arity_ok_def] >>
+  Cases_on `h` >> simp[venomStateTheory.get_label_def]
+QED
+
+Theorem fmp_invoke_output_arity_ok_compute[compute]:
+  fmp_invoke_output_arity_ok callee sig inst <=>
+    inst.inst_opcode = INVOKE /\
+    inst.inst_operands <> [] /\
+    IS_SOME (get_label (HD inst.inst_operands)) /\
+    case fmp_expected_user_return_arity sig callee of
+      NONE => F
+    | SOME n =>
+        LENGTH inst.inst_outputs =
+          n + (if sig.fms_publishes then 1 else 0)
+Proof
+  Cases_on `inst.inst_operands` >>
+  simp[fmp_invoke_output_arity_ok_def] >>
+  Cases_on `h` >> simp[venomStateTheory.get_label_def]
+QED
+
+Definition invoke_layout_wf_exec_def:
+  invoke_layout_wf_exec ctx inst =
+    if inst.inst_opcode <> INVOKE then T
+    else if inst.inst_operands = [] then F
+    else
+      case get_label (HD inst.inst_operands) of
+        NONE => F
+      | SOME callee_name =>
+          case lookup_function callee_name ctx.ctx_functions of
+            NONE => F
+          | SOME callee =>
+              case callee.fn_fmp_signature of
+                NONE => F
+              | SOME sig =>
+                  fmp_signature_syntax_wf sig callee /\
+                  invoke_input_arity_ok callee sig inst /\
+                  fmp_invoke_output_arity_ok callee sig inst
+End
+
+Theorem invoke_layout_wf_compute[compute]:
+  invoke_layout_wf ctx inst <=> invoke_layout_wf_exec ctx inst
+Proof
+  Cases_on `inst.inst_opcode = INVOKE` >>
+  simp[invoke_layout_wf_def, invoke_layout_wf_exec_def,
+       fmp_seal_layout_matches_fn_def] >>
+  Cases_on `inst.inst_operands` >> simp[] >>
+  Cases_on `h` >> simp[venomStateTheory.get_label_def] >>
+  Cases_on `lookup_function s ctx.ctx_functions` >> simp[] >>
+  Cases_on `x.fn_fmp_signature` >> simp[]
+QED
+
+Definition publishing_invoke_wf_exec_def:
+  publishing_invoke_wf_exec ctx inst =
+    if inst.inst_opcode <> INVOKE then F
+    else if inst.inst_operands = [] then F
+    else
+      case get_label (HD inst.inst_operands) of
+        NONE => F
+      | SOME callee_name =>
+          case lookup_function callee_name ctx.ctx_functions of
+            NONE => F
+          | SOME callee =>
+              case callee.fn_fmp_signature of
+                NONE => F
+              | SOME sig =>
+                  fmp_signature_syntax_wf sig callee /\
+                  sig.fms_publishes /\
+                  invoke_input_arity_ok callee sig inst /\
+                  fmp_invoke_output_arity_ok callee sig inst
+End
+
+Theorem publishing_invoke_wf_compute[compute]:
+  publishing_invoke_wf ctx inst <=> publishing_invoke_wf_exec ctx inst
+Proof
+  Cases_on `inst.inst_opcode = INVOKE` >>
+  simp[publishing_invoke_wf_def, publishing_invoke_wf_exec_def,
+       fmp_seal_layout_matches_fn_def,
+       callLayoutDefsTheory.invoke_input_arity_ok_def] >>
+  Cases_on `inst.inst_operands` >> simp[] >>
+  Cases_on `h` >> simp[venomStateTheory.get_label_def] >>
+  Cases_on `lookup_function s ctx.ctx_functions` >> simp[] >>
+  Cases_on `x.fn_fmp_signature` >> simp[]
+QED
+
+Definition fmp_inst_roots_exec_def:
+  fmp_inst_roots_exec ctx sig fn rooted v inst =
+    case inst.inst_opcode of
+      INITIAL_FMP =>
+        fn_is_context_entry ctx fn /\
+        inst.inst_operands = [] /\ inst.inst_outputs = [v]
+    | FMP_PARAM =>
+        ~fn_is_context_entry ctx fn /\ sig.fms_has_fmp_param /\
+        LENGTH inst.inst_operands = 1 /\ inst.inst_outputs = [v]
+    | ASSIGN =>
+        (case inst.inst_operands of
+           [Var src] => inst.inst_outputs = [v] /\ rooted src
+         | _ => F)
+    | PHI =>
+        inst.inst_outputs = [v] /\
+        operand_vars inst.inst_operands <> [] /\
+        2 * LENGTH (phi_pairs inst.inst_operands) =
+          LENGTH inst.inst_operands /\
+        EVERY rooted (operand_vars inst.inst_operands)
+    | BUMP =>
+        (case inst.inst_operands of
+           [Var root_var; size_op] =>
+             (case inst.inst_outputs of
+                [old_var; new_var] =>
+                  (v = old_var \/ v = new_var) /\ rooted root_var
+              | _ => F)
+         | _ => F)
+    | ADD =>
+        LENGTH inst.inst_operands = 2 /\ inst.inst_outputs = [v] /\
+        EXISTS rooted (operand_vars inst.inst_operands)
+    | SUB =>
+        LENGTH inst.inst_operands = 2 /\ inst.inst_outputs = [v] /\
+        EXISTS rooted (operand_vars inst.inst_operands)
+    | INVOKE =>
+        publishing_invoke_wf ctx inst /\
+        inst.inst_outputs <> [] /\ v = LAST inst.inst_outputs
+    | _ => F
+End
+
+val fmp_inst_roots_opcode_tac =
+  simp[fmp_inst_roots_def, fmp_inst_roots_exec_def,
+       publishing_invoke_wf_compute, publishing_invoke_wf_exec_def];
+
+Theorem fmp_inst_roots_compute[compute]:
+  fmp_inst_roots ctx sig fn rooted v inst <=>
+  fmp_inst_roots_exec ctx sig fn rooted v inst
+Proof
+  Cases_on `inst.inst_opcode` >|
+    [(* 1-5 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 6-10 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 11-15 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 16-20 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 21-25 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 26-30 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 31-35 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 36-40 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 41-45 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 46-50 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 51-55 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 56-60 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 61-65 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 66-70 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 71-75 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 76-80 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 81-85 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 86-90 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 91-95 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     (* 96-100 *) fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac, fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac,
+     fmp_inst_roots_opcode_tac] >> (* 101 *)
+  Cases_on `inst.inst_operands` >> simp[] >>
+  Cases_on `t` >> simp[] >>
+  Cases_on `h` >> simp[] >>
+  Cases_on `t'` >> simp[] >>
+  Cases_on `inst.inst_outputs` >> simp[] >>
+  Cases_on `t` >> simp[] >>
+  Cases_on `t'` >> simp[]
+QED
+
+Definition fmp_bump_consumer_wf_exec_def:
+  fmp_bump_consumer_wf_exec ctx sig fn inst =
+    if inst.inst_opcode <> BUMP then T
+    else
+      case inst.inst_operands of
+        [Var root_var; size_op] =>
+          (case inst.inst_outputs of
+             [old_var; new_var] => fmp_value_rooted ctx sig fn root_var
+           | _ => F)
+      | _ => F
+End
+
+Theorem fmp_bump_consumer_wf_compute[compute]:
+  fmp_bump_consumer_wf ctx sig fn inst <=>
+  fmp_bump_consumer_wf_exec ctx sig fn inst
+Proof
+  Cases_on `inst.inst_opcode = BUMP` >>
+  simp[fmp_bump_consumer_wf_def, fmp_bump_consumer_wf_exec_def] >>
+  Cases_on `inst.inst_operands` >> simp[] >>
+  Cases_on `t` >> simp[] >>
+  Cases_on `h` >> simp[] >>
+  Cases_on `t'` >> simp[] >>
+  Cases_on `inst.inst_outputs` >> simp[] >>
+  Cases_on `t` >> simp[] >>
+  Cases_on `t'` >> simp[]
+QED
+
+Definition fmp_invoke_consumer_wf_exec_def:
+  fmp_invoke_consumer_wf_exec ctx caller_sig fn inst =
+    if inst.inst_opcode <> INVOKE then T
+    else if inst.inst_operands = [] then F
+    else
+      case get_label (HD inst.inst_operands) of
+        NONE => F
+      | SOME callee_name =>
+          case lookup_function callee_name ctx.ctx_functions of
+            NONE => F
+          | SOME callee =>
+              case callee.fn_fmp_signature of
+                NONE => F
+              | SOME callee_sig =>
+                  fmp_signature_syntax_wf callee_sig callee /\
+                  invoke_input_arity_ok callee callee_sig inst /\
+                  fmp_invoke_output_arity_ok callee callee_sig inst /\
+                  (if callee_sig.fms_has_fmp_param then
+                     case operand_var
+                       (EL (LENGTH (fn_user_param_insts callee))
+                         (TL inst.inst_operands)) of
+                       NONE => F
+                     | SOME hidden =>
+                         fmp_value_rooted ctx caller_sig fn hidden
+                   else T)
+End
+
+Theorem fmp_invoke_consumer_wf_compute[compute]:
+  fmp_invoke_consumer_wf ctx caller_sig fn inst <=>
+  fmp_invoke_consumer_wf_exec ctx caller_sig fn inst
+Proof
+  Cases_on `inst.inst_opcode = INVOKE` >>
+  simp[fmp_invoke_consumer_wf_def, fmp_invoke_consumer_wf_exec_def,
+       fmp_seal_layout_matches_fn_def] >>
+  Cases_on `inst.inst_operands` >> simp[] >>
+  Cases_on `h` >> simp[venomStateTheory.get_label_def] >>
+  Cases_on `lookup_function s ctx.ctx_functions` >> simp[] >>
+  Cases_on `x.fn_fmp_signature` >> simp[] >>
+  Cases_on `x'.fms_has_fmp_param` >> simp[] >>
+  Cases_on `EL (LENGTH (fn_user_param_insts x)) t` >>
+  simp[venomInstTheory.operand_var_def]
+QED
+
+Definition fmp_return_consumer_wf_exec_def:
+  fmp_return_consumer_wf_exec ctx sig fn inst =
+    if inst.inst_opcode <> RET \/ ~sig.fms_publishes then T
+    else
+      case fmp_expected_user_return_arity sig fn of
+        NONE => F
+      | SOME n =>
+          lowered_return_inst_layout_wf T n inst /\
+          case operand_var (EL n inst.inst_operands) of
+            NONE => F
+          | SOME adopted => fmp_value_rooted ctx sig fn adopted
+End
+
+Theorem fmp_return_consumer_wf_compute[compute]:
+  fmp_return_consumer_wf ctx sig fn inst <=>
+  fmp_return_consumer_wf_exec ctx sig fn inst
+Proof
+  Cases_on `inst.inst_opcode = RET` >>
+  Cases_on `sig.fms_publishes` >>
+  simp[fmp_return_consumer_wf_def, fmp_return_consumer_wf_exec_def] >>
+  Cases_on `fmp_expected_user_return_arity sig fn` >> simp[] >>
+  Cases_on `operand_var (EL x inst.inst_operands)` >> simp[]
+QED
+
+Theorem fmp_lowered_context_wf_compute[compute]:
+  fmp_lowered_context_wf ctx <=>
+    concretized_static_layouts_wf ctx /\
+    EVERY
+      (λfn. IS_SOME fn.fn_eom /\
+            no_raw_fmp_ops fn /\
+            call_abi_matches_fn fn /\
+            fmp_signature_matches_fn ctx fn)
+      ctx.ctx_functions /\
+    EVERY (λfn. EVERY (invoke_layout_wf ctx) (fn_insts fn))
+      ctx.ctx_functions
+Proof
+  simp[fmp_lowered_context_wf_def, listTheory.EVERY_MEM] >>
+  metis_tac[]
+QED
+
 val _ = export_theory();
