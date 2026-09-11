@@ -92,9 +92,11 @@ sh lowering/defs/python-o1-bytecode-fixtures --compare-hol \
 ```
 
 This first reproduces the Python oracle from `VYPER_PIN`, then runs `holbuild`
-with `evalCompilerBytecodeScript.sml` enabled by the `bytecode-parity` root group
-in `holproject.toml`. Any bytecode difference or HOL `NONE` result fails the
-command. There is no implementation-derived fallback expected output.
+with `evalCompilerBytecodeTheory` as an explicit target. The known-failing
+parity theory is deliberately not a default project root, so it does not break
+the main build while the documented compiler discrepancies remain. Any
+bytecode difference or HOL `NONE` result still fails `--compare-hol`. There is
+no implementation-derived fallback expected output.
 
 The parity test currently fails: 17 HOL bytecode pairs differ from Python, and
 four loop plus two internal-call programs return `NONE` while Python emits

@@ -140,7 +140,8 @@ case "$mode" in
     ;;
   compare)
     echo "Python oracle reproduced; running fresh HOL bytecode parity evaluation"
-    (cd "$repo_dir" && holbuild --tactic-timeout "${HOL_PARITY_TACTIC_TIMEOUT:-600}")
+    (cd "$repo_dir" && holbuild --tactic-timeout "${HOL_PARITY_TACTIC_TIMEOUT:-600}" \
+      evalCompilerBytecodeTheory)
     echo "all 23 HOL evaluations match the pinned Python O1/no-assembly-opt oracle"
     ;;
 esac
