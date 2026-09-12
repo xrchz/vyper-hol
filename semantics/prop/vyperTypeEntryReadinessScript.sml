@@ -139,8 +139,8 @@ End
  * machine state by evaluate_defaults. *)
 Theorem evaluate_defaults_success_values_typed:
   well_typed_exprs env es /\
-  env_consistent env cx (initial_state am []) /\
-  state_well_typed (initial_state am []) /\
+  env_consistent env cx (initial_state am [FEMPTY]) /\
+  state_well_typed (initial_state am [FEMPTY]) /\
   context_well_typed cx /\
   accounts_well_typed am.accounts /\
   functions_well_typed cx /\
@@ -155,8 +155,8 @@ Proof
   >- simp[evaluate_defaults_def] >>
   gen_tac >> rpt strip_tac >>
   gvs[well_typed_expr_def, evaluate_defaults_def, AllCaseEqs()] >>
-  Cases_on `eval_expr cx h (initial_state am [])` >> gvs[] >>
-  `accounts_well_typed (initial_state am []).accounts` by
+  Cases_on `eval_expr cx h (initial_state am [FEMPTY])` >> gvs[] >>
+  `accounts_well_typed (initial_state am [FEMPTY]).accounts` by
     simp[initial_state_def] >>
   `call_evaluation_safe cx (int_calls_expr h)` by metis_tac[] >>
   drule_all (cj 8 eval_all_type_sound_mutual) >>
@@ -180,8 +180,8 @@ Theorem checked_defaults_ready_values_typed:
   checked_defaults_ready cx am args dflts vals /\
   well_typed_exprs env
     (DROP (LENGTH dflts - (LENGTH args - LENGTH vals)) dflts) /\
-  env_consistent env cx (initial_state am []) /\
-  state_well_typed (initial_state am []) /\
+  env_consistent env cx (initial_state am [FEMPTY]) /\
+  state_well_typed (initial_state am [FEMPTY]) /\
   context_well_typed cx /\
   accounts_well_typed am.accounts /\
   functions_well_typed cx /\
@@ -268,8 +268,8 @@ Theorem checked_call_inputs_ready_bind_arguments:
   env.type_defs = tenv /\
   well_typed_exprs env
     (DROP (LENGTH dflts - (LENGTH params - LENGTH vals)) dflts) /\
-  env_consistent env cx (initial_state am []) /\
-  state_well_typed (initial_state am []) /\
+  env_consistent env cx (initial_state am [FEMPTY]) /\
+  state_well_typed (initial_state am [FEMPTY]) /\
   context_well_typed cx /\
   accounts_well_typed am.accounts /\
   functions_well_typed cx /\
