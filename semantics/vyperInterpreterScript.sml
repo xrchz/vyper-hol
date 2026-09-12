@@ -1641,7 +1641,7 @@ val () = send_call_value_def
 Definition evaluate_defaults_def:
   evaluate_defaults cx am [] = SOME [] ∧
   evaluate_defaults cx am (e::es) =
-    (case FST $ eval_expr cx e (initial_state am []) of
+    (case FST $ eval_expr cx e (initial_state am [FEMPTY]) of
      | INL (Value v) =>
          (case evaluate_defaults cx am es of
           | SOME vs => SOME (v :: vs)
