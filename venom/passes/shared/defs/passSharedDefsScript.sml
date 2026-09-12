@@ -329,3 +329,72 @@ Definition single_use_form_def:
   single_use_form fn <=>
     !v. SUM (MAP (var_use_count_block v) fn.fn_blocks) <= 1
 End
+
+(* The finite universe needed to execute single_use_form.  Duplicates do not
+ * matter to EVERY and retaining them avoids an unnecessary set conversion. *)
+Definition fn_used_vars_def:
+  fn_used_vars fn = FLAT (MAP inst_uses (fn_insts fn))
+End
+
+Theorem MEM_operand_vars_eq_Var:
+  !ops v. MEM v (operand_vars ops) <=> MEM (Var v) ops
+Proof
+  Induct >> simp[operand_vars_def] >>
+  rpt gen_tac >> Cases_on `h` >>
+  simp[operand_var_def, operand_vars_def]
+QED
+
+Theorem MEM_fn_used_vars:
+  MEM v (fn_used_vars fn) <=>
+  ?inst. MEM inst (fn_insts fn) /\ MEM (Var v) inst.inst_operands
+Proof
+  simp[fn_used_vars_def, inst_uses_def, listTheory.MEM_FLAT,
+       listTheory.MEM_MAP, MEM_operand_vars_eq_Var, PULL_EXISTS]
+QED
+
+Triviality sum_var_use_count_block_eq:
+  !v bbs.
+    SUM (MAP (var_use_count_block v) bbs) =
+    LENGTH
+      (FILTER
+        (λinst. ~sue_count_exempt inst.inst_opcode /\
+                MEM (Var v) inst.inst_operands)
+        (fn_insts_blocks bbs))
+Proof
+  gen_tac >> Induct_on `bbs` >>
+  simp[fn_insts_blocks_def, var_use_count_block_def,
+       listTheory.FILTER_APPEND_DISTRIB]
+QED
+
+Triviality var_use_count_not_in_fn_used_vars:
+  !fn v.
+    ~MEM v (fn_used_vars fn) ==>
+    SUM (MAP (var_use_count_block v) fn.fn_blocks) = 0
+Proof
+  rpt strip_tac >>
+  `FILTER
+     (λinst. ~sue_count_exempt inst.inst_opcode /\
+             MEM (Var v) inst.inst_operands)
+     (fn_insts_blocks fn.fn_blocks) = []` by
+    (simp[listTheory.FILTER_EQ_NIL, listTheory.EVERY_MEM] >>
+     rpt strip_tac >>
+     fs[MEM_fn_used_vars, fn_insts_def] >>
+     metis_tac[]) >>
+  simp[sum_var_use_count_block_eq]
+QED
+
+Theorem single_use_form_compute[compute]:
+  single_use_form fn <=>
+    EVERY
+      (λv. SUM (MAP (var_use_count_block v) fn.fn_blocks) <= 1)
+      (fn_used_vars fn)
+Proof
+  rw[single_use_form_def, listTheory.EVERY_MEM] >>
+  eq_tac
+  >- simp[]
+  >- (rpt strip_tac >>
+      Cases_on `MEM v (fn_used_vars fn)`
+      >- (qpat_x_assum `!x. MEM x (fn_used_vars fn) ==> _`
+            (qspec_then `v` mp_tac) >> simp[])
+      >- (drule var_use_count_not_in_fn_used_vars >> simp[]))
+QED

@@ -24,6 +24,37 @@ Definition no_dret_def:
     !inst. MEM inst (fn_insts fn) ==> inst.inst_opcode <> DRET
 End
 
+(* Executable views for the pass guards. *)
+Theorem dret_value_operand_compute[compute]:
+  dret_value_operand op <=>
+    case op of
+      Lit w => T
+    | Var v => T
+    | Label lbl => F
+Proof
+  Cases_on `op` >> simp[dret_value_operand_def]
+QED
+
+Theorem dret_desugar_input_compute[compute]:
+  dret_desugar_input fn <=>
+    fn.fn_fmp_signature = NONE /\
+    EVERY
+      (λinst. inst.inst_opcode = DRET ==>
+              IS_SOME (parse_dret_shape inst) /\
+              EVERY dret_value_operand inst.inst_operands)
+      (fn_insts fn)
+Proof
+  simp[dret_desugar_input_def, listTheory.EVERY_MEM] >>
+  metis_tac[]
+QED
+
+Theorem no_dret_compute[compute]:
+  no_dret fn <=>
+    EVERY (λinst. inst.inst_opcode <> DRET) (fn_insts fn)
+Proof
+  simp[no_dret_def, listTheory.EVERY_MEM]
+QED
+
 Definition map_functions_supply_def:
   map_functions_supply f s [] = SOME ([],s) /\
   map_functions_supply f s (fn::fns) =

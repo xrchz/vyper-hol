@@ -1,0 +1,11 @@
+# Runtime dependencies for reproducible Vyper cd74ce4 O1 oracle generation.
+cbor2==5.9.0
+immutables==0.21
+lark==1.1.9
+packaging==26.3
+pycryptodome==3.23.0
+wheel==0.48.0
+
+# PEP 517 build environment.
+setuptools==80.10.2
+setuptools-scm==7.1.0

@@ -90,6 +90,90 @@ Definition concretize_layout_wf_def:
         SOME layout.cl_eom
 End
 
+(* Executable views of the finite-map and finite-list specifications above. *)
+Definition lit_static_position_def:
+  lit_static_position reserved pos ops =
+    (LENGTH ops = 1 /\
+     case operand_lit_value (HD ops) of
+       NONE => F
+     | SOME sz => static_position_wf reserved pos sz)
+End
+
+Theorem lit_static_position_exists:
+  lit_static_position reserved pos ops <=>
+    ?sz. ops = [Lit sz] /\ static_position_wf reserved pos sz
+Proof
+  Cases_on `ops` >> simp[lit_static_position_def] >>
+  Cases_on `h` >> simp[operand_lit_value_def] >>
+  Cases_on `t` >> simp[]
+QED
+
+Theorem forced_positions_wf_compute[compute]:
+  forced_positions_wf reserved fn <=>
+    FEVERY
+      (λ(aid,pos).
+        EXISTS
+          (λinst.
+            inst.inst_id = aid /\
+            inst.inst_opcode = ALLOCA /\
+            lit_static_position reserved pos inst.inst_operands)
+          (fn_insts fn))
+      fn.fn_forced_alloc_positions
+Proof
+  simp[forced_positions_wf_def, finite_mapTheory.FEVERY_DEF,
+       finite_mapTheory.FLOOKUP_DEF, listTheory.EXISTS_MEM,
+       lit_static_position_exists, PULL_EXISTS]
+QED
+
+Theorem static_fn_positions_wf_compute[compute]:
+  static_fn_positions_wf reserved positions fn <=>
+    FEVERY
+      (λ(key,pos).
+        case key of
+          Allocation aid =>
+            EXISTS
+              (λinst.
+                inst.inst_id = aid /\
+                inst.inst_opcode = ALLOCA /\
+                lit_static_position reserved pos inst.inst_operands)
+              (fn_insts fn))
+      positions
+Proof
+  simp[static_fn_positions_wf_def, finite_mapTheory.FEVERY_DEF,
+       finite_mapTheory.FLOOKUP_DEF, listTheory.EXISTS_MEM,
+       lit_static_position_exists, PULL_EXISTS] >>
+  eq_tac
+  >- (rpt strip_tac >> Cases_on `x` >> gvs[])
+  >- (rpt strip_tac >>
+      first_x_assum (qspec_then `Allocation aid` mp_tac) >>
+      simp[])
+QED
+
+Theorem raw_static_inputs_wf_compute[compute]:
+  raw_static_inputs_wf ctx <=>
+    reserved_intervals_wf ctx.ctx_global_reserved /\
+    ctx_inst_ids_distinct ctx /\
+    EVERY
+      (λfn. fn.fn_eom = NONE /\
+            fn.fn_fmp_signature = NONE /\
+            forced_positions_wf ctx.ctx_global_reserved fn)
+      ctx.ctx_functions
+Proof
+  simp[raw_static_inputs_wf_def, listTheory.EVERY_MEM]
+QED
+
+Theorem concretized_static_layouts_wf_compute[compute]:
+  concretized_static_layouts_wf ctx <=>
+    reserved_intervals_wf ctx.ctx_global_reserved /\
+    EVERY
+      (λfn. fn.fn_forced_alloc_positions = FEMPTY /\
+            IS_SOME fn.fn_eom /\
+            EVERY (λinst. inst.inst_opcode <> ALLOCA) (fn_insts fn))
+      ctx.ctx_functions
+Proof
+  simp[concretized_static_layouts_wf_def, listTheory.EVERY_MEM]
+QED
+
 Theorem static_wf_dimindex_256[local,simp]:
   dimindex (:256) = 256
 Proof

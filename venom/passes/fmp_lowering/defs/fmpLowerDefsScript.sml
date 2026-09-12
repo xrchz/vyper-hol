@@ -135,6 +135,15 @@ Definition fmp_reclaim_input_def:
       fmp_point_well_located fn p
 End
 
+Theorem fmp_reclaim_input_compute[compute]:
+  fmp_reclaim_input fn plan <=>
+    FEVERY (λ(p,base). fmp_point_well_located fn p) plan
+Proof
+  simp[fmp_reclaim_input_def, finite_mapTheory.FEVERY_DEF,
+       finite_mapTheory.FLOOKUP_DEF] >>
+  metis_tac[]
+QED
+
 (* Lower one checked instruction.  Single-instruction rewrites retain the
    source ID; a DALLOCA expansion obtains every temporary and instruction ID
    from the unit supply. *)

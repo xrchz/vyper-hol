@@ -10,7 +10,8 @@ Theory venomPassDispatcher
 Ancestors
   venomPassSchedule fcgDefs lowerDloadDefs irSupply
   makeSsaCurrentDefs singleUseExpansionDefs cfgNormDefs
-  simplifyCfgDefs dftDefs dretDesugarDefs concretizeMemLocDefs fmpLowerDefs
+  simplifyCfgDefs simplifyCfgCompute dftDefs dretDesugarDefs
+  concretizeMemLocDefs fmpLowerDefs
 Datatype:
   fn_pass_output = <|
     fpo_function : ir_function;

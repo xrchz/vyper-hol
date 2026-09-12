@@ -81,6 +81,18 @@ Definition cfg_is_normalized_def:
          LENGTH (cfg_succs_of cfg pred) <= 1)
 End
 
+Theorem cfg_is_normalized_compute[compute]:
+  cfg_is_normalized cfg fn <=>
+    EVERY
+      (λbb.
+        LENGTH (cfg_preds_of cfg bb.bb_label) <= 1 \/
+        EVERY (λpred. LENGTH (cfg_succs_of cfg pred) <= 1)
+          (cfg_preds_of cfg bb.bb_label))
+      fn.fn_blocks
+Proof
+  simp[cfg_is_normalized_def, listTheory.EVERY_MEM]
+QED
+
 (* ==========================================================================
    Successor / predecessor map construction
    ========================================================================== *)

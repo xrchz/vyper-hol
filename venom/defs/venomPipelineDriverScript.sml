@@ -15,6 +15,7 @@ Ancestors
   staticLayoutWf
   fmpWfDefs
   stackPlanGen
+  codegenReadyCompute
   venomTargetSafety
 Definition pipeline_stage_tags_def:
   (pipeline_stage_tags [] = []) /\
