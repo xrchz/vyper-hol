@@ -541,6 +541,22 @@ Proof
   simp[machine_well_typed_def]
 QED
 
+Theorem simple_deploy_send_success_preserves_machine_well_typed:
+  machine_well_typed am_c /\
+  send_call_value Payable cx (initial_state am_c []) = (INL (),st) ==>
+  machine_well_typed
+    (abstract_machine_from_state am_c.sources am_c.exports am_c.layouts st)
+Proof
+  strip_tac >>
+  `accounts_well_typed (initial_state am_c []).accounts` by
+    gvs[machine_well_typed_def, initial_state_def] >>
+  drule_all send_call_value_accounts_well_typed_c53 >> strip_tac >>
+  imp_res_tac send_call_value_preserves_immutables >>
+  imp_res_tac send_call_value_preserves_scopes_c53 >>
+  gvs[machine_well_typed_def, abstract_machine_from_state_def,
+      state_well_typed_def, initial_state_def]
+QED
+
 Theorem load_contract_establishes_machine_well_typed:
   machine_well_typed am /\
   check_contract T am.layouts tx.target mods = SOME deploy_art /\
@@ -561,7 +577,35 @@ Theorem load_contract_establishes_machine_well_typed:
   machine_well_typed am_deployed
 Proof
   strip_tac >>
-  drule load_contract_success_cases >> strip_tac >> gvs[] >>
+  drule load_contract_success_cases >> strip_tac
+  >- (gvs[] >>
+      `machine_well_typed
+         (am with <|immutables updated_by CONS (tx.target,imms);
+                    exports updated_by CONS (tx.target,exps)|>)` by
+        (irule deployment_initial_machine_well_typed >> simp[] >>
+         qexists `mods` >> simp[]) >>
+      `?am_c'.
+         evaluate_all_constants
+           (initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE with in_deploy := T)
+           (am with <|immutables updated_by CONS (tx.target,imms);
+                      exports updated_by CONS (tx.target,exps)|>)
+           tx.target mods = SOME am_c' /\
+         machine_well_typed am_c' /\
+         deployment_constants_output_typed
+           (get_tenv (initial_evaluation_context
+             ((tx.target,mods)::am.sources) am.layouts tx NONE with
+             in_deploy := T)) tx.target mods am_c'` by
+        (irule checked_deployment_constants_establish_machine_well_typed >>
+         simp[]) >>
+      `machine_well_typed am_c` by gvs[] >>
+      irule deployment_source_install_preserves_machine_well_typed >>
+      irule simple_deploy_send_success_preserves_machine_well_typed >>
+      (conj_tac >- simp[]) >>
+      qexists `initial_evaluation_context ((tx.target,mods)::am.sources)
+                 am.layouts tx NONE with in_deploy := T` >>
+      simp[]) >>
+  gvs[] >>
   `machine_well_typed
      (am with <|immutables updated_by CONS (tx.target,imms);
                 exports updated_by CONS (tx.target,exps)|>)` by

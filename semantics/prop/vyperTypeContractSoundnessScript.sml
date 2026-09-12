@@ -890,7 +890,7 @@ Proof
   simp[]
 QED
 
-Theorem send_call_value_preserves_immutables[local]:
+Theorem send_call_value_preserves_immutables:
   send_call_value mut cx st = (res,st') ==>
   st'.immutables = st.immutables
 Proof
@@ -992,7 +992,7 @@ Proof
   metis_tac[transfer_value_no_type_error_c53]
 QED
 
-Theorem send_call_value_preserves_scopes_c53[local]:
+Theorem send_call_value_preserves_scopes_c53:
   send_call_value mut cx st = (res,st') ==>
   st'.scopes = st.scopes
 Proof
