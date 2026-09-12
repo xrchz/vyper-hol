@@ -1965,9 +1965,20 @@ Theorem load_contract_deployed_bare_globals_immutables_ready_clause[local]:
       ty = SOME tv
 Proof
   rw[] >>
-  drule load_contract_success_constructor_constants_context >>
+  Cases_on `lookup_function NONE deploy_tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])`
+  >- (drule_all load_contract_success_no_constructor >> strip_tac >>
+      drule send_call_value_preserves_immutables >> strip_tac >>
+      drule evaluate_all_constants_preserves_layouts >> strip_tac >>
+      gvs[abstract_machine_from_state_def, initial_state_def,
+          get_tenv_def, initial_evaluation_context_def] >>
+      irule deploy_context_constants_bare_globals_type_ready >>
+      qexistsl [`am`, `am_c`, `call_art`, `deploy_tx`, `exps`, `id`, `imms`, `src`, `v`] >>
+      gvs[initial_evaluation_context_def])
+  >> drule load_contract_success_constructor_constants_context >>
+  (impl_tac >- simp[]) >>
   strip_tac >>
-  gvs[] >>
+  gvs[IS_SOME_EXISTS] >>
   gvs[get_tenv_def, initial_evaluation_context_def] >>
   irule load_contract_constructor_context_bare_global_type_from_constants >>
   gvs[initial_evaluation_context_def] >>
