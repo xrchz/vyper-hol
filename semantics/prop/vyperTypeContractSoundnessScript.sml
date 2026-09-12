@@ -2020,9 +2020,8 @@ Theorem deployed_toplevel_vtypes_immutables_ready_clause[local]:
          ty = SOME tv)
 Proof
   rw[] >>
-  drule load_contract_success_cases >> strip_tac >> gvs[] >>
-  `ALOOKUP ((deploy_tx.target,mods)::am_ctor.sources) call_tx.target = SOME mods` by
-    simp[] >>
+  `ALOOKUP am_deployed.sources call_tx.target = SOME mods` by
+    (drule load_contract_success_sources >> gvs[]) >>
   `(!src id vt.
       FLOOKUP call_art.cta_toplevel_vtypes (src,id) = SOME vt ==>
       well_formed_vtype (type_env_all_modules mods) vt) /\
@@ -2031,24 +2030,24 @@ Proof
       FLOOKUP call_art.cta_bare_globals (src,id) = NONE ==>
       ?ts is_transient typ id_str.
         get_module_code
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) src = SOME ts /\
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) src = SOME ts /\
         find_var_decl_by_num id ts = SOME (StorageVarDecl is_transient typ,id_str) /\
         typ = ty /\
         IS_SOME (evaluate_type (type_env_all_modules mods) typ) /\
         IS_SOME (lookup_var_slot_from_layout
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) is_transient src id_str)) /\
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) is_transient src id_str)) /\
     (!src id kt vt.
       FLOOKUP call_art.cta_toplevel_vtypes (src,id) = SOME (HashMapT kt vt) ==>
       ?ts is_transient id_str.
         get_module_code
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) src = SOME ts /\
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) src = SOME ts /\
         find_var_decl_by_num id ts = SOME (HashMapVarDecl is_transient kt vt,id_str) /\
         IS_SOME (lookup_var_slot_from_layout
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) is_transient src id_str))` by
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) is_transient src id_str))` by
     (irule check_contract_toplevel_vtypes_consistent_initial >> simp[]) >>
   rpt conj_tac
   >- (Cases_on `FLOOKUP call_art.cta_bare_globals (src,id)` >> gvs[]
@@ -2058,7 +2057,7 @@ Proof
             rw[] >> gvs[get_module_code_def, initial_evaluation_context_def]) >>
       rename1 `FLOOKUP call_art.cta_bare_globals (src,id) = SOME bare_ty` >>
       drule check_contract_bare_globals_consistent_initial >>
-      disch_then (qspecl_then [`call_tx`,`(deploy_tx.target,mods)::am_ctor.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
+      disch_then (qspecl_then [`call_tx`,`am_deployed.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
       simp[get_module_code_def, initial_evaluation_context_def] >>
       rw[] >> gvs[get_module_code_def, initial_evaluation_context_def])
   >- (rpt strip_tac >>
@@ -2069,7 +2068,7 @@ Proof
             rw[] >> gvs[get_module_code_def, initial_evaluation_context_def]) >>
       rename1 `FLOOKUP call_art.cta_bare_globals (src,id) = SOME bare_ty` >>
       drule check_contract_bare_globals_consistent_initial >>
-      disch_then (qspecl_then [`call_tx`,`(deploy_tx.target,mods)::am_ctor.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
+      disch_then (qspecl_then [`call_tx`,`am_deployed.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
       simp[get_module_code_def, initial_evaluation_context_def] >>
       rw[] >> gvs[get_module_code_def, initial_evaluation_context_def])
   >> rpt strip_tac >>
@@ -2081,7 +2080,7 @@ Proof
      rename1 `FLOOKUP call_art.cta_bare_globals (src,id) = SOME bare_ty` >>
      `bare_ty = ty` by
        (drule check_contract_bare_globals_consistent_initial >>
-        disch_then (qspecl_then [`call_tx`,`(deploy_tx.target,mods)::am_ctor.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
+        disch_then (qspecl_then [`call_tx`,`am_deployed.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
         simp[get_module_code_def, initial_evaluation_context_def] >>
         rw[] >> gvs[get_module_code_def, initial_evaluation_context_def]) >>
      gvs[] >>
