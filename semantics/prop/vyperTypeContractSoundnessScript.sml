@@ -141,37 +141,91 @@ QED
 
 Theorem load_contract_success_cases:
   load_contract am tx mods exps = INL am_deployed ==>
+  ?imms ts.
+    initial_immutables (type_env_all_modules mods) mods = SOME imms /\
+    ts = (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) /\
+    ((lookup_function NONE tx.function_name Deploy ts = NONE /\
+      tx.args = [] /\
+      ?am_c st.
+        evaluate_all_constants
+          ((initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE) with in_deploy := T)
+          (am with <|immutables updated_by CONS (tx.target,imms);
+                    exports updated_by CONS (tx.target,exps)|>)
+          tx.target mods = SOME am_c /\
+        send_call_value Payable
+          ((initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE) with in_deploy := T)
+          (initial_state am_c []) = (INL (),st) /\
+        am_deployed =
+          (abstract_machine_from_state am_c.sources am_c.exports am_c.layouts st
+             with sources updated_by CONS (tx.target,mods))) \/
+     (?mut nr args dflts ret body v am_ctor.
+        lookup_function NONE tx.function_name Deploy ts =
+          SOME (mut,nr,args,dflts,ret,body) /\
+        call_external_function
+          (am with <|immutables updated_by CONS (tx.target,imms);
+                     exports updated_by CONS (tx.target,exps)|>)
+          ((initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE) with in_deploy := T)
+          nr mut ts mods args dflts tx.args body ret = (INL v,am_ctor) /\
+        am_deployed = am_ctor with sources updated_by CONS (tx.target,mods)))
+Proof
+  rw[load_contract_def] >>
+  gvs[AllCaseEqs(), PULL_EXISTS] >>
+  metis_tac[]
+QED
+
+Theorem load_contract_success_no_constructor:
+  load_contract am tx mods exps = INL am_deployed /\
+  lookup_function NONE tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) = NONE ==>
+  ?imms am_c st.
+    initial_immutables (type_env_all_modules mods) mods = SOME imms /\
+    tx.args = [] /\
+    evaluate_all_constants
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (am with <|immutables updated_by CONS (tx.target,imms);
+                exports updated_by CONS (tx.target,exps)|>)
+      tx.target mods = SOME am_c /\
+    send_call_value Payable
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (initial_state am_c []) = (INL (),st) /\
+    am_deployed =
+      (abstract_machine_from_state am_c.sources am_c.exports am_c.layouts st
+         with sources updated_by CONS (tx.target,mods))
+Proof
+  rw[] >> drule load_contract_success_cases >> strip_tac >> gvs[]
+QED
+
+Theorem load_contract_success_constructor_cases:
+  load_contract am tx mods exps = INL am_deployed /\
+  IS_SOME (lookup_function NONE tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])) ==>
   ?imms ts mut nr args dflts ret body v am_ctor.
     initial_immutables (type_env_all_modules mods) mods = SOME imms /\
     ts = (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) /\
     lookup_function NONE tx.function_name Deploy ts =
       SOME (mut,nr,args,dflts,ret,body) /\
     call_external_function
-      (am with <| immutables updated_by CONS (tx.target,imms);
-                 exports updated_by CONS (tx.target,exps) |>)
+      (am with <|immutables updated_by CONS (tx.target,imms);
+                 exports updated_by CONS (tx.target,exps)|>)
       ((initial_evaluation_context ((tx.target,mods)::am.sources)
           am.layouts tx NONE) with in_deploy := T)
-      nr mut ts mods args dflts tx.args body ret = (INL v, am_ctor) /\
+      nr mut ts mods args dflts tx.args body ret = (INL v,am_ctor) /\
     am_deployed = am_ctor with sources updated_by CONS (tx.target,mods)
 Proof
-  rw[load_contract_def] >>
-  Cases_on `initial_immutables (type_env_all_modules mods) mods` >> gvs[] >>
-  Cases_on `lookup_function NONE tx.function_name Deploy
-              (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])` >> gvs[] >>
-  Cases_on `x'` >> gvs[] >>
-  Cases_on `r` >> gvs[] >>
-  Cases_on `r''` >> gvs[] >>
-  Cases_on `r` >> gvs[] >>
-  Cases_on `r''` >> gvs[] >>
-  Cases_on `call_external_function
-      (am with <|immutables updated_by CONS (tx.target,x);
-                exports updated_by CONS (tx.target,exps)|>)
-      ((initial_evaluation_context ((tx.target,mods)::am.sources) am.layouts tx NONE)
-         with in_deploy := T)
-      q' q (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) mods q'' q''' tx.args r q''''` >>
-  gvs[] >>
-  Cases_on `q'''''` >> gvs[] >>
-  qexists `a` >> simp[]
+  rw[] >> drule load_contract_success_cases >> strip_tac >> gvs[IS_SOME_EXISTS]
+QED
+
+Theorem load_contract_success_sources:
+  load_contract am tx mods exps = INL am_deployed ==>
+  ALOOKUP am_deployed.sources tx.target = SOME mods
+Proof
+  rw[] >> drule load_contract_success_cases >> strip_tac >>
+  gvs[abstract_machine_from_state_def]
 QED
 
 Theorem call_external_function_deploy_success_evaluate_all_constants[local]:
@@ -1798,7 +1852,9 @@ Proof
 QED
 
 Theorem load_contract_success_constructor_constants_context:
-  load_contract am deploy_tx mods exps = INL am_deployed ==>
+  load_contract am deploy_tx mods exps = INL am_deployed /\
+  IS_SOME (lookup_function NONE deploy_tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])) ==>
   ?imms ts mut nr args dflts ret body v am_ctor am_c.
     initial_immutables (type_env_all_modules mods) mods = SOME imms /\
     ts = (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) /\
@@ -1817,7 +1873,7 @@ Theorem load_contract_success_constructor_constants_context:
     am_deployed = am_ctor with sources updated_by CONS (deploy_tx.target,mods)
 Proof
   rw[] >>
-  drule load_contract_success_cases >> strip_tac >> gvs[] >>
+  drule load_contract_success_constructor_cases >> strip_tac >> gvs[] >>
   qspecl_then
     [`am with <|immutables updated_by CONS (deploy_tx.target,imms);
                 exports updated_by CONS (deploy_tx.target,exps)|>`,
