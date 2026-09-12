@@ -2146,7 +2146,18 @@ Theorem load_contract_deployed_bare_globals_immutables_ready_exists_clause[local
         (case ALOOKUP am_deployed.immutables call_tx.target of SOME m => m | NONE => [])) id)
 Proof
   rw[] >>
-  drule load_contract_success_constructor_constants_context >>
+  Cases_on `lookup_function NONE deploy_tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])`
+  >- (drule_all load_contract_success_no_constructor >> strip_tac >>
+      drule send_call_value_preserves_immutables >> strip_tac >>
+      drule evaluate_all_constants_preserves_layouts >> strip_tac >>
+      gvs[abstract_machine_from_state_def, initial_state_def] >>
+      simp[IS_SOME_EXISTS, EXISTS_PROD] >>
+      irule deploy_context_constants_bare_globals_lookup_exists >>
+      qexistsl [`am`,`call_art`,`exps`,`imms`,`mods`,`ty`] >>
+      gvs[initial_evaluation_context_def])
+  >> drule load_contract_success_constructor_constants_context >>
+  (impl_tac >- simp[]) >>
   strip_tac >>
   gvs[] >>
   qspecl_then [`(initial_evaluation_context ((deploy_tx.target,mods)::am.sources) am.layouts deploy_tx NONE with in_deploy := T)`,
