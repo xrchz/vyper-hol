@@ -1772,8 +1772,11 @@ End
    deployment installs Vyper sources and exports rather than init/runtime
    bytecode.  Creator/created-account nonce updates and bytecode installation
    therefore belong to the future correspondence with Verifereum's EVM creation
-   semantics.  Constructor value transfer, however, is performed by
-   call_external_function and retained on success (or rolled back on failure). *)
+   semantics.  Deployment value transfer is retained on success (or rolled
+   back on failure).  With an explicit constructor it is performed by
+   call_external_function.  Without one, structured constructor arguments are
+   rejected, constants are still evaluated, and value transfer follows the
+   upstream compiler's payable simple-deploy path. *)
 Definition load_contract_def:
   load_contract am tx mods exps =
   let addr = tx.target in
@@ -1784,11 +1787,21 @@ Definition load_contract_def:
   | SOME imms =>
   let am = am with <| immutables updated_by CONS (addr, imms);
                       exports updated_by CONS (addr, exps) |> in
+  let cx = (initial_evaluation_context ((addr,mods)::am.sources) am.layouts tx NONE)
+             with in_deploy := T in
   case lookup_function NONE tx.function_name Deploy ts of
-     | NONE => INR $ Error (RuntimeError "no constructor")
+     | NONE =>
+       if tx.args <> [] then INR $ Error (RuntimeError "call args length") else
+       (case evaluate_all_constants cx am addr mods of
+        | NONE => INR $ Error (RuntimeError "call constants_env")
+        | SOME am_c =>
+          case send_call_value Payable cx (initial_state am_c []) of
+          | (INR e, _) => INR e
+          | (INL (), st) =>
+              INL ((abstract_machine_from_state am_c.sources am_c.exports
+                       am_c.layouts st) with
+                     sources updated_by CONS (addr, mods)))
      | SOME (mut, nr, args, dflts, ret, body) =>
-       let cx = (initial_evaluation_context ((addr,mods)::am.sources) am.layouts tx NONE)
-                with in_deploy := T in
        case call_external_function am cx nr mut ts mods args dflts tx.args body ret
          of (INR e, _) => INR e
           | (_, am) => INL (am with sources updated_by CONS (addr, mods))

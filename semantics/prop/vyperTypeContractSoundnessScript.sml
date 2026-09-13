@@ -141,37 +141,91 @@ QED
 
 Theorem load_contract_success_cases:
   load_contract am tx mods exps = INL am_deployed ==>
+  ?imms ts.
+    initial_immutables (type_env_all_modules mods) mods = SOME imms /\
+    ts = (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) /\
+    ((lookup_function NONE tx.function_name Deploy ts = NONE /\
+      tx.args = [] /\
+      ?am_c st.
+        evaluate_all_constants
+          ((initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE) with in_deploy := T)
+          (am with <|immutables updated_by CONS (tx.target,imms);
+                    exports updated_by CONS (tx.target,exps)|>)
+          tx.target mods = SOME am_c /\
+        send_call_value Payable
+          ((initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE) with in_deploy := T)
+          (initial_state am_c []) = (INL (),st) /\
+        am_deployed =
+          (abstract_machine_from_state am_c.sources am_c.exports am_c.layouts st
+             with sources updated_by CONS (tx.target,mods))) \/
+     (?mut nr args dflts ret body v am_ctor.
+        lookup_function NONE tx.function_name Deploy ts =
+          SOME (mut,nr,args,dflts,ret,body) /\
+        call_external_function
+          (am with <|immutables updated_by CONS (tx.target,imms);
+                     exports updated_by CONS (tx.target,exps)|>)
+          ((initial_evaluation_context ((tx.target,mods)::am.sources)
+              am.layouts tx NONE) with in_deploy := T)
+          nr mut ts mods args dflts tx.args body ret = (INL v,am_ctor) /\
+        am_deployed = am_ctor with sources updated_by CONS (tx.target,mods)))
+Proof
+  rw[load_contract_def] >>
+  gvs[AllCaseEqs(), PULL_EXISTS] >>
+  metis_tac[]
+QED
+
+Theorem load_contract_success_no_constructor:
+  load_contract am tx mods exps = INL am_deployed /\
+  lookup_function NONE tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) = NONE ==>
+  ?imms am_c st.
+    initial_immutables (type_env_all_modules mods) mods = SOME imms /\
+    tx.args = [] /\
+    evaluate_all_constants
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (am with <|immutables updated_by CONS (tx.target,imms);
+                exports updated_by CONS (tx.target,exps)|>)
+      tx.target mods = SOME am_c /\
+    send_call_value Payable
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (initial_state am_c []) = (INL (),st) /\
+    am_deployed =
+      (abstract_machine_from_state am_c.sources am_c.exports am_c.layouts st
+         with sources updated_by CONS (tx.target,mods))
+Proof
+  rw[] >> drule load_contract_success_cases >> strip_tac >> gvs[]
+QED
+
+Theorem load_contract_success_constructor_cases:
+  load_contract am tx mods exps = INL am_deployed /\
+  IS_SOME (lookup_function NONE tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])) ==>
   ?imms ts mut nr args dflts ret body v am_ctor.
     initial_immutables (type_env_all_modules mods) mods = SOME imms /\
     ts = (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) /\
     lookup_function NONE tx.function_name Deploy ts =
       SOME (mut,nr,args,dflts,ret,body) /\
     call_external_function
-      (am with <| immutables updated_by CONS (tx.target,imms);
-                 exports updated_by CONS (tx.target,exps) |>)
+      (am with <|immutables updated_by CONS (tx.target,imms);
+                 exports updated_by CONS (tx.target,exps)|>)
       ((initial_evaluation_context ((tx.target,mods)::am.sources)
           am.layouts tx NONE) with in_deploy := T)
-      nr mut ts mods args dflts tx.args body ret = (INL v, am_ctor) /\
+      nr mut ts mods args dflts tx.args body ret = (INL v,am_ctor) /\
     am_deployed = am_ctor with sources updated_by CONS (tx.target,mods)
 Proof
-  rw[load_contract_def] >>
-  Cases_on `initial_immutables (type_env_all_modules mods) mods` >> gvs[] >>
-  Cases_on `lookup_function NONE tx.function_name Deploy
-              (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])` >> gvs[] >>
-  Cases_on `x'` >> gvs[] >>
-  Cases_on `r` >> gvs[] >>
-  Cases_on `r''` >> gvs[] >>
-  Cases_on `r` >> gvs[] >>
-  Cases_on `r''` >> gvs[] >>
-  Cases_on `call_external_function
-      (am with <|immutables updated_by CONS (tx.target,x);
-                exports updated_by CONS (tx.target,exps)|>)
-      ((initial_evaluation_context ((tx.target,mods)::am.sources) am.layouts tx NONE)
-         with in_deploy := T)
-      q' q (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) mods q'' q''' tx.args r q''''` >>
-  gvs[] >>
-  Cases_on `q'''''` >> gvs[] >>
-  qexists `a` >> simp[]
+  rw[] >> drule load_contract_success_cases >> strip_tac >> gvs[IS_SOME_EXISTS]
+QED
+
+Theorem load_contract_success_sources:
+  load_contract am tx mods exps = INL am_deployed ==>
+  ALOOKUP am_deployed.sources tx.target = SOME mods
+Proof
+  rw[] >> drule load_contract_success_cases >> strip_tac >>
+  gvs[abstract_machine_from_state_def]
 QED
 
 Theorem call_external_function_deploy_success_evaluate_all_constants[local]:
@@ -836,7 +890,7 @@ Proof
   simp[]
 QED
 
-Theorem send_call_value_preserves_immutables[local]:
+Theorem send_call_value_preserves_immutables:
   send_call_value mut cx st = (res,st') ==>
   st'.immutables = st.immutables
 Proof
@@ -938,7 +992,7 @@ Proof
   metis_tac[transfer_value_no_type_error_c53]
 QED
 
-Theorem send_call_value_preserves_scopes_c53[local]:
+Theorem send_call_value_preserves_scopes:
   send_call_value mut cx st = (res,st') ==>
   st'.scopes = st.scopes
 Proof
@@ -946,6 +1000,16 @@ Proof
      assert_def, return_def, raise_def] >>
   gvs[AllCaseEqs()] >>
   imp_res_tac transfer_value_scopes >> gvs[]
+QED
+
+Theorem send_call_value_preserves_logs_tStorage:
+  send_call_value mut cx st = (res,st') ==>
+  st'.logs = st.logs /\ st'.tStorage = st.tStorage
+Proof
+  rw[send_call_value_def, transfer_value_def, bind_def, ignore_bind_def,
+     get_accounts_def, update_accounts_def, check_def, assert_def, return_def,
+     raise_def] >>
+  gvs[AllCaseEqs()]
 QED
 
 Theorem send_call_value_accounts_well_typed_c53:
@@ -1011,7 +1075,7 @@ Proof
   TRY (Cases_on `cx.nonreentrant_slot` >> gvs[return_def, raise_def]) >>
   imp_res_tac acquire_nonreentrant_lock_scopes >>
   imp_res_tac acquire_nonreentrant_lock_immutables >>
-  imp_res_tac send_call_value_preserves_scopes_c53 >>
+  imp_res_tac send_call_value_preserves_scopes >>
   imp_res_tac send_call_value_preserves_immutables >>
   gvs[initial_state_def, state_well_typed_def, machine_well_typed_def]
 QED
@@ -1769,9 +1833,11 @@ Proof
   simp[]
 QED
 
-Theorem evaluate_all_constants_preserves_layouts[local]:
+Theorem evaluate_all_constants_preserves_machine_components[local]:
   evaluate_all_constants cx am addr mods = SOME am_c ==>
-  am_c.layouts = am.layouts
+  am_c.sources = am.sources /\ am_c.exports = am.exports /\
+  am_c.accounts = am.accounts /\ am_c.layouts = am.layouts /\
+  am_c.tStorage = am.tStorage /\ am_c.logs = am.logs
 Proof
   qid_spec_tac `am_c` >> qid_spec_tac `am` >>
   Induct_on `mods` >- rw[evaluate_all_constants_def] >>
@@ -1779,6 +1845,46 @@ Proof
   rw[evaluate_all_constants_def] >>
   gvs[AllCaseEqs(), merge_constants_def] >>
   first_x_assum drule >> simp[]
+QED
+
+Theorem evaluate_all_constants_preserves_layouts[local]:
+  evaluate_all_constants cx am addr mods = SOME am_c ==>
+  am_c.layouts = am.layouts
+Proof
+  metis_tac[evaluate_all_constants_preserves_machine_components]
+QED
+
+Theorem load_contract_success_no_constructor_projections:
+  load_contract am tx mods exps = INL am_deployed /\
+  lookup_function NONE tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) = NONE ==>
+  ?imms am_c st.
+    initial_immutables (type_env_all_modules mods) mods = SOME imms /\
+    evaluate_all_constants
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (am with <|immutables updated_by CONS (tx.target,imms);
+                exports updated_by CONS (tx.target,exps)|>)
+      tx.target mods = SOME am_c /\
+    send_call_value Payable
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (initial_state am_c []) = (INL (),st) /\
+    am_deployed.sources = (tx.target,mods)::am.sources /\
+    am_deployed.exports = (tx.target,exps)::am.exports /\
+    am_deployed.immutables = am_c.immutables /\
+    am_deployed.layouts = am.layouts /\
+    am_deployed.accounts = st.accounts /\
+    am_deployed.logs = am.logs /\
+    am_deployed.tStorage = am.tStorage
+Proof
+  rw[] >>
+  drule_all load_contract_success_no_constructor >> strip_tac >>
+  drule evaluate_all_constants_preserves_machine_components >> strip_tac >>
+  drule send_call_value_preserves_immutables >> strip_tac >>
+  drule send_call_value_preserves_logs_tStorage >> strip_tac >>
+  qexistsl [`imms`,`am_c`,`st`] >>
+  gvs[abstract_machine_from_state_def, initial_state_def]
 QED
 
 Theorem call_external_function_deploy_success_preserves_layouts:
@@ -1798,7 +1904,9 @@ Proof
 QED
 
 Theorem load_contract_success_constructor_constants_context:
-  load_contract am deploy_tx mods exps = INL am_deployed ==>
+  load_contract am deploy_tx mods exps = INL am_deployed /\
+  IS_SOME (lookup_function NONE deploy_tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])) ==>
   ?imms ts mut nr args dflts ret body v am_ctor am_c.
     initial_immutables (type_env_all_modules mods) mods = SOME imms /\
     ts = (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) /\
@@ -1817,7 +1925,7 @@ Theorem load_contract_success_constructor_constants_context:
     am_deployed = am_ctor with sources updated_by CONS (deploy_tx.target,mods)
 Proof
   rw[] >>
-  drule load_contract_success_cases >> strip_tac >> gvs[] >>
+  drule load_contract_success_constructor_cases >> strip_tac >> gvs[] >>
   qspecl_then
     [`am with <|immutables updated_by CONS (deploy_tx.target,imms);
                 exports updated_by CONS (deploy_tx.target,exps)|>`,
@@ -1909,9 +2017,20 @@ Theorem load_contract_deployed_bare_globals_immutables_ready_clause[local]:
       ty = SOME tv
 Proof
   rw[] >>
-  drule load_contract_success_constructor_constants_context >>
+  Cases_on `lookup_function NONE deploy_tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])`
+  >- (drule_all load_contract_success_no_constructor >> strip_tac >>
+      drule send_call_value_preserves_immutables >> strip_tac >>
+      drule evaluate_all_constants_preserves_layouts >> strip_tac >>
+      gvs[abstract_machine_from_state_def, initial_state_def,
+          get_tenv_def, initial_evaluation_context_def] >>
+      irule deploy_context_constants_bare_globals_type_ready >>
+      qexistsl [`am`, `am_c`, `call_art`, `deploy_tx`, `exps`, `id`, `imms`, `src`, `v`] >>
+      gvs[initial_evaluation_context_def])
+  >> drule load_contract_success_constructor_constants_context >>
+  (impl_tac >- simp[]) >>
   strip_tac >>
-  gvs[] >>
+  gvs[IS_SOME_EXISTS] >>
   gvs[get_tenv_def, initial_evaluation_context_def] >>
   irule load_contract_constructor_context_bare_global_type_from_constants >>
   gvs[initial_evaluation_context_def] >>
@@ -1953,9 +2072,8 @@ Theorem deployed_toplevel_vtypes_immutables_ready_clause[local]:
          ty = SOME tv)
 Proof
   rw[] >>
-  drule load_contract_success_cases >> strip_tac >> gvs[] >>
-  `ALOOKUP ((deploy_tx.target,mods)::am_ctor.sources) call_tx.target = SOME mods` by
-    simp[] >>
+  `ALOOKUP am_deployed.sources call_tx.target = SOME mods` by
+    (drule load_contract_success_sources >> gvs[]) >>
   `(!src id vt.
       FLOOKUP call_art.cta_toplevel_vtypes (src,id) = SOME vt ==>
       well_formed_vtype (type_env_all_modules mods) vt) /\
@@ -1964,24 +2082,24 @@ Proof
       FLOOKUP call_art.cta_bare_globals (src,id) = NONE ==>
       ?ts is_transient typ id_str.
         get_module_code
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) src = SOME ts /\
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) src = SOME ts /\
         find_var_decl_by_num id ts = SOME (StorageVarDecl is_transient typ,id_str) /\
         typ = ty /\
         IS_SOME (evaluate_type (type_env_all_modules mods) typ) /\
         IS_SOME (lookup_var_slot_from_layout
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) is_transient src id_str)) /\
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) is_transient src id_str)) /\
     (!src id kt vt.
       FLOOKUP call_art.cta_toplevel_vtypes (src,id) = SOME (HashMapT kt vt) ==>
       ?ts is_transient id_str.
         get_module_code
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) src = SOME ts /\
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) src = SOME ts /\
         find_var_decl_by_num id ts = SOME (HashMapVarDecl is_transient kt vt,id_str) /\
         IS_SOME (lookup_var_slot_from_layout
-          (initial_evaluation_context ((deploy_tx.target,mods)::am_ctor.sources)
-             am_ctor.layouts call_tx src) is_transient src id_str))` by
+          (initial_evaluation_context am_deployed.sources
+             am_deployed.layouts call_tx src) is_transient src id_str))` by
     (irule check_contract_toplevel_vtypes_consistent_initial >> simp[]) >>
   rpt conj_tac
   >- (Cases_on `FLOOKUP call_art.cta_bare_globals (src,id)` >> gvs[]
@@ -1991,7 +2109,7 @@ Proof
             rw[] >> gvs[get_module_code_def, initial_evaluation_context_def]) >>
       rename1 `FLOOKUP call_art.cta_bare_globals (src,id) = SOME bare_ty` >>
       drule check_contract_bare_globals_consistent_initial >>
-      disch_then (qspecl_then [`call_tx`,`(deploy_tx.target,mods)::am_ctor.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
+      disch_then (qspecl_then [`call_tx`,`am_deployed.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
       simp[get_module_code_def, initial_evaluation_context_def] >>
       rw[] >> gvs[get_module_code_def, initial_evaluation_context_def])
   >- (rpt strip_tac >>
@@ -2002,7 +2120,7 @@ Proof
             rw[] >> gvs[get_module_code_def, initial_evaluation_context_def]) >>
       rename1 `FLOOKUP call_art.cta_bare_globals (src,id) = SOME bare_ty` >>
       drule check_contract_bare_globals_consistent_initial >>
-      disch_then (qspecl_then [`call_tx`,`(deploy_tx.target,mods)::am_ctor.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
+      disch_then (qspecl_then [`call_tx`,`am_deployed.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
       simp[get_module_code_def, initial_evaluation_context_def] >>
       rw[] >> gvs[get_module_code_def, initial_evaluation_context_def])
   >> rpt strip_tac >>
@@ -2014,7 +2132,7 @@ Proof
      rename1 `FLOOKUP call_art.cta_bare_globals (src,id) = SOME bare_ty` >>
      `bare_ty = ty` by
        (drule check_contract_bare_globals_consistent_initial >>
-        disch_then (qspecl_then [`call_tx`,`(deploy_tx.target,mods)::am_ctor.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
+        disch_then (qspecl_then [`call_tx`,`am_deployed.sources`,`src`,`id`,`bare_ty`] mp_tac) >>
         simp[get_module_code_def, initial_evaluation_context_def] >>
         rw[] >> gvs[get_module_code_def, initial_evaluation_context_def]) >>
      gvs[] >>
@@ -2080,7 +2198,18 @@ Theorem load_contract_deployed_bare_globals_immutables_ready_exists_clause[local
         (case ALOOKUP am_deployed.immutables call_tx.target of SOME m => m | NONE => [])) id)
 Proof
   rw[] >>
-  drule load_contract_success_constructor_constants_context >>
+  Cases_on `lookup_function NONE deploy_tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => [])`
+  >- (drule_all load_contract_success_no_constructor >> strip_tac >>
+      drule send_call_value_preserves_immutables >> strip_tac >>
+      drule evaluate_all_constants_preserves_layouts >> strip_tac >>
+      gvs[abstract_machine_from_state_def, initial_state_def] >>
+      simp[IS_SOME_EXISTS, EXISTS_PROD] >>
+      irule deploy_context_constants_bare_globals_lookup_exists >>
+      qexistsl [`am`,`call_art`,`exps`,`imms`,`mods`,`ty`] >>
+      gvs[initial_evaluation_context_def])
+  >> drule load_contract_success_constructor_constants_context >>
+  (impl_tac >- simp[]) >>
   strip_tac >>
   gvs[] >>
   qspecl_then [`(initial_evaluation_context ((deploy_tx.target,mods)::am.sources) am.layouts deploy_tx NONE with in_deploy := T)`,
@@ -3022,16 +3151,6 @@ Proof
   metis_tac[lookup_exported_function_checked_cases_selected]
 QED
 
-
-Theorem send_call_value_preserves_scopes[local]:
-  send_call_value mut cx st = (res,st') ==>
-  st'.scopes = st.scopes
-Proof
-  rw[send_call_value_def, bind_def, ignore_bind_def, check_def,
-     assert_def, return_def, raise_def] >>
-  gvs[AllCaseEqs()] >>
-  imp_res_tac transfer_value_scopes >> gvs[]
-QED
 
 Theorem call_lock_action_preserves_scopes[local]:
   (if nr then
