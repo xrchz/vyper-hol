@@ -992,7 +992,7 @@ Proof
   metis_tac[transfer_value_no_type_error_c53]
 QED
 
-Theorem send_call_value_preserves_scopes_c53:
+Theorem send_call_value_preserves_scopes:
   send_call_value mut cx st = (res,st') ==>
   st'.scopes = st.scopes
 Proof
@@ -1000,6 +1000,16 @@ Proof
      assert_def, return_def, raise_def] >>
   gvs[AllCaseEqs()] >>
   imp_res_tac transfer_value_scopes >> gvs[]
+QED
+
+Theorem send_call_value_preserves_logs_tStorage:
+  send_call_value mut cx st = (res,st') ==>
+  st'.logs = st.logs /\ st'.tStorage = st.tStorage
+Proof
+  rw[send_call_value_def, transfer_value_def, bind_def, ignore_bind_def,
+     get_accounts_def, update_accounts_def, check_def, assert_def, return_def,
+     raise_def] >>
+  gvs[AllCaseEqs()]
 QED
 
 Theorem send_call_value_accounts_well_typed_c53:
@@ -1065,7 +1075,7 @@ Proof
   TRY (Cases_on `cx.nonreentrant_slot` >> gvs[return_def, raise_def]) >>
   imp_res_tac acquire_nonreentrant_lock_scopes >>
   imp_res_tac acquire_nonreentrant_lock_immutables >>
-  imp_res_tac send_call_value_preserves_scopes_c53 >>
+  imp_res_tac send_call_value_preserves_scopes >>
   imp_res_tac send_call_value_preserves_immutables >>
   gvs[initial_state_def, state_well_typed_def, machine_well_typed_def]
 QED
@@ -1823,9 +1833,11 @@ Proof
   simp[]
 QED
 
-Theorem evaluate_all_constants_preserves_layouts[local]:
+Theorem evaluate_all_constants_preserves_machine_components[local]:
   evaluate_all_constants cx am addr mods = SOME am_c ==>
-  am_c.layouts = am.layouts
+  am_c.sources = am.sources /\ am_c.exports = am.exports /\
+  am_c.accounts = am.accounts /\ am_c.layouts = am.layouts /\
+  am_c.tStorage = am.tStorage /\ am_c.logs = am.logs
 Proof
   qid_spec_tac `am_c` >> qid_spec_tac `am` >>
   Induct_on `mods` >- rw[evaluate_all_constants_def] >>
@@ -1833,6 +1845,46 @@ Proof
   rw[evaluate_all_constants_def] >>
   gvs[AllCaseEqs(), merge_constants_def] >>
   first_x_assum drule >> simp[]
+QED
+
+Theorem evaluate_all_constants_preserves_layouts[local]:
+  evaluate_all_constants cx am addr mods = SOME am_c ==>
+  am_c.layouts = am.layouts
+Proof
+  metis_tac[evaluate_all_constants_preserves_machine_components]
+QED
+
+Theorem load_contract_success_no_constructor_projections:
+  load_contract am tx mods exps = INL am_deployed /\
+  lookup_function NONE tx.function_name Deploy
+    (case ALOOKUP mods NONE of SOME ts => ts | NONE => []) = NONE ==>
+  ?imms am_c st.
+    initial_immutables (type_env_all_modules mods) mods = SOME imms /\
+    evaluate_all_constants
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (am with <|immutables updated_by CONS (tx.target,imms);
+                exports updated_by CONS (tx.target,exps)|>)
+      tx.target mods = SOME am_c /\
+    send_call_value Payable
+      ((initial_evaluation_context ((tx.target,mods)::am.sources)
+          am.layouts tx NONE) with in_deploy := T)
+      (initial_state am_c []) = (INL (),st) /\
+    am_deployed.sources = (tx.target,mods)::am.sources /\
+    am_deployed.exports = (tx.target,exps)::am.exports /\
+    am_deployed.immutables = am_c.immutables /\
+    am_deployed.layouts = am.layouts /\
+    am_deployed.accounts = st.accounts /\
+    am_deployed.logs = am.logs /\
+    am_deployed.tStorage = am.tStorage
+Proof
+  rw[] >>
+  drule_all load_contract_success_no_constructor >> strip_tac >>
+  drule evaluate_all_constants_preserves_machine_components >> strip_tac >>
+  drule send_call_value_preserves_immutables >> strip_tac >>
+  drule send_call_value_preserves_logs_tStorage >> strip_tac >>
+  qexistsl [`imms`,`am_c`,`st`] >>
+  gvs[abstract_machine_from_state_def, initial_state_def]
 QED
 
 Theorem call_external_function_deploy_success_preserves_layouts:
@@ -3099,16 +3151,6 @@ Proof
   metis_tac[lookup_exported_function_checked_cases_selected]
 QED
 
-
-Theorem send_call_value_preserves_scopes[local]:
-  send_call_value mut cx st = (res,st') ==>
-  st'.scopes = st.scopes
-Proof
-  rw[send_call_value_def, bind_def, ignore_bind_def, check_def,
-     assert_def, return_def, raise_def] >>
-  gvs[AllCaseEqs()] >>
-  imp_res_tac transfer_value_scopes >> gvs[]
-QED
 
 Theorem call_lock_action_preserves_scopes[local]:
   (if nr then

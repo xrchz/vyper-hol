@@ -552,7 +552,7 @@ Proof
     gvs[machine_well_typed_def, initial_state_def] >>
   drule_all send_call_value_accounts_well_typed_c53 >> strip_tac >>
   imp_res_tac send_call_value_preserves_immutables >>
-  imp_res_tac send_call_value_preserves_scopes_c53 >>
+  imp_res_tac send_call_value_preserves_scopes >>
   gvs[machine_well_typed_def, abstract_machine_from_state_def,
       state_well_typed_def, initial_state_def]
 QED
